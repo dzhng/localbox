@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "vm-probe.v1",
+  "backend": "fake",
+  "verdict": "pass",
+  "guest": {
+    "identity": "agent-computer-fake-guest",
+    "architecture": "aarch64",
+    "kernel": "linux-fake-6.6",
+    "ipAddress": "192.168.64.2"
+  },
+  "diskMarkerPersistence": { "passed": true },
+  "pauseResume": { "passed": true },
+  "outboundHTTPS": { "passed": true },
+  "hostPathIsolation": { "passed": true },
+  "reconnect": { "passed": true },
+  "cleanStop": { "passed": true },
+  "resourceLeaks": {
+    "vmProcessLeaked": false,
+    "socketLeaked": false,
+    "diskLockLeaked": false
+  }
+}
