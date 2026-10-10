@@ -1,0 +1,722 @@
+[
+  {
+    "id": "system.info",
+    "description": "Describe the contract and fake runtime.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "vm.list",
+    "description": "List available virtual machines.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "vm.status",
+    "description": "Read VM lifecycle status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "vm.start",
+    "description": "Start a VM.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "vm.stop",
+    "description": "Stop a VM.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "vm.pause",
+    "description": "Pause a VM.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "vm.reset",
+    "description": "Reset a VM and discard its guest state.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "vm.logs",
+    "description": "Read recent VM logs.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "network.egress",
+    "description": "Inspect guest egress identity.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "relay.status",
+    "description": "Read relay connectivity status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "shell.exec",
+    "description": "Execute a command in the guest shell.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 128
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "job.status",
+    "description": "Read an asynchronous job status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "job.wait",
+    "description": "Wait for an asynchronous job.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "job.cancel",
+    "description": "Cancel an asynchronous job.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "job.output",
+    "description": "Read asynchronous job output.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "fs.list",
+    "description": "List guest directory entries.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "fs.stat",
+    "description": "Read guest file metadata.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "fs.read",
+    "description": "Read guest file contents.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "fs.write",
+    "description": "Write guest file contents.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 511
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "fs.mkdir",
+    "description": "Create a guest directory.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parents": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "fs.remove",
+    "description": "Remove a guest path.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recursive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.list_tabs",
+    "description": "List browser tabs.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "browser.open",
+    "description": "Open a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.navigate",
+    "description": "Navigate a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tab_id",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.focus",
+    "description": "Focus a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tab_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.close",
+    "description": "Close a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tab_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.screenshot",
+    "description": "Capture a browser tab screenshot.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tab_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "browser.click",
+    "description": "Click in a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "tab_id",
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.type",
+    "description": "Type into a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tab_id",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "browser.key",
+    "description": "Send a key to a browser tab.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "tab_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tab_id",
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "desktop.status",
+    "description": "Read desktop status.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "desktop.screenshot",
+    "description": "Capture the desktop.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none"
+  },
+  {
+    "id": "desktop.click",
+    "description": "Click on the desktop.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "button": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "desktop.move",
+    "description": "Move the desktop pointer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "desktop.scroll",
+    "description": "Scroll the desktop.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "delta_y": {
+          "type": "number"
+        },
+        "delta_x": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "delta_y"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "desktop.key",
+    "description": "Send a key to the desktop.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  },
+  {
+    "id": "desktop.type",
+    "description": "Type into the desktop.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required"
+  }
+]

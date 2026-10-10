@@ -49,3 +49,18 @@ slice or an explicit user decision.
   not protect a VM whose shell is already authoritative.
 - Silent retry of mutations: cannot distinguish a lost response from a failed
   write.
+
+### Slice 00 implementation decisions
+
+- TypeScript on Node.js with `tsx` and the built-in `node:test` runner keeps the
+  contract runnable on the host without a service or VM dependency.
+- The contract owns a 37-entry operation catalog, a small JSON Schema subset,
+  versioned request/response envelopes, stable error codes, retry/idempotency
+  metadata, and generated CLI/MCP help snapshots.
+- The fake runtime uses a fixture clock starting at `1700000000000` and a single
+  handler registry. Mutation IDs cache the complete response so exact replay is
+  deterministic; deadlines and cancellation are checked around every handler.
+- `agent-computer contract probe` emits catalog, help, and a `system.info` fake
+  response as one stable JSON document. Snapshots are committed under
+  `snapshots/` and parity tests invoke every catalog entry through the same
+  dispatcher.

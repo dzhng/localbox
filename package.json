@@ -1,0 +1,20 @@
+{
+  "name": "agent-computer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test tests/**/*.test.ts",
+    "contract:probe": "tsx apps/cli/src/index.ts contract probe",
+    "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots"
+  },
+  "bin": {
+    "agent-computer": "bin/agent-computer.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

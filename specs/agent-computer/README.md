@@ -1,8 +1,8 @@
 # Agent Computer implementation spec
 
-**Status:** planned; no implementation slices have shipped.  
+**Status:** Slice 00 shipped; contract and deterministic fake runtime are implemented.  
 **Last updated:** 2026-10-09.  
-**Current pickup:** Slice 00, the contract and deterministic probe harness.
+**Current pickup:** Slice 01, Apple VM viability probe.
 
 ## Next Agent Prompt
 
@@ -208,7 +208,7 @@ probes.
 
 ## Global TODO
 
-- [ ] Run Slice 00 contract harness.
+- [x] Run Slice 00 contract harness.
 - [ ] Measure Apple VM viability in Slice 01.
 - [ ] Freeze the guest channel and image manifest in Slice 02.
 - [ ] Prove desktop/browser behavior and resource costs in Slice 03.
