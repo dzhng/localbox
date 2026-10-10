@@ -8,15 +8,15 @@ VM.
 
 Configuration comes from environment variables:
 
-- `AGENT_COMPUTER_ROOT` — guest filesystem root (defaults to `/`).
-- `AGENT_COMPUTER_VM_ID` — VM identity (defaults to `vm_01`).
-- `AGENT_COMPUTER_CHANNEL_EPOCH` — host-issued channel epoch (defaults to `1`).
-- `AGENT_COMPUTER_READINESS_MARKER` — marker written before the `ready` frame.
-- `AGENT_COMPUTER_INVENTORY` — comma-separated inventory names. The default is
+- `LOCALBOX_ROOT` — guest filesystem root (defaults to `/`).
+- `LOCALBOX_VM_ID` — VM identity (defaults to `vm_01`).
+- `LOCALBOX_CHANNEL_EPOCH` — host-issued channel epoch (defaults to `1`).
+- `LOCALBOX_READINESS_MARKER` — marker written before the `ready` frame.
+- `LOCALBOX_INVENTORY` — comma-separated inventory names. The default is
   the Duet-compatible inventory contract.
-- `AGENT_COMPUTER_DESKTOP_BACKEND=production` — opt into the Chromium CDP and
+- `LOCALBOX_DESKTOP_BACKEND=production` — opt into the Chromium CDP and
   X11 desktop backend. Chromium must expose loopback CDP (default
-  `http://127.0.0.1:9222`); `AGENT_COMPUTER_CDP_URL` overrides that endpoint,
+  `http://127.0.0.1:9222`); `LOCALBOX_CDP_URL` overrides that endpoint,
   and `DISPLAY` selects the X11 display. Without this variable the deterministic
   fixture desktop remains active for probes and local tests. The production
   ARM64 image sets this automatically after starting its loopback Xvfb, XFCE,
@@ -31,6 +31,6 @@ matching request through its `AbortSignal`.
 For a local protocol smoke test after building:
 
 ```sh
-printf '' | AGENT_COMPUTER_ROOT="$PWD" AGENT_COMPUTER_READINESS_MARKER="$PWD/.agent-computer-ready" \
+printf '' | LOCALBOX_ROOT="$PWD" LOCALBOX_READINESS_MARKER="$PWD/.localbox-ready" \
   npx tsx apps/guest-agent/src/index.ts
 ```

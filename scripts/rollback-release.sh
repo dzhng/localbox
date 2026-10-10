@@ -3,13 +3,13 @@ set -eu
 
 VERSION=${1:-}
 ALLOW_UNSIGNED=${ALLOW_UNSIGNED:-0}
-INSTALL_ROOT=${AGENT_COMPUTER_INSTALL_ROOT:-$HOME/Library/Application Support/AgentComputer}
+INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox}
 RELEASE_ROOT="$INSTALL_ROOT/releases"
-BIN_DIR=${AGENT_COMPUTER_BIN_DIR:-$HOME/.local/bin}
-LAUNCH_AGENTS_DIR=${AGENT_COMPUTER_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
-TOKEN_FILE=${AGENT_COMPUTER_IPC_TOKEN_FILE:-$INSTALL_ROOT/ipc-token}
-SOCKET_PATH=${AGENT_COMPUTER_SOCKET_PATH:-$INSTALL_ROOT/agent.sock}
-DISK_PATH=${AGENT_COMPUTER_DISK:-$INSTALL_ROOT/vm/disk.img}
+BIN_DIR=${LOCALBOX_BIN_DIR:-$HOME/.local/bin}
+LAUNCH_AGENTS_DIR=${LOCALBOX_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
+TOKEN_FILE=${LOCALBOX_IPC_TOKEN_FILE:-$INSTALL_ROOT/ipc-token}
+SOCKET_PATH=${LOCALBOX_SOCKET_PATH:-$INSTALL_ROOT/agent.sock}
+DISK_PATH=${LOCALBOX_DISK:-$INSTALL_ROOT/vm/disk.img}
 
 case "$VERSION" in
   ''|*[!A-Za-z0-9._-]*) echo "usage: scripts/rollback-release.sh VERSION" >&2; exit 2 ;;
@@ -24,8 +24,8 @@ if [ -z "${RELEASE_PUBLIC_KEY:-}" ] && [ "$ALLOW_UNSIGNED" != "1" ]; then
   exit 1
 fi
 
-NODE_ROOT="$RELEASE_ROOT/active/agent-computer-cli"
-if [ ! -x "$NODE_ROOT/node" ]; then NODE_ROOT="$TARGET/agent-computer-cli"; fi
+NODE_ROOT="$RELEASE_ROOT/active/localbox-cli"
+if [ ! -x "$NODE_ROOT/node" ]; then NODE_ROOT="$TARGET/localbox-cli"; fi
 NODE="$NODE_ROOT/node"
 if [ ! -x "$NODE" ]; then echo "installed release has no bundled node runtime" >&2; exit 1; fi
 
@@ -42,24 +42,24 @@ await rollbackRelease(root, manifest.version, manifest, "arm64");
 NODE
 )
 
-ACTIVE_APP="$RELEASE_ROOT/active/Agent Computer.app"
-PLIST="$LAUNCH_AGENTS_DIR/com.agentcomputer.hostd.plist"
-cp "$ACTIVE_APP/Contents/Resources/com.agentcomputer.hostd.plist" "$PLIST"
-plutil -replace 'ProgramArguments.0' -string "$ACTIVE_APP/Contents/MacOS/agent-computer-hostd" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_IPC_TOKEN_FILE' -string "$TOKEN_FILE" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_SOCKET_PATH' -string "$SOCKET_PATH" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_DISK' -string "$DISK_PATH" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
+ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
+PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
+cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
+plutil -replace 'ProgramArguments.0' -string "$ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_FILE' -string "$TOKEN_FILE" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET_PATH' -string "$SOCKET_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_DISK' -string "$DISK_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
 chmod 600 "$PLIST"
-ln -sfn "$RELEASE_ROOT/active/agent-computer-cli/bin/agent-computer" "$BIN_DIR/agent-computer"
+ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
 
-if [ "${AGENT_COMPUTER_SKIP_LAUNCHD:-0}" != "1" ]; then
+if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"
-  launchctl bootout "$DOMAIN/com.agentcomputer.hostd" >/dev/null 2>&1 || true
+  launchctl bootout "$DOMAIN/com.localbox.hostd" >/dev/null 2>&1 || true
   launchctl bootstrap "$DOMAIN" "$PLIST"
-  launchctl kickstart -k "$DOMAIN/com.agentcomputer.hostd"
+  launchctl kickstart -k "$DOMAIN/com.localbox.hostd"
 fi
 
-echo "rolled back Agent Computer to $VERSION"
+echo "rolled back Localbox to $VERSION"

@@ -78,7 +78,7 @@ export class GuestService {
     this.vmId = options.vmId;
     this.channelEpoch = options.channelEpoch;
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
-    this.readinessMarker = options.readinessMarker ?? "/run/agent-computer/ready";
+    this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
     this.maxPending = options.maxPending ?? 32;
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.maxBufferedBytes = options.maxBufferedBytes ?? 16 * 1024 * 1024;

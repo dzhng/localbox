@@ -4,7 +4,7 @@ import Foundation
 /// to the supplied disk path, so two invocations demonstrate persistence.
 public struct FakeVMBackend: VMProbeBackend {
     public let name = "fake"
-    private let marker = "agent-computer-vm-probe-marker-v1"
+    private let marker = "localbox-vm-probe-marker-v1"
 
     public init() {}
 
@@ -32,7 +32,7 @@ public struct FakeVMBackend: VMProbeBackend {
             host: host,
             boot: BootFacts(coldBootMs: warm ? 0 : 42, warmBootMs: warm ? 17 : 0,
                              readinessMarker: "READY vm-probe-v1", coldBootReady: true, warmBootReady: true),
-            guest: GuestFacts(identity: "agent-computer-fake-guest", architecture: "aarch64",
+            guest: GuestFacts(identity: "localbox-fake-guest", architecture: "aarch64",
                               kernel: "linux-fake-6.6", ipAddress: guestIP),
             diskMarkerPersistence: CheckResult(passed: warm || fm.fileExists(atPath: markerURL.path),
                                                 detail: warm ? "marker survived a prior stop/start" : "marker created for next run"),

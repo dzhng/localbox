@@ -7,7 +7,7 @@ without pretending that a native VM boot succeeded.
 
 ```sh
 swift test
-swift run vm-probe --backend fake --json --disk /tmp/agent-computer-vm-disk
+swift run vm-probe --backend fake --json --disk /tmp/localbox-vm-disk
 ```
 
 Run the command twice with the same `--disk` path to observe the warm marker

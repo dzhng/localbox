@@ -1,1 +1,1 @@
-{"name":"@agent-computer/runtime","private":true,"type":"module","exports":{".":"./dist/index.js"}}
+{"name":"@localbox/runtime","private":true,"type":"module","exports":{".":"./dist/index.js"}}

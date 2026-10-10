@@ -12,7 +12,7 @@ The existing JSON registry stays a local disk-path cache; lifecycle transitions 
 
 ## Human runnable artifact
 
-On Apple Silicon: `agent-computer status`, `vm start`, `vm pause`, `vm resume`, `vm stop`, and `invoke shell.exec ...` operate against a real Linux guest. A JSON probe report records cold/warm boot, guest readiness, persistence, pause/resume, reconnect, and clean-stop evidence.
+On Apple Silicon: `localbox status`, `vm start`, `vm pause`, `vm resume`, `vm stop`, and `invoke shell.exec ...` operate against a real Linux guest. A JSON probe report records cold/warm boot, guest readiness, persistence, pause/resume, reconnect, and clean-stop evidence.
 
 ## Verification
 

@@ -1,5 +1,5 @@
 {
-  "name": "agent-computer",
+  "name": "localbox",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts"
   },
   "bin": {
-    "agent-computer": "bin/agent-computer.js"
+    "localbox": "bin/localbox.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

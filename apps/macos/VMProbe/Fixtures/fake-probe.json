@@ -3,7 +3,7 @@
   "backend": "fake",
   "verdict": "pass",
   "guest": {
-    "identity": "agent-computer-fake-guest",
+    "identity": "localbox-fake-guest",
     "architecture": "aarch64",
     "kernel": "linux-fake-6.6",
     "ipAddress": "192.168.64.2"

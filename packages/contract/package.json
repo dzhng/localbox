@@ -1,1 +1,1 @@
-{"name":"@agent-computer/contract","private":true,"type":"module","exports":{".":"./dist/index.js"}}
+{"name":"@localbox/contract","private":true,"type":"module","exports":{".":"./dist/index.js"}}

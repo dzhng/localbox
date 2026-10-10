@@ -30,9 +30,9 @@ test("image verification checks inventory and readiness metadata", () => {
     binaries: ["node"],
     loopbackBindings: ["127.0.0.1:9222"],
     inventoryDigest: "sha256:inventory",
-    readinessMarker: "/run/agent-computer/ready",
+    readinessMarker: "/run/localbox/ready",
   };
-  assert.equal(verifyImage(manifest, { expectedInventoryDigest: "sha256:inventory", expectedReadinessMarker: "/run/agent-computer/ready" }).ok, true);
+  assert.equal(verifyImage(manifest, { expectedInventoryDigest: "sha256:inventory", expectedReadinessMarker: "/run/localbox/ready" }).ok, true);
   assert.equal(verifyImage(manifest, { expectedInventoryDigest: "sha256:wrong" }).ok, false);
 });
 
@@ -59,7 +59,7 @@ test("ARM64 image manifest binds pinned inputs and full Duet inventory", async (
     buildVersion: "test",
     display: { width: 1440, height: 900 },
     loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:5900"],
-    readinessMarker: "/run/agent-computer/ready",
+    readinessMarker: "/run/localbox/ready",
   };
   const tools = DUET_REQUIRED_TOOL_INVENTORY.map((tool) => ({ ...tool, version: "test" }));
   const manifest = buildImageManifest({ pins, tools, artifacts: { "disk.raw": "sha256:" + "c".repeat(64) } });

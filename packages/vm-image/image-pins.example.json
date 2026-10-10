@@ -17,5 +17,5 @@
   "buildVersion": "0.1.0",
   "display": { "width": 1440, "height": 900 },
   "loopbackBindings": ["127.0.0.1:9222", "127.0.0.1:5900"],
-  "readinessMarker": "/run/agent-computer/ready"
+  "readinessMarker": "/run/localbox/ready"
 }

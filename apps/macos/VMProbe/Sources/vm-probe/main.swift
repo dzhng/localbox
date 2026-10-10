@@ -3,7 +3,7 @@ import VMProbeCore
 
 struct Arguments {
     var backend = "auto"
-    var diskURL = URL(fileURLWithPath: ".agent-computer/vm-probe-disk", isDirectory: true)
+    var diskURL = URL(fileURLWithPath: ".localbox/vm-probe-disk", isDirectory: true)
     var json = false
 }
 

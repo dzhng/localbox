@@ -22,7 +22,7 @@ const pinsInput = process.env.IMAGE_INPUTS ?? process.env.IMAGE_OUTPUT_DIR ?? "d
 const pinsPath = pinsInput.endsWith(".json") ? resolve(pinsInput) : resolve(pinsInput, "build-inputs.json");
 const pins = JSON.parse(await (await import("node:fs/promises")).readFile(pinsPath, "utf8")) as ImageBuildPins;
 const report: ImageProbeReport = { architecture: "", binaries: {}, pythonModules: {}, loopbackBindings: [], readinessMarker: false };
-const identity = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", "set -eu; rm -f /tmp/agent-computer-ready; AGENT_COMPUTER_ROOT=/tmp AGENT_COMPUTER_READINESS_MARKER=/tmp/agent-computer-ready node /opt/agent-computer/dist/apps/guest-agent/src/index.js </dev/null >/tmp/guest-frame; test -s /tmp/guest-frame; test -e /tmp/agent-computer-ready; printf '%s|%s|%s|ready\\n' \"$(dpkg --print-architecture 2>/dev/null || uname -m)\" \"${AGENT_COMPUTER_IMAGE_VERSION:-unknown}\" \"${AGENT_COMPUTER_LOOPBACK_BINDINGS:-}\""]); 
+const identity = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", "set -eu; rm -f /tmp/localbox-ready; LOCALBOX_ROOT=/tmp LOCALBOX_READINESS_MARKER=/tmp/localbox-ready node /opt/agent-computer/dist/apps/guest-agent/src/index.js </dev/null >/tmp/guest-frame; test -s /tmp/guest-frame; test -e /tmp/localbox-ready; printf '%s|%s|%s|ready\\n' \"$(dpkg --print-architecture 2>/dev/null || uname -m)\" \"${LOCALBOX_IMAGE_VERSION:-unknown}\" \"${LOCALBOX_LOOPBACK_BINDINGS:-}\""]);
 const [architecture, _version, bindings, readiness] = identity.trim().split("|");
 report.architecture = architecture;
 report.loopbackBindings = bindings ? bindings.split(",").filter(Boolean) : [];

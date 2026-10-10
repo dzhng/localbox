@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.localbox.hostd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Localbox.app/Contents/MacOS/localbox-hostd</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCALBOX_VM_ID</key><string>vm_01</string>
+    <key>LOCALBOX_IPC_TOKEN_FILE</key><string>~/Library/Application Support/Localbox/ipc-token</string>
+    <key>LOCALBOX_SOCKET_PATH</key><string>~/Library/Application Support/Localbox/agent.sock</string>
+    <key>LOCALBOX_KERNEL</key><string>/Applications/Localbox.app/Contents/Resources/vm/vmlinuz</string>
+    <key>LOCALBOX_INITRD</key><string>/Applications/Localbox.app/Contents/Resources/vm/initrd</string>
+    <key>LOCALBOX_DISK</key><string>~/Library/Application Support/Localbox/vm/disk.img</string>
+    <key>LOCALBOX_TEMPLATE_DISK</key><string>/Applications/Localbox.app/Contents/Resources/vm/template.img</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>LimitLoadToSessionType</key><array><string>Aqua</string></array>
+  <key>StandardOutPath</key><string>~/Library/Logs/Localbox/hostd.log</string>
+  <key>StandardErrorPath</key><string>~/Library/Logs/Localbox/hostd.error.log</string>
+</dict>
+</plist>

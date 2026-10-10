@@ -81,7 +81,7 @@ test("guest service can externalize an oversized result before framing", async (
   const provider = new InMemoryBlobProvider({ secret: "a sufficiently long test secret", baseUrl: "https://relay.test" });
   const request: RequestEnvelope = { protocol_version: PROTOCOL_VERSION, request_id: "guest-large", operation: "system.info", vm_id: "vm_blob_guest", deadline_ms: 1_000, mutation_id: null, input: {} };
   const gateway = { dispatch: async (candidate: RequestEnvelope) => success(candidate, { text: "x".repeat(500) }) } as any;
-  const service = new GuestService({ input, output, gateway, vmId: "vm_blob_guest", channelEpoch: 3, readinessMarker: "/tmp/agent-computer-blob-ready", maxFrameBytes: 1_024, blobThresholdBytes: 16, blobProvider: provider });
+  const service = new GuestService({ input, output, gateway, vmId: "vm_blob_guest", channelEpoch: 3, readinessMarker: "/tmp/localbox-blob-ready", maxFrameBytes: 1_024, blobThresholdBytes: 16, blobProvider: provider });
   await service.start();
   assert.equal((await nextFrame(output)).kind, "ready");
   input.write(encodeGuestFrame({ kind: "request", channel_epoch: 3, request }));

@@ -14,8 +14,8 @@ ARG STATIC_WEB_SERVER_SHA256
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    AGENT_COMPUTER_IMAGE_VERSION=${IMAGE_BUILD_VERSION} \
-    AGENT_COMPUTER_LOOPBACK_BINDINGS=127.0.0.1:9222,127.0.0.1:5900
+    LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION} \
+    LOCALBOX_LOOPBACK_BINDINGS=127.0.0.1:9222,127.0.0.1:5900
 
 RUN test "$(dpkg --print-architecture)" = arm64 \
   && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" > /etc/apt/sources.list \

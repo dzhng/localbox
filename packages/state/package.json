@@ -1,1 +1,1 @@
-{"name":"@agent-computer/state","private":true,"type":"module","exports":{".":"./dist/index.js"}}
+{"name":"@localbox/state","private":true,"type":"module","exports":{".":"./dist/index.js"}}

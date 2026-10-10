@@ -21,9 +21,9 @@ function run(command: string, args: string[]): Promise<string> {
 }
 
 const root = resolve(dirname(new URL(import.meta.url).pathname), "../../..");
-const imageRef = process.env.IMAGE_REF ?? "agent-computer-vm:arm64-dev";
-const baseImage = required("AGENT_COMPUTER_BASE_IMAGE");
-if (!/@sha256:[0-9a-f]{64}$/i.test(baseImage)) throw new Error("AGENT_COMPUTER_BASE_IMAGE must be an immutable @sha256:… reference");
+const imageRef = process.env.IMAGE_REF ?? "localbox-vm:arm64-dev";
+const baseImage = required("LOCALBOX_BASE_IMAGE");
+if (!/@sha256:[0-9a-f]{64}$/i.test(baseImage)) throw new Error("LOCALBOX_BASE_IMAGE must be an immutable @sha256:… reference");
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
 const nodeVersion = required("NODE_VERSION");
 const nodeSha256 = required("NODE_SHA256");
@@ -43,7 +43,7 @@ const pins: ImageBuildPins = {
   buildVersion,
   display: { width: 1440, height: 900 },
   loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:5900"],
-  readinessMarker: "/run/agent-computer/ready",
+  readinessMarker: "/run/localbox/ready",
 };
 const output = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 await mkdir(output, { recursive: true });

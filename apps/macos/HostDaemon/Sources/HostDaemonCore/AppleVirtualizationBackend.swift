@@ -41,7 +41,7 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
         // ends) so the guest's stdin/stdout cannot be inverted or deadlocked.
         let toGuest = Pipe(); let fromGuest = Pipe()
         let attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: toGuest.fileHandleForWriting, fileHandleForWriting: fromGuest.fileHandleForReading)
-        let port = VZVirtioConsolePortConfiguration(); port.name = "org.agent-computer.guest"; port.isConsole = false; port.attachment = attachment
+        let port = VZVirtioConsolePortConfiguration(); port.name = "org.localbox.guest"; port.isConsole = false; port.attachment = attachment
         let console = VZVirtioConsoleDeviceConfiguration(); console.ports[0] = port
         configuration.consoleDevices = [console]
         try configuration.validate()

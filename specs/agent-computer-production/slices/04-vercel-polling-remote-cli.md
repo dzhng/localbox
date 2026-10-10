@@ -8,7 +8,7 @@ A remote logged-in CLI can invoke every catalog operation on the Mac VM through 
 
 Vercel route handlers are stateless adapters over `RelayStateRepository`: agent submit, response read/ack, host poll/lease, host response/ack, heartbeat, revoke, and status. They validate auth, envelopes, size/deadline/rate limits, and repository transactions only. The Mac daemon uses bounded short polls with exponential backoff and lease renewal; it never exposes an inbound listener.
 
-`packages/client` gains an HTTPS transport used by CLI and later MCP. `agent-computer login` performs PKCE owner login, stores refresh credentials in Keychain (or the platform secure store), refreshes access tokens, and selects the default VM. CLI commands and generic invoke route through this transport; CLI remains usable without MCP.
+`packages/client` gains an HTTPS transport used by CLI and later MCP. `localbox login` performs PKCE owner login, stores refresh credentials in Keychain (or the platform secure store), refreshes access tokens, and selects the default VM. CLI commands and generic invoke route through this transport; CLI remains usable without MCP.
 
 Small results stay inline. Larger screenshots/files are blob references with hash, size, expiry, and download authorization.
 

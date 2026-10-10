@@ -8,11 +8,11 @@ One catalog is executable by the CLI and MCP. Every current operation has a cano
 
 `packages/contract` remains the sole owner. Add the missing destructive confirmation to `vm.reset` (for example `discard_state` plus `confirm: "RESET"`), and add a generic client-facing invocation shape that preserves the existing `RequestEnvelope`/`ResponseEnvelope`. CLI aliases may be generated from `operationCatalog`; MCP tools must use the same entries.
 
-The CLI must support `agent-computer login`, `status`, and a generic `invoke <operation>` path even before remote transport lands. It must expose every catalog entry in help and validate input/deadlines/mutation IDs before dispatch.
+The CLI must support `localbox login`, `status`, and a generic `invoke <operation>` path even before remote transport lands. It must expose every catalog entry in help and validate input/deadlines/mutation IDs before dispatch.
 
 ## Human runnable artifact
 
-`node bin/agent-computer.js contract`, `... help --json`, and `... invoke system.info --input-json '{}' --json` show the same catalog identity. `... invoke vm.reset ...` refuses without explicit confirmation.
+`node bin/localbox.js contract`, `... help --json`, and `... invoke system.info --input-json '{}' --json` show the same catalog identity. `... invoke vm.reset ...` refuses without explicit confirmation.
 
 ## Verification
 

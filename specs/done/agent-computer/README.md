@@ -1,6 +1,6 @@
-# Agent Computer
+# Localbox
 
-Agent Computer gives a local or cloud agent one durable Linux ARM64 computer on a Mac. Shell is the authority inside the VM; filesystem, browser, desktop, CLI, and MCP are adapters over the same versioned operation catalog. The host stays outside the VM boundary and the relay uses an outbound channel so the user does not configure inbound ports or a VPN.
+Localbox gives a local or cloud agent one durable Linux ARM64 computer on a Mac. Shell is the authority inside the VM; filesystem, browser, desktop, CLI, and MCP are adapters over the same versioned operation catalog. The host stays outside the VM boundary and the relay uses an outbound channel so the user does not configure inbound ports or a VPN.
 
 The shipped code is a host-testable product foundation with native macOS probe seams. The deterministic runtime, guest gateway, desktop/browser model, relay, OAuth, MCP, recovery supervisor, registry, release verifier, and consumer skill are runnable in CI. The native Apple Virtualization adapter validates pinned image configuration and deliberately reports that host-daemon lifecycle wiring is still required before it can claim a real boot. That failure remains visible instead of silently selecting the fixture backend.
 
@@ -34,10 +34,10 @@ The native probe is intentionally swappable. `apps/macos/VMProbe` has a fake bac
 - Streamable HTTP MCP mapping: `apps/mcp/src/index.ts`.
 - Recovery and durable VM registry: `packages/recovery/src/index.ts`, `packages/registry/src/index.ts`.
 - Native probe and host status seam: `apps/macos/VMProbe`, `apps/macos/HostDaemon`.
-- Release verification and consumer runbook: `scripts/release.ts`, `skills/agent-computer/SKILL.md`.
+- Release verification and consumer runbook: `scripts/release.ts`, `skills/localbox/SKILL.md`.
 - Contract, gateway, relay, OAuth/MCP, desktop, recovery, and release behavior: `tests/`.
 
-Run `npm run build && npm test` for the host suite. Run `swift test --package-path apps/macos/VMProbe` for the native probe package. `node bin/agent-computer.js contract probe`, `vm probe --json`, `status --json`, `shell exec -- …`, and `recovery probe --json` are deterministic smoke entry points.
+Run `npm run build && npm test` for the host suite. Run `swift test --package-path apps/macos/VMProbe` for the native probe package. `node bin/localbox.js contract probe`, `vm probe --json`, `status --json`, `shell exec -- …`, and `recovery probe --json` are deterministic smoke entry points.
 
 ## Decisions and dead ends
 

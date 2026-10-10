@@ -45,7 +45,7 @@ public enum LocalIPCError: Error, CustomStringConvertible, Sendable {
 
 public struct LocalIPCEndpoint: Sendable, Equatable {
     public let socketPath: String
-    public init(socketPath: String = "~/Library/Application Support/AgentComputer/agent.sock") { self.socketPath = socketPath }
+    public init(socketPath: String = "~/Library/Application Support/Localbox/agent.sock") { self.socketPath = socketPath }
 }
 
 /// Authenticates before forwarding to the single HostDaemon lifecycle owner.
@@ -121,7 +121,7 @@ public actor UnixDomainSocketServer {
         listenerFD = fd
         resolvedPath = path
         running = true
-        let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "com.agentcomputer.host-daemon.ipc", qos: .userInitiated))
+        let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "com.localbox.host-daemon.ipc", qos: .userInitiated))
         readSource.setEventHandler { [weak self] in
             guard let self else { return }
             Task { await self.acceptReadyConnections() }

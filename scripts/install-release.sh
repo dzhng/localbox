@@ -5,20 +5,20 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 SOURCE_DIR=${1:-}
 ALLOW_UNSIGNED=${ALLOW_UNSIGNED:-0}
-INSTALL_ROOT=${AGENT_COMPUTER_INSTALL_ROOT:-$HOME/Library/Application Support/AgentComputer}
+INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox}
 RELEASE_ROOT="$INSTALL_ROOT/releases"
-BIN_DIR=${AGENT_COMPUTER_BIN_DIR:-$HOME/.local/bin}
-LAUNCH_AGENTS_DIR=${AGENT_COMPUTER_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
-TOKEN_FILE=${AGENT_COMPUTER_IPC_TOKEN_FILE:-$INSTALL_ROOT/ipc-token}
-SOCKET_PATH=${AGENT_COMPUTER_SOCKET_PATH:-$INSTALL_ROOT/agent.sock}
-DISK_PATH=${AGENT_COMPUTER_DISK:-$INSTALL_ROOT/vm/disk.img}
+BIN_DIR=${LOCALBOX_BIN_DIR:-$HOME/.local/bin}
+LAUNCH_AGENTS_DIR=${LOCALBOX_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
+TOKEN_FILE=${LOCALBOX_IPC_TOKEN_FILE:-$INSTALL_ROOT/ipc-token}
+SOCKET_PATH=${LOCALBOX_SOCKET_PATH:-$INSTALL_ROOT/agent.sock}
+DISK_PATH=${LOCALBOX_DISK:-$INSTALL_ROOT/vm/disk.img}
 
 if [ -z "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR" ]; then
   echo "usage: scripts/install-release.sh RELEASE_DIR" >&2
   exit 2
 fi
 if [ "$(uname -m)" != "arm64" ]; then
-  echo "agent-computer releases require arm64" >&2
+  echo "localbox releases require arm64" >&2
   exit 1
 fi
 if [ -z "${RELEASE_PUBLIC_KEY:-}" ] && [ "$ALLOW_UNSIGNED" != "1" ]; then
@@ -26,14 +26,14 @@ if [ -z "${RELEASE_PUBLIC_KEY:-}" ] && [ "$ALLOW_UNSIGNED" != "1" ]; then
   exit 1
 fi
 
-APP_ZIP=$(find "$SOURCE_DIR" -maxdepth 1 -type f -name 'Agent-Computer-*.zip' -print | head -1)
-CLI_TAR=$(find "$SOURCE_DIR" -maxdepth 1 -type f -name 'agent-computer-cli-*.tar.gz' -print | head -1)
+APP_ZIP=$(find "$SOURCE_DIR" -maxdepth 1 -type f -name 'Localbox-*.zip' -print | head -1)
+CLI_TAR=$(find "$SOURCE_DIR" -maxdepth 1 -type f -name 'localbox-cli-*.tar.gz' -print | head -1)
 if [ -z "$APP_ZIP" ] || [ -z "$CLI_TAR" ] || [ ! -f "$SOURCE_DIR/release.json" ]; then
   echo "release directory is missing app, CLI, or manifest artifacts" >&2
   exit 1
 fi
 
-STAGE=$(mktemp -d "${TMPDIR:-/tmp}/agent-computer-install.XXXXXX")
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/localbox-install.XXXXXX")
 INSTALL_STAGE=
 cleanup() {
   rm -rf "$STAGE"
@@ -41,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 tar -xzf "$CLI_TAR" -C "$STAGE"
-CLI_STAGE="$STAGE/agent-computer-cli"
+CLI_STAGE="$STAGE/localbox-cli"
 VERIFY_NODE="$CLI_STAGE/node"
 if [ ! -x "$VERIFY_NODE" ]; then
   echo "CLI archive does not contain its bundled node runtime" >&2
@@ -61,12 +61,12 @@ NODE
 )
 
 VERSION=$(basename "$CLI_TAR")
-VERSION=${VERSION#agent-computer-cli-}
+VERSION=${VERSION#localbox-cli-}
 VERSION=${VERSION%.tar.gz}
 case "$VERSION" in
   ''|*[!A-Za-z0-9._-]*) echo "invalid release version" >&2; exit 1 ;;
 esac
-EXPECTED_APP="$SOURCE_DIR/Agent-Computer-$VERSION.zip"
+EXPECTED_APP="$SOURCE_DIR/Localbox-$VERSION.zip"
 if [ "$APP_ZIP" != "$EXPECTED_APP" ]; then
   echo "app and CLI artifact versions do not match" >&2
   exit 1
@@ -81,13 +81,13 @@ fi
 INSTALL_STAGE=$(mktemp -d "$RELEASE_ROOT/.stage.XXXXXX")
 ditto -x -k "$APP_ZIP" "$INSTALL_STAGE"
 tar -xzf "$CLI_TAR" -C "$INSTALL_STAGE"
-if [ ! -d "$INSTALL_STAGE/Agent Computer.app" ] || [ ! -x "$INSTALL_STAGE/agent-computer-cli/bin/agent-computer" ]; then
+if [ ! -d "$INSTALL_STAGE/Localbox.app" ] || [ ! -x "$INSTALL_STAGE/localbox-cli/bin/localbox" ]; then
   echo "release archive did not extract the expected app and CLI" >&2
   rm -rf "$INSTALL_STAGE"
   exit 1
 fi
 if [ "$ALLOW_UNSIGNED" != "1" ]; then
-  codesign --verify --deep --strict --verbose=2 "$INSTALL_STAGE/Agent Computer.app"
+  codesign --verify --deep --strict --verbose=2 "$INSTALL_STAGE/Localbox.app"
 fi
 cp "$SOURCE_DIR/release.json" "$INSTALL_STAGE/release.json"
 cp "$SOURCE_DIR/SHA256SUMS" "$INSTALL_STAGE/SHA256SUMS"
@@ -106,16 +106,16 @@ await activateRelease(root, manifest.version, manifest, "arm64");
 NODE
 )
 
-ACTIVE_APP="$RELEASE_ROOT/active/Agent Computer.app"
-PLIST="$LAUNCH_AGENTS_DIR/com.agentcomputer.hostd.plist"
-cp "$ACTIVE_APP/Contents/Resources/com.agentcomputer.hostd.plist" "$PLIST"
-plutil -replace 'ProgramArguments.0' -string "$ACTIVE_APP/Contents/MacOS/agent-computer-hostd" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_IPC_TOKEN_FILE' -string "$TOKEN_FILE" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_SOCKET_PATH' -string "$SOCKET_PATH" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_DISK' -string "$DISK_PATH" "$PLIST"
-plutil -replace 'EnvironmentVariables.AGENT_COMPUTER_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
+ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
+PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
+cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
+plutil -replace 'ProgramArguments.0' -string "$ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_FILE' -string "$TOKEN_FILE" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET_PATH' -string "$SOCKET_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_DISK' -string "$DISK_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
 chmod 600 "$PLIST"
 
 if [ ! -s "$TOKEN_FILE" ]; then
@@ -123,15 +123,15 @@ if [ ! -s "$TOKEN_FILE" ]; then
   "$VERIFY_NODE" -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' > "$TOKEN_FILE"
 fi
 chmod 600 "$TOKEN_FILE"
-ln -sfn "$RELEASE_ROOT/active/agent-computer-cli/bin/agent-computer" "$BIN_DIR/agent-computer"
+ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
 
-if [ "${AGENT_COMPUTER_SKIP_LAUNCHD:-0}" != "1" ]; then
+if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"
-  launchctl bootout "$DOMAIN/com.agentcomputer.hostd" >/dev/null 2>&1 || true
+  launchctl bootout "$DOMAIN/com.localbox.hostd" >/dev/null 2>&1 || true
   launchctl bootstrap "$DOMAIN" "$PLIST"
-  launchctl kickstart -k "$DOMAIN/com.agentcomputer.hostd"
+  launchctl kickstart -k "$DOMAIN/com.localbox.hostd"
 fi
 
-echo "installed Agent Computer $VERSION"
-echo "CLI: $BIN_DIR/agent-computer"
-echo "HostDaemon: $ACTIVE_APP/Contents/MacOS/agent-computer-hostd"
+echo "installed Localbox $VERSION"
+echo "CLI: $BIN_DIR/localbox"
+echo "HostDaemon: $ACTIVE_APP/Contents/MacOS/localbox-hostd"

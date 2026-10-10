@@ -1,4 +1,4 @@
-# Agent Computer product map
+# Localbox product map
 
 > This is the decision record from the exploration walk. The durable rationale
 > for the shipped implementation is in [README.md](README.md).

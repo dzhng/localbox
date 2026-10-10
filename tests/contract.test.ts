@@ -79,33 +79,33 @@ test("mutation IDs make replay deterministic", async () => {
 });
 
 test("CLI help is the catalog and generic invoke preserves envelope identity", () => {
-  const help = spawnSync(process.execPath, ["bin/agent-computer.js", "help", "--json"], { encoding: "utf8" });
+  const help = spawnSync(process.execPath, ["bin/localbox.js", "help", "--json"], { encoding: "utf8" });
   assert.equal(help.status, 0);
   assert.deepEqual(JSON.parse(help.stdout), cliHelpSnapshot());
 
-  const fixtureEnv = { ...process.env, AGENT_COMPUTER_LOCAL_TRANSPORT: "fixture" };
-  const invoked = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "system.info", "--input-json", "{}", "--json"], { encoding: "utf8", env: fixtureEnv });
+  const fixtureEnv = { ...process.env, LOCALBOX_LOCAL_TRANSPORT: "fixture" };
+  const invoked = spawnSync(process.execPath, ["bin/localbox.js", "invoke", "system.info", "--input-json", "{}", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(invoked.status, 0);
   const response = JSON.parse(invoked.stdout);
   assert.equal(response.ok, true);
   assert.equal(response.operation, "system.info");
   assert.equal(response.vm_id, "vm_01");
 
-  const reset = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", "{}", "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
+  const reset = spawnSync(process.execPath, ["bin/localbox.js", "invoke", "vm.reset", "--input-json", "{}", "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(reset.status, 0);
   const resetResponse = JSON.parse(reset.stdout);
   assert.equal(resetResponse.ok, false);
   assert.equal(resetResponse.error.code, "invalid_input");
 
-  const confirmed = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
+  const confirmed = spawnSync(process.execPath, ["bin/localbox.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(confirmed.status, 0);
   assert.equal(JSON.parse(confirmed.stdout).ok, true);
 
-  const login = spawnSync(process.execPath, ["bin/agent-computer.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, AGENT_COMPUTER_AUTH_FILE: "/tmp/agent-computer-test-auth.json" } });
+  const login = spawnSync(process.execPath, ["bin/localbox.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_AUTH_FILE: "/tmp/localbox-test-auth.json" } });
   assert.equal(login.status, 0);
   assert.equal(JSON.parse(login.stdout).result.authenticated, true);
 
-  const mcp = spawnSync(process.execPath, ["bin/agent-computer.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, AGENT_COMPUTER_MCP_URL: "https://computer.example/mcp" } });
+  const mcp = spawnSync(process.execPath, ["bin/localbox.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_MCP_URL: "https://computer.example/mcp" } });
   assert.equal(mcp.status, 0);
-  assert.equal(JSON.parse(mcp.stdout).mcpServers["agent-computer"].url, "https://computer.example/mcp");
+  assert.equal(JSON.parse(mcp.stdout).mcpServers["localbox"].url, "https://computer.example/mcp");
 });

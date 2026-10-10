@@ -51,7 +51,7 @@ export class GuestGateway {
     this.shell = options.shell ?? "/bin/sh";
     this.maxOutputBytes = options.maxOutputBytes ?? 1024 * 1024;
     this.maxCommandBytes = options.maxCommandBytes ?? 64 * 1024;
-    this.journalFile = options.journalPath ?? resolve(this.root, ".agent-computer/mutation-journal.json");
+    this.journalFile = options.journalPath ?? resolve(this.root, ".localbox/mutation-journal.json");
     this.now = options.now ?? (() => Date.now());
     this.desktopRuntime = options.desktopRuntime ?? new DesktopRuntime();
     this.extraHandlers = options.extraHandlers ?? {};
@@ -139,7 +139,7 @@ export class GuestGateway {
       "vm.reset": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "reset" }; },
       "vm.logs": async () => ({ lines: [] }),
       "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
-      "relay.status": async () => ({ connected: Boolean(process.env.AGENT_COMPUTER_RELAY_URL), relay_url: process.env.AGENT_COMPUTER_RELAY_URL ?? null }),
+      "relay.status": async () => ({ connected: Boolean(process.env.LOCALBOX_RELAY_URL), relay_url: process.env.LOCALBOX_RELAY_URL ?? null }),
       "job.status": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
       "job.wait": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
       "job.cancel": async (input) => ({ job_id: (input as { job_id: string }).job_id, cancelled: true }),

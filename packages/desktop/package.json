@@ -1,1 +1,1 @@
-{"name":"@agent-computer/desktop","private":true,"type":"module","exports":{".":"./dist/index.js"}}
+{"name":"@localbox/desktop","private":true,"type":"module","exports":{".":"./dist/index.js"}}

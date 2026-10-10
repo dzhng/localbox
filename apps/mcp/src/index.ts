@@ -51,7 +51,7 @@ export class McpAdapter {
   }
   private async dispatch(rpc: RpcRequest, vmId: string, signal?: AbortSignal): Promise<any> {
     try {
-      if (rpc.method === "initialize") return this.rpcResponse(rpc.id ?? null, { protocolVersion: this.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "agent-computer", version: PROTOCOL_VERSION } });
+      if (rpc.method === "initialize") return this.rpcResponse(rpc.id ?? null, { protocolVersion: this.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "localbox", version: PROTOCOL_VERSION } });
       if (rpc.method === "notifications/initialized") return undefined;
       if (rpc.method === "tools/list") return this.rpcResponse(rpc.id ?? null, { tools: mcpToolsSnapshot().map((tool) => ({ name: tool.id, description: tool.description, inputSchema: tool.input_schema })) });
       if (rpc.method === "tools/call") {

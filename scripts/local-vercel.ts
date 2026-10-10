@@ -13,16 +13,16 @@ function loadEnvFile(path: string): void {
 loadEnvFile(".env.local");
 if (!process.env.CONVEX_URL) throw new Error("CONVEX_URL is required; start `npx convex dev` before `npm run dev:local`");
 process.env.VERCEL ??= "1";
-process.env.AGENT_COMPUTER_LOCAL_SERVICES ??= "1";
-process.env.AGENT_COMPUTER_RESOURCE ??= "http://127.0.0.1:3000";
-process.env.AGENT_COMPUTER_RELAY_URL ??= `${process.env.AGENT_COMPUTER_RESOURCE}/api/relay`;
-process.env.AGENT_COMPUTER_ISSUER ??= process.env.AGENT_COMPUTER_RESOURCE;
-process.env.AGENT_COMPUTER_OWNER_SUBJECT ??= "local-owner";
-process.env.AGENT_COMPUTER_VM_ID ??= "vm_local";
+process.env.LOCALBOX_LOCAL_SERVICES ??= "1";
+process.env.LOCALBOX_RESOURCE ??= "http://127.0.0.1:3000";
+process.env.LOCALBOX_RELAY_URL ??= `${process.env.LOCALBOX_RESOURCE}/api/relay`;
+process.env.LOCALBOX_ISSUER ??= process.env.LOCALBOX_RESOURCE;
+process.env.LOCALBOX_OWNER_SUBJECT ??= "local-owner";
+process.env.LOCALBOX_VM_ID ??= "vm_local";
 
 const relay = (await import("../apps/relay/api/[...path].js")).default as (request: Request) => Promise<Response>;
 const mcp = (await import("../apps/mcp/api/[...path].js")).default as (request: Request) => Promise<Response>;
-const configuredPort = process.env.LOCAL_VERCEL_PORT ?? (new URL(process.env.AGENT_COMPUTER_RESOURCE).port || "3000");
+const configuredPort = process.env.LOCAL_VERCEL_PORT ?? (new URL(process.env.LOCALBOX_RESOURCE).port || "3000");
 const port = Number(configuredPort);
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("LOCAL_VERCEL_PORT must be a valid TCP port");
 

@@ -6,11 +6,11 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "HostDaemonCore", targets: ["HostDaemonCore"]),
-        .executable(name: "agent-computer-hostd", targets: ["agent-computer-hostd"]),
+        .executable(name: "localbox-hostd", targets: ["localbox-hostd"]),
     ],
     targets: [
         .target(name: "HostDaemonCore"),
-        .executableTarget(name: "agent-computer-hostd", dependencies: ["HostDaemonCore"]),
+        .executableTarget(name: "localbox-hostd", dependencies: ["HostDaemonCore"]),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
     ]
 )

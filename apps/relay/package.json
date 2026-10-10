@@ -1,1 +1,1 @@
-{"name":"@agent-computer/relay","private":true,"type":"module","exports":{".":"./dist/index.js"}}
+{"name":"@localbox/relay","private":true,"type":"module","exports":{".":"./dist/index.js"}}

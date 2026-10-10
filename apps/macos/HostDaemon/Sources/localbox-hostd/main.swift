@@ -11,29 +11,29 @@ struct HostDaemonMain {
     static func main() async {
         #if os(macOS)
         do {
-            let vmID = required("AGENT_COMPUTER_VM_ID", defaultValue: "vm_01")
+            let vmID = required("LOCALBOX_VM_ID", defaultValue: "vm_01")
             let token = try loadToken()
             let image = AppleVMConfiguration(
-                kernelURL: pathURL("AGENT_COMPUTER_KERNEL"),
-                initialRamdiskURL: pathURL("AGENT_COMPUTER_INITRD"),
-                diskURL: pathURL("AGENT_COMPUTER_DISK"),
-                templateDiskURL: optionalURL("AGENT_COMPUTER_TEMPLATE_DISK"),
-                cpuCount: integer("AGENT_COMPUTER_CPU_COUNT", defaultValue: 4),
-                memorySize: UInt64(integer("AGENT_COMPUTER_MEMORY_BYTES", defaultValue: 4 * 1024 * 1024 * 1024))
+                kernelURL: pathURL("LOCALBOX_KERNEL"),
+                initialRamdiskURL: pathURL("LOCALBOX_INITRD"),
+                diskURL: pathURL("LOCALBOX_DISK"),
+                templateDiskURL: optionalURL("LOCALBOX_TEMPLATE_DISK"),
+                cpuCount: integer("LOCALBOX_CPU_COUNT", defaultValue: 4),
+                memorySize: UInt64(integer("LOCALBOX_MEMORY_BYTES", defaultValue: 4 * 1024 * 1024 * 1024))
             )
             let daemon = HostDaemon(vmID: vmID, backend: AppleVirtualizationBackend(image: image))
-            let endpoint = LocalIPCEndpoint(socketPath: ProcessInfo.processInfo.environment["AGENT_COMPUTER_SOCKET_PATH"] ?? "~/Library/Application Support/AgentComputer/agent.sock")
+            let endpoint = LocalIPCEndpoint(socketPath: ProcessInfo.processInfo.environment["LOCALBOX_SOCKET_PATH"] ?? "~/Library/Application Support/Localbox/agent.sock")
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
             try await server.start()
             try await daemon.start()
             installSignalHandlers(server: server, daemon: daemon)
             dispatchMain()
         } catch {
-            FileHandle.standardError.write(Data("agent-computer-hostd: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("localbox-hostd: \(error)\n".utf8))
             exit(1)
         }
         #else
-        FileHandle.standardError.write(Data("agent-computer-hostd requires macOS Virtualization\n".utf8))
+        FileHandle.standardError.write(Data("localbox-hostd requires macOS Virtualization\n".utf8))
         exit(1)
         #endif
     }
@@ -74,10 +74,10 @@ struct HostDaemonMain {
     }
 
     private static func loadToken() throws -> String {
-        if let value = ProcessInfo.processInfo.environment["AGENT_COMPUTER_IPC_TOKEN"], !value.isEmpty { return value }
-        let path = expanded(required("AGENT_COMPUTER_IPC_TOKEN_FILE"))
+        if let value = ProcessInfo.processInfo.environment["LOCALBOX_IPC_TOKEN"], !value.isEmpty { return value }
+        let path = expanded(required("LOCALBOX_IPC_TOKEN_FILE"))
         let value = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { throw NSError(domain: "AgentComputerHostDaemon", code: 78, userInfo: [NSLocalizedDescriptionKey: "IPC token file is empty"]) }
+        guard !value.isEmpty else { throw NSError(domain: "LocalboxHostDaemon", code: 78, userInfo: [NSLocalizedDescriptionKey: "IPC token file is empty"]) }
         return value
     }
 

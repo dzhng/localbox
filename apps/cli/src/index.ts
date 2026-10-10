@@ -41,7 +41,7 @@ function printResponse(response: ResponseEnvelope, machine = json): void {
 
 function printUsage(): void {
   process.stdout.write([
-    "agent-computer <command> [options]", "",
+    "localbox <command> [options]", "",
     "Commands:",
     "  status [--json]                 Show VM, relay, and egress status",
     "  vm probe [--json]               Run the host virtualization viability probe",
@@ -66,23 +66,23 @@ async function writeSnapshots(): Promise<void> {
   process.stdout.write("Generated contract snapshots.\n");
 }
 
-function authPath(): string { return process.env.AGENT_COMPUTER_AUTH_FILE ?? resolve(homedir(), ".config", "agent-computer", "auth.json"); }
+function authPath(): string { return process.env.LOCALBOX_AUTH_FILE ?? resolve(homedir(), ".config", "localbox", "auth.json"); }
 interface SavedAuth { token: string; refresh_token?: string; expires_at?: number; saved_at: string }
 async function saveAuth(token: string, refreshToken?: string, expiresIn?: number): Promise<void> {
   const serialized = JSON.stringify({ token, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(expiresIn ? { expires_at: Date.now() + expiresIn * 1000 } : {}), saved_at: new Date().toISOString() } satisfies SavedAuth);
-  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
-    try { await execFileAsync("security", ["add-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w", serialized, "-U"]); return; } catch { /* fall back to the platform config file */ }
+  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
+    try { await execFileAsync("security", ["add-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w", serialized, "-U"]); return; } catch { /* fall back to the platform config file */ }
   }
   const path = authPath(); await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${serialized}\n`, { mode: 0o600 });
 }
 
 async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: string }> {
-  const authorizeEndpoint = process.env.AGENT_COMPUTER_OAUTH_AUTHORIZE_URL;
-  const tokenEndpoint = process.env.AGENT_COMPUTER_OAUTH_TOKEN_URL;
-  const resource = process.env.AGENT_COMPUTER_RESOURCE;
-  if (!authorizeEndpoint || !tokenEndpoint || !resource) throw new Error("set AGENT_COMPUTER_OAUTH_AUTHORIZE_URL, AGENT_COMPUTER_OAUTH_TOKEN_URL, and AGENT_COMPUTER_RESOURCE for browser login");
-  const clientId = process.env.AGENT_COMPUTER_OAUTH_CLIENT_ID ?? "agent-computer-cli";
+  const authorizeEndpoint = process.env.LOCALBOX_OAUTH_AUTHORIZE_URL;
+  const tokenEndpoint = process.env.LOCALBOX_OAUTH_TOKEN_URL;
+  const resource = process.env.LOCALBOX_RESOURCE;
+  if (!authorizeEndpoint || !tokenEndpoint || !resource) throw new Error("set LOCALBOX_OAUTH_AUTHORIZE_URL, LOCALBOX_OAUTH_TOKEN_URL, and LOCALBOX_RESOURCE for browser login");
+  const clientId = process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli";
   const pair = createPkcePair(); const state = randomBytes(18).toString("base64url"); let redirectUri = "";
   const callback = createServer();
   const code = await new Promise<string>((resolveCode, reject) => {
@@ -92,7 +92,7 @@ async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: 
       if (url.pathname !== "/oauth/callback") { response.writeHead(404); response.end(); return; }
       if (url.searchParams.get("state") !== state) { response.writeHead(400); response.end("state mismatch"); reject(new Error("OAuth state mismatch")); return; }
       const value = url.searchParams.get("code"); if (!value) { response.writeHead(400); response.end("missing code"); reject(new Error("OAuth callback did not contain a code")); return; }
-      response.writeHead(200, { "content-type": "text/plain" }); response.end("Agent Computer login complete. You can close this window."); resolveCode(value); callback.close();
+      response.writeHead(200, { "content-type": "text/plain" }); response.end("Localbox login complete. You can close this window."); resolveCode(value); callback.close();
     });
     callback.listen(0, "127.0.0.1", () => {
       const address = callback.address(); if (!address || typeof address === "string") { reject(new Error("OAuth callback listener failed")); return; }
@@ -106,44 +106,44 @@ async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: 
   return exchangeAuthorizationCode({ endpoint: tokenEndpoint, code, clientId, redirectUri, verifier: pair.verifier, resource });
 }
 async function hasAuth(): Promise<boolean> {
-  if (process.env.AGENT_COMPUTER_TOKEN) return true;
-  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
-    try { await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); return true; } catch { /* use config file */ }
+  if (process.env.LOCALBOX_TOKEN) return true;
+  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
+    try { await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w"]); return true; } catch { /* use config file */ }
   }
   try { const value = JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }; return typeof value.token === "string" && value.token.length > 0; }
   catch { return false; }
 }
 
 async function readAuth(): Promise<SavedAuth | undefined> {
-  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
-    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); const value = result.stdout.trim(); const parsed = JSON.parse(value) as SavedAuth; return parsed.token ? parsed : { token: value, saved_at: "" }; } catch { /* use config file */ }
+  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
+    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w"]); const value = result.stdout.trim(); const parsed = JSON.parse(value) as SavedAuth; return parsed.token ? parsed : { token: value, saved_at: "" }; } catch { /* use config file */ }
   }
   try { return JSON.parse(await readFile(authPath(), "utf8")) as SavedAuth; } catch { return undefined; }
 }
 
 async function makeClient(): Promise<AgentClient> {
-  const kind: TransportKind = process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local";
-  if (kind === "remote" && process.env.AGENT_COMPUTER_RELAY_URL) {
+  const kind: TransportKind = process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local";
+  if (kind === "remote" && process.env.LOCALBOX_RELAY_URL) {
     const initial = await readAuth();
     let credentials = initial;
     const accessTokenProvider = async () => {
-      if (process.env.AGENT_COMPUTER_TOKEN) return process.env.AGENT_COMPUTER_TOKEN;
+      if (process.env.LOCALBOX_TOKEN) return process.env.LOCALBOX_TOKEN;
       if (credentials?.refresh_token && credentials.expires_at && credentials.expires_at <= Date.now() + 30_000) {
-        const tokenEndpoint = process.env.AGENT_COMPUTER_OAUTH_TOKEN_URL;
-        const resource = process.env.AGENT_COMPUTER_RESOURCE;
+        const tokenEndpoint = process.env.LOCALBOX_OAUTH_TOKEN_URL;
+        const resource = process.env.LOCALBOX_RESOURCE;
         if (!tokenEndpoint || !resource) return credentials.token;
-        const refreshed = await refreshAccessToken({ endpoint: tokenEndpoint, refreshToken: credentials.refresh_token, clientId: process.env.AGENT_COMPUTER_OAUTH_CLIENT_ID ?? "agent-computer-cli", resource });
+        const refreshed = await refreshAccessToken({ endpoint: tokenEndpoint, refreshToken: credentials.refresh_token, clientId: process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli", resource });
         credentials = { token: refreshed.access_token, refresh_token: refreshed.refresh_token ?? credentials.refresh_token, expires_at: refreshed.expires_in ? Date.now() + refreshed.expires_in * 1000 : undefined, saved_at: new Date().toISOString() };
         await saveAuth(credentials.token, credentials.refresh_token, refreshed.expires_in);
       }
       return credentials?.token;
     };
-    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL, accessTokenProvider }) });
+    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.LOCALBOX_RELAY_URL, accessTokenProvider }) });
   }
-  if (kind === "local" && process.env.AGENT_COMPUTER_LOCAL_TRANSPORT !== "fixture") {
+  if (kind === "local" && process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") {
     return new AgentClient({ transport: new LocalIPCTransport() });
   }
-  const guestRoot = resolve(root, ".agent-computer/guest");
+  const guestRoot = resolve(root, ".localbox/guest");
   await mkdir(guestRoot, { recursive: true });
   const guest = new GuestGateway({ root: guestRoot });
   const transport = fixtureTransport(kind, new FakeDispatcher({ handlers: guest.handlers() }));
@@ -215,18 +215,18 @@ async function main(): Promise<void> {
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
   if ((group === "auth" && subcommand === "login") || group === "login") {
-    let token = (group === "login" ? subcommand : rest[0]) ?? process.env.AGENT_COMPUTER_TOKEN;
+    let token = (group === "login" ? subcommand : rest[0]) ?? process.env.LOCALBOX_TOKEN;
     let refreshToken: string | undefined; let expiresIn: number | undefined;
-    if (!token && process.env.AGENT_COMPUTER_OAUTH_AUTHORIZE_URL) {
+    if (!token && process.env.LOCALBOX_OAUTH_AUTHORIZE_URL) {
       const credentials: OAuthTokenResponse = await loginWithPkce(); token = credentials.access_token; refreshToken = credentials.refresh_token; expiresIn = credentials.expires_in;
     }
     if (!token) { process.stderr.write("login requires an OAuth access token or configured OAuth browser endpoints\n"); process.exitCode = 2; return; }
     await saveAuth(token, refreshToken, expiresIn);
-    printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
+    printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
   if (group === "mcp" && subcommand === "install") {
-    const endpoint = process.env.AGENT_COMPUTER_MCP_URL ?? process.env.AGENT_COMPUTER_RESOURCE ?? "https://relay.example.test/mcp";
-    const config = { mcpServers: { "agent-computer": { url: endpoint } }, oauth: { resource: endpoint } };
+    const endpoint = process.env.LOCALBOX_MCP_URL ?? process.env.LOCALBOX_RESOURCE ?? "https://relay.example.test/mcp";
+    const config = { mcpServers: { "localbox": { url: endpoint } }, oauth: { resource: endpoint } };
     process.stdout.write(`${JSON.stringify(config, null, 2)}\n`); return;
   }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }

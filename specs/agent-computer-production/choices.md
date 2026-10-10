@@ -152,7 +152,7 @@ The CLI now sends one length-prefixed, authenticated request to the
 HostDaemon's Unix socket and receives the same response envelope that MCP and
 the remote relay use. A missing daemon or token is reported as unavailable or
 unauthorized; the CLI does not silently execute against a local fake VM. The
-fixture dispatcher remains behind `AGENT_COMPUTER_LOCAL_TRANSPORT=fixture` so
+fixture dispatcher remains behind `LOCALBOX_LOCAL_TRANSPORT=fixture` so
 tests can run without Apple Virtualization. The alternative default would make
 an installed product appear to work while every file, browser, and VM action
 stayed inside the developer checkout. Verdict: sound; production authority is
@@ -166,7 +166,7 @@ the installer replace `releases/active` in one rename; launchd and the CLI
 symlink point at that stable link. An interrupted extraction therefore leaves
 the old daemon selected, and rollback is the same verified switch in reverse.
 Uninstall removes the integration points while preserving the VM disk. The
-alternative was replacing `/Applications/Agent Computer.app` in place, which
+alternative was replacing `/Applications/Localbox.app` in place, which
 could leave launchd pointing at a partial tree. Verdict: sound; the release
 boundary and durable VM state have separate lifecycles. Confidence: high.
 

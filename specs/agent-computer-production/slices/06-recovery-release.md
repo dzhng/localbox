@@ -10,7 +10,7 @@ A clean ARM64 install survives sleep, network changes, guest crashes, interrupte
 
 ## Human runnable artifact
 
-A clean Apple Silicon machine can install, run `agent-computer login`, start the VM, use CLI operations, inspect status, and recover from forced sleep/network/guest failure. A release verifier rejects wrong architecture, digest, signature, or inventory.
+A clean Apple Silicon machine can install, run `localbox login`, start the VM, use CLI operations, inspect status, and recover from forced sleep/network/guest failure. A release verifier rejects wrong architecture, digest, signature, or inventory.
 
 ## Verification
 

@@ -1,6 +1,6 @@
-# Agent Computer
+# Localbox
 
-Agent Computer runs a durable, preconfigured Linux VM on a user's Mac and
+Localbox runs a durable, preconfigured Linux VM on a user's Mac and
 makes that VM available to AI agents through a CLI and an optional MCP adapter.
 
 The VM provides the execution boundary. The agent can use shell access as the
@@ -30,16 +30,16 @@ internet smoke still require the release environment.
 
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
 `apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
-`AGENT_COMPUTER_RESOURCE`, and `AGENT_COMPUTER_RELAY_URL` in Vercel; deployed
+`LOCALBOX_RESOURCE`, and `LOCALBOX_RELAY_URL` in Vercel; deployed
 functions fail closed when Convex is not configured. For repository-backed
-MCP OAuth, also set `AGENT_COMPUTER_ISSUER`, `AGENT_COMPUTER_OWNER_SUBJECT`,
-and `AGENT_COMPUTER_VM_ID` (or provision the owner and VM in Convex first).
+MCP OAuth, also set `LOCALBOX_ISSUER`, `LOCALBOX_OWNER_SUBJECT`,
+and `LOCALBOX_VM_ID` (or provision the owner and VM in Convex first).
 Set `BLOB_READ_WRITE_TOKEN` for the relay's private Vercel Blob provider;
-`AGENT_COMPUTER_BLOB_THRESHOLD_BYTES`, `AGENT_COMPUTER_BLOB_TTL_MS`, and
-`AGENT_COMPUTER_BLOB_MAX_BYTES` tune its bounded externalization policy.
+`LOCALBOX_BLOB_THRESHOLD_BYTES`, `LOCALBOX_BLOB_TTL_MS`, and
+`LOCALBOX_BLOB_MAX_BYTES` tune its bounded externalization policy.
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes. Build an image with
-`AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum
+`LOCALBOX_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum
 and version variables documented by `packages/vm-image/scripts/build-arm64-image.ts`
 (`NODE_*`, `BUN_*`, and `STATIC_WEB_SERVER_*`).
 
@@ -56,28 +56,28 @@ the Convex URL written to `.env.local`. It enables the local in-memory blob
 provider explicitly; deployed functions still fail closed without Convex and
 private Blob configuration.
 
-After deployment, `agent-computer mcp install --json` prints the optional MCP
+After deployment, `localbox mcp install --json` prints the optional MCP
 configuration for agents. CLI login and catalog operations remain independent
 of MCP.
 
 On the Mac, the installed CLI uses the authenticated HostDaemon Unix socket by
 default. The daemon reads the owner-only token at
-`~/Library/Application Support/AgentComputer/ipc-token`; set
-`AGENT_COMPUTER_SOCKET_PATH` or `AGENT_COMPUTER_IPC_TOKEN_FILE` only when an
+`~/Library/Application Support/Localbox/ipc-token`; set
+`LOCALBOX_SOCKET_PATH` or `LOCALBOX_IPC_TOKEN_FILE` only when an
 installer materializes a different location. The in-process fixture transport
-is available only with `AGENT_COMPUTER_LOCAL_TRANSPORT=fixture` for local tests.
+is available only with `LOCALBOX_LOCAL_TRANSPORT=fixture` for local tests.
 
 On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
 app bundle, compiled CLI, VM artifacts, checksums, and release manifest. Set
-`AGENT_COMPUTER_KERNEL`, `AGENT_COMPUTER_INITRD`, and
-`AGENT_COMPUTER_TEMPLATE_DISK` to the published VM inputs, then provide
+`LOCALBOX_KERNEL`, `LOCALBOX_INITRD`, and
+`LOCALBOX_TEMPLATE_DISK` to the published VM inputs, then provide
 `APPLE_SIGNING_IDENTITY`, `NOTARY_PROFILE`, and `RELEASE_PRIVATE_KEY` (a path to
 the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
 reserved for local packaging checks;
 it cannot satisfy the virtualization or distribution gates.
 When `APPLE_SIGNING_IDENTITY` is omitted, the script imports the local
 screen-recorder PKCS#12 from `~/dev/screen-recorder/.release-signing` (or
-`AGENT_COMPUTER_SIGNING_DIR`) into a disposable keychain, authorizes headless
+`LOCALBOX_SIGNING_DIR`) into a disposable keychain, authorizes headless
 `codesign`, and deletes that keychain on exit. If those local files are absent,
 it creates a throwaway self-signed identity instead. `RELEASE_PRIVATE_KEY` is
 still required for the signed release manifest; `ALLOW_UNSIGNED=1` is only for
@@ -89,11 +89,11 @@ trees behind an atomic `releases/active` link, materializes the launchd plist,
 creates the owner-only IPC token, and loads the daemon. Use
 `scripts/rollback-release.sh VERSION` to select an older verified tree; use
 `scripts/uninstall.sh` to remove launchd and the CLI link while preserving VM
-state. Set `AGENT_COMPUTER_INSTALL_ROOT` for a user-local or fixture install.
+state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or fixture install.
 
 ## References
 
-- [Agent Computer rationale](specs/done/agent-computer/README.md)
+- [Localbox rationale](specs/done/agent-computer/README.md)
 - [Security model](SECURITY.md)
 - Duet VM desktop reference: `~/dev/duet/specs/done/vm-desktop/README.md`
 - Screen-recorder CLI and skill reference: `~/dev/screen-recorder/README.md`

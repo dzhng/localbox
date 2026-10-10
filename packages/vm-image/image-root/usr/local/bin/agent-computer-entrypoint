@@ -6,8 +6,8 @@ set -eu
 # are background processes with no public listeners.
 export DISPLAY="${DISPLAY:-:0}"
 export HOME="${HOME:-/root}"
-export AGENT_COMPUTER_DESKTOP_BACKEND="${AGENT_COMPUTER_DESKTOP_BACKEND:-production}"
-export AGENT_COMPUTER_CDP_URL="${AGENT_COMPUTER_CDP_URL:-http://127.0.0.1:9222}"
+export LOCALBOX_DESKTOP_BACKEND="${LOCALBOX_DESKTOP_BACKEND:-production}"
+export LOCALBOX_CDP_URL="${LOCALBOX_CDP_URL:-http://127.0.0.1:9222}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
 mkdir -p "$XDG_RUNTIME_DIR" /var/lib/agent-computer/chromium
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -37,7 +37,7 @@ children="$children $!"
 
 desktop_ready=0
 for _ in $(seq 1 100); do
-  if curl -fsS "$AGENT_COMPUTER_CDP_URL/json/version" >/dev/null 2>&1 \
+  if curl -fsS "$LOCALBOX_CDP_URL/json/version" >/dev/null 2>&1 \
     && xdotool getdisplaygeometry >/dev/null 2>&1; then
     desktop_ready=1
     break

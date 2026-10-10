@@ -102,9 +102,9 @@ export class LocalIPCTransport implements ClientTransport {
   private readonly timeoutMs: number;
 
   constructor(options: LocalIPCTransportOptions = {}) {
-    this.socketPath = expandHome(options.socketPath ?? process.env.AGENT_COMPUTER_SOCKET_PATH ?? "~/Library/Application Support/AgentComputer/agent.sock");
-    this.token = options.token ?? process.env.AGENT_COMPUTER_IPC_TOKEN;
-    this.tokenFile = expandHome(options.tokenFile ?? process.env.AGENT_COMPUTER_IPC_TOKEN_FILE ?? "~/Library/Application Support/AgentComputer/ipc-token");
+    this.socketPath = expandHome(options.socketPath ?? process.env.LOCALBOX_SOCKET_PATH ?? "~/Library/Application Support/Localbox/agent.sock");
+    this.token = options.token ?? process.env.LOCALBOX_IPC_TOKEN;
+    this.tokenFile = expandHome(options.tokenFile ?? process.env.LOCALBOX_IPC_TOKEN_FILE ?? "~/Library/Application Support/Localbox/ipc-token");
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     if (!Number.isSafeInteger(this.maxFrameBytes) || this.maxFrameBytes < 1) throw new TypeError("maxFrameBytes must be a positive integer");
@@ -302,7 +302,7 @@ export function fixtureTransport(kind: TransportKind, dispatcher?: FakeDispatche
 }
 
 export function transportFromEnvironment(env: NodeJS.ProcessEnv = process.env, dispatcher?: FakeDispatcher): FixtureTransport {
-  return fixtureTransport(env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local", dispatcher);
+  return fixtureTransport(env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local", dispatcher);
 }
 
 export { ContractError };

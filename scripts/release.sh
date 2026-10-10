@@ -18,10 +18,10 @@ if ! printf '%s\n' "$IMAGE_DIGEST" | grep -Eq '^sha256:[0-9a-fA-F]{64}$'; then
   exit 1
 fi
 if [ "$(uname -m)" != "arm64" ]; then
-  echo "agent-computer releases require arm64" >&2
+  echo "localbox releases require arm64" >&2
   exit 1
 fi
-for required in AGENT_COMPUTER_KERNEL AGENT_COMPUTER_INITRD AGENT_COMPUTER_TEMPLATE_DISK; do
+for required in LOCALBOX_KERNEL LOCALBOX_INITRD LOCALBOX_TEMPLATE_DISK; do
   value=$(eval "printf '%s' \"\${$required-}\"")
   if [ -z "$value" ] || [ ! -f "$value" ]; then
     echo "$required must name an existing release artifact" >&2
@@ -34,7 +34,7 @@ if [ -z "${RELEASE_PRIVATE_KEY:-}" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
-STAGE=$(mktemp -d "${TMPDIR:-/tmp}/agent-computer-release.XXXXXX")
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/localbox-release.XXXXXX")
 cleanup() {
   if [ -n "$SIGNING_KEYCHAIN" ] && [ -n "$SIGNING_WORK" ] && [ -e "$SIGNING_KEYCHAIN" ]; then
     security delete-keychain "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || true
@@ -56,10 +56,10 @@ trap cleanup EXIT INT TERM
 # PKCS#12 -> owned keychain -> partition-list pattern. The key never enters the
 # login keychain and the keychain is removed by cleanup.
 if [ -z "$IDENTITY" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
-  SIGNING_WORK=$(mktemp -d "${TMPDIR:-/tmp}/agent-computer-signing.XXXXXX")
+  SIGNING_WORK=$(mktemp -d "${TMPDIR:-/tmp}/localbox-signing.XXXXXX")
   SIGNING_KEYCHAIN="$SIGNING_WORK/signing.keychain-db"
   SIGNING_PASSWORD=$(openssl rand -hex 24)
-  LOCAL_SIGNING_DIR=${AGENT_COMPUTER_SIGNING_DIR:-${HOME:-}/dev/screen-recorder/.release-signing}
+  LOCAL_SIGNING_DIR=${LOCALBOX_SIGNING_DIR:-${HOME:-}/dev/screen-recorder/.release-signing}
   LOCAL_P12="$LOCAL_SIGNING_DIR/release-identity.p12"
   LOCAL_PASSWORD="$LOCAL_SIGNING_DIR/release-identity-password.txt"
   if [ -f "$LOCAL_P12" ] && [ -f "$LOCAL_PASSWORD" ]; then
@@ -95,7 +95,7 @@ distinguished_name = name
 x509_extensions = signing
 prompt = no
 [name]
-CN = Agent Computer Local
+CN = Localbox Local
 [signing]
 basicConstraints = critical,CA:false
 keyUsage = critical,digitalSignature
@@ -104,10 +104,10 @@ EOF
     openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes \
       -keyout "$SIGNING_KEY" -out "$SIGNING_CERT" -config "$SIGNING_CONFIG" >/dev/null 2>&1
     openssl pkcs12 -export -inkey "$SIGNING_KEY" -in "$SIGNING_CERT" \
-      -out "$SIGNING_P12" -name "Agent Computer Local" \
+      -out "$SIGNING_P12" -name "Localbox Local" \
       -macalg sha1 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES \
       -passout "pass:$SIGNING_P12_PASSWORD" >/dev/null 2>&1
-    IDENTITY="Agent Computer Local"
+    IDENTITY="Localbox Local"
   fi
   security create-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
   security unlock-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN"
@@ -118,7 +118,7 @@ fi
 npm --prefix "$ROOT" run build
 swift build --package-path "$ROOT/apps/macos/HostDaemon" -c release
 
-APP="$STAGE/Agent Computer.app"
+APP="$STAGE/Localbox.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/vm"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -128,13 +128,13 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>agent-computer-hostd</string>
+  <string>localbox-hostd</string>
   <key>CFBundleIdentifier</key>
-  <string>com.agentcomputer.hostd</string>
+  <string>com.localbox.hostd</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Agent Computer</string>
+  <string>Localbox</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -144,32 +144,32 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
-cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/agent-computer-hostd" "$APP/Contents/MacOS/agent-computer-hostd" 2>/dev/null \
-  || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/agent-computer-hostd" "$APP/Contents/MacOS/agent-computer-hostd"
-cp "$ROOT/apps/macos/HostDaemon/Resources/com.agentcomputer.hostd.plist" "$APP/Contents/Resources/com.agentcomputer.hostd.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/agent-computer-hostd.entitlements" "$APP/Contents/Resources/agent-computer-hostd.entitlements"
-cp "$AGENT_COMPUTER_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
-cp "$AGENT_COMPUTER_INITRD" "$APP/Contents/Resources/vm/initrd"
-cp "$AGENT_COMPUTER_TEMPLATE_DISK" "$APP/Contents/Resources/vm/template.img"
+cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd" 2>/dev/null \
+  || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd"
+cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.hostd.plist" "$APP/Contents/Resources/com.localbox.hostd.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
+cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
+cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"
+cp "$LOCALBOX_TEMPLATE_DISK" "$APP/Contents/Resources/vm/template.img"
 
-CLI="$STAGE/agent-computer-cli"
+CLI="$STAGE/localbox-cli"
 mkdir -p "$CLI/dist" "$CLI/bin"
 cp -R "$ROOT/dist/apps" "$CLI/dist/apps"
 cp -R "$ROOT/dist/packages" "$CLI/dist/packages"
 cp -R "$ROOT/dist/scripts" "$CLI/dist/scripts"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$CLI/"
-NODE_BIN=${AGENT_COMPUTER_NODE_BIN:-}
+NODE_BIN=${LOCALBOX_NODE_BIN:-}
 if [ -z "$NODE_BIN" ]; then NODE_BIN=$(command -v node || true); fi
 if [ -z "$NODE_BIN" ] || [ ! -f "$NODE_BIN" ]; then
-  echo "an ARM64 node runtime is required; set AGENT_COMPUTER_NODE_BIN" >&2
+  echo "an ARM64 node runtime is required; set LOCALBOX_NODE_BIN" >&2
   exit 1
 fi
 if ! file "$NODE_BIN" | grep -Eq 'arm64|aarch64'; then
-  echo "AGENT_COMPUTER_NODE_BIN must be an ARM64 executable" >&2
+  echo "LOCALBOX_NODE_BIN must be an ARM64 executable" >&2
   exit 1
 fi
 cp "$NODE_BIN" "$CLI/node"
-cat > "$CLI/bin/agent-computer" <<'EOF'
+cat > "$CLI/bin/localbox" <<'EOF'
 #!/bin/sh
 set -eu
 SELF=$0
@@ -177,7 +177,7 @@ if [ -L "$SELF" ]; then SELF=$(readlink "$SELF"); fi
 ROOT=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
 exec "$ROOT/node" "$ROOT/dist/apps/cli/src/index.js" "$@"
 EOF
-chmod 0755 "$CLI/bin/agent-computer"
+chmod 0755 "$CLI/bin/localbox"
 npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
 
 sign_code() {
@@ -196,20 +196,20 @@ verify_code() {
 }
 
 if [ -n "$IDENTITY" ]; then
-  sign_code --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/agent-computer-hostd"
-  sign_code --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP"
-  sign_code --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/agent-computer"
+  sign_code --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/localbox-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/localbox-hostd"
+  sign_code --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/localbox-hostd.entitlements" --sign "$IDENTITY" "$APP"
+  sign_code --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/localbox"
   # Keep Node outside hardened runtime so V8 can reserve executable JIT memory;
   # the HostDaemon app is hardened separately.
   sign_code --force --timestamp --sign "$IDENTITY" "$CLI/node"
   verify_code --verify --deep --strict --verbose=2 "$APP"
-  verify_code --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/agent-computer"
+  verify_code --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/localbox"
 fi
 
-APP_ZIP="$OUT_DIR/Agent-Computer-$VERSION.zip"
+APP_ZIP="$OUT_DIR/Localbox-$VERSION.zip"
 ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
-CLI_TAR="$OUT_DIR/agent-computer-cli-$VERSION.tar.gz"
-tar -czf "$CLI_TAR" -C "$STAGE" agent-computer-cli
+CLI_TAR="$OUT_DIR/localbox-cli-$VERSION.tar.gz"
+tar -czf "$CLI_TAR" -C "$STAGE" localbox-cli
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
