@@ -61,7 +61,7 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 - Mutations are never implicitly retried after a lost response. Exact replay with the same mutation ID returns the recorded response; conflicting payloads fail closed.
 - Channel grants are VM-bound, epoch-bound, revocable, lease-owned, and stored as hashes where possible. Stale epochs/tokens are rejected transactionally.
 - Convex transactions make enqueue, claim, ack, response retention, mutation dedupe, refresh rotation, and revocation atomic.
-- Payloads up to the inline limit remain inline; the relay rejects oversized frames. A signed expiring blob adapter for larger/binary screenshots and files remains a release integration task.
+- Payloads up to the inline limit remain inline; the relay rejects oversized frames. Larger/binary results use the versioned `BlobReference` contract from `packages/blob`, whose signed URLs carry a hash, byte size, content type, and expiry. The in-memory provider is the local harness seam; deployment supplies durable object storage behind the same interface.
 - Guest paths never escape the VM root. Shell process groups, output, deadlines, and egress are bounded.
 - Reset is explicitly confirmed and destructive. Reprovision preserves the disk unless reset was confirmed.
 - Browser targets are generation-scoped. Desktop geometry is 1440x900, loopback-bound, demand-started, and grace-reaped.
@@ -89,9 +89,11 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   environment variables in `README.md`; the local schema/function harness and
   route contract cover the transaction behavior, including repository-backed
   OAuth authorization, token rotation, and revocation.
-- The inline relay limit is enforced, but a production blob provider for
-  larger/binary screenshots and files still needs to be selected and wired
-  with expiring signed URLs, hashes, and size metadata.
+- The code-level blob seam is complete: `packages/blob` signs expiring references,
+  `RelayHttpAdapter` serves authorized downloads and externalizes configured
+  large JSON results, and `GuestService` can externalize oversized results before
+  framing. A durable production object-storage provider and its deployment
+  credentials remain an external release gate.
 - Release infrastructure must provide Apple signing/notarization credentials,
   package the daemon/CLI/image, and run upgrade interruption and rollback tests.
 
@@ -115,6 +117,6 @@ You are resuming `agent-computer-production`. All code-level seams are implement
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
 - [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon; launchd packaging and hardware boot smoke remain pending.
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
-- [ ] External payload storage: select and wire signed expiring blob storage for large/binary screenshots and files.
+- [x] Blob payload seam: signed expiring references, local provider, relay download path, and guest/relay large-result integration; durable object-storage deployment remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.

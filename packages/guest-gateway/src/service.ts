@@ -7,6 +7,7 @@ import {
   type RequestEnvelope,
   type ResponseEnvelope,
 } from "../../contract/src/index.js";
+import { isBlobReference, type BlobProvider } from "../../blob/src/index.js";
 import { GuestGateway } from "./index.js";
 import {
   decodeGuestFrames,
@@ -29,6 +30,9 @@ export interface GuestServiceOptions {
   maxPending?: number;
   maxFrameBytes?: number;
   maxBufferedBytes?: number;
+  /** Optional object storage seam for responses that do not fit inline. */
+  blobProvider?: BlobProvider;
+  blobThresholdBytes?: number;
   /** Protocol errors are reported out of band because they have no request identity. */
   onProtocolError?: (error: Error) => void;
 }
@@ -52,6 +56,8 @@ export class GuestService {
   private readonly maxPending: number;
   private readonly maxFrameBytes: number;
   private readonly maxBufferedBytes: number;
+  private readonly blobProvider?: BlobProvider;
+  private readonly blobThresholdBytes: number;
   private readonly onProtocolError: (error: Error) => void;
   private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   private pending = 0;
@@ -76,9 +82,12 @@ export class GuestService {
     this.maxPending = options.maxPending ?? 32;
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.maxBufferedBytes = options.maxBufferedBytes ?? 16 * 1024 * 1024;
+    this.blobProvider = options.blobProvider;
+    this.blobThresholdBytes = options.blobThresholdBytes ?? this.maxFrameBytes;
     if (!Number.isInteger(this.maxPending) || this.maxPending < 1) throw new TypeError("guest service maxPending must be positive");
     if (!Number.isInteger(this.maxFrameBytes) || this.maxFrameBytes < 1 || this.maxFrameBytes > 8 * 1024 * 1024) throw new TypeError("guest service maxFrameBytes must be between 1 byte and 8 MiB");
     if (!Number.isInteger(this.maxBufferedBytes) || this.maxBufferedBytes < 1) throw new TypeError("guest service maxBufferedBytes must be positive");
+    if (!Number.isInteger(this.blobThresholdBytes) || this.blobThresholdBytes < 1) throw new TypeError("guest service blobThresholdBytes must be positive");
     this.onProtocolError = options.onProtocolError ?? (() => undefined);
     this.finished = new Promise<void>((resolve) => { this.finishResolve = resolve; });
   }
@@ -172,8 +181,9 @@ export class GuestService {
     }
   }
 
-  private respond(request: RequestEnvelope, response: ResponseEnvelope): Promise<void> {
-    let frame: GuestFrame = { kind: "response", response, channel_epoch: this.channelEpoch };
+  private async respond(request: RequestEnvelope, response: ResponseEnvelope): Promise<void> {
+    const materialized = await this.externalizeResponse(response);
+    let frame: GuestFrame = { kind: "response", response: materialized, channel_epoch: this.channelEpoch };
     if (encodeGuestFrame(frame).byteLength - 4 > this.maxFrameBytes) {
       frame = {
         kind: "response",
@@ -182,6 +192,14 @@ export class GuestService {
       };
     }
     return this.write(frame);
+  }
+
+  private async externalizeResponse(response: ResponseEnvelope): Promise<ResponseEnvelope> {
+    if (!this.blobProvider || !response.ok || isBlobReference(response.result)) return response;
+    const encoded = Buffer.from(JSON.stringify(response.result));
+    if (encoded.byteLength <= this.blobThresholdBytes) return response;
+    const reference = await this.blobProvider.put({ body: encoded, contentType: "application/json" });
+    return { ...response, result: reference } as unknown as ResponseEnvelope;
   }
 
   private write(frame: GuestFrame): Promise<void> {

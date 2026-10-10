@@ -98,3 +98,14 @@ stores hashes.
 Artifact SHA-256 checksums, ARM64 metadata/image digests, and Ed25519 manifest
 signatures are checked independently. A valid checksum cannot authorize a
 wrong-architecture artifact, and a valid signature cannot hide a changed file.
+
+### Large and binary results use signed blob references — high confidence
+
+Inline JSON remains the default. When a result exceeds the configured inline
+threshold, `GuestService` or the relay can place the JSON/binary bytes behind a
+`BlobReference` containing a SHA-256 digest, byte count, content type, expiry,
+and an HMAC-signed download URL. `packages/blob` owns this stable contract and
+ships an in-memory provider for local Convex/relay tests; production object
+storage can implement the same `BlobProvider` interface without changing CLI,
+MCP, or guest envelopes. The relay validates signed URLs itself and never
+turns a blob reference into an unauthenticated public object.

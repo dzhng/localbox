@@ -1,16 +1,21 @@
 import type { RelayStateRepository } from "../../../packages/state/src/index.js";
-import { RelayHttpAdapter } from "./http.js";
+import { RelayHttpAdapter, type RelayHttpAdapterOptions } from "./http.js";
 
 /**
  * Vercel's function boundary is deliberately a thin Web Request adapter. The
  * repository remains the only authority; a function instance never dispatches
  * guest operations or keeps queue state in module globals.
  */
-export function createVercelRelayHandler(repository: RelayStateRepository, options: { resource?: string } = {}) {
-  const adapter = new RelayHttpAdapter({ repository, resource: options.resource });
+export function createVercelRelayHandler(repository: RelayStateRepository, options: Pick<RelayHttpAdapterOptions, "resource" | "blobProvider" | "blobThresholdBytes"> = {}) {
+  const adapter = new RelayHttpAdapter({
+    repository,
+    resource: options.resource,
+    blobProvider: options.blobProvider,
+    blobThresholdBytes: options.blobThresholdBytes,
+  });
   return async function handle(request: Request): Promise<Response> {
-    let body: unknown;
-    try { body = request.method === "GET" || request.method === "HEAD" ? undefined : await readJson(request, adapter.maxFrameBytes); }
+    let parsedBody: unknown;
+    try { parsedBody = request.method === "GET" || request.method === "HEAD" ? undefined : await readJson(request, adapter.maxFrameBytes); }
     catch (error) {
       const status = error instanceof RequestBodyError ? error.status : 400;
       return new Response(JSON.stringify({ error: error instanceof RequestBodyError ? error.code : "invalid_json" }), { status, headers: { "content-type": "application/json" } });
@@ -19,9 +24,10 @@ export function createVercelRelayHandler(repository: RelayStateRepository, optio
       method: request.method,
       url: request.url,
       headers: Object.fromEntries(request.headers.entries()),
-      body,
+      body: parsedBody,
     });
-    return new Response(result.body === undefined ? undefined : JSON.stringify(result.body), {
+    const responseBody: BodyInit | undefined = result.body === undefined ? undefined : result.body instanceof Uint8Array ? result.body as unknown as BodyInit : JSON.stringify(result.body);
+    return new Response(responseBody, {
       status: result.status,
       headers: result.headers,
     });

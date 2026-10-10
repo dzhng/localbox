@@ -1,0 +1,6 @@
+{
+  "name": "@agent-computer/blob",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./dist/index.js" }
+}
