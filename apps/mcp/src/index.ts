@@ -6,6 +6,7 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export interface McpHttpRequest { method: string; url: string; headers?: Record<string, string | undefined>; body?: unknown; signal?: AbortSignal }
 export interface McpHttpResponse { status: number; headers: Record<string, string>; body?: unknown }
 export interface McpAdapterOptions { client?: AgentClient; transport?: ClientTransport; oauth?: OAuthAuthorizationServer; allowedOrigins?: string[]; protocolVersion?: string; endpoint?: string }
+export interface McpAccessIdentity { vm_id: string }
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
 /** Streamable HTTP MCP adapter generated from the canonical operation catalog. */
@@ -15,12 +16,14 @@ export class McpAdapter {
   readonly endpoint: string;
   private readonly allowedOrigins: Set<string>;
   readonly protocolVersion: string;
-  constructor(options: McpAdapterOptions = {}) {
+  private readonly accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity;
+  constructor(options: McpAdapterOptions & { accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity } = {}) {
     this.oauth = options.oauth ?? new OAuthAuthorizationServer();
     this.client = options.client ?? new AgentClient({ transport: options.transport ?? ({ kind: "local", dispatch: async () => { throw new Error("MCP adapter requires a client or transport"); } } as ClientTransport) });
     this.allowedOrigins = new Set(options.allowedOrigins ?? []);
     this.protocolVersion = options.protocolVersion ?? MCP_PROTOCOL_VERSION;
     this.endpoint = options.endpoint ?? this.oauth.resource;
+    this.accessTokenValidator = options.accessTokenValidator;
   }
   protectedResourceMetadata(): Record<string, unknown> { return this.oauth.protectedResourceMetadata(); }
   async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
@@ -33,8 +36,10 @@ export class McpAdapter {
     if (request.method !== "POST" && request.method !== "GET") return { status: 405, headers: { allow: "POST, GET", "content-type": "application/json" }, body: { error: "method_not_allowed" } };
     const token = this.bearer(headers.authorization ?? headers.Authorization);
     if (!token) return this.unauthorized();
-    let auth: ReturnType<OAuthAuthorizationServer["validateAccessToken"]>;
-    try { auth = this.oauth.validateAccessToken(token); } catch (error) { return this.oauthHttpError(error); }
+    let auth: McpAccessIdentity & Partial<ReturnType<OAuthAuthorizationServer["validateAccessToken"]>>;
+    try {
+      auth = this.accessTokenValidator ? await this.accessTokenValidator(token) : this.oauth.validateAccessToken(token);
+    } catch (error) { return this.oauthHttpError(error); }
     if (request.method === "GET") return { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "mcp-protocol-version": this.protocolVersion }, body: "" };
     const rpc = request.body as RpcRequest;
     if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") return this.rpcResponse(rpc?.id ?? null, undefined, { code: -32600, message: "Invalid Request" });

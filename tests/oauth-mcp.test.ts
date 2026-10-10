@@ -43,3 +43,15 @@ test("MCP Streamable HTTP initialize/list/call and auth/origin mapping", async (
   const get = await adapter.handle({ method: "GET", url: "https://relay.test/mcp", headers: { authorization: `Bearer ${token.access_token}` } });
   assert.equal(get.status, 200);
 });
+
+test("MCP accepts a durable access-token validator without owning OAuth state", async () => {
+  const adapter = new McpAdapter({
+    endpoint: "https://relay.test/mcp",
+    client: new AgentClient({ transport: new FixtureTransport("local") }),
+    accessTokenValidator: (token) => token === "durable" ? { vm_id: "vm_01" } : (() => { throw new Error("invalid token"); })(),
+  });
+  const response = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: "Bearer durable" }, body: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+  assert.equal(response.status, 200);
+  const denied = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: "Bearer other" }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
+  assert.equal(denied.status, 401);
+});
