@@ -10,7 +10,7 @@ export interface RelayStateRepository {
   createVm(input: VmInput): Promise<VmRecord>;
   listVms(ownerId: string): Promise<VmRecord[]>;
   issueChannelGrant(input: ChannelGrantInput): Promise<ChannelGrantRecord>;
-  rotateChannelGrant(channelId: string, expectedEpoch: number): Promise<ChannelGrantRecord>;
+  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string): Promise<ChannelGrantRecord>;
   revokeChannel(channelId: string): Promise<void>;
   getChannel(channelId: string): Promise<ChannelGrantRecord | undefined>;
   validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }): Promise<ChannelGrantRecord>;
@@ -97,7 +97,7 @@ export class InMemoryRelayStateRepository implements RelayStateRepository {
   async createVm(input: VmInput): Promise<VmRecord> { this.requireOwner(input.ownerId); if (this.store.vms.some((x) => x.vmId === input.vmId)) throw new StateConflictError("VM already exists"); const record = { vmId: input.vmId ?? this.id("vm"), ownerId: input.ownerId, name: input.name, createdAt: this.now() }; this.store.vms.push(record); return clone(record); }
   async listVms(ownerId: string): Promise<VmRecord[]> { this.requireOwner(ownerId); return clone(this.store.vms.filter((x) => x.ownerId === ownerId && !x.revokedAt)); }
   async issueChannelGrant(input: ChannelGrantInput): Promise<ChannelGrantRecord> { this.requireVm(input.ownerId, input.vmId); const existing = this.store.channels.find((x) => x.channelId === input.channelId); if (existing) throw new StateConflictError("channel already exists"); const record = { channelId: input.channelId ?? this.id("channel"), ownerId: input.ownerId, vmId: input.vmId, tokenHash: hash(input.token), epoch: input.epoch ?? 1, expiresAt: input.expiresAt ?? this.now() + 86_400_000 }; this.store.channels.push(record); return clone(record); }
-  async rotateChannelGrant(channelId: string, expectedEpoch: number): Promise<ChannelGrantRecord> { const record = this.channel(channelId); this.assertLiveChannel(record); if (record.epoch !== expectedEpoch) throw new StateConflictError("stale channel epoch"); record.epoch++; record.tokenHash = hash(this.id("channel_token")); return clone(record); }
+  async rotateChannelGrant(channelId: string, expectedEpoch: number, token: string): Promise<ChannelGrantRecord> { const record = this.channel(channelId); this.assertLiveChannel(record); if (record.epoch !== expectedEpoch) throw new StateConflictError("stale channel epoch"); record.epoch++; record.tokenHash = hash(token); return clone(record); }
   async revokeChannel(channelId: string): Promise<void> { const record = this.channel(channelId); record.revokedAt = this.now(); }
   async getChannel(channelId: string): Promise<ChannelGrantRecord | undefined> { const record = this.store.channels.find((x) => x.channelId === channelId); return record && clone(record); }
   async validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }): Promise<ChannelGrantRecord> { const record = this.channel(input.channelId); this.assertLiveChannel(record); if (record.vmId !== input.vmId || record.epoch !== input.epoch || record.tokenHash !== hash(input.token)) throw new StateUnauthorizedError("channel grant is stale, revoked, or VM-bound"); return clone(record); }
@@ -156,7 +156,7 @@ export class ConvexRelayStateRepository implements RelayStateRepository {
   createVm(input: VmInput) { return this.write<VmRecord>("createVm", input); }
   listVms(ownerId: string) { return this.read<VmRecord[]>("listVms", { ownerId }); }
   issueChannelGrant(input: ChannelGrantInput) { return this.write<ChannelGrantRecord>("issueChannelGrant", input); }
-  rotateChannelGrant(channelId: string, expectedEpoch: number) { return this.write<ChannelGrantRecord>("rotateChannelGrant", { channelId, expectedEpoch }); }
+  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string) { return this.write<ChannelGrantRecord>("rotateChannelGrant", { channelId, expectedEpoch, token }); }
   async revokeChannel(channelId: string) { await this.write("revokeChannel", { channelId }); }
   getChannel(channelId: string) { return this.read<ChannelGrantRecord | undefined>("getChannel", { channelId }); }
   validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }) { return this.read<ChannelGrantRecord>("validateChannelGrant", input); }

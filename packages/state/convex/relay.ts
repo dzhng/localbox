@@ -55,10 +55,7 @@ export const write = mutationGeneric({
       }
       case "createVm": {
         await owner(ctx, input.ownerId) ?? fail(`owner ${input.ownerId} not found`);
-        if (input.vmId && await byField(ctx, "vms", "by_owner", "ownerId", input.ownerId)) {
-          const duplicate = await ctx.db.query("vms").withIndex("by_owner", (q: any) => q.eq("ownerId", input.ownerId)).filter((q: any) => q.eq(q.field("vmId"), input.vmId)).first();
-          if (duplicate) fail("VM already exists");
-        }
+        if (input.vmId && await byField(ctx, "vms", "by_vm", "vmId", input.vmId)) fail("VM already exists");
         const row = { vmId: input.vmId ?? id("vm"), ownerId: input.ownerId, name: input.name, createdAt: at };
         await ctx.db.insert("vms", row); return row;
       }
@@ -72,7 +69,7 @@ export const write = mutationGeneric({
         const row = await byField(ctx, "channels", "by_channel", "channelId", input.channelId); if (!row) fail("channel not found");
         if (row.revokedAt || row.expiresAt <= at) fail("channel revoked or expired");
         if (row.epoch !== input.expectedEpoch) fail("stale channel epoch");
-        const next = { epoch: row.epoch + 1, tokenHash: await jsonHash(id("channel_token")) }; await ctx.db.patch(row._id, next); return clean({ ...row, ...next });
+        const next = { epoch: row.epoch + 1, tokenHash: await jsonHash(input.token) }; await ctx.db.patch(row._id, next); return clean({ ...row, ...next });
       }
       case "revokeChannel": {
         const row = await byField(ctx, "channels", "by_channel", "channelId", input.channelId); if (!row) fail("channel not found");

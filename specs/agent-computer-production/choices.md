@@ -40,6 +40,19 @@ are written through Convex functions. The local `convex-test` harness and the
 in-memory repository are doubles of that transaction interface, not competing
 authorities. A server restart therefore replays the same durable state rules.
 
+### VM identities are unique and channel rotation takes a caller-owned token — high confidence
+
+When a host reconnects, it must be able to identify one VM without another
+owner or an earlier row sharing that identifier. The Convex schema therefore
+indexes `vmId` directly and rejects duplicates, matching the local repository's
+global uniqueness rule. When a channel epoch changes, the caller supplies the
+new random token and receives only its hash in durable state; the previous
+token then fails while the caller can authenticate with the new one. The
+alternative implementation generated a token inside the transaction and
+discarded it, which would make every rotated channel unusable. Verdict: sound;
+the durable authority never stores raw bearer material and the owner of the new
+token can complete the reconnect. Confidence: high.
+
 ### Vercel is a stateless HTTPS adapter — high confidence
 
 An agent submits a request, a Mac host polls and leases it, and the host posts

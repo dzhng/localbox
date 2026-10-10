@@ -10,7 +10,7 @@ import { v } from "convex/values";
  */
 const indexes = {
   owners: defineTable({ ownerId: v.string(), subject: v.string(), displayName: v.optional(v.string()), createdAt: v.number() }).index("by_subject", ["subject"]).index("by_owner", ["ownerId"]),
-  vms: defineTable({ vmId: v.string(), ownerId: v.string(), name: v.optional(v.string()), createdAt: v.number(), revokedAt: v.optional(v.number()) }).index("by_owner", ["ownerId"]),
+  vms: defineTable({ vmId: v.string(), ownerId: v.string(), name: v.optional(v.string()), createdAt: v.number(), revokedAt: v.optional(v.number()) }).index("by_vm", ["vmId"]).index("by_owner", ["ownerId"]),
   channels: defineTable({ channelId: v.string(), ownerId: v.string(), vmId: v.string(), tokenHash: v.string(), epoch: v.number(), expiresAt: v.number(), revokedAt: v.optional(v.number()) }).index("by_channel", ["channelId"]).index("by_vm", ["vmId"]).index("by_owner", ["ownerId"]).index("by_owner_vm", ["ownerId", "vmId"]),
   requests: defineTable({ frameId: v.string(), ownerId: v.string(), vmId: v.string(), requestId: v.string(), operation: v.string(), mutationId: v.optional(v.string()), payload: v.any(), payloadHash: v.string(), status: v.union(v.literal("queued"), v.literal("leased"), v.literal("completed")), createdAt: v.number(), deadlineAt: v.optional(v.number()), leaseOwner: v.optional(v.string()), leaseExpiresAt: v.optional(v.number()) }).index("by_request_id", ["requestId"]).index("by_dedupe", ["vmId", "operation", "mutationId"]).index("by_lease", ["status", "leaseExpiresAt"]).index("by_owner_status", ["ownerId", "status"]).index("by_owner_vm_status_lease", ["ownerId", "vmId", "status", "leaseExpiresAt"]),
   responses: defineTable({ requestId: v.string(), response: v.any(), responseHash: v.string(), recordedAt: v.number() }).index("by_request_id", ["requestId"]),
@@ -26,7 +26,7 @@ export default relaySchema;
 
 /** Stable metadata consumed by probes and the local repository contract. */
 export const relayStateSchema = {
-  owners: { indexes: ["by_subject", "by_owner"] }, vms: { indexes: ["by_owner"] },
+  owners: { indexes: ["by_subject", "by_owner"] }, vms: { indexes: ["by_vm", "by_owner"] },
   channels: { indexes: ["by_channel", "by_vm", "by_owner", "by_owner_vm"] }, requests: { indexes: ["by_request_id", "by_dedupe", "by_lease", "by_owner_status", "by_owner_vm_status_lease"] },
   responses: { indexes: ["by_request_id"] }, authCodes: { indexes: ["by_code_hash"] },
   oauthTokens: { indexes: ["by_access_hash", "by_refresh_hash", "by_family"] },

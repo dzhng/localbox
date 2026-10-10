@@ -10,7 +10,12 @@ test("production Convex schema and relay functions run in the local Convex harne
   }, "test-deployment");
   const owner = await repository.createOwner({ ownerId: "owner_test", subject: "subject_test" });
   await repository.createVm({ ownerId: owner.ownerId, vmId: "vm_test" });
+  await assert.rejects(() => repository.createVm({ ownerId: owner.ownerId, vmId: "vm_test" }), /VM already exists/);
   await repository.issueChannelGrant({ ownerId: owner.ownerId, vmId: "vm_test", channelId: "channel_test", token: "token_test" });
+  const rotated = await repository.rotateChannelGrant("channel_test", 1, "token_rotated");
+  assert.equal(rotated.epoch, 2);
+  await assert.rejects(() => repository.validateChannelGrant({ channelId: "channel_test", token: "token_test", vmId: "vm_test", epoch: 1 }));
+  assert.equal((await repository.validateChannelGrant({ channelId: "channel_test", token: "token_rotated", vmId: "vm_test", epoch: 2 })).epoch, 2);
   assert.equal((await repository.getChannel("channel_test"))?.vmId, "vm_test");
   const queued = await repository.enqueueRequest({ ownerId: owner.ownerId, vmId: "vm_test", requestId: "request_test", operation: "shell.exec", payload: { command: "true" } });
   assert.equal((await repository.getRequest(queued.requestId))?.frameId, queued.frameId);

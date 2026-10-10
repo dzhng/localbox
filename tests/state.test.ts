@@ -23,6 +23,10 @@ test("local Convex harness preserves relay state across restart and enforces ded
   await harness.pushSchema(); const repo = harness.client();
   const owner = await repo.createOwner({ subject: "user_1" }); const vm = await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
   await repo.issueChannelGrant({ ownerId: owner.ownerId, vmId: vm.vmId, channelId: "channel_1", token: "raw-token" });
+  const rotatedChannel = await repo.rotateChannelGrant("channel_1", 1, "next-token");
+  assert.equal(rotatedChannel.epoch, 2);
+  await assert.rejects(() => repo.validateChannelGrant({ channelId: "channel_1", token: "raw-token", vmId: vm.vmId, epoch: 1 }), StateUnauthorizedError);
+  assert.equal((await repo.validateChannelGrant({ channelId: "channel_1", token: "next-token", vmId: vm.vmId, epoch: 2 })).epoch, 2);
   const frame = await repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_1", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo hi" } });
   assert.equal((await repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_1", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo hi" } })).frameId, frame.frameId);
   await assert.rejects(() => repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_2", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo bye" } }), StateConflictError);
