@@ -35,3 +35,4 @@
 
 - Slice 01a is split from the original broad image slice: manifest/inventory/framing can be verified in CI, while real image build and guest execution remain an explicit hardware-gated slice 01b.
 - Slice 02 is materialized as a lifecycle seam first: the Swift actor and native VZ owner are testable now, while guest readiness, local IPC, and real image boot remain hardware-gated work.
+- The first implementation wave keeps a local Convex-compatible repository and HTTP adapter as deterministic seams; deployed Convex functions, Vercel wiring, Mac polling, and real image boot remain explicit follow-up slices rather than being implied by fixture tests.

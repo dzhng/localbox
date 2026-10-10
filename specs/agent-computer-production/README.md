@@ -96,15 +96,18 @@ The implementer may choose internal names and package layout within the owners a
 
 ## Next Agent Prompt
 
-You are resuming `agent-computer-production`. Read this README and the next uncompleted slice. Start at **slice 00**. Implement only that slice, run its focused tests plus the existing build/test gates, apply refactor-clean/code-review/write-docs and audit-choices, commit the clean pass, and update this section with the exact next pickup point. Do not claim production usability until gates G1–G7 are green. Keep CLI as the primary interface and MCP optional; do not add invites or a second operation/auth owner.
+You are resuming `agent-computer-production`. Slices 00, 01a, the Convex-compatible state seam, and the stateless HTTP relay seam are implemented and committed; slice 02 has a tested Swift lifecycle owner. The next pickup is **slice 01b**: build a real reproducible ARM64 image and guest service, then run the Apple Silicon gate. Keep CLI as the primary interface and MCP optional; do not add invites or a second operation/auth owner. Update this handoff, choices ledger, and focused verification before ending your pass. Do not claim production usability until gates G1–G7 are green.
 
 ## Global TODO
 
-- [ ] Slice 00: freeze contract and generic CLI/MCP parity, including destructive reset input.
-- [ ] Slice 01a: freeze image manifest, Duet inventory, and guest channel framing.
+- [x] Slice 00: freeze contract and generic CLI/MCP parity, including destructive reset input.
+- [x] Slice 01a: freeze image manifest, Duet inventory, and guest channel framing.
 - [ ] Slice 01b: build/publish reproducible ARM64 image and real guest agent.
-- [ ] Slice 02: implement native HostDaemon lifecycle and local IPC transport seam; real image/guest IPC remains hardware-gated.
-- [ ] Slice 03: add Convex schema/repository and isolated local harness.
-- [ ] Slice 04: add Vercel polling routes, host poller, and remote CLI transport.
+- [x] Slice 02 seam: implement native HostDaemon lifecycle owner; real image/guest IPC remains hardware-gated.
+- [x] Slice 03 seam: add Convex-compatible repository and isolated local harness.
+- [x] Slice 04 seam: add stateless HTTP polling routes and remote CLI transport against the local repository.
+- [ ] Slice 02b: add authenticated local IPC and connect the daemon to the real guest channel.
+- [ ] Slice 03b: replace the local state double with deployed Convex functions/schema and the Duet local deployment harness.
+- [ ] Slice 04b: connect the Mac poller to the HTTP relay and run deployed Vercel/Convex smoke tests.
 - [ ] Slice 05: wire optional MCP/OAuth to durable state with exact CLI parity.
 - [ ] Slice 06: integrate recovery, quotas/audit, signing/notarization, installer, and rollback.
