@@ -70,6 +70,7 @@ export class RelayHttpAdapter {
     const existing = await this.repository.getResponse(requestId);
     if (existing && await this.responsesEquivalent(existing.response, incoming)) return this.json(200, existing);
     const normalized = await this.externalizeResponse(incoming);
+    const createdBlob = normalized !== incoming && isBlobResponse(normalized);
     try {
       const response = await this.repository.recordResponse({ requestId, response: normalized, leaseOwner: body.lease_owner ? this.string(body.lease_owner) : undefined });
       return this.json(200, response);
@@ -78,7 +79,7 @@ export class RelayHttpAdapter {
         const raced = await this.repository.getResponse(requestId);
         if (raced && await this.responsesEquivalent(raced.response, incoming)) return this.json(200, raced);
       }
-      await this.deleteExternalized(normalized);
+      if (createdBlob) await this.deleteExternalized(normalized);
       throw error;
     }
   }
@@ -161,3 +162,8 @@ export class RelayHttpAdapter {
 }
 export const RelayHttpServer = RelayHttpAdapter;
 export function createRelayHttpAdapter(options: RelayHttpAdapterOptions): RelayHttpAdapter { return new RelayHttpAdapter(options); }
+
+function isBlobResponse(value: Json): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return isBlobReference((value as Record<string, unknown>).result);
+}
