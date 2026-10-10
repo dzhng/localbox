@@ -102,6 +102,7 @@ export class FakeDispatcher {
 }
 
 export function sampleInput(operation: OperationId): Json {
+  if (operation === "vm.reset") return { discard_state: true, confirm: "RESET" };
   if (["shell.exec"].includes(operation)) return { command: "true" };
   if (["job.status", "job.wait", "job.cancel", "job.output"].includes(operation)) return { job_id: "job_fixture" };
   if (["fs.list", "fs.stat", "fs.read"].includes(operation)) return { path: "/tmp/fixture" };

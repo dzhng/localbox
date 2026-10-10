@@ -124,7 +124,21 @@
     "description": "Reset a VM and discard its guest state.",
     "input_schema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "discard_state": {
+          "type": "boolean"
+        },
+        "confirm": {
+          "type": "string",
+          "enum": [
+            "RESET"
+          ]
+        }
+      },
+      "required": [
+        "discard_state",
+        "confirm"
+      ],
       "additionalProperties": false
     },
     "retryable": false,

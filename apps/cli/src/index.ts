@@ -3,7 +3,8 @@ import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
   catalogById, catalogSnapshot, cliHelpSnapshot, mcpToolsSnapshot,
-  PROTOCOL_VERSION, RELEASE_ID, type Json, type OperationId, type ResponseEnvelope,
+  ContractError, failure, PROTOCOL_VERSION, RELEASE_ID, requestFromInvocation, validateRequest,
+  type Json, type OperationId, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, type TransportKind } from "../../../packages/client/src/index.js";
@@ -43,6 +44,8 @@ function printUsage(): void {
     "  vm start|stop|pause [--json]    Change VM lifecycle",
     "  shell exec [--json] -- CMD ...  Execute a guest shell command",
     "  auth login [TOKEN]               Authenticate remote transport",
+    "  login [TOKEN]                    Alias for auth login",
+    "  invoke OPERATION [options]       Invoke any catalog operation",
     "  help [OPERATION]                 Show catalog-generated schemas",
     "  contract probe|generate-snapshots  Inspect contract fixtures", "",
   ].join("\n"));
@@ -86,6 +89,39 @@ async function vmProbe(): Promise<void> {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
+function optionValue(values: string[], name: string): string | undefined {
+  const index = values.indexOf(name);
+  return index >= 0 ? values[index + 1] : undefined;
+}
+
+async function invokeOperation(operationName: string, values: string[]): Promise<void> {
+  const operation = catalogById.get(operationName as OperationId);
+  const vmId = optionValue(values, "--vm-id") ?? "vm_01";
+  const requestId = optionValue(values, "--request-id") ?? "cli-invoke-1";
+  const deadlineRaw = optionValue(values, "--deadline-ms");
+  const mutationId = optionValue(values, "--mutation-id") ?? null;
+  const inputRaw = optionValue(values, "--input-json") ?? "{}";
+  let input: Json;
+  try { input = JSON.parse(inputRaw) as Json; }
+  catch { input = null; }
+  const request = requestFromInvocation({ operation: operationName, vm_id: vmId, request_id: requestId, deadline_ms: deadlineRaw ? Number(deadlineRaw) : undefined, mutation_id: mutationId, input });
+  if (!operation) {
+    printResponse(failure(request, new ContractError("invalid_input", `unknown operation: ${operationName}`)));
+    return;
+  }
+  if (vmId !== "vm_01") {
+    printResponse(failure(request, { code: "vm_not_found", message: `unknown VM: ${vmId}`, retryable: false }));
+    return;
+  }
+  try { validateRequest(request); }
+  catch (error) {
+    printResponse(failure(request, error instanceof ContractError ? error : new ContractError("invalid_input", "invalid invocation")));
+    return;
+  }
+  const client = await makeClient();
+  printResponse(await client.invoke(operation.id, input, { vmId, requestId, deadlineMs: request.deadline_ms, mutationId }));
+}
+
 async function main(): Promise<void> {
   if (positional.length === 0 || positional[0] === "--help" || positional[0] === "-h") { printUsage(); return; }
   const [group, subcommand, ...rest] = positional;
@@ -96,7 +132,7 @@ async function main(): Promise<void> {
     if (!entry) { printResponse({ ...requestEnvelope("system.info", null), ok: false, error: { code: "invalid_input", message: `unknown operation: ${operation}`, retryable: false } }); return; }
     process.stdout.write(`${JSON.stringify(entry, null, 2)}\n`); return;
   }
-  if (group === "contract" && subcommand === "probe") {
+  if (group === "contract" && (!subcommand || subcommand === "probe")) {
     const dispatcher = new FakeDispatcher();
     const response = await dispatcher.dispatch({ protocol_version: PROTOCOL_VERSION, request_id: "probe-0001", operation: "system.info", vm_id: "vm_01", deadline_ms: 30_000, mutation_id: null, input: {} });
     if (response.ok) printResponse({ ...response, result: ({ catalog: catalogSnapshot(), cli_help: cliHelpSnapshot(), mcp_tools: mcpToolsSnapshot(), system_info: response.result } as unknown as Json) });
@@ -106,11 +142,12 @@ async function main(): Promise<void> {
   if (group === "contract" && subcommand === "generate-snapshots") { await writeSnapshots(); return; }
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
-  if (group === "auth" && subcommand === "login") {
+  if ((group === "auth" && subcommand === "login") || group === "login") {
     const token = rest[0] ?? process.env.AGENT_COMPUTER_TOKEN ?? "fixture-token";
     await saveAuth(token);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
+  if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }
   const client = await makeClient();
   if (group === "status") { printResponse(await client.status()); return; }
   if (group === "vm" && ["start", "stop", "pause"].includes(subcommand ?? "")) {

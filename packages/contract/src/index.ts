@@ -67,7 +67,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "vm.start": ["Start a VM.", empty(), false, true, "required"],
   "vm.stop": ["Stop a VM.", empty(), false, true, "required"],
   "vm.pause": ["Pause a VM.", empty(), false, true, "required"],
-  "vm.reset": ["Reset a VM and discard its guest state.", empty(), false, true, "required"],
+  "vm.reset": ["Reset a VM and discard its guest state.", object({ discard_state: bool(), confirm: { type: "string", enum: ["RESET"] } }, ["discard_state", "confirm"]), false, true, "required"],
   "vm.logs": ["Read recent VM logs.", object({ limit: { type: "integer", minimum: 1, maximum: 1000 } }), true, false, "none"],
   "network.egress": ["Inspect guest egress identity.", empty(), true, false, "none"],
   "relay.status": ["Read relay connectivity status.", empty(), true, false, "none"],
@@ -114,6 +114,26 @@ export interface RequestEnvelope<T extends Json = Json> {
   deadline_ms: number;
   mutation_id: string | null;
   input: T;
+}
+/** Transport-neutral input accepted by CLI, MCP, and future adapters. */
+export interface Invocation<T extends Json = Json> {
+  operation: OperationId | string;
+  vm_id?: string;
+  deadline_ms?: number;
+  mutation_id?: string | null;
+  request_id?: string;
+  input: T;
+}
+export function requestFromInvocation<T extends Json>(invocation: Invocation<T>, defaults: { vm_id?: string; request_id?: string; deadline_ms?: number } = {}): RequestEnvelope<T> {
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    request_id: invocation.request_id ?? defaults.request_id ?? "request-1",
+    operation: invocation.operation,
+    vm_id: invocation.vm_id ?? defaults.vm_id ?? "vm_01",
+    deadline_ms: invocation.deadline_ms ?? defaults.deadline_ms ?? 30_000,
+    mutation_id: invocation.mutation_id ?? null,
+    input: invocation.input,
+  };
 }
 export interface EnvelopeIdentity {
   protocol_version: typeof PROTOCOL_VERSION;

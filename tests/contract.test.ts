@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import {
   catalogById, cliHelpSnapshot, ContractError, mcpToolsSnapshot, operationCatalog, PROTOCOL_VERSION,
@@ -75,4 +76,27 @@ test("mutation IDs make replay deterministic", async () => {
   const missing = await dispatcher.dispatch(request({ operation: "vm.start" }));
   assert.equal(missing.ok, false);
   if (!missing.ok) assert.equal(missing.error.code, "invalid_input");
+});
+
+test("CLI help is the catalog and generic invoke preserves envelope identity", () => {
+  const help = spawnSync(process.execPath, ["bin/agent-computer.js", "help", "--json"], { encoding: "utf8" });
+  assert.equal(help.status, 0);
+  assert.deepEqual(JSON.parse(help.stdout), cliHelpSnapshot());
+
+  const invoked = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "system.info", "--input-json", "{}", "--json"], { encoding: "utf8" });
+  assert.equal(invoked.status, 0);
+  const response = JSON.parse(invoked.stdout);
+  assert.equal(response.ok, true);
+  assert.equal(response.operation, "system.info");
+  assert.equal(response.vm_id, "vm_01");
+
+  const reset = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", "{}", "--mutation-id", "reset-1", "--json"], { encoding: "utf8" });
+  assert.equal(reset.status, 0);
+  const resetResponse = JSON.parse(reset.stdout);
+  assert.equal(resetResponse.ok, false);
+  assert.equal(resetResponse.error.code, "invalid_input");
+
+  const confirmed = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8" });
+  assert.equal(confirmed.status, 0);
+  assert.equal(JSON.parse(confirmed.stdout).ok, true);
 });
