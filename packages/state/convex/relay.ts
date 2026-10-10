@@ -40,6 +40,14 @@ async function vm(ctx: DbContext, ownerId: string, vmId: string): Promise<any> {
 async function byField(ctx: DbContext, table: string, index: string, field: string, value: any): Promise<any> {
   return await ctx.db.query(table).withIndex(index, (q: any) => q.eq(field, value)).first();
 }
+async function familyRevoked(ctx: DbContext, familyId: string): Promise<any | undefined> {
+  return await ctx.db.query("oauthRevocations").withIndex("by_family", (q: any) => q.eq("familyId", familyId)).first();
+}
+async function persistFamilyRevocation(ctx: DbContext, familyId: string, at: number): Promise<void> {
+  if (!(await familyRevoked(ctx, familyId))) await ctx.db.insert("oauthRevocations", { familyId, revokedAt: at });
+  const rows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", familyId)), "OAuth token family");
+  for (const row of rows) if (row.revokedAt === undefined) await ctx.db.patch(row._id, { revokedAt: at });
+}
 
 export const write = mutationGeneric({
   args: { operation: v.string(), input: v.any() },
@@ -145,11 +153,13 @@ export const write = mutationGeneric({
       case "rotateRefreshToken": {
         const refreshHash = await jsonHash(input.refreshToken);
         const old = await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", refreshHash);
-        if (!old || old.revokedAt !== undefined || old.refreshExpiresAt <= at) fail("refresh token invalid or revoked");
+        if (!old || old.revokedAt !== undefined || old.refreshExpiresAt <= at || await familyRevoked(ctx, old.familyId)) fail("refresh token invalid or revoked");
         if (old.refreshUsedAt !== undefined) {
-          const familyRows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", old.familyId)), "OAuth token family");
-          for (const row of familyRows) await ctx.db.patch(row._id, { revokedAt: at });
-          fail("refresh replay revoked family");
+          // Convex rolls back writes when a mutation throws. Return a
+          // sentinel instead, so the repository can raise the public error
+          // after this transaction commits the family revocation.
+          await persistFamilyRevocation(ctx, old.familyId, at);
+          return { __error: "refresh_replay_revoked_family" };
         }
         const accessToken = id("access"); const refreshToken = id("refresh");
         await ctx.db.patch(old._id, { refreshUsedAt: at, replacementRefreshHash: await jsonHash(refreshToken) });
@@ -165,8 +175,7 @@ export const write = mutationGeneric({
         const updated = { ...next, used: next.used + amount, limit: input.limit }; if (row) await ctx.db.patch(row._id, { used: updated.used, limit: updated.limit }); else await ctx.db.insert("quotas", updated); return clean(updated);
       }
       case "revokeOAuthFamily": {
-        const rows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", input.familyId)), "OAuth token family");
-        for (const row of rows) await ctx.db.patch(row._id, { revokedAt: at });
+        await persistFamilyRevocation(ctx, input.familyId, at);
         return null;
       }
       case "revokeOAuthToken": {
@@ -178,8 +187,7 @@ export const write = mutationGeneric({
             : [await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", digest), await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", digest)];
         const match = rows.find(Boolean);
         if (match) {
-          const family = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", match.familyId)), "OAuth token family");
-          for (const row of family) await ctx.db.patch(row._id, { revokedAt: at });
+          await persistFamilyRevocation(ctx, match.familyId, at);
         }
         return null;
       }
@@ -209,7 +217,7 @@ export const read = queryGeneric({
       case "validateAccessToken": {
         const tokenHash = await jsonHash(input.accessToken);
         const row = await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", tokenHash);
-        if (!row || row.revokedAt !== undefined || row.accessExpiresAt <= (input.now ?? Date.now()) || row.resource !== input.resource || (input.vmId && row.vmId !== input.vmId)) fail("access token invalid or expired");
+        if (!row || row.revokedAt !== undefined || await familyRevoked(ctx, row.familyId) || row.accessExpiresAt <= (input.now ?? Date.now()) || row.resource !== input.resource || (input.vmId && row.vmId !== input.vmId)) fail("access token invalid or expired");
         return { ownerId: row.ownerId, vmId: row.vmId, resource: row.resource, scope: row.scope, familyId: row.familyId, accessExpiresAt: row.accessExpiresAt };
       }
       case "ownerStatus": {

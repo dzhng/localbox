@@ -169,7 +169,11 @@ export class ConvexRelayStateRepository implements RelayStateRepository {
   createAuthorizationCode(input: AuthorizationCodeInput) { return this.write<AuthorizationCodeRecord>("createAuthorizationCode", input); }
   consumeAuthorizationCode(code: string, verifier: string) { return this.write<AuthorizationCodeRecord>("consumeAuthorizationCode", { code, verifier }); }
   issueOAuthTokens(input: OAuthTokenInput) { return this.write<OAuthTokenRecord>("issueOAuthTokens", input); }
-  rotateRefreshToken(refreshToken: string) { return this.write<OAuthTokenRecord>("rotateRefreshToken", { refreshToken }); }
+  async rotateRefreshToken(refreshToken: string): Promise<OAuthTokenRecord> {
+    const result = await this.write<OAuthTokenRecord | { __error?: string }>("rotateRefreshToken", { refreshToken });
+    if (result && typeof result === "object" && (result as { __error?: string }).__error === "refresh_replay_revoked_family") throw new StateUnauthorizedError("refresh replay revoked family");
+    return result as OAuthTokenRecord;
+  }
   async revokeOAuthToken(token: string, hint?: "access_token" | "refresh_token") { await this.write("revokeOAuthToken", { token, hint }); }
   validateAccessToken(accessToken: string, resource: string, vmId?: string) { return this.read<AccessTokenRecord>("validateAccessToken", { accessToken, resource, vmId }); }
   async revokeOAuthFamily(familyId: string) { await this.write("revokeOAuthFamily", { familyId }); }

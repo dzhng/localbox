@@ -16,6 +16,10 @@ const indexes = {
   responses: defineTable({ requestId: v.string(), response: v.any(), responseHash: v.string(), recordedAt: v.number() }).index("by_request_id", ["requestId"]),
   authCodes: defineTable({ code: v.string(), codeHash: v.string(), ownerId: v.string(), clientId: v.string(), redirectUri: v.string(), resource: v.string(), vmId: v.string(), codeChallenge: v.string(), expiresAt: v.number(), scope: v.optional(v.string()), usedAt: v.optional(v.number()) }).index("by_code_hash", ["codeHash"]),
   oauthTokens: defineTable({ ownerId: v.string(), vmId: v.string(), resource: v.string(), scope: v.string(), familyId: v.string(), accessTokenHash: v.string(), refreshTokenHash: v.string(), accessExpiresAt: v.number(), refreshExpiresAt: v.number(), refreshUsedAt: v.optional(v.number()), replacementRefreshHash: v.optional(v.string()), revokedAt: v.optional(v.number()) }).index("by_access_hash", ["accessTokenHash"]).index("by_refresh_hash", ["refreshTokenHash"]).index("by_family", ["familyId"]),
+  // Family revocation is a separate durable row so a replay can commit the
+  // revocation atomically. Throwing after patching OAuth rows would roll back
+  // the entire Convex mutation and leave the family usable.
+  oauthRevocations: defineTable({ familyId: v.string(), revokedAt: v.number() }).index("by_family", ["familyId"]),
   audit: defineTable({ auditId: v.string(), ownerId: v.optional(v.string()), vmId: v.optional(v.string()), requestId: v.optional(v.string()), operation: v.string(), outcome: v.union(v.literal("success"), v.literal("error")), code: v.optional(v.string()), metadata: v.optional(v.any()), at: v.number() }).index("by_owner", ["ownerId"]).index("by_request", ["requestId"]),
   quotas: defineTable({ ownerId: v.string(), bucket: v.string(), used: v.number(), limit: v.number(), resetAt: v.number() }).index("by_owner_bucket", ["ownerId", "bucket"]),
 };
@@ -29,7 +33,7 @@ export const relayStateSchema = {
   owners: { indexes: ["by_subject", "by_owner"] }, vms: { indexes: ["by_vm", "by_owner"] },
   channels: { indexes: ["by_channel", "by_vm", "by_owner", "by_owner_vm"] }, requests: { indexes: ["by_request_id", "by_dedupe", "by_lease", "by_owner_status", "by_owner_vm_status_lease"] },
   responses: { indexes: ["by_request_id"] }, authCodes: { indexes: ["by_code_hash"] },
-  oauthTokens: { indexes: ["by_access_hash", "by_refresh_hash", "by_family"] },
+  oauthTokens: { indexes: ["by_access_hash", "by_refresh_hash", "by_family"] }, oauthRevocations: { indexes: ["by_family"] },
   audit: { indexes: ["by_owner", "by_request"] }, quotas: { indexes: ["by_owner_bucket"] },
 } as const;
 export type RelayStateTable = keyof typeof relayStateSchema;

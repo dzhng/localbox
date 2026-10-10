@@ -27,3 +27,19 @@ test("production Convex schema and relay functions run in the local Convex harne
   assert.deepEqual(await repository.ownerStatus(owner.ownerId), { channels: 1, queued: 0 });
 });
 
+test("Convex refresh replay commits durable family revocation before returning an error", async () => {
+  const convex = createConvexTestHarness();
+  const repository = new ConvexRelayStateRepository({
+    mutation: (ref, args) => convex.mutation(ref, args),
+    query: (ref, args) => convex.query(ref, args),
+  }, "replay-deployment");
+  const owner = await repository.createOwner({ ownerId: "owner_replay", subject: "subject_replay" });
+  await repository.createVm({ ownerId: owner.ownerId, vmId: "vm_replay" });
+  const original = await repository.issueOAuthTokens({ ownerId: owner.ownerId, vmId: "vm_replay", resource: "https://relay.test/mcp", accessToken: "access_original", refreshToken: "refresh_original", accessExpiresAt: Date.now() + 60_000, refreshExpiresAt: Date.now() + 60_000 });
+  const rotated = await repository.rotateRefreshToken("refresh_original");
+  await assert.rejects(() => repository.rotateRefreshToken("refresh_original"), /refresh replay revoked family/);
+  await assert.rejects(() => repository.validateAccessToken(rotated.accessToken!, "https://relay.test/mcp"), /access token invalid or expired/);
+  await assert.rejects(() => repository.validateAccessToken("access_original", "https://relay.test/mcp"), /access token invalid or expired/);
+  assert.ok(original.familyId);
+});
+
