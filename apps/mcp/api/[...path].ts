@@ -23,6 +23,7 @@ export default async function handle(request: Request): Promise<Response> {
   const client = new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL ?? resource, accessToken: token }) });
   const adapter = new McpAdapter({ client, oauth: fixtureOAuth, endpoint: resource, accessTokenValidator: durableOAuth ? (access) => durableOAuth.validateAccessToken(access).then((identity) => ({ vm_id: identity.vm_id })) : undefined });
   const body = request.method === "GET" ? undefined : await request.text();
+  if (body !== undefined && Buffer.byteLength(body) > 1024 * 1024) return new Response(JSON.stringify({ error: "payload_too_large", error_description: "MCP request exceeds the configured size limit" }), { status: 413, headers: { "content-type": "application/json" } });
   let parsed: unknown;
   try { parsed = body ? JSON.parse(body) : undefined; } catch { return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400, headers: { "content-type": "application/json" } }); }
   const result = await adapter.handle({ method: request.method, url: request.url, headers: Object.fromEntries(request.headers.entries()), body: parsed });
@@ -55,7 +56,7 @@ async function formBody(request: Request): Promise<Record<string, string>> {
   const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   const text = await request.text();
   if (text.length > 1024 * 1024) throw new OAuthError("invalid_request", "request body is too large", 413);
-  if (contentType === "application/json") return JSON.parse(text || "{}") as Record<string, string>;
+  if (contentType === "application/json") { try { return JSON.parse(text || "{}") as Record<string, string>; } catch { throw new OAuthError("invalid_request", "malformed JSON request body", 400); } }
   if (contentType !== "application/x-www-form-urlencoded") throw new OAuthError("invalid_request", "OAuth endpoints require form encoded requests", 400);
   return Object.fromEntries(new URLSearchParams(text).entries());
 }

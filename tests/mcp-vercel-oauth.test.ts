@@ -23,3 +23,9 @@ test("MCP Vercel handler rejects malformed JSON before dispatch", async () => {
   assert.equal((await response.json()).error, "invalid_json");
 });
 
+test("OAuth Vercel handler reports malformed form JSON as a client error", async () => {
+  const response = await handle(new Request("https://relay.test/oauth/token", { method: "POST", headers: { "content-type": "application/json" }, body: "{" }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "invalid_request");
+});
+
