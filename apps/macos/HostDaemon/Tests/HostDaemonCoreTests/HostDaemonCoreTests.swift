@@ -18,6 +18,22 @@ final class HostDaemonCoreTests: XCTestCase {
         let daemon = HostDaemon(backend: FakeVMBackend())
         await XCTAssertThrowsErrorAsync(try await daemon.reset(confirm: "no"))
     }
+
+    #if os(macOS)
+    func testAppleResetRestoresTemplateDisk() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("host-reset-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let template = directory.appendingPathComponent("template.img")
+        let disk = directory.appendingPathComponent("disk.img")
+        try Data("clean-state".utf8).write(to: template)
+        try Data("mutated-state".utf8).write(to: disk)
+        let backend = AppleVirtualizationBackend(image: AppleVMConfiguration(kernelURL: directory.appendingPathComponent("kernel"), initialRamdiskURL: directory.appendingPathComponent("initrd"), diskURL: disk, templateDiskURL: template))
+        try await backend.reset()
+        XCTAssertEqual(try Data(contentsOf: disk), Data("clean-state".utf8))
+    }
+    #endif
+
     func testAuthenticatedLocalIPCRejectsWrongTokenAndForwardsEnvelope() async throws {
         let daemon = HostDaemon(backend: FakeVMBackend())
         try await daemon.start()

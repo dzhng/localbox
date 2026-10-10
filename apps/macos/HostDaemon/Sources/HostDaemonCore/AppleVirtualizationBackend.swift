@@ -7,10 +7,11 @@ public struct AppleVMConfiguration: Sendable {
     public let kernelURL: URL
     public let initialRamdiskURL: URL
     public let diskURL: URL
+    public let templateDiskURL: URL?
     public let cpuCount: Int
     public let memorySize: UInt64
-    public init(kernelURL: URL, initialRamdiskURL: URL, diskURL: URL, cpuCount: Int = 4, memorySize: UInt64 = 4 * 1024 * 1024 * 1024) {
-        self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.diskURL = diskURL; self.cpuCount = cpuCount; self.memorySize = memorySize
+    public init(kernelURL: URL, initialRamdiskURL: URL, diskURL: URL, templateDiskURL: URL? = nil, cpuCount: Int = 4, memorySize: UInt64 = 4 * 1024 * 1024 * 1024) {
+        self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.diskURL = diskURL; self.templateDiskURL = templateDiskURL; self.cpuCount = cpuCount; self.memorySize = memorySize
     }
 }
 
@@ -52,7 +53,23 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
     public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); try await stopMachine(machine); self.guestChannel = nil; self.serialAttachment = nil; self.machine = nil }
     public func pause() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await pauseMachine(machine) }
     public func resume() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await resumeMachine(machine) }
-    public func reset() async throws { try await stop(); try Data().write(to: image.diskURL, options: .atomic) }
+    public func reset() async throws {
+        guard let template = image.templateDiskURL else { throw HostDaemonError.unsupported("reset requires an immutable template disk") }
+        guard FileManager.default.fileExists(atPath: template.path) else { throw HostDaemonError.unsupported("reset template disk is missing") }
+        try await stop()
+        let temporary = image.diskURL.deletingLastPathComponent().appendingPathComponent(".\(image.diskURL.lastPathComponent).reset-\(UUID().uuidString)")
+        do {
+            try FileManager.default.copyItem(at: template, to: temporary)
+            if FileManager.default.fileExists(atPath: image.diskURL.path) {
+                _ = try FileManager.default.replaceItemAt(image.diskURL, withItemAt: temporary)
+            } else {
+                try FileManager.default.moveItem(at: temporary, to: image.diskURL)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+    }
 
     private func startMachine(_ machine: VZVirtualMachine) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
