@@ -86,6 +86,18 @@ this choice constrains the guest entrypoint and the future launchd/socket
 packaging. Verdict: sound, because it makes readiness observable at the
 consumer boundary and matches the guest framing contract. Confidence: high.
 
+### The installed CLI uses HostDaemon IPC and fixtures require an explicit switch — high confidence
+
+The CLI now sends one length-prefixed, authenticated request to the
+HostDaemon's Unix socket and receives the same response envelope that MCP and
+the remote relay use. A missing daemon or token is reported as unavailable or
+unauthorized; the CLI does not silently execute against a local fake VM. The
+fixture dispatcher remains behind `AGENT_COMPUTER_LOCAL_TRANSPORT=fixture` so
+tests can run without Apple Virtualization. The alternative default would make
+an installed product appear to work while every file, browser, and VM action
+stayed inside the developer checkout. Verdict: sound; production authority is
+the signed HostDaemon and the fixture is explicit. Confidence: high.
+
 ### The ARM64 image is reproducible and probe-backed — high confidence
 
 The builder requires an immutable base digest, pinned Debian snapshot and

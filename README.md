@@ -46,6 +46,13 @@ After deployment, `agent-computer mcp install --json` prints the optional MCP
 configuration for agents. CLI login and catalog operations remain independent
 of MCP.
 
+On the Mac, the installed CLI uses the authenticated HostDaemon Unix socket by
+default. The daemon reads the owner-only token at
+`~/Library/Application Support/AgentComputer/ipc-token`; set
+`AGENT_COMPUTER_SOCKET_PATH` or `AGENT_COMPUTER_IPC_TOKEN_FILE` only when an
+installer materializes a different location. The in-process fixture transport
+is available only with `AGENT_COMPUTER_LOCAL_TRANSPORT=fixture` for local tests.
+
 On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
 app bundle, compiled CLI, VM artifacts, checksums, and release manifest. Set
 `AGENT_COMPUTER_KERNEL`, `AGENT_COMPUTER_INITRD`, and

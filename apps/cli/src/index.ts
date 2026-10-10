@@ -11,7 +11,7 @@ import {
   type Json, type OperationId, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
-import { AgentClient, fixtureTransport, RelayHttpTransport, type TransportKind } from "../../../packages/client/src/index.js";
+import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, type TransportKind } from "../../../packages/client/src/index.js";
 import { authorizationUrl, createPkcePair, exchangeAuthorizationCode, refreshAccessToken, type OAuthTokenResponse } from "../../../packages/client/src/auth.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
@@ -140,6 +140,9 @@ async function makeClient(): Promise<AgentClient> {
       return credentials?.token;
     };
     return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL, accessTokenProvider }) });
+  }
+  if (kind === "local" && process.env.AGENT_COMPUTER_LOCAL_TRANSPORT !== "fixture") {
+    return new AgentClient({ transport: new LocalIPCTransport() });
   }
   const guestRoot = resolve(root, ".agent-computer/guest");
   await mkdir(guestRoot, { recursive: true });

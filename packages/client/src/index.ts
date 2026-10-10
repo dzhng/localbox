@@ -9,6 +9,9 @@ import {
   type ResponseEnvelope,
 } from "../../contract/src/index.js";
 import { FakeDispatcher, type DispatchOptions } from "../../runtime/src/index.js";
+import { createConnection, type Socket } from "node:net";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
 export type TransportKind = "local" | "remote";
 
@@ -79,6 +82,110 @@ export class RelayHttpTransport implements ClientTransport {
     }
     return failure(request, { code: "operation_timeout", message: "relay response deadline exceeded", retryable: true });
   }
+}
+
+export interface LocalIPCTransportOptions {
+  socketPath?: string;
+  token?: string;
+  tokenFile?: string;
+  maxFrameBytes?: number;
+  timeoutMs?: number;
+}
+
+/** Authenticated one-request Unix-socket transport used by the installed CLI. */
+export class LocalIPCTransport implements ClientTransport {
+  readonly kind = "local" as const;
+  private readonly socketPath: string;
+  private readonly token?: string;
+  private readonly tokenFile: string;
+  private readonly maxFrameBytes: number;
+  private readonly timeoutMs: number;
+
+  constructor(options: LocalIPCTransportOptions = {}) {
+    this.socketPath = expandHome(options.socketPath ?? process.env.AGENT_COMPUTER_SOCKET_PATH ?? "~/Library/Application Support/AgentComputer/agent.sock");
+    this.token = options.token ?? process.env.AGENT_COMPUTER_IPC_TOKEN;
+    this.tokenFile = expandHome(options.tokenFile ?? process.env.AGENT_COMPUTER_IPC_TOKEN_FILE ?? "~/Library/Application Support/AgentComputer/ipc-token");
+    this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
+    this.timeoutMs = options.timeoutMs ?? 30_000;
+    if (!Number.isSafeInteger(this.maxFrameBytes) || this.maxFrameBytes < 1) throw new TypeError("maxFrameBytes must be a positive integer");
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) throw new TypeError("timeoutMs must be a positive integer");
+  }
+
+  async dispatch(request: RequestEnvelope, options: DispatchOptions = {}): Promise<ResponseEnvelope> {
+    let token: string;
+    try {
+      token = this.token ?? (await readFile(this.tokenFile, "utf8")).trim();
+    } catch {
+      return failure(request, { code: "unauthorized", message: "local IPC token is unavailable", retryable: false });
+    }
+    if (!token) return failure(request, { code: "unauthorized", message: "local IPC token is empty", retryable: false });
+    const body = Buffer.from(JSON.stringify({ token, envelope: Buffer.from(JSON.stringify(request)).toString("base64") }));
+    if (body.byteLength > this.maxFrameBytes) return failure(request, { code: "resource_exhausted", message: "local IPC request exceeds the frame limit", retryable: false });
+    try {
+      const response = await readIPCFrame(this.socketPath, body, this.maxFrameBytes, this.timeoutMs, options.signal);
+      if (response.error) return failure(request, localIPCError(response.error));
+      if (!response.envelope) return failure(request, { code: "guest_unreachable", message: "local HostDaemon returned no envelope", retryable: true });
+      return JSON.parse(Buffer.from(response.envelope, "base64").toString("utf8")) as ResponseEnvelope;
+    } catch (error) {
+      return failure(request, { code: "guest_unreachable", message: error instanceof Error ? error.message : "local IPC request failed", retryable: true });
+    }
+  }
+}
+
+interface LocalIPCWireResponse { envelope?: string; error?: string }
+
+function expandHome(path: string): string {
+  if (path === "~") return homedir();
+  return path.startsWith("~/") ? `${homedir()}/${path.slice(2)}` : path;
+}
+
+function localIPCError(code: string): { code: ErrorCode; message: string; retryable: boolean } {
+  if (code === "unauthorized") return { code: "unauthorized", message: "local IPC authentication failed", retryable: false };
+  if (code === "malformed") return { code: "internal", message: "HostDaemon rejected the local IPC frame", retryable: false };
+  if (code === "frame_too_large") return { code: "resource_exhausted", message: "HostDaemon rejected an oversized local IPC frame", retryable: false };
+  return { code: "guest_unreachable", message: "HostDaemon is unavailable", retryable: true };
+}
+
+async function readIPCFrame(socketPath: string, body: Buffer, maxFrameBytes: number, timeoutMs: number, signal?: AbortSignal): Promise<LocalIPCWireResponse> {
+  if (signal?.aborted) throw new Error("local IPC request cancelled");
+  return await new Promise<LocalIPCWireResponse>((resolve, reject) => {
+    let settled = false;
+    let wrote = false;
+    let expected: number | undefined;
+    let received = Buffer.alloc(0);
+    let socket: Socket | undefined;
+    const timer = setTimeout(() => finish(new Error("local IPC request timed out")), timeoutMs);
+    const abort = () => finish(new Error("local IPC request cancelled"));
+    const finish = (error?: Error, value?: LocalIPCWireResponse) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      socket?.destroy();
+      error ? reject(error) : resolve(value!);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    socket = createConnection(socketPath);
+    socket.on("error", (error) => finish(error));
+    socket.on("close", () => { if (!settled) finish(new Error(wrote ? "local IPC connection closed before a response" : "HostDaemon socket is unavailable")); });
+    socket.on("data", (chunk) => {
+      received = Buffer.concat([received, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      if (expected === undefined && received.length >= 4) {
+        expected = received.readUInt32BE(0);
+        if (expected < 1 || expected > maxFrameBytes) return finish(new Error("local IPC response exceeds the frame limit"));
+      }
+      if (expected !== undefined && received.length >= expected + 4) {
+        try { finish(undefined, JSON.parse(received.subarray(4, expected + 4).toString("utf8")) as LocalIPCWireResponse); }
+        catch { finish(new Error("HostDaemon returned malformed local IPC JSON")); }
+      }
+    });
+    socket.on("connect", () => {
+      const frame = Buffer.allocUnsafe(4 + body.length);
+      frame.writeUInt32BE(body.length, 0);
+      body.copy(frame, 4);
+      socket!.write(frame, () => { wrote = true; });
+    });
+  });
 }
 
 /** A deterministic transport used by the Mac-side and hosted fixture adapters. */

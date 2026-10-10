@@ -83,20 +83,21 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   assert.equal(help.status, 0);
   assert.deepEqual(JSON.parse(help.stdout), cliHelpSnapshot());
 
-  const invoked = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "system.info", "--input-json", "{}", "--json"], { encoding: "utf8" });
+  const fixtureEnv = { ...process.env, AGENT_COMPUTER_LOCAL_TRANSPORT: "fixture" };
+  const invoked = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "system.info", "--input-json", "{}", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(invoked.status, 0);
   const response = JSON.parse(invoked.stdout);
   assert.equal(response.ok, true);
   assert.equal(response.operation, "system.info");
   assert.equal(response.vm_id, "vm_01");
 
-  const reset = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", "{}", "--mutation-id", "reset-1", "--json"], { encoding: "utf8" });
+  const reset = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", "{}", "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(reset.status, 0);
   const resetResponse = JSON.parse(reset.stdout);
   assert.equal(resetResponse.ok, false);
   assert.equal(resetResponse.error.code, "invalid_input");
 
-  const confirmed = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8" });
+  const confirmed = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(confirmed.status, 0);
   assert.equal(JSON.parse(confirmed.stdout).ok, true);
 
