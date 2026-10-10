@@ -109,7 +109,7 @@ export const write = mutationGeneric({
         const request = await byField(ctx, "requests", "by_request_id", "requestId", input.requestId); if (!request) fail("request not found");
         const responseHash = await jsonHash(input.response); const existing = await byField(ctx, "responses", "by_request_id", "requestId", input.requestId);
         if (existing) { if (existing.responseHash !== responseHash) fail("response conflicts with recorded response"); return clean(existing); }
-        if (request.status === "leased" && (request.leaseOwner !== input.leaseOwner || (request.leaseExpiresAt ?? 0) <= at)) fail("request lease is not owned or has expired");
+        if (request.status !== "leased" || !input.leaseOwner || request.leaseOwner !== input.leaseOwner || (request.leaseExpiresAt ?? 0) <= at) fail("request lease is not owned or has expired");
         await ctx.db.patch(request._id, { status: "completed", leaseOwner: undefined, leaseExpiresAt: undefined });
         const row = { requestId: input.requestId, response: input.response, responseHash, recordedAt: at }; await ctx.db.insert("responses", row); return row;
       }

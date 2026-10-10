@@ -72,7 +72,7 @@ export class RelayHttpAdapter {
     const normalized = await this.externalizeResponse(incoming);
     const createdBlob = normalized !== incoming && isBlobResponse(normalized);
     try {
-      const response = await this.repository.recordResponse({ requestId, response: normalized, leaseOwner: body.lease_owner ? this.string(body.lease_owner) : undefined });
+      const response = await this.repository.recordResponse({ requestId, response: normalized, leaseOwner: this.string(body.lease_owner) });
       return this.json(200, response);
     } catch (error) {
       if (error instanceof StateConflictError) {
