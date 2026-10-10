@@ -69,6 +69,7 @@ test("relay keeps inline results inline and externalizes only large JSON results
   assert.equal((replay.body as any).response.result.download_url, reference.download_url);
   const conflict = await relay.handle({ method: "POST", url: "https://relay.test/host/responses/large", headers: channel, body: { lease_owner: "host", response: { protocol_version: "v1", request_id: "large", operation: "system.info", vm_id: "vm_blob", release_id: "agent-computer-contract-v1", ok: true, result: { text: "different" } } } });
   assert.equal(conflict.status, 409);
+  assert.equal(provider.size(), 1);
   const downloaded = await relay.handle({ method: "GET", url: reference.download_url });
   assert.equal(downloaded.status, 200);
   assert.deepEqual(JSON.parse(Buffer.from(downloaded.body as Uint8Array).toString()), { text: "x".repeat(100) });

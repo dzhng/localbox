@@ -22,4 +22,6 @@ server lifecycle in the signed product bundle.
 `AppleVirtualizationBackend` configures a named virtio-console port and attaches
 the framed `GuestService` channel after VM start; a hardware run still must
 prove that the published guest kernel/initrd and service actually boot and emit
-readiness.
+readiness. Destructive reset requires an immutable template disk and replaces
+the persistent disk from that template, so a failed or interrupted reset never
+leaves an empty disk image attached to the VM.
