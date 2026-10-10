@@ -60,6 +60,16 @@ the response. Vercel functions validate credentials and call repository
 transactions; they never execute guest operations or keep an in-memory queue.
 This makes cold starts safe and keeps all connectivity outbound from the Mac.
 
+### Hosted adapters fail closed when production identity is incomplete — high confidence
+
+The Vercel relay and MCP entrypoints now refuse to initialize without the
+durable Convex URL, private blob token, public resource URL, and (for MCP) the
+relay URL and owner subject. Falling back to an in-memory queue or the fixture
+audience would make a deployment appear healthy while losing requests or
+issuing tokens that the CLI could not use. Local tests still omit `VERCEL` and
+retain their explicit in-memory fixtures. Verdict: sound; production and test
+authority are separated at the process boundary. Confidence: high.
+
 ### The host waits for a guest readiness frame before serving requests — high confidence
 
 When Apple Virtualization starts the VM, the backend creates a named

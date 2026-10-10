@@ -7,6 +7,7 @@ import { createVercelRelayHandler } from "../src/vercel.js";
 // repository with the Convex implementation without changing the HTTP routes.
 if (process.env.VERCEL && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed relay");
 if (process.env.VERCEL && !process.env.BLOB_READ_WRITE_TOKEN) throw new Error("BLOB_READ_WRITE_TOKEN is required for the deployed relay");
+if (process.env.VERCEL && !process.env.AGENT_COMPUTER_RESOURCE) throw new Error("AGENT_COMPUTER_RESOURCE is required for the deployed relay");
 const repository = process.env.CONVEX_URL
   ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }), process.env.CONVEX_DEPLOYMENT ?? "convex")
   : new InMemoryRelayStateRepository({ deploymentId: process.env.CONVEX_DEPLOYMENT ?? "vercel-local" });
