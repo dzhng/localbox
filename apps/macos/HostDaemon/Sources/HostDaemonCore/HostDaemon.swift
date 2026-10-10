@@ -36,6 +36,16 @@ public protocol VMBackend: Sendable {
     func reset() async throws
 }
 
+/// Backends that expose the guest's ordered virtio-serial byte stream use this
+/// hook to attach it to the lifecycle owner after a successful VM start.
+public protocol GuestChannelProvider: Sendable {
+    func makeGuestChannel() async throws -> any GuestChannel
+}
+
+public protocol GuestReadinessProvider: Sendable {
+    func waitUntilReady() async throws
+}
+
 public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
     case invalidState(String)
     case unsupported(String)
@@ -63,8 +73,16 @@ public actor HostDaemon {
     public func start() async throws {
         guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped || statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM cannot start from \(statusValue.lifecycle.rawValue)") }
         statusValue = DaemonStatus(lifecycle: .starting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: statusValue.relayConnected)
-        do { try await backend.start(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected) }
-        catch { statusValue = DaemonStatus(lifecycle: .error, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false, detail: String(describing: error)); throw error }
+        do {
+            try await backend.start()
+            if let provider = backend as? any GuestChannelProvider {
+                let guestChannel = try await provider.makeGuestChannel()
+                if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
+                channel = guestChannel
+            }
+            statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected)
+        }
+        catch { await channel?.close(); channel = nil; try? await backend.stop(); statusValue = DaemonStatus(lifecycle: .error, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false, detail: String(describing: error)); throw error }
     }
     public func pause() async throws { guard statusValue.lifecycle == .ready else { throw HostDaemonError.invalidState("VM is not ready") }; try await backend.pause(); statusValue = DaemonStatus(lifecycle: .paused, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false) }
     public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM is not paused") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected) }

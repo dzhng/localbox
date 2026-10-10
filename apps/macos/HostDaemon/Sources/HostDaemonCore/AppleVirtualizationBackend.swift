@@ -14,10 +14,12 @@ public struct AppleVMConfiguration: Sendable {
     }
 }
 
-/// Native lifecycle owner. Guest readiness is established by the future serial/vsock bridge before attach().
-public actor AppleVirtualizationBackend: VMBackend {
+/// Native lifecycle owner. A named virtio-console port carries GuestService frames.
+public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
     private let image: AppleVMConfiguration
     private var machine: VZVirtualMachine?
+    private var guestChannel: FramedFileHandleGuestChannel?
+    private var serialAttachment: VZFileHandleSerialPortAttachment?
     public init(image: AppleVMConfiguration) { self.image = image }
     public func start() async throws {
         guard FileManager.default.fileExists(atPath: image.kernelURL.path), FileManager.default.fileExists(atPath: image.initialRamdiskURL.path), FileManager.default.fileExists(atPath: image.diskURL.path) else { throw HostDaemonError.unsupported("pinned ARM64 kernel, initrd, and persistent disk are required") }
@@ -32,12 +34,18 @@ public actor AppleVirtualizationBackend: VMBackend {
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: storage)]
         configuration.networkDevices = [VZVirtioNetworkDeviceConfiguration()]
         configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+        let toGuest = Pipe(); let fromGuest = Pipe()
+        let attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: toGuest.fileHandleForReading, fileHandleForWriting: fromGuest.fileHandleForWriting)
+        let port = VZVirtioConsolePortConfiguration(); port.name = "org.agent-computer.guest"; port.isConsole = false; port.attachment = attachment
+        let console = VZVirtioConsoleDeviceConfiguration(); console.ports[0] = port
+        configuration.consoleDevices = [console]
         try configuration.validate()
         let vm = VZVirtualMachine(configuration: configuration)
         try await startMachine(vm)
-        machine = vm
+        machine = vm; serialAttachment = attachment; guestChannel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting)
     }
-    public func stop() async throws { guard let machine else { return }; try await stopMachine(machine); self.machine = nil }
+    public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
+    public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); try await stopMachine(machine); self.guestChannel = nil; self.serialAttachment = nil; self.machine = nil }
     public func pause() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await pauseMachine(machine) }
     public func resume() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await resumeMachine(machine) }
     public func reset() async throws { try await stop(); try Data().write(to: image.diskURL, options: .atomic) }

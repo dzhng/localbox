@@ -98,19 +98,19 @@ The implementer may choose internal names and package layout within the owners a
 
 ## Next Agent Prompt
 
-You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, Convex schema/functions and local harness, Vercel relay/poller, durable MCP token validation, Keychain-aware CLI token storage, recovery, and signed release manifests. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, then notarized packaging and rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
+You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, named virtio-console framing, Convex schema/functions and local harness, Vercel relay/poller, repository-backed MCP OAuth, Keychain-aware CLI token storage, recovery, and signed release manifests. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, then notarized packaging and rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
 
 ## Global TODO
 
 - [x] Slice 00: freeze contract and generic CLI/MCP parity, including destructive reset input.
 - [x] Slice 01a: freeze image manifest, Duet inventory, and guest channel framing.
 - [x] Slice 01b: build/publish reproducible ARM64 image and real guest agent (Docker/Apple Silicon gate pending).
-- [x] Slice 02 seam: implement native HostDaemon lifecycle owner; real image/guest IPC remains hardware-gated.
+- [x] Slice 02: implement native HostDaemon lifecycle owner and named virtio-console guest channel; boot/readiness remains hardware-gated.
 - [x] Slice 03 seam: add Convex-compatible repository and isolated local harness.
 - [x] Slice 03b: add production Convex schema/functions and `convex-test` transaction harness.
 - [x] Slice 04 seam: add stateless HTTP polling routes and remote CLI transport against the local repository.
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
-- [x] Slice 02b seam: add authenticated local IPC forwarding into HostDaemon (virtio channel/hardware gate remains pending).
+- [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon; launchd packaging and hardware boot smoke remain pending.
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.

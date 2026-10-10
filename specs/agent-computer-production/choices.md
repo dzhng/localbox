@@ -9,12 +9,11 @@ architecture choices.
 ### Apple Silicon VM integration — needs-user, medium confidence
 
 The code now has one Swift lifecycle owner, an authenticated local IPC seam, a
-framed guest process, and an ARM64 image. The remaining choice is which signed
-macOS product bundle supplies the launchd Unix socket and virtio-serial wiring,
-because that requires the release team's Apple entitlements and a real host.
-The reversible default is to keep `HostDaemon` as the only owner and add the
-socket/serial implementation behind its existing protocols; no second daemon
-or alternate VM backend should be introduced.
+framed guest process, a named virtio-console attachment, and an ARM64 image.
+The remaining choice is which signed macOS product bundle supplies the launchd
+Unix socket and entitlements, because that requires the release team's Apple
+credentials and a real host. The reversible default is to keep `HostDaemon` as
+the only owner; no second daemon or alternate VM backend should be introduced.
 
 ### Production identity and release credentials — needs-user, low confidence
 
