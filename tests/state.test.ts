@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createLocalConvexHarness, StateConflictError, StateUnauthorizedError, pkceChallenge } from "../packages/state/src/index.js";
+import { makeFunctionReference } from "convex/server";
+import { createConvexTestHarness, createLocalConvexHarness, StateConflictError, StateUnauthorizedError, pkceChallenge } from "../packages/state/src/index.js";
+
+test("Convex test harness executes the production relay schema and transactions", async () => {
+  const t = createConvexTestHarness();
+  const write = makeFunctionReference("relay:write") as any;
+  const read = makeFunctionReference("relay:read") as any;
+  const owner = await t.mutation(write, { operation: "createOwner", input: { subject: "convex-user" } }) as { ownerId: string };
+  await t.mutation(write, { operation: "createVm", input: { ownerId: owner.ownerId, vmId: "vm_convex" } });
+  await t.mutation(write, { operation: "enqueueRequest", input: { ownerId: owner.ownerId, vmId: "vm_convex", requestId: "convex-req", operation: "system.info", payload: {}, deadlineAt: Date.now() + 30_000 } });
+  const claimed = await t.mutation(write, { operation: "claimRequests", input: { ownerId: owner.ownerId, vmId: "vm_convex", leaseOwner: "host", limit: 1 } }) as Array<{ requestId: string }>;
+  assert.equal(claimed[0]?.requestId, "convex-req");
+  await t.mutation(write, { operation: "recordResponse", input: { requestId: "convex-req", leaseOwner: "host", response: { ok: true } } });
+  const response = await t.query(read, { operation: "getResponse", input: { requestId: "convex-req" } }) as { response: { ok: boolean } };
+  assert.equal(response.response.ok, true);
+});
 
 test("local Convex harness preserves relay state across restart and enforces dedupe/leases", async () => {
   let now = 1_700_000_000_000;

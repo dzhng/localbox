@@ -45,7 +45,10 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir \
 # The guest service and readiness marker are installed by the guest-agent slice.
 # This image layer intentionally only establishes the reproducible workflow base.
 COPY image-root/ /opt/agent-computer/image-root/
+COPY dist/ /opt/agent-computer/dist/
 RUN install -d -m 0755 /run/agent-computer /var/lib/agent-computer \
   && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-image-probe /usr/local/bin/agent-computer-image-probe
 
-ENTRYPOINT ["/usr/local/bin/agent-computer-image-probe"]
+# The guest service owns stdin/stdout (virtio-serial in production). The image
+# probe remains available as a diagnostic command and as the verifier override.
+ENTRYPOINT ["node", "/opt/agent-computer/dist/apps/guest-agent/src/index.js"]

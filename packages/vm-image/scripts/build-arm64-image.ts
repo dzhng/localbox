@@ -46,6 +46,10 @@ const pins: ImageBuildPins = {
 const output = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 await mkdir(output, { recursive: true });
 await writeFile(join(output, "build-inputs.json"), `${JSON.stringify(pins, null, 2)}\n`);
+// Compile the guest service before Docker copies the immutable JS artifact into
+// the image. The runtime entrypoint is plain Node, so the shipped VM does not
+// depend on tsx or a source checkout.
+await run("npm", ["run", "build"]);
 const buildArgs = [
   "buildx", "build", "--platform", "linux/arm64", "--provenance=false", "--sbom=false",
   "--file", join(root, "packages/vm-image/Dockerfile.arm64"),

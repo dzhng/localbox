@@ -60,7 +60,18 @@ export class RelayHttpAdapter {
   private string(value: unknown): string { if (typeof value !== "string" || !value) throw new StateConflictError("non-empty string is required"); return value; }
   private number(value: unknown): number { if (typeof value !== "number" || !Number.isFinite(value)) throw new StateConflictError("finite number is required"); return value; }
   private limit(body: unknown): void { if (Buffer.byteLength(JSON.stringify(body)) > this.maxFrameBytes) throw new StateConflictError("frame exceeds relay size limit"); }
-  private frame(record: RequestFrameRecord): Record<string, unknown> { return { request_id: record.requestId, operation: record.operation, vm_id: record.vmId, mutation_id: record.mutationId, payload: record.payload, lease_owner: record.leaseOwner, lease_expires_at: record.leaseExpiresAt }; }
+  private frame(record: RequestFrameRecord): Record<string, unknown> {
+    return {
+      request_id: record.requestId,
+      operation: record.operation,
+      vm_id: record.vmId,
+      mutation_id: record.mutationId,
+      deadline_ms: Math.max(1, (record.deadlineAt ?? Date.now()) - Date.now()),
+      payload: record.payload,
+      lease_owner: record.leaseOwner,
+      lease_expires_at: record.leaseExpiresAt,
+    };
+  }
   private json(status: number, body: unknown): RelayHttpResponse { return { status, headers: { "content-type": "application/json" }, body }; }
   private error(error: unknown): RelayHttpResponse { const message = error instanceof Error ? error.message : "relay request failed"; if (error instanceof StateUnauthorizedError) return this.json(401, { error: "unauthorized", error_description: message }); if (error instanceof StateNotFoundError) return this.json(404, { error: "not_found", error_description: message }); if (error instanceof StateConflictError) return this.json(409, { error: "conflict", error_description: message }); return this.json(500, { error: "internal_error" }); }
 }
