@@ -148,3 +148,15 @@ the parser would reject the very response it was meant to externalize. The
 ceiling is finite and must be configured with the deployment's provider limit.
 Verdict: sound; it preserves the inline cap while making externalization
 possible. Confidence: high.
+
+### Production blobs use private Vercel Blob storage — needs-user, medium confidence
+
+The relay now has a real `BlobProvider` implementation backed by Vercel Blob.
+It uploads private objects, limits size and expiry, signs short-lived download
+URLs, and restricts every object to the configured pathname prefix. The local
+harness still uses the deterministic in-memory provider. The plan required
+durable binary storage but left the vendor unspecified; this is a reversible
+deployment choice because another object store can implement the same interface.
+Verdict: needs-user only for the account and billing choice; the provisional
+call is Vercel Blob because the relay already runs on Vercel and the adapter is
+covered by a provider-injected test. Confidence: medium.

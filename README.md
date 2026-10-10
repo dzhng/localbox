@@ -34,6 +34,9 @@ The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
 functions fail closed when Convex is not configured. For repository-backed
 MCP OAuth, also set `AGENT_COMPUTER_ISSUER`, `AGENT_COMPUTER_OWNER_SUBJECT`,
 and `AGENT_COMPUTER_VM_ID` (or provision the owner and VM in Convex first).
+Set `BLOB_READ_WRITE_TOKEN` for the relay's private Vercel Blob provider;
+`AGENT_COMPUTER_BLOB_THRESHOLD_BYTES`, `AGENT_COMPUTER_BLOB_TTL_MS`, and
+`AGENT_COMPUTER_BLOB_MAX_BYTES` tune its bounded externalization policy.
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes. Build an image with
 `AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the four artifact

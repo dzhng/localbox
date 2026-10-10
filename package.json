@@ -21,6 +21,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.1",
     "convex": "^1.42.1"
   }
 }

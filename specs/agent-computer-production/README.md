@@ -90,11 +90,10 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   environment variables in `README.md`; the local schema/function harness and
   route contract cover the transaction behavior, including repository-backed
   OAuth authorization, token rotation, and revocation.
-- The code-level blob seam is complete: `packages/blob` signs expiring references,
-  `RelayHttpAdapter` serves authorized downloads and externalizes configured
-  large JSON results, and `GuestService` can externalize oversized results before
-  framing. A durable production object-storage provider and its deployment
-  credentials remain an external release gate.
+- The blob seam is complete: `packages/blob` provides the local harness provider
+  and a private Vercel Blob provider with bounded size/TTL, signed downloads,
+  hashes, and prefix isolation. The deployed relay still needs a real
+  `BLOB_READ_WRITE_TOKEN` and an internet smoke run.
 - Release infrastructure must provide Apple signing/notarization credentials,
   package the daemon/CLI/image, and run upgrade interruption and rollback tests.
 
@@ -120,6 +119,6 @@ Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk thro
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
 - [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon; launchd packaging and hardware boot smoke remain pending.
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
-- [x] Blob payload seam: signed expiring references, local provider, relay download path, and guest/relay large-result integration; durable object-storage deployment remains external.
+- [x] Blob payload seam: signed expiring references, local and Vercel Blob providers, relay download path, and guest/relay large-result integration; deployed token/smoke remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.
