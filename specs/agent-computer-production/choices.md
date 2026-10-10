@@ -98,6 +98,18 @@ an installed product appear to work while every file, browser, and VM action
 stayed inside the developer checkout. Verdict: sound; production authority is
 the signed HostDaemon and the fixture is explicit. Confidence: high.
 
+### Installation uses versioned trees with an atomic active link — high confidence
+
+An upgrade first verifies the signed release and extracts the app and CLI into
+a new version directory. Only after its checksums and code signature pass does
+the installer replace `releases/active` in one rename; launchd and the CLI
+symlink point at that stable link. An interrupted extraction therefore leaves
+the old daemon selected, and rollback is the same verified switch in reverse.
+Uninstall removes the integration points while preserving the VM disk. The
+alternative was replacing `/Applications/Agent Computer.app` in place, which
+could leave launchd pointing at a partial tree. Verdict: sound; the release
+boundary and durable VM state have separate lifecycles. Confidence: high.
+
 ### The ARM64 image is reproducible and probe-backed — high confidence
 
 The builder requires an immutable base digest, pinned Debian snapshot and
@@ -146,7 +158,8 @@ names are confined to the release root.
 
 The release command packages the HostDaemon executable and launchd resources in
 an app bundle, while the CLI ships as a self-contained archive containing the
-compiled catalog/client packages and production dependencies. The VM kernel,
+ARM64 Node runtime, compiled catalog/client packages, and production
+dependencies. The VM kernel,
 initrd, immutable template disk, and versioned `Info.plist` are copied or
 generated in the app resources before the manifest is written. This keeps the
 host lifecycle owner and the agent's primary CLI install in one versioned

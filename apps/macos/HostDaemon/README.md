@@ -33,3 +33,10 @@ stops both on `SIGTERM`/`SIGINT`. The checked-in
 `Resources/com.agentcomputer.hostd.plist` is a bundle template; an installer
 must materialize its paths, create the token file with mode `0600`, load it with
 `launchctl`, and unload it before replacement.
+
+The repository installer does that materialization in a versioned release root:
+`scripts/install-release.sh` verifies the manifest before extracting, points
+launchd at the atomic `releases/active` app, and leaves prior verified trees in
+place for `scripts/rollback-release.sh`. `scripts/uninstall.sh` removes only
+the launchd registration and CLI link by default, so the VM disk and token are
+not deleted during an ordinary uninstall.

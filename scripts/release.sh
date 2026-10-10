@@ -83,12 +83,26 @@ CLI="$STAGE/agent-computer-cli"
 mkdir -p "$CLI/dist" "$CLI/bin"
 cp -R "$ROOT/dist/apps" "$CLI/dist/apps"
 cp -R "$ROOT/dist/packages" "$CLI/dist/packages"
+cp -R "$ROOT/dist/scripts" "$CLI/dist/scripts"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$CLI/"
+NODE_BIN=${AGENT_COMPUTER_NODE_BIN:-}
+if [ -z "$NODE_BIN" ]; then NODE_BIN=$(command -v node || true); fi
+if [ -z "$NODE_BIN" ] || [ ! -f "$NODE_BIN" ]; then
+  echo "an ARM64 node runtime is required; set AGENT_COMPUTER_NODE_BIN" >&2
+  exit 1
+fi
+if ! file "$NODE_BIN" | grep -Eq 'arm64|aarch64'; then
+  echo "AGENT_COMPUTER_NODE_BIN must be an ARM64 executable" >&2
+  exit 1
+fi
+cp "$NODE_BIN" "$CLI/node"
 cat > "$CLI/bin/agent-computer" <<'EOF'
 #!/bin/sh
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec node "$ROOT/dist/apps/cli/src/index.js" "$@"
+SELF=$0
+if [ -L "$SELF" ]; then SELF=$(readlink "$SELF"); fi
+ROOT=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+exec "$ROOT/node" "$ROOT/dist/apps/cli/src/index.js" "$@"
 EOF
 chmod 0755 "$CLI/bin/agent-computer"
 npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
@@ -97,7 +111,9 @@ if [ -n "$IDENTITY" ]; then
   codesign --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/agent-computer-hostd"
   codesign --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP"
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/agent-computer"
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/node"
   codesign --verify --deep --strict --verbose=2 "$APP"
+  codesign --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/agent-computer"
 elif [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
   echo "APPLE_SIGNING_IDENTITY is required; set ALLOW_UNSIGNED=1 only for local packaging checks" >&2
   exit 1

@@ -62,6 +62,14 @@ the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
 reserved for local packaging checks;
 it cannot satisfy the virtualization or distribution gates.
 
+Install a signed release with `scripts/install-release.sh dist/release`. The
+installer verifies checksums and the Ed25519 manifest, keeps versioned app/CLI
+trees behind an atomic `releases/active` link, materializes the launchd plist,
+creates the owner-only IPC token, and loads the daemon. Use
+`scripts/rollback-release.sh VERSION` to select an older verified tree; use
+`scripts/uninstall.sh` to remove launchd and the CLI link while preserving VM
+state. Set `AGENT_COMPUTER_INSTALL_ROOT` for a user-local or fixture install.
+
 ## References
 
 - [Agent Computer rationale](specs/done/agent-computer/README.md)
