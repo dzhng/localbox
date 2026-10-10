@@ -99,4 +99,8 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   const confirmed = spawnSync(process.execPath, ["bin/agent-computer.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8" });
   assert.equal(confirmed.status, 0);
   assert.equal(JSON.parse(confirmed.stdout).ok, true);
+
+  const login = spawnSync(process.execPath, ["bin/agent-computer.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, AGENT_COMPUTER_AUTH_FILE: "/tmp/agent-computer-test-auth.json" } });
+  assert.equal(login.status, 0);
+  assert.equal(JSON.parse(login.stdout).result.authenticated, true);
 });

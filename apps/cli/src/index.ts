@@ -143,7 +143,7 @@ async function main(): Promise<void> {
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
   if ((group === "auth" && subcommand === "login") || group === "login") {
-    const token = rest[0] ?? process.env.AGENT_COMPUTER_TOKEN ?? "fixture-token";
+    const token = (group === "login" ? subcommand : rest[0]) ?? process.env.AGENT_COMPUTER_TOKEN ?? "fixture-token";
     await saveAuth(token);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
