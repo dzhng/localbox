@@ -69,11 +69,14 @@ The client reports `operation_uncertain` when transport drops after dispatch.
 An exact mutation ID replays the recorded response; a different payload with
 the same ID fails closed. Read-only calls may retry under recovery supervision.
 
-### MCP remains optional and shares the durable token boundary — high confidence
+### MCP remains optional and shares the durable OAuth boundary — high confidence
 
 MCP is a thin Streamable HTTP adapter over `AgentClient`. Its deployed entrypoint
-can validate access tokens through Convex and then select the VM identity; it
-does not add invites, agent enrollment, or a separate operation owner.
+uses the repository for authorization-code creation, PKCE token exchange,
+refresh rotation, revocation, and access-token validation, then selects the VM
+identity. It does not add invites, agent enrollment, or a separate operation
+owner. Raw token material is returned only at issuance and refresh time; Convex
+stores hashes.
 
 ### Release verification is layered — high confidence
 

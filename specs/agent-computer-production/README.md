@@ -29,7 +29,7 @@ The existing `specs/done/agent-computer` material is the testable foundation and
 - `DesktopRuntime` is replaced in production by the guest desktop/browser backend; it remains the deterministic fixture oracle.
 - The macOS `HostDaemon` owns VM lifecycle, image verification, guest channel, reconnect, and local IPC. The Swift probe validates it; it is not a second lifecycle owner.
 - `RelayStateRepository` is the only durable relay/OAuth authority. Convex is its production implementation; the local harness implements the same transaction interface.
-- Vercel route handlers authenticate, validate, and call repository transactions. They never dispatch operations, retry mutations, or own in-memory authority.
+- Vercel route handlers authenticate, validate, and call repository transactions. OAuth authorization, token rotation, and revocation use the same repository; handlers never dispatch operations, retry mutations, or own in-memory authority.
 - CLI and MCP are generated adapters over one remote `AgentClient` and must produce the same request/response/error identities.
 - The local VM registry remains a host cache for disk paths; Convex owns account, VM, channel, request, response, auth, audit, and quota state.
 
@@ -87,7 +87,8 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   pause/resume, sleep recovery, and clean stop on Apple Silicon.
 - A real Convex deployment and Vercel project must be provisioned with the
   environment variables in `README.md`; the local schema/function harness and
-  route contract already cover the transaction behavior.
+  route contract cover the transaction behavior, including repository-backed
+  OAuth authorization, token rotation, and revocation.
 - Release infrastructure must provide Apple signing/notarization credentials,
   package the daemon/CLI/image, and run upgrade interruption and rollback tests.
 
@@ -111,5 +112,5 @@ You are resuming `agent-computer-production`. All code-level seams are implement
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
 - [x] Slice 02b seam: add authenticated local IPC forwarding into HostDaemon (virtio channel/hardware gate remains pending).
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
-- [x] Slice 05 seam: wire optional MCP endpoint to a durable Convex access-token validator with exact catalog parity; full deployed OAuth/PKCE smoke remains pending.
+- [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.

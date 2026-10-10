@@ -11,6 +11,12 @@ const jsonHash = async (value: unknown): Promise<string> => {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
+const base64Hash = async (value: string): Promise<string> => {
+  const bytes = new TextEncoder().encode(value);
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
+  let binary = ""; for (const byte of digest) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
 const clean = <T extends Record<string, any>>(row: T): Omit<T, "_id" | "_creationTime"> => {
   const { _id: _ignoredId, _creationTime: _ignoredCreationTime, ...rest } = row;
   return rest;
@@ -104,7 +110,7 @@ export const write = mutationGeneric({
       }
       case "consumeAuthorizationCode": {
         const row = await byField(ctx, "authCodes", "by_code_hash", "codeHash", await jsonHash(input.code));
-        if (!row || row.usedAt !== undefined || row.expiresAt <= at || await jsonHash(input.verifier) !== row.codeChallenge) fail("authorization code invalid, expired, or already used");
+        if (!row || row.usedAt !== undefined || row.expiresAt <= at || (await jsonHash(input.verifier) !== row.codeChallenge && await base64Hash(input.verifier) !== row.codeChallenge)) fail("authorization code invalid, expired, or already used");
         await ctx.db.patch(row._id, { usedAt: at }); return clean({ ...row, usedAt: at });
       }
       case "issueOAuthTokens": {
@@ -134,24 +140,7 @@ export const write = mutationGeneric({
         const accessToken = id("access"); const refreshToken = id("refresh");
         await ctx.db.patch(old._id, { refreshUsedAt: at, replacementRefreshHash: await jsonHash(refreshToken) });
         const replacement = { ownerId: old.ownerId, vmId: old.vmId, resource: old.resource, scope: old.scope, familyId: old.familyId, accessTokenHash: await jsonHash(accessToken), refreshTokenHash: await jsonHash(refreshToken), accessExpiresAt: at + 900_000, refreshExpiresAt: old.refreshExpiresAt };
-        await ctx.db.insert("oauthTokens", replacement); return replacement;
-      }
-      case "issueOAuthTokens": {
-        await vm(ctx, input.ownerId, input.vmId);
-        const row = { ownerId: input.ownerId, vmId: input.vmId, resource: input.resource, scope: input.scope ?? "vm", familyId: input.familyId ?? id("family"), accessTokenHash: await jsonHash(input.accessToken), refreshTokenHash: await jsonHash(input.refreshToken), accessExpiresAt: input.accessExpiresAt, refreshExpiresAt: input.refreshExpiresAt };
-        await ctx.db.insert("oauthTokens", row); return row;
-      }
-      case "rotateRefreshToken": {
-        const old = await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", await jsonHash(input.refreshToken));
-        if (!old || old.revokedAt !== undefined || old.refreshExpiresAt <= at || old.refreshUsedAt !== undefined) {
-          if (old?.refreshUsedAt !== undefined) { const family = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", old.familyId)).collect(); for (const row of family) await ctx.db.patch(row._id, { revokedAt: at }); }
-          fail("refresh token invalid or revoked");
-        }
-        const replacement = { ownerId: old.ownerId, vmId: old.vmId, resource: old.resource, scope: old.scope, familyId: old.familyId, accessTokenHash: await jsonHash(id("access")), refreshTokenHash: await jsonHash(id("refresh")), accessExpiresAt: at + 900_000, refreshExpiresAt: old.refreshExpiresAt };
-        await ctx.db.patch(old._id, { refreshUsedAt: at, replacementRefreshHash: replacement.refreshTokenHash }); await ctx.db.insert("oauthTokens", replacement); return replacement;
-      }
-      case "revokeOAuthFamily": {
-        const family = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", input.familyId)).collect(); for (const row of family) await ctx.db.patch(row._id, { revokedAt: at }); return null;
+        await ctx.db.insert("oauthTokens", replacement); return { ...replacement, accessToken, refreshToken };
       }
       case "appendAudit": {
         const row: any = { ...input, auditId: input.auditId ?? id("audit"), at, metadata: input.metadata }; delete row.now; await ctx.db.insert("audit", row); return row;
@@ -164,6 +153,20 @@ export const write = mutationGeneric({
       case "revokeOAuthFamily": {
         const rows = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", input.familyId)).collect();
         for (const row of rows) await ctx.db.patch(row._id, { revokedAt: at });
+        return null;
+      }
+      case "revokeOAuthToken": {
+        const digest = await jsonHash(input.token);
+        const rows = input.hint === "refresh_token"
+          ? [await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", digest)]
+          : input.hint === "access_token"
+            ? [await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", digest)]
+            : [await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", digest), await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", digest)];
+        const match = rows.find(Boolean);
+        if (match) {
+          const family = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", match.familyId)).collect();
+          for (const row of family) await ctx.db.patch(row._id, { revokedAt: at });
+        }
         return null;
       }
       default: fail(`unsupported relay mutation ${args.operation}`);
@@ -182,11 +185,6 @@ export const read = queryGeneric({
       case "getResponse": { const row = await byField(ctx, "responses", "by_request_id", "requestId", input.requestId); return row ? clean(row) : undefined; }
       case "validateChannelGrant": {
         const row = await byField(ctx, "channels", "by_channel", "channelId", input.channelId); if (!row || row.revokedAt !== undefined || row.expiresAt <= (input.now ?? Date.now()) || row.vmId !== input.vmId || row.epoch !== input.epoch || row.tokenHash !== await jsonHash(input.token)) fail("channel grant is stale, revoked, or VM-bound"); return clean(row);
-      }
-      case "validateAccessToken": {
-        const row = await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", await jsonHash(input.accessToken));
-        if (!row || row.revokedAt !== undefined || row.accessExpiresAt <= (input.now ?? Date.now()) || row.resource !== input.resource || (input.vmId !== undefined && row.vmId !== input.vmId)) fail("access token invalid or expired");
-        return clean(row);
       }
       case "snapshot": {
         const table = async (name: string) => (await ctx.db.query(name).collect()).map(clean);

@@ -31,7 +31,11 @@ signed distribution still require the release environment.
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
 `apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
 `AGENT_COMPUTER_RESOURCE`, and `AGENT_COMPUTER_RELAY_URL` in Vercel; deployed
-functions fail closed when Convex is not configured. Build an image with
+functions fail closed when Convex is not configured. For repository-backed
+MCP OAuth, also set `AGENT_COMPUTER_ISSUER`, `AGENT_COMPUTER_OWNER_SUBJECT`,
+and `AGENT_COMPUTER_VM_ID` (or provision the owner and VM in Convex first).
+The OAuth route returns raw access and refresh tokens only at issuance or
+rotation; Convex stores hashes. Build an image with
 `AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the four artifact
 pin variables documented by `packages/vm-image/scripts/build-arm64-image.ts`.
 
