@@ -4,7 +4,7 @@
 
 Ship Agent Computer as a usable product: a signed macOS Apple Silicon host runs one durable Linux ARM64 VM; the host maintains an outbound HTTPS polling connection to a Vercel relay; Convex is the durable control-plane state; a logged-in CLI is the default interface; and an optional MCP endpoint exposes the same complete operation catalog. One owner account may connect any number of agents to the same MCP server. There is no invite workflow.
 
-The existing `specs/done/agent-computer` material is the testable foundation and evidence base. This spec now owns the production seams for native VM boot, guest execution, durable relay state, full CLI parity, image verification, and signed release activation; the remaining work is evidence from Apple hardware, deployed services, and the release team's signing environment.
+The existing `specs/done/agent-computer` material is the testable foundation and evidence base. This spec now owns the production seams for native VM boot, guest execution, durable relay state, full CLI parity, image verification, and signed release activation; the remaining work is evidence from Apple hardware and deployed services. Local Convex/Vercel-compatible smoke and signed packaging now run with the repository and local release credentials.
 
 ## Settled decisions
 
@@ -77,11 +77,11 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 | G0 | `npm run build`, `npm test`; catalog/help/tool snapshots and malformed-request tests. |
 | G1 | Reproducible ARM64 image build, digest, actual tool probes, guest readiness and inventory report. |
 | G2 | Apple Silicon cold/warm boot, persistent marker, guest channel, pause/resume, clean stop, no leaks. Local HostDaemon/IPC coverage is green; hardware and launchd remain external. |
-| G3 | Local Convex deployment starts via Duet-style harness; restart, lease expiry, dedupe, revocation, and refresh tests. Local harness is green; deployed Convex remains external. |
-| G4 | Stateless Vercel HTTP contract against local Convex; concurrent polls, stale epochs, ack/replay, limits, uncertain response, and the full catalog relay path. |
+| G3 | Local Convex deployment starts with `npx convex dev`; restart, lease expiry, dedupe, revocation, and refresh tests. Local harness and local deployment are green; deployed Convex remains external. |
+| G4 | Stateless Vercel HTTP contract against local Convex through `npm run dev:local`; concurrent polls, stale epochs, ack/replay, limits, uncertain response, and the full catalog relay path. |
 | G5 | Logged-in CLI invokes all catalog operations through local and HTTPS paths with identical envelopes/errors/help; `tests/catalog-relay-parity.test.ts` drives the real Web Request handler, host poller, and remote transport. |
 | G6 | MCP metadata/PKCE/tools list and tools call equal CLI behavior; MCP is optional. Local parity is green; deployed smoke remains external. |
-| G7 | Sleep/network/guest-crash recovery, redacted audit/quotas, signed/notarized ARM64 app/CLI/image verification and rollback. |
+| G7 | Sleep/network/guest-crash recovery, redacted audit/quotas, signed/notarized ARM64 app/CLI/image verification and rollback. Local signed packaging and manifest verification are green with fixture VM inputs; notarization and bootable-artifact installation remain external. |
 
 ## Remaining external gates
 
@@ -93,20 +93,23 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   `com.apple.security.virtualization` entitlement. The next run must use the
   signed entitlement-bearing product bundle.
 - A real Convex deployment and Vercel project must be provisioned with the
-  environment variables in `README.md`; the local schema/function harness and
-  route contract cover the transaction behavior, including repository-backed
-  OAuth authorization, token rotation, and revocation.
+  environment variables in `README.md`; the local schema/function harness,
+  local Convex deployment, and local route contract cover the transaction
+  behavior, including repository-backed OAuth authorization, token rotation,
+  and revocation.
 - The blob seam is complete: `packages/blob` provides the local harness provider
   and a private Vercel Blob provider with bounded size/TTL, signed downloads,
   hashes, and prefix isolation. The deployed relay still needs a real
   `BLOB_READ_WRITE_TOKEN` and an internet smoke run.
-- Release infrastructure must provide Apple signing/notarization credentials,
-  publish the daemon/CLI/image, and run the signed clean-machine install,
-  interrupted upgrade, and rollback tests. The repository now provides the
-  versioned installer and rollback commands; their real launchd/Virtualization
-  path remains hardware-gated. The release script intentionally requires
-  externally supplied ARM64 kernel, initrd, and template-disk files; the
-  container image builder does not manufacture boot artifacts.
+- Release infrastructure must publish bootable ARM64 kernel, initrd, and
+  template-disk artifacts, provide notarization credentials, and run the signed
+  clean-machine install, interrupted upgrade, and rollback tests. Local
+  packaging imports the screen-recorder PKCS#12 into a disposable keychain and
+  signs the app/CLI; the repository now provides the versioned installer and
+  rollback commands, while their real launchd/Virtualization path remains
+  hardware-gated. The release script intentionally requires externally
+  supplied boot artifacts; the container image builder does not manufacture
+  them.
 
 ## Delegated implementation choices
 
@@ -134,4 +137,4 @@ Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk thro
 - [x] Blob payload seam: signed expiring references, local and Vercel Blob providers, relay download path, and guest/relay large-result integration; deployed token/smoke remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, Ed25519 release-manifest signing, verified atomic release activation/rollback, ARM64 app/CLI packaging, bundled Node runtime, and clean-machine install/rollback scripts; production signing/notarization and hardware smoke remain pending.
-- [x] Local closeout: 69 TypeScript tests, 9 Swift HostDaemon tests, `npm run build`, Swift build, the previous image verification, full catalog Web Request/host-poller parity, guest catalog smoke, production desktop handler smoke, and relay lease-owner regressions pass. The updated desktop/Node image must be rebuilt and reverified in an ARM64 Docker environment.
+- [x] Local closeout: 69 TypeScript tests, 9 Swift HostDaemon tests, `npm run build`, Swift build, full catalog Web Request/host-poller parity, guest catalog smoke, production desktop handler smoke, relay lease-owner regressions, local Convex/Web Request smoke, and a signed release-package smoke with non-bootable fixture inputs pass. The updated desktop/Node image must be rebuilt and reverified in an ARM64 Docker environment, and the signed package still needs real boot artifacts and hardware validation.

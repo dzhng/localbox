@@ -8,6 +8,7 @@
     "test": "tsx --test tests/**/*.test.ts",
     "contract:probe": "tsx apps/cli/src/index.ts contract probe",
     "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots",
+    "dev:local": "tsx scripts/local-vercel.ts",
     "image:build": "tsx packages/vm-image/scripts/build-arm64-image.ts",
     "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts"
   },

@@ -15,14 +15,68 @@ Unix socket and entitlements, because that requires the release team's Apple
 credentials and a real host. The reversible default is to keep `HostDaemon` as
 the only owner; no second daemon or alternate VM backend should be introduced.
 
-### Production identity and release credentials — needs-user, low confidence
+### Production identity and release credentials — needs-user, medium confidence
 
 The repository can validate Convex bearer tokens, store CLI tokens in Keychain,
-and sign manifests with Ed25519, but it cannot choose the owner's identity
-provider, Vercel project, Convex deployment, Apple team, or notarization key.
-The provisional call is to use the environment variables and key material named
-by the deployment/release scripts, then replace them with the team's managed
-secrets without changing request or auth contracts.
+and sign manifests with Ed25519. Local packaging follows the screen-recorder
+pattern: it imports the ignored local PKCS#12 into an owned temporary keychain,
+authorizes headless `codesign`, and deletes the keychain after the run. The
+remaining deployment choice is the owner's identity provider, Vercel project,
+Convex deployment, Apple team, and notarization key. The provisional call is
+to use the environment variables and key material named by the deployment and
+release scripts, then replace them with the team's managed secrets without
+changing request or auth contracts.
+
+### Local service boundary — sound, high confidence
+
+`npx convex dev` owns the local durable state process, while `npm run dev:local`
+invokes the exact Web Request handlers used by the Vercel functions. The local
+flag enables only the in-memory blob provider and leaves the Convex repository
+path active, so local smoke exercises the deployed route shape without turning
+production deployments into an in-memory fallback. Vercel deployment remains
+fail-closed unless its Convex URL, resource URL, and private blob token are
+configured.
+
+The gap was how to run the Vercel adapter before a network deployment existed.
+The local launcher now refuses to start without the URL emitted by `convex dev`,
+then binds only to loopback and forwards requests into the same relay and MCP
+handlers. A missing Convex process therefore fails at startup instead of
+silently losing queued work in an in-memory fallback. This constrains local
+development to the same durable transaction surface as deployment while
+leaving the blob provider injectable for a deterministic local run.
+
+Verdict: sound. The split keeps one state owner and makes the local boundary
+reversible; deploying the same handlers only changes environment variables.
+Confidence: high.
+
+### Vercel function discovery uses root boundary wrappers — sound, high confidence
+
+Vercel discovers functions from the root `api/` directory in this repository,
+while the relay and MCP implementations live under their owning app folders.
+The root files only forward the default Web Request handlers, so Vercel gets a
+stable deployment boundary without duplicating route logic. The gap was the
+provider's function discovery convention, which the application module layout
+does not control. This constrains deployment wiring but leaves all behavior in
+the app-owned handlers and keeps local smoke on the same imports.
+
+Verdict: sound. A provider boundary is the concrete consumer that justifies
+the otherwise-thin wrappers. Confidence: high.
+
+### Local release signing uses an owned temporary keychain — sound, high confidence
+
+When a developer runs `scripts/release.sh` without an explicit distribution
+identity, the script imports the ignored screen-recorder PKCS#12 into a newly
+created keychain, grants `codesign` access only there, signs the app and bundled
+Node runtime with `--keychain`, and deletes the keychain on exit. If the local
+credential files are unavailable, it generates a throwaway self-signed bundle
+for packaging checks. The gap was how local credentials could be used without
+mutating the login keychain or requiring a hosted signing service. This makes
+local signed-package validation repeatable while preserving explicit Apple
+identity and notarization inputs for distribution.
+
+Verdict: sound. The key material is scoped to one run and cleanup covers normal
+exit and signals; the real boot artifacts and notarization gate remain outside
+the local fixture smoke. Confidence: high.
 
 ## Sound decisions
 

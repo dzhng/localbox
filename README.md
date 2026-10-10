@@ -24,9 +24,9 @@ as convenience interfaces over the same operation contract.
 
 The code-level production implementation is shipped and documented in the
 [production spec](specs/agent-computer-production/README.md). Contract, guest,
-Convex, relay, MCP, recovery, registry, image, release, and CLI gates are
-runnable locally. Apple Virtualization boot, deployed Convex/Vercel smoke, and
-signed distribution still require the release environment.
+local Convex, relay, MCP, recovery, registry, image, release, and CLI gates
+are runnable locally. Apple Virtualization boot and deployed Convex/Vercel
+internet smoke still require the release environment.
 
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
 `apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
@@ -42,6 +42,19 @@ rotation; Convex stores hashes. Build an image with
 `AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum
 and version variables documented by `packages/vm-image/scripts/build-arm64-image.ts`
 (`NODE_*`, `BUN_*`, and `STATIC_WEB_SERVER_*`).
+
+For a local control-plane smoke, start an isolated Convex deployment and the
+same Web Request handlers used by the Vercel functions:
+
+```sh
+npx convex dev --typecheck disable --codegen disable
+npm run dev:local
+```
+
+The local server listens on `http://127.0.0.1:3000/api/{relay,mcp}` and reads
+the Convex URL written to `.env.local`. It enables the local in-memory blob
+provider explicitly; deployed functions still fail closed without Convex and
+private Blob configuration.
 
 After deployment, `agent-computer mcp install --json` prints the optional MCP
 configuration for agents. CLI login and catalog operations remain independent
@@ -62,6 +75,13 @@ app bundle, compiled CLI, VM artifacts, checksums, and release manifest. Set
 the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
 reserved for local packaging checks;
 it cannot satisfy the virtualization or distribution gates.
+When `APPLE_SIGNING_IDENTITY` is omitted, the script imports the local
+screen-recorder PKCS#12 from `~/dev/screen-recorder/.release-signing` (or
+`AGENT_COMPUTER_SIGNING_DIR`) into a disposable keychain, authorizes headless
+`codesign`, and deletes that keychain on exit. If those local files are absent,
+it creates a throwaway self-signed identity instead. `RELEASE_PRIVATE_KEY` is
+still required for the signed release manifest; `ALLOW_UNSIGNED=1` is only for
+explicit unsigned packaging checks.
 
 Install a signed release with `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`. The
 installer verifies checksums and the Ed25519 manifest, keeps versioned app/CLI

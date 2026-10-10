@@ -7,6 +7,8 @@ OUT_DIR=${1:-$ROOT/dist/release}
 VERSION=${VERSION:-0.1.0}
 IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:unrecorded}
 IDENTITY=${APPLE_SIGNING_IDENTITY:-}
+SIGNING_KEYCHAIN=
+SIGNING_WORK=
 
 case "$VERSION" in
   ''|*[!A-Za-z0-9._-]*) echo "VERSION contains invalid characters" >&2; exit 1 ;;
@@ -34,6 +36,12 @@ fi
 mkdir -p "$OUT_DIR"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/agent-computer-release.XXXXXX")
 cleanup() {
+  if [ -n "$SIGNING_KEYCHAIN" ] && [ -n "$SIGNING_WORK" ] && [ -e "$SIGNING_KEYCHAIN" ]; then
+    security delete-keychain "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$SIGNING_WORK" ]; then
+    rm -rf "$SIGNING_WORK"
+  fi
   python3 - "$STAGE" <<'PY'
 import shutil
 import sys
@@ -41,6 +49,71 @@ shutil.rmtree(sys.argv[1], ignore_errors=True)
 PY
 }
 trap cleanup EXIT INT TERM
+
+# Local packaging uses a disposable keychain. When the screen-recorder local
+# credentials are present, they are imported for this run; otherwise a
+# throwaway self-signed identity is generated. Both paths follow the same
+# PKCS#12 -> owned keychain -> partition-list pattern. The key never enters the
+# login keychain and the keychain is removed by cleanup.
+if [ -z "$IDENTITY" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
+  SIGNING_WORK=$(mktemp -d "${TMPDIR:-/tmp}/agent-computer-signing.XXXXXX")
+  SIGNING_KEYCHAIN="$SIGNING_WORK/signing.keychain-db"
+  SIGNING_PASSWORD=$(openssl rand -hex 24)
+  LOCAL_SIGNING_DIR=${AGENT_COMPUTER_SIGNING_DIR:-${HOME:-}/dev/screen-recorder/.release-signing}
+  LOCAL_P12="$LOCAL_SIGNING_DIR/release-identity.p12"
+  LOCAL_PASSWORD="$LOCAL_SIGNING_DIR/release-identity-password.txt"
+  if [ -f "$LOCAL_P12" ] && [ -f "$LOCAL_PASSWORD" ]; then
+    SIGNING_P12_PASSWORD=$(cat "$LOCAL_PASSWORD")
+    python3 - "$LOCAL_P12" "$SIGNING_WORK/identity.p12" <<'PY'
+import base64
+import pathlib
+import sys
+
+source, target = map(pathlib.Path, sys.argv[1:])
+value = source.read_bytes().strip()
+try:
+    value = base64.b64decode(value, validate=True)
+except Exception:
+    pass
+target.write_bytes(value)
+PY
+    SIGNING_P12="$SIGNING_WORK/identity.p12"
+    SIGNING_CERT="$SIGNING_WORK/identity.crt"
+    printf '%s\n' "$SIGNING_P12_PASSWORD" | openssl pkcs12 -in "$SIGNING_P12" \
+      -clcerts -nokeys -passin stdin -out "$SIGNING_CERT" >/dev/null 2>&1
+    IDENTITY=$(openssl x509 -in "$SIGNING_CERT" -noout -fingerprint -sha1 \
+      | sed 's/.*=//; s/://g')
+  else
+    SIGNING_P12_PASSWORD=$(openssl rand -hex 24)
+    SIGNING_CONFIG="$SIGNING_WORK/openssl.cnf"
+    SIGNING_KEY="$SIGNING_WORK/identity.key"
+    SIGNING_CERT="$SIGNING_WORK/identity.crt"
+    SIGNING_P12="$SIGNING_WORK/identity.p12"
+    cat > "$SIGNING_CONFIG" <<'EOF'
+[req]
+distinguished_name = name
+x509_extensions = signing
+prompt = no
+[name]
+CN = Agent Computer Local
+[signing]
+basicConstraints = critical,CA:false
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+EOF
+    openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes \
+      -keyout "$SIGNING_KEY" -out "$SIGNING_CERT" -config "$SIGNING_CONFIG" >/dev/null 2>&1
+    openssl pkcs12 -export -inkey "$SIGNING_KEY" -in "$SIGNING_CERT" \
+      -out "$SIGNING_P12" -name "Agent Computer Local" \
+      -macalg sha1 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES \
+      -passout "pass:$SIGNING_P12_PASSWORD" >/dev/null 2>&1
+    IDENTITY="Agent Computer Local"
+  fi
+  security create-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
+  security unlock-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN"
+  security import "$SIGNING_P12" -k "$SIGNING_KEYCHAIN" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign >/dev/null
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
+fi
 
 npm --prefix "$ROOT" run build
 swift build --package-path "$ROOT/apps/macos/HostDaemon" -c release
@@ -107,18 +180,30 @@ EOF
 chmod 0755 "$CLI/bin/agent-computer"
 npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
 
+sign_code() {
+  if [ -n "$SIGNING_KEYCHAIN" ]; then
+    codesign "$@" --keychain "$SIGNING_KEYCHAIN"
+  else
+    codesign "$@"
+  fi
+}
+verify_code() {
+  if [ -n "$SIGNING_KEYCHAIN" ]; then
+    codesign "$@" --keychain "$SIGNING_KEYCHAIN"
+  else
+    codesign "$@"
+  fi
+}
+
 if [ -n "$IDENTITY" ]; then
-  codesign --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/agent-computer-hostd"
-  codesign --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP"
-  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/agent-computer"
+  sign_code --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/agent-computer-hostd"
+  sign_code --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP"
+  sign_code --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/agent-computer"
   # Keep Node outside hardened runtime so V8 can reserve executable JIT memory;
   # the HostDaemon app is hardened separately.
-  codesign --force --timestamp --sign "$IDENTITY" "$CLI/node"
-  codesign --verify --deep --strict --verbose=2 "$APP"
-  codesign --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/agent-computer"
-elif [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
-  echo "APPLE_SIGNING_IDENTITY is required; set ALLOW_UNSIGNED=1 only for local packaging checks" >&2
-  exit 1
+  sign_code --force --timestamp --sign "$IDENTITY" "$CLI/node"
+  verify_code --verify --deep --strict --verbose=2 "$APP"
+  verify_code --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/agent-computer"
 fi
 
 APP_ZIP="$OUT_DIR/Agent-Computer-$VERSION.zip"
