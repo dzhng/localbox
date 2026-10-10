@@ -111,7 +111,9 @@ if [ -n "$IDENTITY" ]; then
   codesign --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/agent-computer-hostd"
   codesign --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/agent-computer-hostd.entitlements" --sign "$IDENTITY" "$APP"
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/agent-computer"
-  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/node"
+  # Keep Node outside hardened runtime so V8 can reserve executable JIT memory;
+  # the HostDaemon app is hardened separately.
+  codesign --force --timestamp --sign "$IDENTITY" "$CLI/node"
   codesign --verify --deep --strict --verbose=2 "$APP"
   codesign --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/agent-computer"
 elif [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then

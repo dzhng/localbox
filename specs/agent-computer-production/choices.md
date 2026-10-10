@@ -168,7 +168,9 @@ release; the alternative was shipping a source checkout and a development
 Virtualization entitlement, but signing and notarization remain release-
 environment inputs. Verdict: sound as the packaging boundary; confidence:
 medium because the team's final installer layout and signing identity are still
-environment choices. The archive omits macOS resource-fork and quarantine
+environment choices. The bundled Node binary is signed without hardened-runtime
+flags so V8 can reserve JIT memory; the HostDaemon app remains hardened. The
+archive omits macOS resource-fork and quarantine
 metadata so a normal unzip-based installer does not add `._*` files that
 invalidate the sealed code signature. Verdict: sound; generic extraction now
 has the same verification result as native macOS extraction.
