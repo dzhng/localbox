@@ -18,7 +18,8 @@ function run(args: string[]): Promise<string> {
 const root = resolve(dirname(new URL(import.meta.url).pathname), "../../..");
 const imageRef = process.env.IMAGE_REF;
 if (!imageRef) throw new Error("IMAGE_REF is required");
-const pinsPath = resolve(process.env.IMAGE_INPUTS ?? process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image", "build-inputs.json");
+const pinsInput = process.env.IMAGE_INPUTS ?? process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image";
+const pinsPath = pinsInput.endsWith(".json") ? resolve(pinsInput) : resolve(pinsInput, "build-inputs.json");
 const pins = JSON.parse(await (await import("node:fs/promises")).readFile(pinsPath, "utf8")) as ImageBuildPins;
 const report: ImageProbeReport = { architecture: "", binaries: {}, pythonModules: {}, loopbackBindings: [], readinessMarker: false };
 const identity = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", "printf '%s|%s|%s|%s\\n' \"$(dpkg --print-architecture 2>/dev/null || uname -m)\" \"${AGENT_COMPUTER_IMAGE_VERSION:-unknown}\" \"${AGENT_COMPUTER_LOOPBACK_BINDINGS:-}\" \"$(test -e /run/agent-computer/ready && echo ready || echo absent)\""]);
