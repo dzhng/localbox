@@ -250,10 +250,11 @@ class ProductionDesktopBackend {
 
   async key(tabId: string, key: string): Promise<Json> {
     const target = await this.target(tabId);
-    const value = normalizeCdpKey(key);
+    const value = cdpKeySpec(key);
     await this.withCdp(target, async (client) => {
-      await client.command("Input.dispatchKeyEvent", { type: "keyDown", key: value, code: value });
-      await client.command("Input.dispatchKeyEvent", { type: "keyUp", key: value, code: value });
+      const params = { key: value.key, code: value.code, modifiers: value.modifiers, ...(value.text ? { text: value.text } : {}) };
+      await client.command("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+      await client.command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
     });
     return { tab_id: tabId, key };
   }
@@ -394,7 +395,18 @@ function normalizeKey(key: string): string {
   return aliases[key.toUpperCase()] ?? key;
 }
 
-function normalizeCdpKey(key: string): string {
+function cdpKeySpec(raw: string): { key: string; code: string; modifiers: number; text?: string } {
+  const parts = raw.split("+").filter(Boolean);
+  const base = parts.pop() ?? raw;
+  let modifiers = 0;
+  for (const modifier of parts) {
+    if (modifier.toUpperCase() === "CTRL" || modifier.toUpperCase() === "CONTROL") modifiers |= 2;
+    else if (modifier.toUpperCase() === "ALT") modifiers |= 1;
+    else if (modifier.toUpperCase() === "SHIFT") modifiers |= 8;
+    else if (modifier.toUpperCase() === "META" || modifier.toUpperCase() === "CMD" || modifier.toUpperCase() === "COMMAND") modifiers |= 4;
+  }
   const aliases: Record<string, string> = { ENTER: "Enter", ESC: "Escape", ESCAPE: "Escape", TAB: "Tab", BACKSPACE: "Backspace", SPACE: " ", ARROWLEFT: "ArrowLeft", ARROWRIGHT: "ArrowRight", ARROWUP: "ArrowUp", ARROWDOWN: "ArrowDown" };
-  return aliases[key.toUpperCase()] ?? key;
+  const value = aliases[base.toUpperCase()] ?? base;
+  const code = value.length === 1 && /[a-z]/i.test(value) ? `Key${value.toUpperCase()}` : value === " " ? "Space" : value;
+  return { key: value, code, modifiers, ...(value.length === 1 ? { text: value } : {}) };
 }
