@@ -1,43 +1,82 @@
-# Choices ledger
+# Final choices ledger
 
-## User-chosen
+This ledger records decisions made while implementing the production spec. The
+remaining hardware, deployment, and signing gates are evidence gaps, not new
+architecture choices.
 
-- Production transport is Vercel HTTPS polling with outbound-only Mac connectivity.
-- Convex is the durable control-plane state system, with a local Convex harness modeled on Duet.
-- CLI is the primary interface after `agent-computer login`; every MCP capability must be available from CLI.
-- MCP is optional and separate; the product publishes install information rather than making CLI manage MCP.
-- One owner account can connect one or many agents to one MCP server; there is no invite workflow.
-- First release exposes the complete catalog: shell, filesystem, jobs, browser, desktop, VM, network, and relay operations.
-- Build our own reproducible ARM64 image while carrying Duet's prebuilt workflow inventory and substituting architecture-specific artifacts as required.
+## Needs user or environment
 
-## Answered by the agent on the user's behalf
+### Apple Silicon VM integration — needs-user, medium confidence
 
-- Use one shared generated catalog for CLI and MCP to prevent capability drift.
-- Use Keychain/secure storage for CLI refresh credentials and revocable bearer/channel credentials.
-- Use bounded short polling rather than permanent Vercel connections.
-- Use a Debian Bookworm ARM64 base, system Chromium/Playwright CDP, XFCE plus loopback VNC, and virtio-serial as the initial reversible implementation choices.
-- Keep the local JSON registry as a host disk cache while Convex owns cloud control-plane state.
+The code now has one Swift lifecycle owner, an authenticated local IPC seam, a
+framed guest process, and an ARM64 image. The remaining choice is which signed
+macOS product bundle supplies the launchd Unix socket and virtio-serial wiring,
+because that requires the release team's Apple entitlements and a real host.
+The reversible default is to keep `HostDaemon` as the only owner and add the
+socket/serial implementation behind its existing protocols; no second daemon
+or alternate VM backend should be introduced.
 
-## Territory evidence
+### Production identity and release credentials — needs-user, low confidence
 
-- Existing catalog, runtime, guest, desktop, recovery, relay, OAuth, MCP, registry, release, and VM probe are deterministic foundation seams, not production implementations.
-- Duet's Convex harness provides the local isolated-deployment pattern.
-- Duet's required-tools manifest is the image compatibility target.
+The repository can validate Convex bearer tokens, store CLI tokens in Keychain,
+and sign manifests with Ed25519, but it cannot choose the owner's identity
+provider, Vercel project, Convex deployment, Apple team, or notarization key.
+The provisional call is to use the environment variables and key material named
+by the deployment/release scripts, then replace them with the team's managed
+secrets without changing request or auth contracts.
 
-## Open until implementation evidence
+## Sound decisions
 
-- Exact Convex schema/function names and retention indexes.
-- Exact ARM64 artifact provenance for each Duet tool and browser licensing.
-- Apple Virtualization guest channel/display implementation details.
-- Production identity provider/device bootstrap details and release signing credentials.
+### One catalog owns CLI and MCP parity — high confidence
 
-## Implementation evidence
+When an operation is added, `packages/contract` defines its ID and schema once;
+CLI help, generic `invoke`, and MCP `tools/list` read that same catalog. The
+alternative would be two lists that slowly disagree. This keeps one operation
+authority and preserves identical envelope identity and errors.
 
-- Slice 01a is split from the original broad image slice: manifest/inventory/framing can be verified in CI, while real image build and guest execution remain an explicit hardware-gated slice 01b.
-- Slice 02 is materialized as a lifecycle seam first: the Swift actor and native VZ owner are testable now, while guest readiness, local IPC, and real image boot remain hardware-gated work.
-- The first implementation wave keeps a local Convex-compatible repository and HTTP adapter as deterministic seams; deployed Convex functions, Vercel wiring, Mac polling, and real image boot remain explicit follow-up slices rather than being implied by fixture tests.
-- Slice 01b now ships a pinned ARM64 BuildKit path, probe-backed manifest, and compiled guest service entrypoint. Docker and Apple Silicon gates remain open because they require external hardware.
-- Convex production schema/functions are in `packages/state/convex`, with `convex-test` exercising the real transaction handlers and `ConvexRelayStateRepository` using function references.
-- Vercel is a thin Web Request adapter over the repository; the host uses bounded outbound `/host/poll` and `/host/responses` calls. A deployment can select Convex through `CONVEX_URL` without changing route code.
-- MCP stays an adapter: its Vercel entrypoint validates bearer tokens through the durable Convex repository and then uses the same remote `AgentClient` catalog as CLI; the fixture OAuth server remains local-test-only.
-- Release manifests use Ed25519 signatures over canonical JSON, while artifact checksums and ARM64 metadata remain independently verified. Apple notarization and installer credentials are release-environment work.
+### Convex owns durable relay state — high confidence
+
+Requests, leases, responses, channels, OAuth families, audit rows, and quotas
+are written through Convex functions. The local `convex-test` harness and the
+in-memory repository are doubles of that transaction interface, not competing
+authorities. A server restart therefore replays the same durable state rules.
+
+### Vercel is a stateless HTTPS adapter — high confidence
+
+An agent submits a request, a Mac host polls and leases it, and the host posts
+the response. Vercel functions validate credentials and call repository
+transactions; they never execute guest operations or keep an in-memory queue.
+This makes cold starts safe and keeps all connectivity outbound from the Mac.
+
+### The ARM64 image is reproducible and probe-backed — high confidence
+
+The builder requires an immutable base digest, pinned Debian snapshot and
+artifact checksums, then probes actual executables, Python imports, readiness,
+and architecture. The image carries Duet's workflow inventory while using
+ARM64-compatible artifacts. A manifest name alone cannot make a missing binary
+usable, so verification fails closed.
+
+### Guest execution stays inside the VM boundary — high confidence
+
+The guest service owns shell/filesystem dispatch, path confinement, deadlines,
+cancellation, and the mutation journal. It receives framed requests on its
+channel and emits framed responses; the relay only transports data. This keeps
+host paths and guest authority separate.
+
+### Mutations are never guessed after a lost response — high confidence
+
+The client reports `operation_uncertain` when transport drops after dispatch.
+An exact mutation ID replays the recorded response; a different payload with
+the same ID fails closed. Read-only calls may retry under recovery supervision.
+
+### MCP remains optional and shares the durable token boundary — high confidence
+
+MCP is a thin Streamable HTTP adapter over `AgentClient`. Its deployed entrypoint
+can validate access tokens through Convex and then select the VM identity; it
+does not add invites, agent enrollment, or a separate operation owner.
+
+### Release verification is layered — high confidence
+
+Artifact SHA-256 checksums, ARM64 metadata/image digests, and Ed25519 manifest
+signatures are checked independently. A valid checksum cannot authorize a
+wrong-architecture artifact, and a valid signature cannot hide a changed file.

@@ -1,0 +1,4 @@
+{
+  "functions": "packages/state/convex",
+  "schema": "packages/state/convex/schema.ts"
+}

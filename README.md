@@ -29,6 +29,13 @@ and host daemon before it can claim a real VM boot. All contract, guest, relay,
 OAuth, MCP, recovery, registry, release, and CLI fixture gates are runnable on
 the host.
 
+The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
+`apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
+`AGENT_COMPUTER_RESOURCE`, and `AGENT_COMPUTER_RELAY_URL` in Vercel; deployed
+functions fail closed when Convex is not configured. Build an image with
+`AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the four artifact
+pin variables documented by `packages/vm-image/scripts/build-arm64-image.ts`.
+
 ## References
 
 - [Agent Computer rationale](specs/done/agent-computer/README.md)
