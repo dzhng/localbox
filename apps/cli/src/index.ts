@@ -1,4 +1,6 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -13,6 +15,7 @@ import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { desktopHandlers, DesktopRuntime } from "../../../packages/desktop/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
+const execFileAsync = promisify(execFile);
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 const positional = args.filter((arg) => arg !== "--json");
@@ -62,11 +65,17 @@ async function writeSnapshots(): Promise<void> {
 
 function authPath(): string { return process.env.AGENT_COMPUTER_AUTH_FILE ?? resolve(homedir(), ".config", "agent-computer", "auth.json"); }
 async function saveAuth(token: string): Promise<void> {
+  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
+    try { await execFileAsync("security", ["add-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w", token, "-U"]); return; } catch { /* fall back to the platform config file */ }
+  }
   const path = authPath(); await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify({ token, saved_at: new Date().toISOString() })}\n`, { mode: 0o600 });
 }
 async function hasAuth(): Promise<boolean> {
   if (process.env.AGENT_COMPUTER_TOKEN) return true;
+  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
+    try { await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); return true; } catch { /* use config file */ }
+  }
   try { const value = JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }; return typeof value.token === "string" && value.token.length > 0; }
   catch { return false; }
 }
@@ -88,6 +97,9 @@ async function makeClient(): Promise<AgentClient> {
 }
 
 async function readSavedToken(): Promise<string | undefined> {
+  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
+    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); return result.stdout.trim() || undefined; } catch { /* use config file */ }
+  }
   try { return (JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }).token; }
   catch { return undefined; }
 }
@@ -152,7 +164,12 @@ async function main(): Promise<void> {
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
   if ((group === "auth" && subcommand === "login") || group === "login") {
-    const token = (group === "login" ? subcommand : rest[0]) ?? process.env.AGENT_COMPUTER_TOKEN ?? "fixture-token";
+    const token = (group === "login" ? subcommand : rest[0]) ?? process.env.AGENT_COMPUTER_TOKEN;
+    if (!token) {
+      process.stderr.write("login requires an OAuth access token (pass TOKEN or set AGENT_COMPUTER_TOKEN)\n");
+      process.exitCode = 2;
+      return;
+    }
     await saveAuth(token);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
