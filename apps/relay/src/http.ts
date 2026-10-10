@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Json } from "../../../packages/contract/src/index.js";
 import { BlobError, isBlobReference, type BlobProvider } from "../../../packages/blob/src/index.js";
 import type { RelayStateRepository, RequestFrameRecord } from "../../../packages/state/src/index.js";
@@ -77,6 +78,7 @@ export class RelayHttpAdapter {
         const raced = await this.repository.getResponse(requestId);
         if (raced && await this.responsesEquivalent(raced.response, incoming)) return this.json(200, raced);
       }
+      await this.deleteExternalized(normalized);
       throw error;
     }
   }
@@ -125,6 +127,11 @@ export class RelayHttpAdapter {
     const stored = recorded as Record<string, unknown>;
     const candidate = incoming as Record<string, unknown>;
     if (stored.ok !== true || candidate.ok !== true || !isBlobReference(stored.result)) return false;
+    const serialized = JSON.stringify(candidate.result);
+    if (serialized !== undefined) {
+      const digest = `sha256:${createHash("sha256").update(serialized).digest("hex")}`;
+      if (digest === stored.result.sha256 && Buffer.byteLength(serialized) === stored.result.size_bytes) return true;
+    }
     try {
       const blob = await this.blobProvider.get(stored.result);
       if (!blob.reference.content_type.toLowerCase().startsWith("application/json")) return false;
@@ -132,6 +139,12 @@ export class RelayHttpAdapter {
     } catch {
       return false;
     }
+  }
+  private async deleteExternalized(response: Json): Promise<void> {
+    if (!this.blobProvider || !response || typeof response !== "object" || Array.isArray(response)) return;
+    const result = (response as Record<string, unknown>).result;
+    if (!isBlobReference(result)) return;
+    try { await this.blobProvider.delete(result); } catch { /* cleanup is best effort; expiry handles orphaned references */ }
   }
   private error(error: unknown): RelayHttpResponse {
     const message = error instanceof Error ? error.message : "relay request failed";
