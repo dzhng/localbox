@@ -5,13 +5,15 @@ import { StateConflictError, StateNotFoundError, StateUnauthorizedError } from "
 
 export interface RelayHttpRequest { method: string; url: string; headers?: Record<string, string | undefined>; body?: unknown }
 export interface RelayHttpResponse { status: number; headers: Record<string, string>; body: unknown }
-export interface RelayHttpAdapterOptions { repository: RelayStateRepository; resource?: string; maxFrameBytes?: number; maxDeadlineMs?: number; maxPoll?: number; blobProvider?: BlobProvider; blobThresholdBytes?: number }
+export interface RelayHttpAdapterOptions { repository: RelayStateRepository; resource?: string; maxFrameBytes?: number; maxBodyBytes?: number; maxDeadlineMs?: number; maxPoll?: number; blobProvider?: BlobProvider; blobThresholdBytes?: number }
 
 /** Stateless HTTP route adapter. It authenticates and commits repository transactions; it never dispatches guest operations. */
 export class RelayHttpAdapter {
   readonly repository: RelayStateRepository;
   readonly resource: string;
   readonly maxFrameBytes: number;
+  /** HTTP parser ceiling; may exceed maxFrameBytes for blob-backed host responses. */
+  readonly maxBodyBytes: number;
   readonly maxDeadlineMs: number;
   readonly maxPoll: number;
   readonly blobProvider?: BlobProvider;
@@ -20,10 +22,12 @@ export class RelayHttpAdapter {
     this.repository = options.repository;
     this.resource = options.resource ?? "https://relay.example.test/mcp";
     this.maxFrameBytes = options.maxFrameBytes ?? 1024 * 1024;
+    this.maxBodyBytes = options.maxBodyBytes ?? this.maxFrameBytes;
     this.maxDeadlineMs = options.maxDeadlineMs ?? 120_000;
     this.maxPoll = options.maxPoll ?? 100;
     this.blobProvider = options.blobProvider;
     this.blobThresholdBytes = options.blobThresholdBytes ?? this.maxFrameBytes;
+    if (!Number.isSafeInteger(this.maxBodyBytes) || this.maxBodyBytes < this.maxFrameBytes) throw new TypeError("maxBodyBytes must be at least maxFrameBytes");
     if (!Number.isSafeInteger(this.blobThresholdBytes) || this.blobThresholdBytes < 1) throw new TypeError("blobThresholdBytes must be positive");
   }
   async handle(request: RelayHttpRequest): Promise<RelayHttpResponse> {

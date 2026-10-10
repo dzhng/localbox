@@ -6,16 +6,17 @@ import { RelayHttpAdapter, type RelayHttpAdapterOptions } from "./http.js";
  * repository remains the only authority; a function instance never dispatches
  * guest operations or keeps queue state in module globals.
  */
-export function createVercelRelayHandler(repository: RelayStateRepository, options: Pick<RelayHttpAdapterOptions, "resource" | "blobProvider" | "blobThresholdBytes"> = {}) {
+export function createVercelRelayHandler(repository: RelayStateRepository, options: Pick<RelayHttpAdapterOptions, "resource" | "blobProvider" | "blobThresholdBytes" | "maxBodyBytes"> = {}) {
   const adapter = new RelayHttpAdapter({
     repository,
     resource: options.resource,
     blobProvider: options.blobProvider,
     blobThresholdBytes: options.blobThresholdBytes,
+    maxBodyBytes: options.maxBodyBytes,
   });
   return async function handle(request: Request): Promise<Response> {
     let parsedBody: unknown;
-    try { parsedBody = request.method === "GET" || request.method === "HEAD" ? undefined : await readJson(request, adapter.maxFrameBytes); }
+    try { parsedBody = request.method === "GET" || request.method === "HEAD" ? undefined : await readJson(request, adapter.maxBodyBytes); }
     catch (error) {
       const status = error instanceof RequestBodyError ? error.status : 400;
       return new Response(JSON.stringify({ error: error instanceof RequestBodyError ? error.code : "invalid_json" }), { status, headers: { "content-type": "application/json" } });
