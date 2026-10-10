@@ -5,6 +5,8 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 ARG DEBIAN_SNAPSHOT=20250929T000000Z
 ARG IMAGE_BUILD_VERSION=dev
+ARG NODE_VERSION
+ARG NODE_SHA256
 ARG BUN_VERSION
 ARG BUN_SHA256
 ARG STATIC_WEB_SERVER_VERSION
@@ -22,9 +24,20 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
   && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git gh imagemagick ffmpeg ghostscript jq \
     libreoffice-core-nogui pandoc poppler-utils python3 python3-pip qpdf \
-    tesseract-ocr libvips-tools nodejs chromium python-is-python3 unzip \
+    tesseract-ocr libvips-tools chromium python-is-python3 unzip xz-utils \
     dbus-x11 x11-utils x11vnc xdotool xfce4 xfce4-terminal xvfb \
   && rm -rf /var/lib/apt/lists/*
+
+RUN test -n "$NODE_VERSION" -a -n "$NODE_SHA256" \
+  && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-arm64.tar.xz" \
+  && echo "$NODE_SHA256  /tmp/node.tar.xz" | sha256sum -c - \
+  && mkdir -p /opt/node \
+  && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /opt/node \
+  && ln -s /opt/node/bin/node /usr/local/bin/node \
+  && ln -s /opt/node/bin/npm /usr/local/bin/npm \
+  && ln -s /opt/node/bin/npx /usr/local/bin/npx \
+  && rm -f /tmp/node.tar.xz \
+  && node --version && npm --version
 
 RUN test -n "$BUN_VERSION" -a -n "$BUN_SHA256" -a -n "$STATIC_WEB_SERVER_VERSION" -a -n "$STATIC_WEB_SERVER_SHA256" \
   && curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64.zip" \

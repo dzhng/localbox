@@ -25,6 +25,8 @@ const imageRef = process.env.IMAGE_REF ?? "agent-computer-vm:arm64-dev";
 const baseImage = required("AGENT_COMPUTER_BASE_IMAGE");
 if (!/@sha256:[0-9a-f]{64}$/i.test(baseImage)) throw new Error("AGENT_COMPUTER_BASE_IMAGE must be an immutable @sha256:… reference");
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
+const nodeVersion = required("NODE_VERSION");
+const nodeSha256 = required("NODE_SHA256");
 const bunVersion = required("BUN_VERSION");
 const bunSha256 = required("BUN_SHA256");
 const staticWebServerVersion = required("STATIC_WEB_SERVER_VERSION");
@@ -36,7 +38,7 @@ const pins: ImageBuildPins = {
   architecture: "arm64",
   baseImage,
   baseSnapshot: snapshot,
-  packages: { python3: "3.11", nodejs: "20", bun: bunVersion, staticWebServer: staticWebServerVersion, chromium: process.env.CHROMIUM_VERSION ?? "guest-agent-managed" },
+  packages: { python3: "3.11", nodejs: nodeVersion, bun: bunVersion, staticWebServer: staticWebServerVersion, chromium: process.env.CHROMIUM_VERSION ?? "guest-agent-managed" },
   pythonRequirementsSha256: `sha256:${createHash("sha256").update(requirements).digest("hex")}`,
   buildVersion,
   display: { width: 1440, height: 900 },
@@ -57,6 +59,8 @@ const buildArgs = [
   "--build-arg", `BASE_IMAGE=${baseImage}`,
   "--build-arg", `DEBIAN_SNAPSHOT=${snapshot}`,
   "--build-arg", `IMAGE_BUILD_VERSION=${buildVersion}`,
+  "--build-arg", `NODE_VERSION=${nodeVersion}`,
+  "--build-arg", `NODE_SHA256=${nodeSha256}`,
   "--build-arg", `BUN_VERSION=${bunVersion}`,
   "--build-arg", `BUN_SHA256=${bunSha256}`,
   "--build-arg", `STATIC_WEB_SERVER_VERSION=${staticWebServerVersion}`,

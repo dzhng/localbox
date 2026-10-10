@@ -39,8 +39,9 @@ Set `BLOB_READ_WRITE_TOKEN` for the relay's private Vercel Blob provider;
 `AGENT_COMPUTER_BLOB_MAX_BYTES` tune its bounded externalization policy.
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes. Build an image with
-`AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the four artifact
-pin variables documented by `packages/vm-image/scripts/build-arm64-image.ts`.
+`AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum
+and version variables documented by `packages/vm-image/scripts/build-arm64-image.ts`
+(`NODE_*`, `BUN_*`, and `STATIC_WEB_SERVER_*`).
 
 After deployment, `agent-computer mcp install --json` prints the optional MCP
 configuration for agents. CLI login and catalog operations remain independent

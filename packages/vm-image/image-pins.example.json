@@ -5,11 +5,12 @@
   "baseSnapshot": "20250929T000000Z",
   "packages": {
     "python3": "3.11",
-    "nodejs": "20",
+    "nodejs": "20.19.5",
     "bun": "<pinned-version>",
     "staticWebServer": "<pinned-version>",
     "chromium": "<pinned-arm64-version>",
     "bunSha256": "sha256:<64-hex-digest>",
+    "nodeSha256": "sha256:<64-hex-digest>",
     "staticWebServerSha256": "sha256:<64-hex-digest>"
   },
   "pythonRequirementsSha256": "sha256:<sha256-of-requirements-arm64.txt>",
