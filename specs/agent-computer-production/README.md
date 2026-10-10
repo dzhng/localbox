@@ -96,7 +96,7 @@ The implementer may choose internal names and package layout within the owners a
 
 ## Next Agent Prompt
 
-You are resuming `agent-computer-production`. Slices 00, 01a, 01b, 02 seam, 03 seam/03b, and the HTTP relay/poller/Vercel seam are implemented and committed. The ARM64 builder requires an immutable base digest, emits probe-backed manifests, and installs the framed guest entrypoint; Docker/Apple Silicon execution remains hardware-gated. Convex schema/functions and the `convex-test` harness exercise real transactions locally. The next pickup is **slice 02b**: authenticated local IPC and a real guest channel owned by HostDaemon. Keep CLI as the primary interface and MCP optional; do not add invites or a second operation/auth owner. Update this handoff, choices ledger, and focused verification before ending your pass. Do not claim production usability until gates G1–G7 are green.
+You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, Convex schema/functions and local harness, Vercel relay/poller, durable MCP token validation, Keychain-aware CLI token storage, recovery, and signed release manifests. The remaining work is external release validation: build/probe the image on an ARM64 Docker builder, connect virtio-serial and launchd on Apple Silicon, deploy Convex/Vercel and run internet smoke, then sign/notarize/package and verify rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G1–G7 are green.
 
 ## Global TODO
 
