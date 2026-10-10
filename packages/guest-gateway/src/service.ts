@@ -118,6 +118,16 @@ export class GuestService {
     if (this.stopped) return;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     if (this.buffer.byteLength > this.maxBufferedBytes) throw new Error("guest input buffer exceeds configured limit");
+    // Inspect complete and partial headers before JSON decoding. The framing
+    // decoder has an 8 MiB protocol ceiling; this service may choose a lower
+    // per-channel limit and must reject that frame before admitting it.
+    let cursor = 0;
+    while (this.buffer.byteLength - cursor >= 4) {
+      const length = this.buffer.readUInt32BE(cursor);
+      if (length > this.maxFrameBytes) throw new Error("guest frame exceeds configured limit");
+      if (this.buffer.byteLength - cursor - 4 < length) break;
+      cursor += 4 + length;
+    }
     const decoded = decodeGuestFrames(this.buffer);
     this.buffer = Buffer.from(decoded.remainder);
     // Do not serialize frames: a cancel frame must be able to reach an active
