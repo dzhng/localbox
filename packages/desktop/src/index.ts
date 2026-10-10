@@ -131,6 +131,7 @@ class CdpClient {
           this.pending.clear();
         }
       });
+      if (socket.readyState === 1) { clearTimeout(timer); resolve(); }
     });
   }
 
@@ -318,7 +319,11 @@ class ProductionDesktopBackend {
   }
 
   private async run(command: string, args: string[]): Promise<DesktopCommandResult> {
-    try { return await this.command(command, args, this.env); }
+    try {
+      const result = await this.command(command, args, this.env);
+      if (result.code !== 0) throw new ContractError("internal", result.stderr.toString("utf8") || `${command} exited with code ${result.code}`);
+      return result;
+    }
     catch (error) {
       if (error instanceof ContractError) throw error;
       throw new ContractError("unsupported", `${command} is unavailable: ${error instanceof Error ? error.message : String(error)}`);
