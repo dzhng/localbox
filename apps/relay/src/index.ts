@@ -69,6 +69,7 @@ export function requestFrame(request: RequestEnvelope, epoch: number, sequence =
 export function responseFrame(response: ResponseEnvelope, epoch: number, sequence = 0): RelayFrame { return { kind: "response", channel_id: "", epoch, sequence, vm_id: response.vm_id, request_id: response.request_id, payload: response }; }
 
 export * from "./oauth.js";
+export * from "./repository-oauth.js";
 export * from "./http.js";
 export * from "./poller.js";
 export * from "./vercel.js";
