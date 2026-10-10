@@ -61,7 +61,7 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 - Mutations are never implicitly retried after a lost response. Exact replay with the same mutation ID returns the recorded response; conflicting payloads fail closed.
 - Channel grants are VM-bound, epoch-bound, revocable, lease-owned, and stored as hashes where possible. Stale epochs/tokens are rejected transactionally.
 - Convex transactions make enqueue, claim, ack, response retention, mutation dedupe, refresh rotation, and revocation atomic.
-- Payloads up to the inline limit remain inline; larger/binary screenshots and files use signed expiring blobs with hash and size metadata.
+- Payloads up to the inline limit remain inline; the relay rejects oversized frames. A signed expiring blob adapter for larger/binary screenshots and files remains a release integration task.
 - Guest paths never escape the VM root. Shell process groups, output, deadlines, and egress are bounded.
 - Reset is explicitly confirmed and destructive. Reprovision preserves the disk unless reset was confirmed.
 - Browser targets are generation-scoped. Desktop geometry is 1440x900, loopback-bound, demand-started, and grace-reaped.
@@ -89,6 +89,9 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   environment variables in `README.md`; the local schema/function harness and
   route contract cover the transaction behavior, including repository-backed
   OAuth authorization, token rotation, and revocation.
+- The inline relay limit is enforced, but a production blob provider for
+  larger/binary screenshots and files still needs to be selected and wired
+  with expiring signed URLs, hashes, and size metadata.
 - Release infrastructure must provide Apple signing/notarization credentials,
   package the daemon/CLI/image, and run upgrade interruption and rollback tests.
 
