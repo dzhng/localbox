@@ -7,7 +7,7 @@ import {
   type Json, type OperationId, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
-import { AgentClient, fixtureTransport, type TransportKind } from "../../../packages/client/src/index.js";
+import { AgentClient, fixtureTransport, RelayHttpTransport, type TransportKind } from "../../../packages/client/src/index.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { desktopHandlers, DesktopRuntime } from "../../../packages/desktop/src/index.js";
@@ -73,6 +73,10 @@ async function hasAuth(): Promise<boolean> {
 
 async function makeClient(): Promise<AgentClient> {
   const kind: TransportKind = process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local";
+  if (kind === "remote" && process.env.AGENT_COMPUTER_RELAY_URL) {
+    const token = process.env.AGENT_COMPUTER_TOKEN ?? await readSavedToken();
+    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL, accessToken: token }) });
+  }
   const guestRoot = resolve(root, ".agent-computer/guest");
   await mkdir(guestRoot, { recursive: true });
   const guest = new GuestGateway({ root: guestRoot });
@@ -81,6 +85,11 @@ async function makeClient(): Promise<AgentClient> {
   const transport = fixtureTransport(kind, new FakeDispatcher({ handlers }));
   if (kind === "remote" && !(await hasAuth())) transport.setUnauthorized();
   return new AgentClient({ transport });
+}
+
+async function readSavedToken(): Promise<string | undefined> {
+  try { return (JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }).token; }
+  catch { return undefined; }
 }
 
 async function vmProbe(): Promise<void> {

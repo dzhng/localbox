@@ -25,6 +25,62 @@ export interface ClientTransport {
   dispatch(request: RequestEnvelope, options?: DispatchOptions): Promise<ResponseEnvelope>;
 }
 
+export interface RelayHttpTransportOptions {
+  baseUrl: string;
+  accessToken?: string;
+  accessTokenProvider?: () => Promise<string | undefined>;
+  fetchImpl?: typeof fetch;
+  pollMs?: number;
+}
+
+/** Stateless HTTPS transport for the Vercel relay. It never retries a mutation. */
+export class RelayHttpTransport implements ClientTransport {
+  readonly kind = "remote" as const;
+  private readonly baseUrl: string;
+  private readonly accessTokenProvider?: () => Promise<string | undefined>;
+  private readonly fetchImpl: typeof fetch;
+  private readonly pollMs: number;
+  private accessToken?: string;
+  constructor(options: RelayHttpTransportOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.accessToken = options.accessToken;
+    this.accessTokenProvider = options.accessTokenProvider;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.pollMs = options.pollMs ?? 50;
+  }
+  async dispatch(request: RequestEnvelope, options: DispatchOptions = {}): Promise<ResponseEnvelope> {
+    const token = this.accessTokenProvider ? await this.accessTokenProvider() : this.accessToken;
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (token) headers.authorization = `Bearer ${token}`;
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}/v1/requests`, { method: "POST", headers, body: JSON.stringify(request), signal: options.signal });
+    } catch (error) {
+      throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay request failed", true);
+    }
+    if (response.status === 401 || response.status === 403) return failure(request, { code: "unauthorized", message: "remote authentication failed", retryable: false });
+    if (!response.ok) return failure(request, { code: response.status === 429 ? "rate_limited" : "internal", message: await response.text(), retryable: response.status >= 500 || response.status === 429 });
+    const submitted = await response.json() as { status?: string; response?: ResponseEnvelope; request_id?: string };
+    if (submitted.response) return submitted.response;
+    const requestId = submitted.request_id ?? request.request_id;
+    const deadline = Date.now() + request.deadline_ms;
+    while (Date.now() < deadline) {
+      let polled: Response;
+      try {
+        polled = await this.fetchImpl(`${this.baseUrl}/v1/requests/${encodeURIComponent(requestId)}`, { method: "GET", headers, signal: options.signal });
+      } catch (error) {
+        throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay poll failed", true);
+      }
+      if (polled.status === 202 || polled.status === 404) { await new Promise((resolve) => setTimeout(resolve, this.pollMs)); continue; }
+      if (!polled.ok) return failure(request, { code: polled.status === 401 ? "unauthorized" : "internal", message: await polled.text(), retryable: polled.status >= 500 });
+      const result = await polled.json() as { response?: ResponseEnvelope; status?: string };
+      if (result.response) return result.response;
+      await new Promise((resolve) => setTimeout(resolve, this.pollMs));
+    }
+    return failure(request, { code: "operation_timeout", message: "relay response deadline exceeded", retryable: true });
+  }
+}
+
 /** A deterministic transport used by the Mac-side and hosted fixture adapters. */
 export class FixtureTransport implements ClientTransport {
   readonly dispatcher: FakeDispatcher;

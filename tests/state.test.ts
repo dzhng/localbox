@@ -14,7 +14,7 @@ test("local Convex harness preserves relay state across restart and enforces ded
   const claimed = await repo.claimRequests({ leaseOwner: "agent_a", leaseMs: 10 }); assert.equal(claimed.length, 1);
   assert.equal((await repo.claimRequests({ leaseOwner: "agent_b" })).length, 0);
   now += 11; assert.equal((await repo.claimRequests({ leaseOwner: "agent_b" })).length, 1);
-  await repo.recordResponse({ requestId: "req_1", response: { ok: true } });
+  await repo.recordResponse({ requestId: "req_1", response: { ok: true }, leaseOwner: "agent_b" });
   const restarted = await harness.restart(); assert.ok(await restarted.getResponse("req_1"));
   await harness.close(); await assert.rejects(() => harness.pushSchema(), StateConflictError);
 });

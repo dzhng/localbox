@@ -47,7 +47,7 @@ export class RelayHttpAdapter {
   }
   private async complete(request: RelayHttpRequest, requestId: string): Promise<RelayHttpResponse> {
     const channel = await this.channel(request); const body = this.object(request.body); const snapshot = await this.repository.snapshot(); const frame = snapshot.requests.find((item) => item.requestId === requestId); if (!frame || frame.ownerId !== channel.ownerId || frame.vmId !== channel.vmId) throw new StateNotFoundError("request not found");
-    if (body.response === undefined) throw new StateConflictError("response is required"); const response = await this.repository.recordResponse({ requestId, response: body.response as Json });
+    if (body.response === undefined) throw new StateConflictError("response is required"); const response = await this.repository.recordResponse({ requestId, response: body.response as Json, leaseOwner: body.lease_owner ? this.string(body.lease_owner) : undefined });
     return this.json(200, response);
   }
   private async heartbeat(request: RelayHttpRequest): Promise<RelayHttpResponse> { const channel = await this.channel(request); return this.json(200, { channel_id: channel.channelId, vm_id: channel.vmId, epoch: channel.epoch, expires_at: channel.expiresAt }); }
