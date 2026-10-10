@@ -38,6 +38,7 @@ test("in-memory blob provider returns signed, hashed, expiring references", asyn
   const tampered = new URL(reference.download_url);
   tampered.searchParams.set("signature", "bad");
   await assert.rejects(() => provider.get(tampered.toString()), (error: unknown) => error instanceof BlobError && error.code === "invalid_reference");
+  await assert.rejects(() => provider.get({ ...reference, size_bytes: 5 }), (error: unknown) => error instanceof BlobError && error.code === "invalid_reference");
   now = 1_050;
   await assert.rejects(() => provider.get(reference), (error: unknown) => error instanceof BlobError && error.code === "expired");
 });

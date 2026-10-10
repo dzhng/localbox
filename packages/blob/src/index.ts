@@ -96,13 +96,15 @@ export class InMemoryBlobProvider implements BlobProvider {
     const url = new URL(`/blobs/${encodeURIComponent(blobId)}`, `${this.baseUrl}/`);
     url.searchParams.set("expires", String(expiresAt));
     url.searchParams.set("signature", signature);
+    const contentType = input.contentType ?? "application/octet-stream";
+    if (!contentType || /[\r\n]/.test(contentType)) throw new BlobError("blob content type is invalid", "invalid_reference");
     const reference: BlobReference = {
       kind: BLOB_REFERENCE_KIND,
       blob_id: blobId,
       download_url: url.toString(),
       sha256: digest,
       size_bytes: body.byteLength,
-      content_type: input.contentType ?? "application/octet-stream",
+      content_type: contentType,
       expires_at: expiresAt,
     };
     this.blobs.set(blobId, { reference, body: Buffer.from(body) });
@@ -114,6 +116,7 @@ export class InMemoryBlobProvider implements BlobProvider {
     if (parsed.expiresAt <= this.now()) throw new BlobError("blob reference has expired", "expired");
     const stored = this.blobs.get(parsed.blobId);
     if (!stored) throw new BlobError("blob was not found", "not_found");
+    assertReferenceMetadata(signed, stored.reference);
     const expected = this.sign(parsed.blobId, parsed.expiresAt, stored.reference.sha256, stored.reference.size_bytes);
     if (!constantTimeEqual(expected, parsed.signature) || stored.reference.expires_at !== parsed.expiresAt) throw new BlobError("blob signature is invalid", "invalid_reference");
     return { reference: cloneReference(stored.reference), body: Buffer.from(stored.body) };
@@ -124,6 +127,7 @@ export class InMemoryBlobProvider implements BlobProvider {
     if (parsed.expiresAt <= this.now()) throw new BlobError("blob reference has expired", "expired");
     const stored = this.blobs.get(parsed.blobId);
     if (!stored) return;
+    assertReferenceMetadata(signed, stored.reference);
     const expected = this.sign(parsed.blobId, parsed.expiresAt, stored.reference.sha256, stored.reference.size_bytes);
     if (!constantTimeEqual(expected, parsed.signature) || stored.reference.expires_at !== parsed.expiresAt) throw new BlobError("blob signature is invalid", "invalid_reference");
     this.blobs.delete(parsed.blobId);
@@ -166,6 +170,10 @@ function toBytes(body: BlobPutInput["body"]): Uint8Array {
 }
 
 function cloneReference(reference: BlobReference): BlobReference { return { ...reference }; }
+function assertReferenceMetadata(value: string | BlobReference, canonical: BlobReference): void {
+  if (typeof value === "string") return;
+  if (value.kind !== canonical.kind || value.blob_id !== canonical.blob_id || value.download_url !== canonical.download_url || value.sha256 !== canonical.sha256 || value.size_bytes !== canonical.size_bytes || value.content_type !== canonical.content_type || value.expires_at !== canonical.expires_at) throw new BlobError("blob reference metadata is invalid", "invalid_reference");
+}
 function constantTimeEqual(left: string, right: string): boolean {
   const a = Buffer.from(left); const b = Buffer.from(right);
   return a.byteLength === b.byteLength && timingSafeEqual(a, b);
