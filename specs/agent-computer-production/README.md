@@ -87,6 +87,10 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 - Apple Virtualization must boot the published ARM64 kernel/initrd/disk, attach
   virtio-serial to `GuestService`, and exercise cold/warm persistence,
   pause/resume, sleep recovery, and clean stop on Apple Silicon.
+  A local artifact boot attempt reached `HostDaemon` but stopped before VM
+  validation with `VZErrorDomain Code=2`: the process lacked the
+  `com.apple.security.virtualization` entitlement. The next run must use the
+  signed entitlement-bearing product bundle.
 - A real Convex deployment and Vercel project must be provisioned with the
   environment variables in `README.md`; the local schema/function harness and
   route contract cover the transaction behavior, including repository-backed
@@ -106,7 +110,7 @@ The implementer may choose internal names and package layout within the owners a
 
 You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, named virtio-console framing, safe template-disk reset, bounded/indexed Convex relay reads, Vercel relay/poller, signed blob references with bounded replay cleanup, repository-backed MCP OAuth, Keychain-aware CLI token storage, recovery, and signed release manifests with verified atomic activation and rollback. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`; HostDaemon has 8 passing Swift tests. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, durable object storage, then notarized packaging and an interrupted upgrade/rollback run. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
 
-Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk through Apple Virtualization and launchd, including sleep and guest-crash recovery; (2) deploy Convex and Vercel and run internet CLI/MCP smoke; (3) bind `BlobProvider` to durable object storage; (4) sign, notarize, install, interrupt, and roll back the release. These require credentials and hardware absent from this workspace; preserve the local gates while collecting that evidence.
+Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk through an entitlement-bearing signed HostDaemon bundle and launchd, including sleep and guest-crash recovery; (2) deploy Convex and Vercel and run internet CLI/MCP smoke; (3) bind `BlobProvider` to durable object storage; (4) sign, notarize, install, interrupt, and roll back the release. A local unsigned boot attempt was rejected for the missing `com.apple.security.virtualization` entitlement; deployment credentials and signed packaging are still required.
 
 ## Global TODO
 
