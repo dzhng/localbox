@@ -1,8 +1,7 @@
 # Agent Computer product map
 
-> **Superseded by the implementation plan:** read
-> [README.md](README.md) and its slice files for the current build plan. This
-> map remains the decision record from the exploration walk.
+> This is the decision record from the exploration walk. The durable rationale
+> for the shipped implementation is in [README.md](README.md).
 
 This map records the decisions from the exploration walk before implementation.
 

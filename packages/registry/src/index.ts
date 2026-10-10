@@ -8,7 +8,13 @@ export interface RegistryDocument { version: 1; selectedVmId: string; vms: VMRec
 export class DurableVMRegistry {
   private doc: RegistryDocument = { version: 1, selectedVmId: "", vms: [] };
   constructor(public readonly path: string) {}
-  async load(): Promise<this> { try { this.doc = JSON.parse(await readFile(this.path, "utf8")) as RegistryDocument; } catch { /* first launch */ } return this; }
+  async load(): Promise<this> {
+    try { this.doc = JSON.parse(await readFile(this.path, "utf8")) as RegistryDocument; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return this;
+  }
   private async save(): Promise<void> { await mkdir(dirname(this.path), { recursive: true }); await writeFile(this.path, `${JSON.stringify(this.doc, null, 2)}\n`, { mode: 0o600 }); }
   list(): VMRecord[] { return this.doc.vms.map((v) => ({ ...v })); }
   selected(): VMRecord | undefined { return this.doc.vms.find((v) => v.vmId === this.doc.selectedVmId); }

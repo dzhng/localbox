@@ -22,14 +22,16 @@ as convenience interfaces over the same operation contract.
 
 ## Status
 
-This repository currently holds the product map and will receive the
-implementation specification next. The first engineering spikes should validate
-Apple silicon virtualization, the Linux desktop image, residential egress,
-sleep/wake reconnect, and OAuth VM selection.
+The host-testable implementation foundation is shipped and documented in the
+[closed rationale](specs/done/agent-computer/README.md). The native probe keeps
+real Apple Virtualization lifecycle work explicit: it needs a pinned Linux image
+and host daemon before it can claim a real VM boot. All contract, guest, relay,
+OAuth, MCP, recovery, registry, release, and CLI fixture gates are runnable on
+the host.
 
 ## References
 
-- [Product map](specs/agent-computer/MAP.md)
+- [Agent Computer rationale](specs/done/agent-computer/README.md)
 - [Security model](SECURITY.md)
 - [Duet VM desktop reference](../duet/specs/done/vm-desktop/README.md)
 - [Screen-recorder CLI and skill reference](../screen-recorder/README.md)
