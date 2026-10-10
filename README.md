@@ -62,7 +62,7 @@ the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
 reserved for local packaging checks;
 it cannot satisfy the virtualization or distribution gates.
 
-Install a signed release with `scripts/install-release.sh dist/release`. The
+Install a signed release with `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`. The
 installer verifies checksums and the Ed25519 manifest, keeps versioned app/CLI
 trees behind an atomic `releases/active` link, materializes the launchd plist,
 creates the owner-only IPC token, and loads the daemon. Use
