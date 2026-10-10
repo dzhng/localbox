@@ -115,5 +115,6 @@ You are resuming `agent-computer-production`. All code-level seams are implement
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
 - [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon; launchd packaging and hardware boot smoke remain pending.
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
+- [ ] External payload storage: select and wire signed expiring blob storage for large/binary screenshots and files.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.
