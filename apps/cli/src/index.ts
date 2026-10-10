@@ -12,7 +12,7 @@ import {
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, RelayHttpTransport, type TransportKind } from "../../../packages/client/src/index.js";
-import { authorizationUrl, createPkcePair, exchangeAuthorizationCode } from "../../../packages/client/src/auth.js";
+import { authorizationUrl, createPkcePair, exchangeAuthorizationCode, refreshAccessToken, type OAuthTokenResponse } from "../../../packages/client/src/auth.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { desktopHandlers, DesktopRuntime } from "../../../packages/desktop/src/index.js";
@@ -67,8 +67,9 @@ async function writeSnapshots(): Promise<void> {
 }
 
 function authPath(): string { return process.env.AGENT_COMPUTER_AUTH_FILE ?? resolve(homedir(), ".config", "agent-computer", "auth.json"); }
-async function saveAuth(token: string, refreshToken?: string): Promise<void> {
-  const serialized = JSON.stringify({ token, ...(refreshToken ? { refresh_token: refreshToken } : {}), saved_at: new Date().toISOString() });
+interface SavedAuth { token: string; refresh_token?: string; expires_at?: number; saved_at: string }
+async function saveAuth(token: string, refreshToken?: string, expiresIn?: number): Promise<void> {
+  const serialized = JSON.stringify({ token, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(expiresIn ? { expires_at: Date.now() + expiresIn * 1000 } : {}), saved_at: new Date().toISOString() } satisfies SavedAuth);
   if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
     try { await execFileAsync("security", ["add-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w", serialized, "-U"]); return; } catch { /* fall back to the platform config file */ }
   }
@@ -113,11 +114,31 @@ async function hasAuth(): Promise<boolean> {
   catch { return false; }
 }
 
+async function readAuth(): Promise<SavedAuth | undefined> {
+  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
+    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); const value = result.stdout.trim(); const parsed = JSON.parse(value) as SavedAuth; return parsed.token ? parsed : { token: value, saved_at: "" }; } catch { /* use config file */ }
+  }
+  try { return JSON.parse(await readFile(authPath(), "utf8")) as SavedAuth; } catch { return undefined; }
+}
+
 async function makeClient(): Promise<AgentClient> {
   const kind: TransportKind = process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local";
   if (kind === "remote" && process.env.AGENT_COMPUTER_RELAY_URL) {
-    const token = process.env.AGENT_COMPUTER_TOKEN ?? await readSavedToken();
-    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL, accessToken: token }) });
+    const initial = await readAuth();
+    let credentials = initial;
+    const accessTokenProvider = async () => {
+      if (process.env.AGENT_COMPUTER_TOKEN) return process.env.AGENT_COMPUTER_TOKEN;
+      if (credentials?.refresh_token && credentials.expires_at && credentials.expires_at <= Date.now() + 30_000) {
+        const tokenEndpoint = process.env.AGENT_COMPUTER_OAUTH_TOKEN_URL;
+        const resource = process.env.AGENT_COMPUTER_RESOURCE;
+        if (!tokenEndpoint || !resource) return credentials.token;
+        const refreshed = await refreshAccessToken({ endpoint: tokenEndpoint, refreshToken: credentials.refresh_token, clientId: process.env.AGENT_COMPUTER_OAUTH_CLIENT_ID ?? "agent-computer-cli", resource });
+        credentials = { token: refreshed.access_token, refresh_token: refreshed.refresh_token ?? credentials.refresh_token, expires_at: refreshed.expires_in ? Date.now() + refreshed.expires_in * 1000 : undefined, saved_at: new Date().toISOString() };
+        await saveAuth(credentials.token, credentials.refresh_token, refreshed.expires_in);
+      }
+      return credentials?.token;
+    };
+    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.AGENT_COMPUTER_RELAY_URL, accessTokenProvider }) });
   }
   const guestRoot = resolve(root, ".agent-computer/guest");
   await mkdir(guestRoot, { recursive: true });
@@ -130,11 +151,7 @@ async function makeClient(): Promise<AgentClient> {
 }
 
 async function readSavedToken(): Promise<string | undefined> {
-  if (process.platform === "darwin" && !process.env.AGENT_COMPUTER_AUTH_FILE) {
-    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "agent-computer-access", "-w"]); const value = result.stdout.trim(); return (JSON.parse(value) as { token?: string }).token ?? value; } catch { /* use config file */ }
-  }
-  try { return (JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }).token; }
-  catch { return undefined; }
+  return (await readAuth())?.token;
 }
 
 async function vmProbe(): Promise<void> {
@@ -198,12 +215,12 @@ async function main(): Promise<void> {
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
   if ((group === "auth" && subcommand === "login") || group === "login") {
     let token = (group === "login" ? subcommand : rest[0]) ?? process.env.AGENT_COMPUTER_TOKEN;
-    let refreshToken: string | undefined;
+    let refreshToken: string | undefined; let expiresIn: number | undefined;
     if (!token && process.env.AGENT_COMPUTER_OAUTH_AUTHORIZE_URL) {
-      const credentials = await loginWithPkce(); token = credentials.access_token; refreshToken = credentials.refresh_token;
+      const credentials: OAuthTokenResponse = await loginWithPkce(); token = credentials.access_token; refreshToken = credentials.refresh_token; expiresIn = credentials.expires_in;
     }
     if (!token) { process.stderr.write("login requires an OAuth access token or configured OAuth browser endpoints\n"); process.exitCode = 2; return; }
-    await saveAuth(token, refreshToken);
+    await saveAuth(token, refreshToken, expiresIn);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }

@@ -5,7 +5,7 @@ import { OAuthAuthorizationServer, OAuthError } from "../../relay/src/oauth.js";
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export interface McpHttpRequest { method: string; url: string; headers?: Record<string, string | undefined>; body?: unknown; signal?: AbortSignal }
 export interface McpHttpResponse { status: number; headers: Record<string, string>; body?: unknown }
-export interface McpAdapterOptions { client?: AgentClient; transport?: ClientTransport; oauth?: OAuthAuthorizationServer; allowedOrigins?: string[]; protocolVersion?: string; endpoint?: string }
+export interface McpAdapterOptions { client?: AgentClient; transport?: ClientTransport; oauth?: OAuthAuthorizationServer; allowedOrigins?: string[]; protocolVersion?: string; endpoint?: string; maxBodyBytes?: number }
 export interface McpAccessIdentity { vm_id: string }
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
@@ -16,6 +16,7 @@ export class McpAdapter {
   readonly endpoint: string;
   private readonly allowedOrigins: Set<string>;
   readonly protocolVersion: string;
+  readonly maxBodyBytes: number;
   private readonly accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity;
   constructor(options: McpAdapterOptions & { accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity } = {}) {
     this.oauth = options.oauth ?? new OAuthAuthorizationServer();
@@ -23,11 +24,13 @@ export class McpAdapter {
     this.allowedOrigins = new Set(options.allowedOrigins ?? []);
     this.protocolVersion = options.protocolVersion ?? MCP_PROTOCOL_VERSION;
     this.endpoint = options.endpoint ?? this.oauth.resource;
+    this.maxBodyBytes = options.maxBodyBytes ?? 1024 * 1024;
     this.accessTokenValidator = options.accessTokenValidator;
   }
   protectedResourceMetadata(): Record<string, unknown> { return this.oauth.protectedResourceMetadata(); }
   async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
     const headers = request.headers ?? {};
+    if (request.body !== undefined && Buffer.byteLength(typeof request.body === "string" ? request.body : JSON.stringify(request.body)) > this.maxBodyBytes) return this.httpError(413, "payload_too_large", "MCP request exceeds the configured size limit");
     const origin = headers.origin ?? headers.Origin;
     if (origin && this.allowedOrigins.size > 0 && !this.allowedOrigins.has(origin)) return this.httpError(403, "forbidden", "origin is not allowed");
     const url = new URL(request.url, this.endpoint);

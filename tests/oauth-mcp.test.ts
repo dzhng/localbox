@@ -55,3 +55,9 @@ test("MCP accepts a durable access-token validator without owning OAuth state", 
   const denied = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: "Bearer other" }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
   assert.equal(denied.status, 401);
 });
+
+test("MCP rejects malformed and oversized request bodies", async () => {
+  const adapter = new McpAdapter({ oauth: new OAuthAuthorizationServer(), maxBodyBytes: 8 });
+  const oversized = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", body: "123456789" });
+  assert.equal(oversized.status, 413);
+});
