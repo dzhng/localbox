@@ -1,5 +1,5 @@
-import { createHash, sign, verify, type KeyObject } from "node:crypto";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { createHash, randomUUID, sign, verify, type KeyObject } from "node:crypto";
+import { readFile, writeFile, readdir, mkdir, readlink, symlink, rename, unlink } from "node:fs/promises";
 import { join, basename } from "node:path";
 
 export interface ReleaseArtifact { name: string; sha256: string; size: number; arch: "arm64"; }
@@ -12,6 +12,7 @@ export async function verifyRelease(dir: string, manifest: ReleaseManifest, plat
   if (platformArch !== "arm64") throw new Error(`unsupported architecture: ${platformArch}`);
   if (!manifest.imageDigest.startsWith("sha256:")) throw new Error("invalid image digest");
   for (const artifact of manifest.artifacts) {
+    if (basename(artifact.name) !== artifact.name || artifact.name === "." || artifact.name === "..") throw new Error(`invalid artifact name: ${artifact.name}`);
     if (artifact.arch !== "arm64") throw new Error(`unsupported artifact architecture: ${artifact.name}`);
     const actual = await sha256(join(dir, artifact.name));
     if (actual !== artifact.sha256) throw new Error(`checksum mismatch: ${artifact.name}`);
@@ -30,5 +31,32 @@ export function verifyManifestSignature(manifest: ReleaseManifest, publicKey: st
   const unsigned = { ...manifest, signature: undefined };
   const valid = verify(null, Buffer.from(JSON.stringify(unsigned)), publicKey, Buffer.from(manifest.signature.value, "base64url"));
   if (!valid) throw new Error("release signature verification failed");
+}
+/** Atomically switch the product's active release symlink after verification. */
+export async function activateRelease(root: string, version: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
+  validateVersion(version);
+  if (manifest.version !== version) throw new Error("release version mismatch");
+  const releaseDir = join(root, version);
+  await verifyRelease(releaseDir, manifest, platformArch);
+  await mkdir(root, { recursive: true });
+  const temporary = join(root, `.active-${process.pid}-${randomUUID()}`);
+  await symlink(version, temporary, "dir");
+  try { await rename(temporary, join(root, "active")); }
+  catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
+}
+/** Return the version currently selected by the atomic active symlink. */
+export async function activeRelease(root: string): Promise<string | undefined> {
+  try {
+    const version = await readlink(join(root, "active"));
+    validateVersion(version);
+    return version;
+  } catch { return undefined; }
+}
+/** Select a previously verified release using the same atomic switch as install. */
+export async function rollbackRelease(root: string, version: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
+  await activateRelease(root, version, manifest, platformArch);
+}
+function validateVersion(version: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(version)) throw new Error("invalid release version");
 }
 export const artifactName = basename;

@@ -99,6 +99,14 @@ Artifact SHA-256 checksums, ARM64 metadata/image digests, and Ed25519 manifest
 signatures are checked independently. A valid checksum cannot authorize a
 wrong-architecture artifact, and a valid signature cannot hide a changed file.
 
+### Release activation is verified and atomic — high confidence
+
+The installer verifies the selected version and every artifact before creating
+an `active` symlink, then replaces that symlink in one rename. Rollback calls
+the same activation path, so a bad or interrupted upgrade cannot replace the
+currently selected release with a partially verified tree. Version and artifact
+names are confined to the release root.
+
 ### Large and binary results use signed blob references — high confidence
 
 Inline JSON remains the default. When a result exceeds the configured inline

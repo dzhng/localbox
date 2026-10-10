@@ -6,7 +6,7 @@ A clean ARM64 install survives sleep, network changes, guest crashes, interrupte
 
 ## Seam
 
-`RecoverySupervisor` becomes the host lifecycle/reconnect owner and emits redacted structured events/metrics. Read operations may retry; mutations remain uncertain until status or exact replay resolves them. Release tooling builds/signs/notarizes the macOS host app/CLI, publishes the image and manifest digest, verifies checksums/signatures/architecture/tool inventory, and supports rollback to the previous image/app.
+`RecoverySupervisor` becomes the host lifecycle/reconnect owner and emits redacted structured events/metrics. Read operations may retry; mutations remain uncertain until status or exact replay resolves them. Release tooling builds/signs/notarizes the macOS host app/CLI, publishes the image and manifest digest, verifies checksums/signatures/architecture/tool inventory, and supports rollback to the previous image/app. Activation verifies every artifact before atomically replacing the `active` symlink; rollback uses the same verified switch, so an interrupted or invalid upgrade leaves the current release selected.
 
 ## Human runnable artifact
 
