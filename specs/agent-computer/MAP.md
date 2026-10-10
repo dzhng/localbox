@@ -1,5 +1,9 @@
 # Agent Computer product map
 
+> **Superseded by the implementation plan:** read
+> [README.md](README.md) and its slice files for the current build plan. This
+> map remains the decision record from the exploration walk.
+
 This map records the decisions from the exploration walk before implementation.
 
 ## Known knowns
