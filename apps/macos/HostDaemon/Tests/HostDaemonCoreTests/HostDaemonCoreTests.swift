@@ -18,6 +18,16 @@ final class HostDaemonCoreTests: XCTestCase {
         let daemon = HostDaemon(backend: FakeVMBackend())
         await XCTAssertThrowsErrorAsync(try await daemon.reset(confirm: "no"))
     }
+    func testAuthenticatedLocalIPCRejectsWrongTokenAndForwardsEnvelope() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "secret")
+        let envelope = Data("request".utf8)
+        do { _ = try await ipc.handle(LocalIPCRequest(token: "wrong", envelope: envelope)); XCTFail("expected authentication failure") } catch { }
+        let echoed = try await ipc.handle(LocalIPCRequest(token: "secret", envelope: envelope))
+        XCTAssertEqual(echoed, envelope)
+    }
 }
 
 private func XCTAssertThrowsErrorAsync(_ expression: @autoclosure () async throws -> Void) async {
