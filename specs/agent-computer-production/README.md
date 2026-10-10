@@ -111,5 +111,5 @@ You are resuming `agent-computer-production`. Slices 00, 01a, 01b, 02 seam, 03 s
 - [x] Slice 02b seam: add authenticated local IPC forwarding into HostDaemon (virtio channel/hardware gate remains pending).
 - [ ] Slice 03b: replace the local state double with deployed Convex functions/schema and the Duet local deployment harness.
 - [ ] Slice 04b: connect the Mac poller to the HTTP relay and run deployed Vercel/Convex smoke tests.
-- [ ] Slice 05: wire optional MCP/OAuth to durable state with exact CLI parity.
-- [ ] Slice 06: integrate recovery, quotas/audit, signing/notarization, installer, and rollback.
+- [x] Slice 05 seam: wire optional MCP endpoint to a durable Convex access-token validator with exact catalog parity; full deployed OAuth/PKCE smoke remains pending.
+- [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.

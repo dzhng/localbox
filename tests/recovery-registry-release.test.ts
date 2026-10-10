@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecoverySupervisor } from "../packages/recovery/src/index.js";
 import { DurableVMRegistry } from "../packages/registry/src/index.js";
-import { makeManifest, writeRelease, verifyRelease } from "../scripts/release.js";
+import { generateKeyPairSync } from "node:crypto";
+import { makeManifest, signManifest, verifyManifestSignature, writeRelease, verifyRelease } from "../scripts/release.js";
 
 test("recovery timeline reconnects and reaps desktop after demand grace", () => {
   let now = 1_000; const s = new RecoverySupervisor({ now: () => now, graceMs: 10 });
@@ -26,4 +27,14 @@ test("release manifest and checksums verify artifacts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-")); await writeFile(join(dir, "agent-computer-arm64"), "fixture");
   const manifest = await makeManifest(dir, "0.1.0", "sha256:image"); await writeRelease(dir, manifest); await verifyRelease(dir, manifest);
   await writeFile(join(dir, "agent-computer-arm64"), "tampered"); await assert.rejects(() => verifyRelease(dir, manifest), /checksum mismatch/);
+});
+
+test("release manifest signatures fail closed after tampering", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-signature-"));
+  await writeFile(join(dir, "agent-computer-arm64"), "fixture");
+  const manifest = await makeManifest(dir, "0.1.0", "sha256:image");
+  const keys = generateKeyPairSync("ed25519");
+  const signed = signManifest(manifest, keys.privateKey, "test-key");
+  verifyManifestSignature(signed, keys.publicKey);
+  assert.throws(() => verifyManifestSignature({ ...signed, version: "tampered" }, keys.publicKey), /signature verification failed/);
 });

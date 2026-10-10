@@ -39,3 +39,5 @@
 - Slice 01b now ships a pinned ARM64 BuildKit path, probe-backed manifest, and compiled guest service entrypoint. Docker and Apple Silicon gates remain open because they require external hardware.
 - Convex production schema/functions are in `packages/state/convex`, with `convex-test` exercising the real transaction handlers and `ConvexRelayStateRepository` using function references.
 - Vercel is a thin Web Request adapter over the repository; the host uses bounded outbound `/host/poll` and `/host/responses` calls. A deployment can select Convex through `CONVEX_URL` without changing route code.
+- MCP stays an adapter: its Vercel entrypoint validates bearer tokens through the durable Convex repository and then uses the same remote `AgentClient` catalog as CLI; the fixture OAuth server remains local-test-only.
+- Release manifests use Ed25519 signatures over canonical JSON, while artifact checksums and ARM64 metadata remain independently verified. Apple notarization and installer credentials are release-environment work.
