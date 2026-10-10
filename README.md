@@ -86,10 +86,26 @@ explicit unsigned packaging checks.
 Install a signed release with `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`. The
 installer verifies checksums and the Ed25519 manifest, keeps versioned app/CLI
 trees behind an atomic `releases/active` link, materializes the launchd plist,
-creates the owner-only IPC token, and loads the daemon. Use
+creates the owner-only IPC token, and loads the daemon plus the automatic
+GitHub release updater. `localbox update check` inspects the latest release;
+`localbox update install` downloads, verifies, installs, and then refreshes a
+managed global skill. Use
 `scripts/rollback-release.sh VERSION` to select an older verified tree; use
 `scripts/uninstall.sh` to remove launchd and the CLI link while preserving VM
 state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or fixture install.
+
+The tagged-release workflow is `.github/workflows/release.yml`. It expects
+repository variables for the pinned ARM64 kernel, initrd, template disk, image
+digest, and release public key, plus secrets for the Ed25519 release key,
+Apple signing identity, and password. The workflow publishes the app, CLI,
+manifest, and checksums to GitHub Releases. The updater trusts the public key
+configured by the installer and refuses unsigned or mismatched artifacts. The
+manifest may carry public-key metadata for inspection, but it is never used as
+the trust root for its own signature. Set `LOCALBOX_RELEASE_REPOSITORY` during
+installation when the release repository is not the default
+`dzhng/agent-computer`. Automatic installs leave the running updater job loaded
+while the new active release is switched, so the updater cannot terminate its
+own install process.
 
 ## References
 

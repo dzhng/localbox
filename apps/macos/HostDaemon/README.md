@@ -37,6 +37,11 @@ must materialize its paths, create the token file with mode `0600`, load it with
 The repository installer does that materialization in a versioned release root:
 `scripts/install-release.sh` verifies the manifest before extracting, points
 launchd at the atomic `releases/active` app, and leaves prior verified trees in
-place for `scripts/rollback-release.sh`. `scripts/uninstall.sh` removes only
-the launchd registration and CLI link by default, so the VM disk and token are
-not deleted during an ordinary uninstall.
+place for `scripts/rollback-release.sh`. It also installs
+`com.localbox.updater`, a six-hour launchd job that runs the bundled updater;
+the updater verifies the signed GitHub manifest before replacing the active
+release and refreshes a managed global skill afterward. An automatic install
+leaves that updater job loaded while it switches the active release, so the
+updater cannot terminate its own installer. `scripts/uninstall.sh`
+removes both launchd registrations and the CLI link by default, so the VM disk
+and token are not deleted during an ordinary uninstall.

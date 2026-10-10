@@ -7,13 +7,20 @@ description: Install and operate Localbox through its CLI, with optional MCP.
 
 Install the signed arm64 release, verify `release.json` and `SHA256SUMS`, then
 run `localbox status`. The installer places the app at
-`~/Applications/Localbox.app` and the CLI at `~/.local/bin/localbox`.
+`~/Library/Application Support/Localbox/releases/active/Localbox.app` and the
+CLI at `~/.local/bin/localbox`.
 
 ## Everyday use
 
 Use `localbox vm start`, `localbox shell exec -- <command>`, and
 `localbox status`. The CLI works without MCP. Run `localbox auth login`
 before remote use; configure MCP OAuth only when a client needs tool discovery.
+Use `localbox update check` to inspect GitHub Releases and
+`localbox update install` to install a verified update. The installed launchd
+job performs the same check automatically every six hours. Use
+`localbox skill status`, `localbox skill install`, and `localbox skill update`
+to manage the global Localbox skill for Codex and Claude; managed skills are
+refreshed after an app update.
 
 ## Recovery
 

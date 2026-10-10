@@ -60,8 +60,16 @@ if [ -z "$IDENTITY" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
   SIGNING_KEYCHAIN="$SIGNING_WORK/signing.keychain-db"
   SIGNING_PASSWORD=$(openssl rand -hex 24)
   LOCAL_SIGNING_DIR=${LOCALBOX_SIGNING_DIR:-${HOME:-}/dev/screen-recorder/.release-signing}
-  LOCAL_P12="$LOCAL_SIGNING_DIR/release-identity.p12"
-  LOCAL_PASSWORD="$LOCAL_SIGNING_DIR/release-identity-password.txt"
+  LOCAL_P12=${LOCALBOX_SIGNING_P12:-$LOCAL_SIGNING_DIR/release-identity.p12}
+  LOCAL_PASSWORD=${LOCALBOX_SIGNING_P12_PASSWORD_FILE:-$LOCAL_SIGNING_DIR/release-identity-password.txt}
+  if [ -n "${LOCALBOX_SIGNING_P12_PASSWORD:-}" ]; then
+    printf '%s\n' "$LOCALBOX_SIGNING_P12_PASSWORD" > "$SIGNING_WORK/p12-password.txt"
+    LOCAL_PASSWORD="$SIGNING_WORK/p12-password.txt"
+  fi
+  if [ -n "${LOCALBOX_SIGNING_P12:-}" ] && [ ! -f "$LOCAL_PASSWORD" ]; then
+    echo "LOCALBOX_SIGNING_P12_PASSWORD or LOCALBOX_SIGNING_P12_PASSWORD_FILE is required" >&2
+    exit 1
+  fi
   if [ -f "$LOCAL_P12" ] && [ -f "$LOCAL_PASSWORD" ]; then
     SIGNING_P12_PASSWORD=$(cat "$LOCAL_PASSWORD")
     python3 - "$LOCAL_P12" "$SIGNING_WORK/identity.p12" <<'PY'
@@ -147,6 +155,7 @@ EOF
 cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd" 2>/dev/null \
   || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd"
 cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.hostd.plist" "$APP/Contents/Resources/com.localbox.hostd.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.updater.plist" "$APP/Contents/Resources/com.localbox.updater.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
 cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
 cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"
@@ -157,6 +166,9 @@ mkdir -p "$CLI/dist" "$CLI/bin"
 cp -R "$ROOT/dist/apps" "$CLI/dist/apps"
 cp -R "$ROOT/dist/packages" "$CLI/dist/packages"
 cp -R "$ROOT/dist/scripts" "$CLI/dist/scripts"
+mkdir -p "$CLI/scripts"
+cp "$ROOT/scripts/install-release.sh" "$ROOT/scripts/rollback-release.sh" "$CLI/scripts/"
+cp -R "$ROOT/skills/localbox" "$CLI/skill"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$CLI/"
 NODE_BIN=${LOCALBOX_NODE_BIN:-}
 if [ -z "$NODE_BIN" ]; then NODE_BIN=$(command -v node || true); fi
@@ -175,6 +187,7 @@ set -eu
 SELF=$0
 if [ -L "$SELF" ]; then SELF=$(readlink "$SELF"); fi
 ROOT=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+export LOCALBOX_SKILL_SOURCE="${LOCALBOX_SKILL_SOURCE:-$ROOT/skill}"
 exec "$ROOT/node" "$ROOT/dist/apps/cli/src/index.js" "$@"
 EOF
 chmod 0755 "$CLI/bin/localbox"
@@ -219,12 +232,17 @@ fi
 
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
+import { createPublicKey } from "node:crypto";
 import { makeManifest, signManifest, writeRelease } from "./dist/scripts/release.js";
 const dir = process.env.RELEASE_DIR;
 const version = process.env.RELEASE_VERSION;
 const imageDigest = process.env.RELEASE_IMAGE_DIGEST;
 let manifest = await makeManifest(dir, version, imageDigest);
-if (process.env.RELEASE_PRIVATE_KEY) manifest = signManifest(manifest, readFileSync(process.env.RELEASE_PRIVATE_KEY), process.env.RELEASE_KEY_ID || "release");
+if (process.env.RELEASE_PRIVATE_KEY) {
+  const privateKey = readFileSync(process.env.RELEASE_PRIVATE_KEY);
+  const publicKey = createPublicKey(privateKey).export({ type: "spki", format: "pem" }).toString();
+  manifest = signManifest({ ...manifest, public_key: publicKey }, privateKey, process.env.RELEASE_KEY_ID || "release");
+}
 await writeRelease(dir, manifest);
 NODE
 

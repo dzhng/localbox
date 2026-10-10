@@ -15,6 +15,8 @@ import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, t
 import { authorizationUrl, createPkcePair, exchangeAuthorizationCode, refreshAccessToken, type OAuthTokenResponse } from "../../../packages/client/src/auth.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
+import { SkillManager } from "./skill-manager.js";
+import { checkForUpdate, installLatest } from "./updater.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const execFileAsync = promisify(execFile);
@@ -51,6 +53,8 @@ function printUsage(): void {
     "  auth login [TOKEN]               Authenticate remote transport",
     "  login [TOKEN]                    Alias for auth login",
     "  mcp install [--json]             Print optional MCP installation config",
+    "  update check|install [--json]    Check or install the latest GitHub release",
+    "  skill status|install|update|uninstall  Manage the global Localbox skill",
     "  invoke OPERATION [options]       Invoke any catalog operation",
     "  help [OPERATION]                 Show catalog-generated schemas",
     "  contract probe|generate-snapshots  Inspect contract fixtures", "",
@@ -228,6 +232,15 @@ async function main(): Promise<void> {
     const endpoint = process.env.LOCALBOX_MCP_URL ?? process.env.LOCALBOX_RESOURCE ?? "https://relay.example.test/mcp";
     const config = { mcpServers: { "localbox": { url: endpoint } }, oauth: { resource: endpoint } };
     process.stdout.write(`${JSON.stringify(config, null, 2)}\n`); return;
+  }
+  if (group === "update" && (subcommand === "check" || subcommand === "install")) {
+    const result = subcommand === "check" ? await checkForUpdate() : await installLatest({ automatic: rest.includes("--auto") });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); return;
+  }
+  if (group === "skill" && ["status", "install", "update", "uninstall"].includes(subcommand ?? "")) {
+    const manager = new SkillManager();
+    const result = subcommand === "status" ? await manager.status() : subcommand === "install" ? await manager.install() : subcommand === "update" ? await manager.update() : await manager.uninstall();
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); return;
   }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }
   const client = await makeClient();

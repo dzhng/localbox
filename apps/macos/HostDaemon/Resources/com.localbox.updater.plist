@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.localbox.updater</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/USER/.local/bin/localbox</string><string>update</string><string>install</string><string>--auto</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCALBOX_AUTO_UPDATE</key><string>1</string>
+    <key>LOCALBOX_INSTALL_ROOT</key><string>~/Library/Application Support/Localbox</string>
+    <key>LOCALBOX_RELEASE_REPOSITORY</key><string>dzhng/agent-computer</string>
+    <key>LOCALBOX_RELEASE_PUBLIC_KEY</key><string></string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>~/Library/Logs/Localbox/updater.log</string>
+  <key>StandardErrorPath</key><string>~/Library/Logs/Localbox/updater.error.log</string>
+</dict>
+</plist>

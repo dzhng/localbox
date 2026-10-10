@@ -10,7 +10,9 @@
     "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots",
     "dev:local": "tsx scripts/local-vercel.ts",
     "image:build": "tsx packages/vm-image/scripts/build-arm64-image.ts",
-    "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts"
+    "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts",
+    "release": "sh scripts/release.sh",
+    "update": "tsx apps/cli/src/index.ts update"
   },
   "bin": {
     "localbox": "bin/localbox.js"

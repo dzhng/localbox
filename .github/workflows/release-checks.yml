@@ -1,0 +1,43 @@
+name: Localbox release checks
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/**
+      - apps/cli/**
+      - apps/macos/HostDaemon/**
+      - packages/vm-image/**
+      - scripts/release*
+      - scripts/install-release.sh
+      - scripts/rollback-release.sh
+      - scripts/uninstall.sh
+      - skills/localbox/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - apps/cli/**
+      - apps/macos/HostDaemon/**
+      - packages/vm-image/**
+      - scripts/release*
+      - scripts/install-release.sh
+      - scripts/rollback-release.sh
+      - scripts/uninstall.sh
+      - skills/localbox/**
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: swift test --package-path apps/macos/HostDaemon
