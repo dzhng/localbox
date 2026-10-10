@@ -47,5 +47,5 @@ of MCP.
 
 - [Agent Computer rationale](specs/done/agent-computer/README.md)
 - [Security model](SECURITY.md)
-- [Duet VM desktop reference](../duet/specs/done/vm-desktop/README.md)
-- [Screen-recorder CLI and skill reference](../screen-recorder/README.md)
+- Duet VM desktop reference: `~/dev/duet/specs/done/vm-desktop/README.md`
+- Screen-recorder CLI and skill reference: `~/dev/screen-recorder/README.md`

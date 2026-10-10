@@ -137,3 +137,14 @@ confirmed reset. The plan required explicit confirmation but did not specify
 how a valid disk returns. `AppleVMConfiguration.templateDiskURL` now owns that
 source, and missing templates fail closed. Verdict: sound; a reset either
 restores a valid image or leaves the original disk in place. Confidence: high.
+
+### Vercel has a separate bounded body ceiling for host responses — high confidence
+
+The normal relay frame limit remains the inline safety limit. The Web Request
+parser may accept a larger, explicitly configured body only on the path where a
+host response is converted into a signed blob reference; the adapter still
+stores the bounded reference rather than the large payload. Without this split,
+the parser would reject the very response it was meant to externalize. The
+ceiling is finite and must be configured with the deployment's provider limit.
+Verdict: sound; it preserves the inline cap while making externalization
+possible. Confidence: high.
