@@ -15,6 +15,17 @@ test("Vercel handler maps Web Requests to the stateless relay adapter", async ()
   assert.equal((await response.json()).request_id, "req");
 });
 
+test("Vercel relay rejects malformed and oversized JSON before repository access", async () => {
+  const harness = await createLocalConvexHarness();
+  const handle = createVercelRelayHandler(harness.client(), { resource: "https://relay.test/mcp" });
+  const malformed = await handle(new Request("https://relay.test/v1/requests", { method: "POST", body: "{" }));
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error, "invalid_json");
+  const oversized = await handle(new Request("https://relay.test/v1/requests", { method: "POST", body: "x".repeat(1024 * 1024 + 1) }));
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error, "payload_too_large");
+});
+
 test("host poller dispatches leased frames and posts the response", async () => {
   const harness = await createLocalConvexHarness();
   const repo = harness.client();
