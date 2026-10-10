@@ -144,7 +144,7 @@ export class InMemoryBlobProvider implements BlobProvider {
 export function isBlobReference(value: unknown): value is BlobReference {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<BlobReference>;
-  return candidate.kind === BLOB_REFERENCE_KIND && typeof candidate.blob_id === "string" && typeof candidate.download_url === "string" && typeof candidate.sha256 === "string" && typeof candidate.size_bytes === "number" && Number.isSafeInteger(candidate.size_bytes) && typeof candidate.content_type === "string" && typeof candidate.expires_at === "number" && Number.isSafeInteger(candidate.expires_at);
+  return candidate.kind === BLOB_REFERENCE_KIND && typeof candidate.blob_id === "string" && candidate.blob_id.length > 0 && typeof candidate.download_url === "string" && candidate.download_url.length > 0 && typeof candidate.sha256 === "string" && /^sha256:[0-9a-f]{64}$/.test(candidate.sha256) && typeof candidate.size_bytes === "number" && Number.isSafeInteger(candidate.size_bytes) && candidate.size_bytes >= 0 && typeof candidate.content_type === "string" && candidate.content_type.length > 0 && typeof candidate.expires_at === "number" && Number.isSafeInteger(candidate.expires_at) && candidate.expires_at > 0;
 }
 
 function parseSignedReference(value: string | BlobReference): { blobId: string; expiresAt: number; signature: string } {
