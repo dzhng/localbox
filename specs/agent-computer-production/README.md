@@ -26,7 +26,7 @@ The existing `specs/done/agent-computer` material is the testable foundation and
 - `packages/contract` owns operation IDs, input schemas, envelopes, limits, idempotency, and generated CLI/MCP help.
 - `packages/client` owns request identity, explicit retry/uncertainty behavior, and transport selection.
 - `packages/guest-gateway` plus the in-VM guest agent own shell/filesystem/jobs and the mutation journal. The relay never executes handlers.
-- `GuestGateway` owns the guest-side shell, filesystem, job, browser, and desktop catalog. Its desktop runtime is a bounded backend seam; the signed image and Apple gate still need the Chromium/CDP and XFCE/VNC wiring that turns those handlers into the production desktop.
+- `GuestGateway` owns the guest-side shell, filesystem, job, browser, and desktop catalog. The production image starts loopback Xvfb/XFCE/VNC/Chromium and selects the CDP/X11 backend; the signed image and Apple gate still need hardware validation.
 - `HostDaemon` intercepts VM lifecycle operations at the authenticated local IPC boundary, so `vm.start`, `vm.stop`, `vm.pause`, `vm.reset`, status, logs, and listing operate on the native lifecycle owner before guest forwarding.
 - The macOS `HostDaemon` owns VM lifecycle, image verification, guest channel, reconnect, and local IPC. The Swift probe validates it; it is not a second lifecycle owner.
 - `RelayStateRepository` is the only durable relay/OAuth authority. Convex is its production implementation; the local harness implements the same transaction interface.
@@ -132,4 +132,4 @@ Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk thro
 - [x] Blob payload seam: signed expiring references, local and Vercel Blob providers, relay download path, and guest/relay large-result integration; deployed token/smoke remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, Ed25519 release-manifest signing, verified atomic release activation/rollback, ARM64 app/CLI packaging, bundled Node runtime, and clean-machine install/rollback scripts; production signing/notarization and hardware smoke remain pending.
-- [x] Local closeout: 66 TypeScript tests, 9 Swift HostDaemon tests, `npm run build`, Swift build, image verification, full catalog Web Request/host-poller parity, guest catalog smoke, and relay lease-owner regressions pass.
+- [x] Local closeout: 69 TypeScript tests, 9 Swift HostDaemon tests, `npm run build`, Swift build, image verification, full catalog Web Request/host-poller parity, guest catalog smoke, production desktop handler smoke, and relay lease-owner regressions pass.

@@ -18,7 +18,9 @@ Configuration comes from environment variables:
   X11 desktop backend. Chromium must expose loopback CDP (default
   `http://127.0.0.1:9222`); `AGENT_COMPUTER_CDP_URL` overrides that endpoint,
   and `DISPLAY` selects the X11 display. Without this variable the deterministic
-  fixture desktop remains active for probes and local tests.
+  fixture desktop remains active for probes and local tests. The production
+  ARM64 image sets this automatically after starting its loopback Xvfb, XFCE,
+  VNC, and Chromium services.
 
 The first output frame is `ready`, containing the VM ID, channel epoch,
 inventory digest, and readiness marker. Requests with a stale epoch or VM ID
