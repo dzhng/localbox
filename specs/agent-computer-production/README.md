@@ -126,4 +126,4 @@ Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk thro
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
 - [x] Blob payload seam: signed expiring references, local and Vercel Blob providers, relay download path, and guest/relay large-result integration; deployed token/smoke remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
-- [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, Ed25519 release-manifest signing, and verified atomic release activation/rollback; notarization/installer and hardware smoke remain pending.
+- [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, Ed25519 release-manifest signing, verified atomic release activation/rollback, and ARM64 app/CLI packaging; production signing/notarization and hardware smoke remain pending.

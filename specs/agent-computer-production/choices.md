@@ -107,6 +107,21 @@ the same activation path, so a bad or interrupted upgrade cannot replace the
 currently selected release with a partially verified tree. Version and artifact
 names are confined to the release root.
 
+### The release artifact is a signed app plus compiled CLI archive — medium confidence
+
+The release command packages the HostDaemon executable and launchd resources in
+an app bundle, while the CLI ships as a self-contained archive containing the
+compiled catalog/client packages and production dependencies. The VM kernel,
+initrd, immutable template disk, and versioned `Info.plist` are copied or
+generated in the app resources before the manifest is written. This keeps the
+host lifecycle owner and the agent's primary CLI install in one versioned
+release; the alternative was shipping a source checkout and a development
+`tsx` wrapper that cannot run on a clean machine. The bundle declares the Apple
+Virtualization entitlement, but signing and notarization remain release-
+environment inputs. Verdict: sound as the packaging boundary; confidence:
+medium because the team's final installer layout and signing identity are still
+environment choices.
+
 ### Large and binary results use signed blob references — high confidence
 
 Inline JSON remains the default. When a result exceeds the configured inline

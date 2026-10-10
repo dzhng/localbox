@@ -46,6 +46,15 @@ After deployment, `agent-computer mcp install --json` prints the optional MCP
 configuration for agents. CLI login and catalog operations remain independent
 of MCP.
 
+On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
+app bundle, compiled CLI, VM artifacts, checksums, and release manifest. Set
+`AGENT_COMPUTER_KERNEL`, `AGENT_COMPUTER_INITRD`, and
+`AGENT_COMPUTER_TEMPLATE_DISK` to the published VM inputs, then provide
+`APPLE_SIGNING_IDENTITY`, `NOTARY_PROFILE`, and `RELEASE_PRIVATE_KEY` (a path to
+the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
+reserved for local packaging checks;
+it cannot satisfy the virtualization or distribution gates.
+
 ## References
 
 - [Agent Computer rationale](specs/done/agent-computer/README.md)
