@@ -47,6 +47,22 @@ the response. Vercel functions validate credentials and call repository
 transactions; they never execute guest operations or keep an in-memory queue.
 This makes cold starts safe and keeps all connectivity outbound from the Mac.
 
+### The host waits for a guest readiness frame before serving requests — high confidence
+
+When Apple Virtualization starts the VM, the backend creates a named
+virtio-console port and connects it to two host pipes. `GuestService` sends a
+length-prefixed JSON readiness frame first; `HostDaemon` consumes that frame
+before changing the lifecycle to ready, and later frames carry request
+responses. The alternative would mark the VM ready immediately after the
+hypervisor reports “started,” which lets the CLI race a guest process that is
+still booting. Keeping framing in one `FramedFileHandleGuestChannel` actor also
+serializes writes and bounds each frame.
+
+The plan did not specify the host-side byte transport or readiness ordering;
+this choice constrains the guest entrypoint and the future launchd/socket
+packaging. Verdict: sound, because it makes readiness observable at the
+consumer boundary and matches the guest framing contract. Confidence: high.
+
 ### The ARM64 image is reproducible and probe-backed — high confidence
 
 The builder requires an immutable base digest, pinned Debian snapshot and
