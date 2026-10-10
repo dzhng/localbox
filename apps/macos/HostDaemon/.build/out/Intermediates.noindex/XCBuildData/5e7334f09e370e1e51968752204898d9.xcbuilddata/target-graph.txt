@@ -1,0 +1,11 @@
+Target dependency graph (4 targets)
+Target 'AllIncludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'HostDaemonCoreTests-product' in project 'HostDaemon'
+➜ Dependency on target 'HostDaemonCoreTests-product' in project 'HostDaemon' via transitive dependency through 'HostDaemonCoreTests-test-runner'
+➜ Explicit dependency on target 'HostDaemonCore-product' in project 'HostDaemon'
+➜ Explicit dependency on target 'HostDaemonCore' in project 'HostDaemon'
+Target 'HostDaemonCore-product' in project 'HostDaemon'
+➜ Explicit dependency on target 'HostDaemonCore' in project 'HostDaemon'
+Target 'HostDaemonCoreTests-product' in project 'HostDaemon'
+➜ Explicit dependency on target 'HostDaemonCore' in project 'HostDaemon'
+Target 'HostDaemonCore' in project 'HostDaemon' (no dependencies)

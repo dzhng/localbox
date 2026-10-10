@@ -34,3 +34,4 @@
 ## Implementation evidence
 
 - Slice 01a is split from the original broad image slice: manifest/inventory/framing can be verified in CI, while real image build and guest execution remain an explicit hardware-gated slice 01b.
+- Slice 02 is materialized as a lifecycle seam first: the Swift actor and native VZ owner are testable now, while guest readiness, local IPC, and real image boot remain hardware-gated work.

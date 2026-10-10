@@ -1,0 +1,4 @@
+module HostDaemonCore {
+header "HostDaemonCore-Swift.h"
+export *
+}

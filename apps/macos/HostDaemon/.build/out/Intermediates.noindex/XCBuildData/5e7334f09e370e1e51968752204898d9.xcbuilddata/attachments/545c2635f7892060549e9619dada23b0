@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests-primary.dia",
+    "emit-module-dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests-primary-emit-module.dia",
+    "pch" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests-primary.swiftdeps"
+  },
+  "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/Tests/HostDaemonCoreTests/HostDaemonCoreTests.swift" : {
+    "const-values" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.swiftconstvalues",
+    "dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.d",
+    "diagnostics" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.dia",
+    "index-unit-output-path" : "/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.o",
+    "llvm-bc" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.bc",
+    "object" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.o",
+    "swift-dependencies" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests.swiftdeps",
+    "swiftmodule" : "/Users/server/.t3/worktrees/agent-computer/t3code-44b212b5/apps/macos/HostDaemon/.build/out/Intermediates.noindex/HostDaemon.build/Debug/HostDaemonCoreTests-p.build/Objects-normal/arm64/HostDaemonCoreTests~partial.swiftmodule"
+  }
+}
