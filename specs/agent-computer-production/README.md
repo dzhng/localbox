@@ -4,7 +4,7 @@
 
 Ship Agent Computer as a usable product: a signed macOS Apple Silicon host runs one durable Linux ARM64 VM; the host maintains an outbound HTTPS polling connection to a Vercel relay; Convex is the durable control-plane state; a logged-in CLI is the default interface; and an optional MCP endpoint exposes the same complete operation catalog. One owner account may connect any number of agents to the same MCP server. There is no invite workflow.
 
-The existing `specs/done/agent-computer` material is the testable foundation and evidence base. It is not the production implementation: native VM boot, real guest execution, durable relay state, full CLI parity, image publication, and signed distribution remain to be built.
+The existing `specs/done/agent-computer` material is the testable foundation and evidence base. This spec now owns the production seams for native VM boot, guest execution, durable relay state, full CLI parity, image verification, and signed release activation; the remaining work is evidence from Apple hardware, deployed services, and the release team's signing environment.
 
 ## Settled decisions
 
