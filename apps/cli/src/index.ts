@@ -8,6 +8,8 @@ import {
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, type TransportKind } from "../../../packages/client/src/index.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
+import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
+import { desktopHandlers, DesktopRuntime } from "../../../packages/desktop/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const args = process.argv.slice(2);
@@ -68,7 +70,12 @@ async function hasAuth(): Promise<boolean> {
 
 async function makeClient(): Promise<AgentClient> {
   const kind: TransportKind = process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local";
-  const transport = fixtureTransport(kind, new FakeDispatcher());
+  const guestRoot = resolve(root, ".agent-computer/guest");
+  await mkdir(guestRoot, { recursive: true });
+  const guest = new GuestGateway({ root: guestRoot });
+  const { runtime: _desktopRuntime, ...desktop } = desktopHandlers(new DesktopRuntime());
+  const handlers = { ...guest.handlers(), ...desktop } as any;
+  const transport = fixtureTransport(kind, new FakeDispatcher({ handlers }));
   if (kind === "remote" && !(await hasAuth())) transport.setUnauthorized();
   return new AgentClient({ transport });
 }
