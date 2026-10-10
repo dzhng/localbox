@@ -21,7 +21,7 @@ if (!imageRef) throw new Error("IMAGE_REF is required");
 const pinsPath = resolve(process.env.IMAGE_INPUTS ?? process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image", "build-inputs.json");
 const pins = JSON.parse(await (await import("node:fs/promises")).readFile(pinsPath, "utf8")) as ImageBuildPins;
 const report: ImageProbeReport = { architecture: "", binaries: {}, pythonModules: {}, loopbackBindings: [], readinessMarker: false };
-const identity = await run(["run", "--rm", "--platform", "linux/arm64", imageRef, "sh", "-lc", "printf '%s|%s|%s|%s\\n' \"$(dpkg --print-architecture 2>/dev/null || uname -m)\" \"${AGENT_COMPUTER_IMAGE_VERSION:-unknown}\" \"${AGENT_COMPUTER_LOOPBACK_BINDINGS:-}\" \"$(test -e /run/agent-computer/ready && echo ready || echo absent)\""]);
+const identity = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", "printf '%s|%s|%s|%s\\n' \"$(dpkg --print-architecture 2>/dev/null || uname -m)\" \"${AGENT_COMPUTER_IMAGE_VERSION:-unknown}\" \"${AGENT_COMPUTER_LOOPBACK_BINDINGS:-}\" \"$(test -e /run/agent-computer/ready && echo ready || echo absent)\""]);
 const [architecture, _version, bindings, readiness] = identity.trim().split("|");
 report.architecture = architecture;
 report.loopbackBindings = bindings ? bindings.split(",").filter(Boolean) : [];
@@ -33,7 +33,7 @@ for (const name of DUET_REQUIRED_TOOL_NAMES) {
     ? `python3 -c 'import ${spec.importName}; print(${JSON.stringify(spec.importName)}.__version__ if hasattr(${JSON.stringify(spec.importName)}, "__version__") else "ok")'`
     : `command -v ${name} && ${spec.probe}`;
   try {
-    const output = await run(["run", "--rm", "--platform", "linux/arm64", imageRef, "sh", "-lc", `set -eu; ${command}`]);
+    const output = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", `set -eu; ${command}`]);
     if (spec.kind === "python") report.pythonModules[name] = { ok: true, version: output.trim().split("\n").at(-1) };
     else report.binaries[name] = { ok: true, path: output.trim().split("\n")[0], version: output.trim().split("\n").at(-1), machine: "aarch64" };
   } catch (error) {

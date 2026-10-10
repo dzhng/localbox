@@ -54,7 +54,7 @@ const buildArgs = [
 ];
 await run("docker", buildArgs);
 if (process.env.IMAGE_SKIP_PROBE !== "1") {
-  await run("tsx", [join(root, "packages/vm-image/scripts/verify-arm64-image.ts")]);
+  await run("env", [`IMAGE_REF=${imageRef}`, `IMAGE_INPUTS=${join(output, "build-inputs.json")}`, `IMAGE_OUTPUT_DIR=${output}`, "tsx", join(root, "packages/vm-image/scripts/verify-arm64-image.ts")]);
 }
 const manifest = buildImageManifest({ pins, tools: DUET_REQUIRED_TOOL_INVENTORY });
 // The verifier writes the complete probe-backed manifest. This placeholder is
