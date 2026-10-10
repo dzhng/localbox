@@ -1,0 +1,7 @@
+{
+  "schema": "agent-computer.release.v1",
+  "version": "0.1.0",
+  "imageDigest": "sha256:unreleased",
+  "artifacts": [],
+  "minimumMacOS": "13.0"
+}

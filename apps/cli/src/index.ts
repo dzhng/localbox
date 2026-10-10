@@ -7,6 +7,7 @@ import {
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, type TransportKind } from "../../../packages/client/src/index.js";
+import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const args = process.argv.slice(2);
@@ -36,6 +37,7 @@ function printUsage(): void {
     "Commands:",
     "  status [--json]                 Show VM, relay, and egress status",
     "  vm probe [--json]               Run the host virtualization viability probe",
+    "  recovery probe [--json]         Emit injected recovery timeline",
     "  vm start|stop|pause [--json]    Change VM lifecycle",
     "  shell exec [--json] -- CMD ...  Execute a guest shell command",
     "  auth login [TOKEN]               Authenticate remote transport",
@@ -96,6 +98,7 @@ async function main(): Promise<void> {
   }
   if (group === "contract" && subcommand === "generate-snapshots") { await writeSnapshots(); return; }
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
+  if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
   if (group === "auth" && subcommand === "login") {
     const token = rest[0] ?? process.env.AGENT_COMPUTER_TOKEN ?? "fixture-token";
     await saveAuth(token);
