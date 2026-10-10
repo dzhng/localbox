@@ -299,3 +299,7 @@ same non-empty owner in both the local and Convex implementations, and the HTTP
 route requires that field. The alternative allowed one host to complete another
 host's request. Verdict: sound, because ownership is checked at the transaction
 that changes the request state. Confidence: high.
+
+### Production desktop is a loopback X11/Chromium backend selected by the image — sound, medium confidence
+
+When a guest receives `browser.open` or `desktop.click`, the operation must reach a real desktop rather than the deterministic test runtime. The image now starts Xvfb (a virtual X display), XFCE, loopback-only VNC, and Chromium with CDP (Chrome DevTools Protocol) on `127.0.0.1`; the guest agent injects handlers that use CDP for browser actions and `xdotool`/ImageMagick for desktop actions. The standalone agent still defaults to fixtures for probes, while the production image sets the backend explicitly. The plan named Chromium/CDP and XFCE/VNC but left process startup and the Node 18 WebSocket gap unspecified. Keeping all listeners loopback-only avoids exposing the desktop through the relay, and using `undici` as an explicit runtime dependency supplies WebSocket support where Node 18 has no global implementation. Verdict: sound; the remaining uncertainty is hardware boot and real Chromium/X11 behavior on the signed image. Confidence: medium.
