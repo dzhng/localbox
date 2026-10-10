@@ -6,3 +6,5 @@ dist/
 build/
 apps/macos/VMProbe/.build/
 .turbo/
+
+apps/macos/**/.build/
