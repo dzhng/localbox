@@ -284,11 +284,11 @@ The image entrypoint now registers every catalog operation through
 `GuestGateway`; the CLI fixture uses that same handler map instead of layering a
 second desktop map over it. This means a production guest no longer answers
 browser, desktop, job, network, or status calls with an accidental
-`unsupported` response. The current desktop implementation is still a bounded
-backend seam until the signed image wires Chromium/CDP and XFCE/VNC, so that
-hardware/integration gate remains explicit. Verdict: sound for ownership and
-parity; the real desktop backend is an external implementation gate. Confidence:
-medium.
+`unsupported` response. The production image now wires Chromium/CDP and
+XFCE/VNC through a bounded backend seam; hardware boot and signed-image
+integration remain explicit validation gates. Verdict: sound for ownership and
+parity; the remaining desktop uncertainty is environmental rather than a second
+operation owner. Confidence: medium.
 
 ### Relay responses require the active lease owner — sound, high confidence
 
