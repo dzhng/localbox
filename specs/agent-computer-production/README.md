@@ -64,6 +64,7 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 - Payloads up to the inline limit remain inline; the relay rejects oversized frames. Larger/binary results use the versioned `BlobReference` contract from `packages/blob`, whose signed URLs carry a hash, byte size, content type, and expiry. The in-memory provider is the local harness seam; deployment supplies durable object storage behind the same interface.
 - Guest paths never escape the VM root. Shell process groups, output, deadlines, and egress are bounded.
 - Reset is explicitly confirmed and destructive. Reprovision preserves the disk unless reset was confirmed.
+- A destructive host reset replaces the persistent disk from an immutable template; it never truncates a live disk image.
 - Browser targets are generation-scoped. Desktop geometry is 1440x900, loopback-bound, demand-started, and grace-reaped.
 - Duet inventory verification probes actual ARM64 executables/linkage and Python imports inside the built image; a manifest string alone is insufficient.
 
@@ -103,7 +104,7 @@ The implementer may choose internal names and package layout within the owners a
 
 ## Next Agent Prompt
 
-You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, named virtio-console framing, Convex schema/functions and local harness, Vercel relay/poller, repository-backed MCP OAuth, Keychain-aware CLI token storage, recovery, and signed release manifests. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, then notarized packaging and rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
+You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, named virtio-console framing, safe template-disk reset, Convex schema/functions and local harness, Vercel relay/poller, signed blob references with bounded replay cleanup, repository-backed MCP OAuth, Keychain-aware CLI token storage, recovery, and signed release manifests. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`; HostDaemon has 8 passing Swift tests. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, durable object storage, then notarized packaging and rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
 
 ## Global TODO
 

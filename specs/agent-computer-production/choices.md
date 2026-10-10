@@ -102,10 +102,38 @@ wrong-architecture artifact, and a valid signature cannot hide a changed file.
 ### Large and binary results use signed blob references — high confidence
 
 Inline JSON remains the default. When a result exceeds the configured inline
-threshold, `GuestService` or the relay can place the JSON/binary bytes behind a
+threshold, the guest or relay can place its serialized bytes behind a
 `BlobReference` containing a SHA-256 digest, byte count, content type, expiry,
 and an HMAC-signed download URL. `packages/blob` owns this stable contract and
 ships an in-memory provider for local Convex/relay tests; production object
 storage can implement the same `BlobProvider` interface without changing CLI,
 MCP, or guest envelopes. The relay validates signed URLs itself and never
-turns a blob reference into an unauthenticated public object.
+turns a blob reference into an unauthenticated public object. The gap was the
+payload limit versus screenshot/file-sized results; this keeps normal responses
+cheap while making retries resolve to the original signed reference. Verdict:
+sound, because the digest and size are checked before replay and rejected
+attempts clean up only references they created. Confidence: high.
+
+### Local host IPC uses one bounded length-prefixed request per socket — high confidence
+
+The CLI/daemon boundary is a Unix-domain socket carrying a four-byte
+big-endian length followed by JSON. The server handles one request and closes
+the connection, authenticates before forwarding to `HostDaemon`, refuses to
+replace a non-socket path, and applies owner-only permissions. This choice was
+needed because launchd supplies process lifecycle but does not define an
+application message format. A newline protocol or a long-lived multiplexed
+connection would complicate framing and let one stuck client hold shared state.
+The wire shape is owned by `UnixDomainSocketServer` and `LocalIPCResponse`;
+launchd packaging can wrap it without changing the protocol. Verdict: sound;
+bounded frames and one-request connections make malformed input and cleanup
+observable. Confidence: high.
+
+### Destructive VM reset copies an immutable template disk — high confidence
+
+Reset first stops the VM, copies the configured template image to a temporary
+file, then atomically replaces the persistent disk. The old implementation's
+empty-file reset would leave Virtualization with an invalid disk image after a
+confirmed reset. The plan required explicit confirmation but did not specify
+how a valid disk returns. `AppleVMConfiguration.templateDiskURL` now owns that
+source, and missing templates fail closed. Verdict: sound; a reset either
+restores a valid image or leaves the original disk in place. Confidence: high.
