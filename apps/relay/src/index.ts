@@ -67,3 +67,5 @@ export class ChannelSupervisor {
 
 export function requestFrame(request: RequestEnvelope, epoch: number, sequence = 0): RelayFrame { return { kind: "request", channel_id: "", epoch, sequence, vm_id: request.vm_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms, payload: request }; }
 export function responseFrame(response: ResponseEnvelope, epoch: number, sequence = 0): RelayFrame { return { kind: "response", channel_id: "", epoch, sequence, vm_id: response.vm_id, request_id: response.request_id, payload: response }; }
+
+export * from "./oauth.js";
