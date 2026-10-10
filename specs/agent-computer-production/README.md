@@ -38,7 +38,9 @@ The existing `specs/done/agent-computer` material is the testable foundation and
 ```text
 00 contract + CLI/MCP parity corrections
        |
-01 ARM64 image + real guest agent seam
+01a ARM64 image contract + guest channel framing
+       |
+01b reproducible ARM64 image + real guest agent
        |
 02 native macOS HostDaemon + local CLI transport
        |
@@ -99,7 +101,8 @@ You are resuming `agent-computer-production`. Read this README and the next unco
 ## Global TODO
 
 - [ ] Slice 00: freeze contract and generic CLI/MCP parity, including destructive reset input.
-- [ ] Slice 01: build/publish reproducible ARM64 image and real guest agent.
+- [ ] Slice 01a: freeze image manifest, Duet inventory, and guest channel framing.
+- [ ] Slice 01b: build/publish reproducible ARM64 image and real guest agent.
 - [ ] Slice 02: implement native HostDaemon lifecycle and local IPC transport.
 - [ ] Slice 03: add Convex schema/repository and isolated local harness.
 - [ ] Slice 04: add Vercel polling routes, host poller, and remote CLI transport.

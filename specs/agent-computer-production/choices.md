@@ -30,3 +30,7 @@
 - Exact ARM64 artifact provenance for each Duet tool and browser licensing.
 - Apple Virtualization guest channel/display implementation details.
 - Production identity provider/device bootstrap details and release signing credentials.
+
+## Implementation evidence
+
+- Slice 01a is split from the original broad image slice: manifest/inventory/framing can be verified in CI, while real image build and guest execution remain an explicit hardware-gated slice 01b.
