@@ -65,8 +65,20 @@ export class RelayHttpAdapter {
   private async complete(request: RelayHttpRequest, requestId: string): Promise<RelayHttpResponse> {
     const channel = await this.channel(request); const body = this.object(request.body); const snapshot = await this.repository.snapshot(); const frame = snapshot.requests.find((item) => item.requestId === requestId); if (!frame || frame.ownerId !== channel.ownerId || frame.vmId !== channel.vmId) throw new StateNotFoundError("request not found");
     if (body.response === undefined) throw new StateConflictError("response is required");
-    const response = await this.repository.recordResponse({ requestId, response: await this.externalizeResponse(body.response as Json), leaseOwner: body.lease_owner ? this.string(body.lease_owner) : undefined });
-    return this.json(200, response);
+    const incoming = body.response as Json;
+    const existing = await this.repository.getResponse(requestId);
+    if (existing && await this.responsesEquivalent(existing.response, incoming)) return this.json(200, existing);
+    const normalized = await this.externalizeResponse(incoming);
+    try {
+      const response = await this.repository.recordResponse({ requestId, response: normalized, leaseOwner: body.lease_owner ? this.string(body.lease_owner) : undefined });
+      return this.json(200, response);
+    } catch (error) {
+      if (error instanceof StateConflictError) {
+        const raced = await this.repository.getResponse(requestId);
+        if (raced && await this.responsesEquivalent(raced.response, incoming)) return this.json(200, raced);
+      }
+      throw error;
+    }
   }
   private async downloadBlob(request: RelayHttpRequest): Promise<RelayHttpResponse> {
     if (!this.blobProvider) throw new StateNotFoundError("blob storage is not configured");
@@ -106,6 +118,20 @@ export class RelayHttpAdapter {
     if (encoded.byteLength <= this.blobThresholdBytes) return response;
     const reference = await this.blobProvider.put({ body: encoded, contentType: "application/json" });
     return { ...envelope, result: reference } as unknown as Json;
+  }
+  private async responsesEquivalent(recorded: Json, incoming: Json): Promise<boolean> {
+    if (JSON.stringify(recorded) === JSON.stringify(incoming)) return true;
+    if (!this.blobProvider || !recorded || typeof recorded !== "object" || Array.isArray(recorded) || !incoming || typeof incoming !== "object" || Array.isArray(incoming)) return false;
+    const stored = recorded as Record<string, unknown>;
+    const candidate = incoming as Record<string, unknown>;
+    if (stored.ok !== true || candidate.ok !== true || !isBlobReference(stored.result)) return false;
+    try {
+      const blob = await this.blobProvider.get(stored.result);
+      if (!blob.reference.content_type.toLowerCase().startsWith("application/json")) return false;
+      return JSON.stringify(JSON.parse(Buffer.from(blob.body).toString("utf8"))) === JSON.stringify(candidate.result);
+    } catch {
+      return false;
+    }
   }
   private error(error: unknown): RelayHttpResponse {
     const message = error instanceof Error ? error.message : "relay request failed";
