@@ -22,7 +22,7 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
   && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git gh imagemagick ffmpeg ghostscript jq \
     libreoffice-core-nogui pandoc poppler-utils python3 python3-pip qpdf \
-    tesseract-ocr libvips-tools nodejs python-is-python3 unzip \
+    tesseract-ocr libvips-tools nodejs chromium python-is-python3 unzip \
   && rm -rf /var/lib/apt/lists/*
 
 RUN test -n "$BUN_VERSION" -a -n "$BUN_SHA256" -a -n "$STATIC_WEB_SERVER_VERSION" -a -n "$STATIC_WEB_SERVER_SHA256" \
@@ -38,16 +38,18 @@ RUN test -n "$BUN_VERSION" -a -n "$BUN_SHA256" -a -n "$STATIC_WEB_SERVER_VERSION
   && rm -rf /tmp/bun.zip /tmp/static-web-server.tar.gz /opt/bun-linux-aarch64 /tmp/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu \
   && bun --version && static-web-server --version
 
-COPY requirements-arm64.txt /opt/agent-computer/requirements-arm64.txt
+COPY packages/vm-image/requirements-arm64.txt /opt/agent-computer/requirements-arm64.txt
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
       --requirement /opt/agent-computer/requirements-arm64.txt
 
-# The guest service and readiness marker are installed by the guest-agent slice.
-# This image layer intentionally only establishes the reproducible workflow base.
-COPY image-root/ /opt/agent-computer/image-root/
+# The guest service and readiness marker are installed into the immutable image
+# so the VM starts with the framed service on its virtio-serial stdin/stdout.
+COPY packages/vm-image/image-root/ /opt/agent-computer/image-root/
 COPY dist/ /opt/agent-computer/dist/
+COPY package.json /opt/agent-computer/package.json
 RUN install -d -m 0755 /run/agent-computer /var/lib/agent-computer \
-  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-image-probe /usr/local/bin/agent-computer-image-probe
+  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-image-probe /usr/local/bin/agent-computer-image-probe \
+  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/duet-browser /usr/local/bin/duet-browser
 
 # The guest service owns stdin/stdout (virtio-serial in production). The image
 # probe remains available as a diagnostic command and as the verifier override.

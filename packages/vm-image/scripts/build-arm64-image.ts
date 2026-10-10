@@ -50,8 +50,9 @@ await writeFile(join(output, "build-inputs.json"), `${JSON.stringify(pins, null,
 // the image. The runtime entrypoint is plain Node, so the shipped VM does not
 // depend on tsx or a source checkout.
 await run("npm", ["run", "build"]);
+const useBuildx = process.env.DOCKER_BUILDX === "1";
 const buildArgs = [
-  "buildx", "build", "--platform", "linux/arm64", "--provenance=false", "--sbom=false",
+  ...(useBuildx ? ["buildx", "build", "--platform", "linux/arm64", "--provenance=false", "--sbom=false"] : ["build", "--platform", "linux/arm64"]),
   "--file", join(root, "packages/vm-image/Dockerfile.arm64"),
   "--build-arg", `BASE_IMAGE=${baseImage}`,
   "--build-arg", `DEBIAN_SNAPSHOT=${snapshot}`,
@@ -61,7 +62,7 @@ const buildArgs = [
   "--build-arg", `STATIC_WEB_SERVER_VERSION=${staticWebServerVersion}`,
   "--build-arg", `STATIC_WEB_SERVER_SHA256=${staticWebServerSha256}`,
   "--tag", imageRef,
-  process.env.IMAGE_PUSH === "1" ? "--push" : "--load",
+  ...(useBuildx ? [process.env.IMAGE_PUSH === "1" ? "--push" : "--load"] : []),
   root,
 ];
 await run("docker", buildArgs);

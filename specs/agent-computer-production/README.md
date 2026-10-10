@@ -96,7 +96,7 @@ The implementer may choose internal names and package layout within the owners a
 
 ## Next Agent Prompt
 
-You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, Convex schema/functions and local harness, Vercel relay/poller, durable MCP token validation, Keychain-aware CLI token storage, recovery, and signed release manifests. The remaining work is external release validation: build/probe the image on an ARM64 Docker builder, connect virtio-serial and launchd on Apple Silicon, deploy Convex/Vercel and run internet smoke, then sign/notarize/package and verify rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G1–G7 are green.
+You are resuming `agent-computer-production`. All code-level seams are implemented and committed: pinned ARM64 image/guest entrypoint, authenticated HostDaemon IPC seam, Convex schema/functions and local harness, Vercel relay/poller, durable MCP token validation, Keychain-aware CLI token storage, recovery, and signed release manifests. The local ARM64 Docker gate passed with image digest `sha256:7adaf4b410916c868dee76dcebb581a2d1e0c5fd32449c0987b3522684a82c69` and inventory digest `sha256:b790c8762f8d8a61972cd9811760de53c649a0b0a734e48e6be45522822b2db2`. Remaining external validation is Apple Virtualization/virtio-serial and launchd, deployed Convex/Vercel internet smoke, then notarized packaging and rollback. Keep CLI primary and MCP optional; do not add invites or a second operation/auth owner. Do not claim production usability until gates G2–G7 are green.
 
 ## Global TODO
 
