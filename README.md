@@ -39,6 +39,10 @@ rotation; Convex stores hashes. Build an image with
 `AGENT_COMPUTER_BASE_IMAGE` pinned to an ARM64 digest plus the four artifact
 pin variables documented by `packages/vm-image/scripts/build-arm64-image.ts`.
 
+After deployment, `agent-computer mcp install --json` prints the optional MCP
+configuration for agents. CLI login and catalog operations remain independent
+of MCP.
+
 ## References
 
 - [Agent Computer rationale](specs/done/agent-computer/README.md)

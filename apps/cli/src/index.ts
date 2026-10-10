@@ -51,6 +51,7 @@ function printUsage(): void {
     "  shell exec [--json] -- CMD ...  Execute a guest shell command",
     "  auth login [TOKEN]               Authenticate remote transport",
     "  login [TOKEN]                    Alias for auth login",
+    "  mcp install [--json]             Print optional MCP installation config",
     "  invoke OPERATION [options]       Invoke any catalog operation",
     "  help [OPERATION]                 Show catalog-generated schemas",
     "  contract probe|generate-snapshots  Inspect contract fixtures", "",
@@ -222,6 +223,11 @@ async function main(): Promise<void> {
     if (!token) { process.stderr.write("login requires an OAuth access token or configured OAuth browser endpoints\n"); process.exitCode = 2; return; }
     await saveAuth(token, refreshToken, expiresIn);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.AGENT_COMPUTER_TRANSPORT === "remote" ? "remote" : "local" })); return;
+  }
+  if (group === "mcp" && subcommand === "install") {
+    const endpoint = process.env.AGENT_COMPUTER_MCP_URL ?? process.env.AGENT_COMPUTER_RESOURCE ?? "https://relay.example.test/mcp";
+    const config = { mcpServers: { "agent-computer": { url: endpoint } }, oauth: { resource: endpoint } };
+    process.stdout.write(`${JSON.stringify(config, null, 2)}\n`); return;
   }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }
   const client = await makeClient();

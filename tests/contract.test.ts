@@ -103,4 +103,8 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   const login = spawnSync(process.execPath, ["bin/agent-computer.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, AGENT_COMPUTER_AUTH_FILE: "/tmp/agent-computer-test-auth.json" } });
   assert.equal(login.status, 0);
   assert.equal(JSON.parse(login.stdout).result.authenticated, true);
+
+  const mcp = spawnSync(process.execPath, ["bin/agent-computer.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, AGENT_COMPUTER_MCP_URL: "https://computer.example/mcp" } });
+  assert.equal(mcp.status, 0);
+  assert.equal(JSON.parse(mcp.stdout).mcpServers["agent-computer"].url, "https://computer.example/mcp");
 });
