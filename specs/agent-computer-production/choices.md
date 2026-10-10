@@ -40,6 +40,12 @@ are written through Convex functions. The local `convex-test` harness and the
 in-memory repository are doubles of that transaction interface, not competing
 authorities. A server restart therefore replays the same durable state rules.
 
+The production Convex directory contains only the schema and deployed
+transactions; the `convex-test` harness lives beside it in the state package.
+This keeps test-only imports out of a real Convex push while preserving the
+same function references for local tests. Verdict: sound; deployment and test
+authority have one contract with separate build surfaces. Confidence: high.
+
 ### VM identities are unique and channel rotation takes a caller-owned token — high confidence
 
 When a host reconnects, it must be able to identify one VM without another

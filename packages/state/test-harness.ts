@@ -1,5 +1,5 @@
 import { convexTest, type TestConvexForDataModel } from "convex-test";
-import schema from "./schema.js";
+import schema from "./convex/schema.js";
 
 /**
  * In-process Convex deployment used by relay tests. This exercises the actual
@@ -9,7 +9,7 @@ import schema from "./schema.js";
 export function createConvexTestHarness() {
   return convexTest(schema, {
     "./_generated/api.ts": async () => ({}),
-    "./relay.ts": async () => import("./relay.js"),
+    "./relay.ts": async () => import("./convex/relay.js"),
   }) as TestConvexForDataModel<any>;
 }
 

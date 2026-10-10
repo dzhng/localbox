@@ -182,4 +182,4 @@ export class ConvexRelayStateRepository implements RelayStateRepository {
 export const pkceChallenge = (verifier: string): string => hash(verifier);
 
 export { relayStateSchema } from "../convex/schema.js";
-export { createConvexTestHarness } from "../convex/test-harness.js";
+export { createConvexTestHarness } from "../test-harness.js";
