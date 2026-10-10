@@ -104,14 +104,14 @@ elif [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
 fi
 
 APP_ZIP="$OUT_DIR/Agent-Computer-$VERSION.zip"
-ditto -c -k --keepParent "$APP" "$APP_ZIP"
+ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
 CLI_TAR="$OUT_DIR/agent-computer-cli-$VERSION.tar.gz"
 tar -czf "$CLI_TAR" -C "$STAGE" agent-computer-cli
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$APP"
-  ditto -c -k --keepParent "$APP" "$APP_ZIP"
+  ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
 fi
 
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'

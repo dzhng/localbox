@@ -143,7 +143,10 @@ release; the alternative was shipping a source checkout and a development
 Virtualization entitlement, but signing and notarization remain release-
 environment inputs. Verdict: sound as the packaging boundary; confidence:
 medium because the team's final installer layout and signing identity are still
-environment choices.
+environment choices. The archive omits macOS resource-fork and quarantine
+metadata so a normal unzip-based installer does not add `._*` files that
+invalidate the sealed code signature. Verdict: sound; generic extraction now
+has the same verification result as native macOS extraction.
 
 ### Large and binary results use signed blob references — high confidence
 
