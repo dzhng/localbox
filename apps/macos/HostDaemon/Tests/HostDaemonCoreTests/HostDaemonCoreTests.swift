@@ -50,3 +50,124 @@ final class HostDaemonCoreTests: XCTestCase {
 private func XCTAssertThrowsErrorAsync(_ expression: @autoclosure () async throws -> Void) async {
     do { try await expression(); XCTFail("expected error") } catch {}
 }
+
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+private func localSocketPath() -> String {
+    "/tmp/ac-\(UUID().uuidString).sock"
+}
+
+private func socketType() -> Int32 {
+    #if canImport(Darwin)
+    return SOCK_STREAM
+    #else
+    return Int32(SOCK_STREAM.rawValue)
+    #endif
+}
+
+private func connectLocalSocket(_ path: String) throws -> Int32 {
+    let fd = socket(AF_UNIX, socketType(), 0)
+    guard fd >= 0 else { throw POSIXTestError.systemCall("socket", errno) }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let bytes = Array(path.utf8)
+    withUnsafeMutableBytes(of: &address.sun_path) { destination in
+        destination.copyBytes(from: [UInt8](repeating: 0, count: destination.count))
+        destination.copyBytes(from: bytes)
+    }
+    let length = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count + 1)
+    let result = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            #if canImport(Darwin)
+            Darwin.connect(fd, $0, length)
+            #else
+            Glibc.connect(fd, $0, length)
+            #endif
+        }
+    }
+    guard result == 0 else { close(fd); throw POSIXTestError.systemCall("connect", errno) }
+    return fd
+}
+
+private enum POSIXTestError: Error { case systemCall(String, Int32) }
+
+private func readExactly(_ count: Int, from handle: FileHandle) throws -> Data {
+    var data = Data(); data.reserveCapacity(count)
+    while data.count < count {
+        guard let chunk = try handle.read(upToCount: count - data.count), !chunk.isEmpty else { throw POSIXTestError.systemCall("read", 0) }
+        data.append(chunk)
+    }
+    return data
+}
+
+private func sendSocketFrame(_ body: Data, to handle: FileHandle) throws {
+    var length = UInt32(body.count).bigEndian
+    try handle.write(contentsOf: Data(bytes: &length, count: 4))
+    try handle.write(contentsOf: body)
+}
+
+private func receiveSocketFrame(from handle: FileHandle) throws -> Data {
+    let header = try readExactly(4, from: handle)
+    let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+    return try readExactly(Int(length), from: handle)
+}
+
+extension HostDaemonCoreTests {
+    func testUnixDomainSocketForwardsAuthenticatedRequest() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let path = localSocketPath()
+        let endpoint = LocalIPCEndpoint(socketPath: path)
+        let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "socket-secret", endpoint: endpoint)
+        let server = UnixDomainSocketServer(ipc: ipc, endpoint: endpoint)
+        try await server.start()
+        defer { Task { await server.stop() } }
+
+        let fd = try connectLocalSocket(path)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        let request = LocalIPCRequest(token: "socket-secret", envelope: Data("ping".utf8))
+        try sendSocketFrame(try JSONEncoder().encode(request), to: handle)
+        let response = try JSONDecoder().decode(LocalIPCResponse.self, from: receiveSocketFrame(from: handle))
+        XCTAssertEqual(response.envelope, Data("ping".utf8))
+        XCTAssertNil(response.error)
+        try handle.close()
+        await server.stop()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    func testUnixDomainSocketReturnsUnauthorizedAndMalformedResponses() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let path = localSocketPath()
+        let endpoint = LocalIPCEndpoint(socketPath: path)
+        let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "socket-secret", endpoint: endpoint)
+        let server = UnixDomainSocketServer(ipc: ipc, endpoint: endpoint)
+        try await server.start()
+        defer { Task { await server.stop() } }
+
+        do {
+            let fd = try connectLocalSocket(path)
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            let request = LocalIPCRequest(token: "wrong", envelope: Data("ping".utf8))
+            try sendSocketFrame(try JSONEncoder().encode(request), to: handle)
+            let response = try JSONDecoder().decode(LocalIPCResponse.self, from: receiveSocketFrame(from: handle))
+            XCTAssertEqual(response.error, "unauthorized")
+            try handle.close()
+        }
+        do {
+            let fd = try connectLocalSocket(path)
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            try sendSocketFrame(Data("not-json".utf8), to: handle)
+            let response = try JSONDecoder().decode(LocalIPCResponse.self, from: receiveSocketFrame(from: handle))
+            XCTAssertEqual(response.error, "malformed")
+            try handle.close()
+        }
+        await server.stop()
+    }
+}
