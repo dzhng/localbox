@@ -6,7 +6,7 @@ A signed-capable macOS host owns one durable VM lifecycle and provides a local C
 
 ## Seam
 
-`HostDaemon` is the only owner of `VZVirtualMachine`, persistent disk lock, image verification, virtio NAT/entropy/block devices, virtio-serial `GuestChannel`, readiness, pause/resume, stop, reset, and status. The Swift probe reports real evidence from this owner; it never silently selects the fake backend. A small authenticated local Unix socket/launchd IPC adapter exposes the same operation envelopes to the CLI.
+`HostDaemon` is the only owner of `VZVirtualMachine`, persistent disk lock, image verification, virtio NAT/entropy/block devices, virtio-serial `GuestChannel`, readiness, pause/resume, stop, reset, and status. The Swift probe reports real evidence from this owner; it never silently selects the fake backend. A small authenticated local Unix socket/launchd IPC adapter exposes the same operation envelopes to the CLI. The IPC boundary handles VM lifecycle, status, logs, and listing in `HostDaemon`; guest-bound operations are forwarded only after the daemon confirms the VM is ready.
 
 The existing JSON registry stays a local disk-path cache; lifecycle transitions and recovery events are emitted by the daemon. VM reset requires the contract confirmation from slice 00.
 
@@ -18,5 +18,5 @@ On Apple Silicon: `agent-computer status`, `vm start`, `vm pause`, `vm resume`, 
 
 - Real cold and warm boot; persistent marker survives restart; guest channel reconnects after sleep/network change.
 - Pause/resume, explicit reset, clean stop, disk/socket/process leak checks, and host-path isolation.
-- Local CLI operation matrix covers all catalog operations against the real/fake backend seam.
+- Local CLI operation matrix covers all catalog operations against the real/fake backend seam; `GuestGateway` owns the guest catalog map and `HostDaemon` owns the lifecycle subset.
 - Swift tests and existing JS tests remain green; unsupported is returned only on non-macOS or missing image, never as a fake fallback on macOS.
