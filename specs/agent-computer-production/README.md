@@ -109,7 +109,6 @@ You are resuming `agent-computer-production`. All code-level seams are implement
 - [x] Slice 04 seam: add stateless HTTP polling routes and remote CLI transport against the local repository.
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
 - [x] Slice 02b seam: add authenticated local IPC forwarding into HostDaemon (virtio channel/hardware gate remains pending).
-- [ ] Slice 03b: replace the local state double with deployed Convex functions/schema and the Duet local deployment harness.
-- [ ] Slice 04b: connect the Mac poller to the HTTP relay and run deployed Vercel/Convex smoke tests.
+- [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
 - [x] Slice 05 seam: wire optional MCP endpoint to a durable Convex access-token validator with exact catalog parity; full deployed OAuth/PKCE smoke remains pending.
 - [x] Slice 06 seam: add recovery timeline, redacted audit/quota state, and Ed25519 release-manifest signing; notarization/installer/rollback and hardware smoke remain pending.
