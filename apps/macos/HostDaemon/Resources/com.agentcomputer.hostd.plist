@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.agentcomputer.hostd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Agent Computer.app/Contents/MacOS/agent-computer-hostd</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AGENT_COMPUTER_VM_ID</key><string>vm_01</string>
+    <key>AGENT_COMPUTER_IPC_TOKEN_FILE</key><string>~/Library/Application Support/AgentComputer/ipc-token</string>
+    <key>AGENT_COMPUTER_SOCKET_PATH</key><string>~/Library/Application Support/AgentComputer/agent.sock</string>
+    <key>AGENT_COMPUTER_KERNEL</key><string>/Applications/Agent Computer.app/Contents/Resources/vm/vmlinuz</string>
+    <key>AGENT_COMPUTER_INITRD</key><string>/Applications/Agent Computer.app/Contents/Resources/vm/initrd</string>
+    <key>AGENT_COMPUTER_DISK</key><string>~/Library/Application Support/AgentComputer/vm/disk.img</string>
+    <key>AGENT_COMPUTER_TEMPLATE_DISK</key><string>/Applications/Agent Computer.app/Contents/Resources/vm/template.img</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>LimitLoadToSessionType</key><array><string>Aqua</string></array>
+  <key>StandardOutPath</key><string>~/Library/Logs/AgentComputer/hostd.log</string>
+  <key>StandardErrorPath</key><string>~/Library/Logs/AgentComputer/hostd.error.log</string>
+</dict>
+</plist>

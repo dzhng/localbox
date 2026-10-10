@@ -160,3 +160,13 @@ deployment choice because another object store can implement the same interface.
 Verdict: needs-user only for the account and billing choice; the provisional
 call is Vercel Blob because the relay already runs on Vercel and the adapter is
 covered by a provider-injected test. Confidence: medium.
+
+### launchd receives a token file rather than an inline secret — sound, high confidence
+
+The host daemon executable reads its IPC credential from an owner-only file and
+the launchd template points to that path. An inline plist environment variable
+would put the bearer secret in a process configuration file that installers,
+diagnostics, and backups can expose. The process still accepts an explicit
+environment token for controlled development, while the product template uses
+the file path. Verdict: sound; the credential boundary is clearer and can be
+rotated without changing the socket protocol. Confidence: high.

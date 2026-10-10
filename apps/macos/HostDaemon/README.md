@@ -25,3 +25,11 @@ prove that the published guest kernel/initrd and service actually boot and emit
 readiness. Destructive reset requires an immutable template disk and replaces
 the persistent disk from that template, so a failed or interrupted reset never
 leaves an empty disk image attached to the VM.
+
+The `agent-computer-hostd` executable is the launchd process boundary. It reads
+the VM image paths and an owner-only IPC token file from environment variables,
+starts the same `HostDaemon` and `UnixDomainSocketServer` used by tests, and
+stops both on `SIGTERM`/`SIGINT`. The checked-in
+`Resources/com.agentcomputer.hostd.plist` is a bundle template; an installer
+must materialize its paths, create the token file with mode `0600`, load it with
+`launchctl`, and unload it before replacement.

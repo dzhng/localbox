@@ -117,7 +117,7 @@ Pickup priority is: (1) run the published ARM64 kernel/initrd/template disk thro
 - [x] Slice 03b: add production Convex schema/functions and `convex-test` transaction harness.
 - [x] Slice 04 seam: add stateless HTTP polling routes and remote CLI transport against the local repository.
 - [x] Slice 04b seam: add Vercel Web Request handler and outbound host poller; deployed smoke remains pending.
-- [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon; launchd packaging and hardware boot smoke remain pending.
+- [x] Slice 02b: add authenticated local IPC forwarding into HostDaemon and a launchd executable/plist seam; hardware boot smoke and signed installer remain pending.
 - [ ] External G3/G4: push the Convex project and run deployed Convex/Vercel cold-start and internet smoke tests with production credentials.
 - [x] Blob payload seam: signed expiring references, local and Vercel Blob providers, relay download path, and guest/relay large-result integration; deployed token/smoke remains external.
 - [x] Slice 05: wire optional MCP endpoint and repository-backed OAuth/PKCE endpoints to durable Convex state with exact catalog parity; deployed smoke remains pending.
