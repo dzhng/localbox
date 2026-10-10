@@ -154,3 +154,5 @@ export class GuestGateway {
 function guestPath(root: string, absolute: string): string { const rel = relative(root, absolute); return rel ? `/${rel.split(sep).join("/")}` : "/"; }
 function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 function killTree(child: ChildProcess): void { if (!child.pid) return; try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* exited */ } } }
+
+export { GuestService, runGuestService, type GuestServiceOptions } from "./service.js";
