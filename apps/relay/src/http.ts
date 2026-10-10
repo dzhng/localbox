@@ -18,8 +18,9 @@ export class RelayHttpAdapter {
     const url = new URL(request.url, this.resource); const path = url.pathname.replace(/\/$/, "");
     try {
       if (request.method === "GET" && path === "/status") return await this.status(request);
-      if (path === "/agent/requests" && request.method === "POST") return await this.submit(request);
+      if ((path === "/agent/requests" || path === "/v1/requests") && request.method === "POST") return await this.submit(request);
       if (path.startsWith("/agent/responses/") && request.method === "GET") return await this.readResponse(request, path.slice("/agent/responses/".length));
+      if (path.startsWith("/v1/requests/") && request.method === "GET") return await this.readResponse(request, path.slice("/v1/requests/".length));
       if (path === "/host/poll" && request.method === "POST") return await this.poll(request);
       if (path.startsWith("/host/responses/") && request.method === "POST") return await this.complete(request, path.slice("/host/responses/".length));
       if (path === "/host/heartbeat" && request.method === "POST") return await this.heartbeat(request);
