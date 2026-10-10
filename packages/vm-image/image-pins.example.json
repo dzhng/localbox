@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "agent-computer-image-build.v1",
+  "architecture": "arm64",
+  "baseImage": "registry.example/debian@sha256:<64-hex-digest>",
+  "baseSnapshot": "20250929T000000Z",
+  "packages": {
+    "python3": "3.11",
+    "nodejs": "20",
+    "chromium": "<pinned-arm64-version>"
+  },
+  "pythonRequirementsSha256": "sha256:<sha256-of-requirements-arm64.txt>",
+  "buildVersion": "0.1.0",
+  "display": { "width": 1440, "height": 900 },
+  "loopbackBindings": ["127.0.0.1:9222", "127.0.0.1:5900"],
+  "readinessMarker": "/run/agent-computer/ready"
+}

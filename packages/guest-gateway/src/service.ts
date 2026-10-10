@@ -77,8 +77,8 @@ export class GuestService {
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.maxBufferedBytes = options.maxBufferedBytes ?? 16 * 1024 * 1024;
     if (!Number.isInteger(this.maxPending) || this.maxPending < 1) throw new TypeError("guest service maxPending must be positive");
-    if (!Number.isInteger(this.maxFrameBytes) || this.maxFrameBytes < 1024 || this.maxFrameBytes > 8 * 1024 * 1024) throw new TypeError("guest service maxFrameBytes must be between 1 KiB and 8 MiB");
-    if (!Number.isInteger(this.maxBufferedBytes) || this.maxBufferedBytes < 1024) throw new TypeError("guest service maxBufferedBytes is too small");
+    if (!Number.isInteger(this.maxFrameBytes) || this.maxFrameBytes < 1 || this.maxFrameBytes > 8 * 1024 * 1024) throw new TypeError("guest service maxFrameBytes must be between 1 byte and 8 MiB");
+    if (!Number.isInteger(this.maxBufferedBytes) || this.maxBufferedBytes < 1) throw new TypeError("guest service maxBufferedBytes must be positive");
     this.onProtocolError = options.onProtocolError ?? (() => undefined);
     this.finished = new Promise<void>((resolve) => { this.finishResolve = resolve; });
   }

@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1.7
+# The builder supplies BASE_IMAGE as an immutable digest. Keeping the ARG
+# mandatory prevents an accidental moving-tag release.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG DEBIAN_SNAPSHOT=20250929T000000Z
+ARG IMAGE_BUILD_VERSION=dev
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    AGENT_COMPUTER_IMAGE_VERSION=${IMAGE_BUILD_VERSION} \
+    AGENT_COMPUTER_LOOPBACK_BINDINGS=127.0.0.1:9222,127.0.0.1:5900
+
+RUN test "$(dpkg --print-architecture)" = arm64 \
+  && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" > /etc/apt/sources.list \
+  && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/%s bookworm-security main\n' "$DEBIAN_SNAPSHOT" >> /etc/apt/sources.list \
+  && apt-get -o Acquire::Check-Valid-Until=false update \
+  && apt-get install -y --no-install-recommends \
+    bash ca-certificates curl git gh imagemagick ffmpeg ghostscript jq \
+    libreoffice-core-nogui pandoc poppler-utils python3 python3-pip qpdf \
+    tesseract-ocr libvips-tools nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-arm64.txt /opt/agent-computer/requirements-arm64.txt
+RUN python3 -m pip install --break-system-packages --no-cache-dir \
+      --requirement /opt/agent-computer/requirements-arm64.txt
+
+# The guest service and readiness marker are installed by the guest-agent slice.
+# This image layer intentionally only establishes the reproducible workflow base.
+COPY image-root/ /opt/agent-computer/image-root/
+RUN install -d -m 0755 /run/agent-computer /var/lib/agent-computer \
+  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-image-probe /usr/local/bin/agent-computer-image-probe
+
+ENTRYPOINT ["/usr/local/bin/agent-computer-image-probe"]

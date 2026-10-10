@@ -24,3 +24,9 @@ An offline rebuild command emits the same digest from pinned inputs. A guest smo
 ## Delegated choices
 
 Base distro, exact ARM64 browser artifact, and VNC package may change only with manifest provenance and a passing inventory/CDP gate.
+
+## Implementation checkpoint (image build side)
+
+The image side now has a reproducible ARM64 build entrypoint (`npm run image:build`) that requires an immutable `AGENT_COMPUTER_BASE_IMAGE@sha256:…`, pins the Debian snapshot and Python workflow modules, and uses BuildKit with provenance/SBOM inputs disabled for stable output. `packages/vm-image/src/manifest.ts` derives canonical build-input, inventory, artifact, and image digests. `npm run image:verify` boots the image under `linux/arm64` and executes the Duet binary probes and Python imports, checks the architecture, loopback declarations, and readiness marker, then writes `manifest.json` and `probe-report.json`.
+
+This checkpoint deliberately does not claim the slice complete: the guest-agent layer still needs to install the framed service, browser/desktop stack, persistent readiness marker, and real ARM64 substitutions. Until that layer is present, the verifier must fail closed on missing tools or `/run/agent-computer/ready`.

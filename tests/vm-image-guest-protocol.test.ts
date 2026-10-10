@@ -46,3 +46,33 @@ test("guest frames use bounded length-prefix framing and preserve partial buffer
   assert.deepEqual(decoded.frames, [frame]);
   assert.equal(decoded.remainder.length, 0);
 });
+
+test("ARM64 image manifest binds pinned inputs and full Duet inventory", async () => {
+  const { buildImageManifest, digestJson, inventoryDigestForTools } = await import("../packages/vm-image/src/manifest.js");
+  const pins = {
+    schemaVersion: "agent-computer-image-build.v1" as const,
+    architecture: "arm64" as const,
+    baseImage: "debian:bookworm-slim@sha256:" + "a".repeat(64),
+    baseSnapshot: "20250929T000000Z",
+    packages: { python3: "3.11", chromium: "123.0" },
+    pythonRequirementsSha256: "sha256:" + "b".repeat(64),
+    buildVersion: "test",
+    display: { width: 1440, height: 900 },
+    loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:5900"],
+    readinessMarker: "/run/agent-computer/ready",
+  };
+  const tools = DUET_REQUIRED_TOOL_INVENTORY.map((tool) => ({ ...tool, version: "test" }));
+  const manifest = buildImageManifest({ pins, tools, artifacts: { "disk.raw": "sha256:" + "c".repeat(64) } });
+  assert.equal(manifest.architecture, "arm64");
+  assert.equal(manifest.buildInputsDigest, digestJson(pins));
+  assert.equal(manifest.inventoryDigest, inventoryDigestForTools(tools));
+  assert.equal(manifest.artifactDigests?.["disk.raw"], "sha256:" + "c".repeat(64));
+  assert.equal(manifest.digest, digestJson({ ...manifest, digest: undefined }));
+});
+
+test("Duet probes distinguish executable tools from Python imports", () => {
+  // This is the same machine-readable distinction used by the in-image probe;
+  // a name-only manifest cannot accidentally satisfy a Python import check.
+  assert.equal(DUET_REQUIRED_TOOL_INVENTORY.find((tool) => tool.name === "python3")?.kind, "binary");
+  assert.equal(DUET_REQUIRED_TOOL_INVENTORY.find((tool) => tool.name === "pandas")?.kind, "python");
+});
