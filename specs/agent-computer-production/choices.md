@@ -266,3 +266,36 @@ diagnostics, and backups can expose. The process still accepts an explicit
 environment token for controlled development, while the product template uses
 the file path. Verdict: sound; the credential boundary is clearer and can be
 rotated without changing the socket protocol. Confidence: high.
+
+### Host lifecycle requests are handled before guest forwarding — sound, high confidence
+
+When the CLI sends `vm.stop`, the request must reach the native Virtualization
+owner; sending it into Linux would only let the guest claim that the VM stopped
+while the macOS process kept running. The local IPC router now recognizes host
+lifecycle operations and returns the same response envelope after calling
+`HostDaemon`; shell, filesystem, browser, desktop, and job operations continue
+through the guest channel. The plan named one lifecycle owner but did not spell
+out where the envelope split occurred. Verdict: sound, because the operation
+that changes the VM cannot be simulated inside the VM. Confidence: high.
+
+### The guest owns one complete catalog adapter — sound, medium confidence
+
+The image entrypoint now registers every catalog operation through
+`GuestGateway`; the CLI fixture uses that same handler map instead of layering a
+second desktop map over it. This means a production guest no longer answers
+browser, desktop, job, network, or status calls with an accidental
+`unsupported` response. The current desktop implementation is still a bounded
+backend seam until the signed image wires Chromium/CDP and XFCE/VNC, so that
+hardware/integration gate remains explicit. Verdict: sound for ownership and
+parity; the real desktop backend is an external implementation gate. Confidence:
+medium.
+
+### Relay responses require the active lease owner — sound, high confidence
+
+A channel-authenticated host could previously post a response for a queued
+request by omitting `lease_owner`; the repository accepted it before any host
+had claimed the work. Response recording now requires a live leased row and the
+same non-empty owner in both the local and Convex implementations, and the HTTP
+route requires that field. The alternative allowed one host to complete another
+host's request. Verdict: sound, because ownership is checked at the transaction
+that changes the request state. Confidence: high.

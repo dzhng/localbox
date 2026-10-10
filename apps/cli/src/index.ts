@@ -15,7 +15,6 @@ import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, t
 import { authorizationUrl, createPkcePair, exchangeAuthorizationCode, refreshAccessToken, type OAuthTokenResponse } from "../../../packages/client/src/auth.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
-import { desktopHandlers, DesktopRuntime } from "../../../packages/desktop/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const execFileAsync = promisify(execFile);
@@ -147,9 +146,7 @@ async function makeClient(): Promise<AgentClient> {
   const guestRoot = resolve(root, ".agent-computer/guest");
   await mkdir(guestRoot, { recursive: true });
   const guest = new GuestGateway({ root: guestRoot });
-  const { runtime: _desktopRuntime, ...desktop } = desktopHandlers(new DesktopRuntime());
-  const handlers = { ...guest.handlers(), ...desktop } as any;
-  const transport = fixtureTransport(kind, new FakeDispatcher({ handlers }));
+  const transport = fixtureTransport(kind, new FakeDispatcher({ handlers: guest.handlers() }));
   if (kind === "remote" && !(await hasAuth())) transport.setUnauthorized();
   return new AgentClient({ transport });
 }

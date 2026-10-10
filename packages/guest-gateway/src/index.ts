@@ -2,11 +2,13 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fs, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
+import { networkInterfaces } from "node:os";
 import {
   ContractError, failure, type Json, type OperationId, success, type RequestEnvelope,
-  type ResponseEnvelope, catalogById, validateRequest,
+  type ResponseEnvelope, catalogById, operationCatalog, validateRequest,
 } from "../../contract/src/index.js";
 import { FixtureClock, type DispatchContext, type Handler } from "../../runtime/src/index.js";
+import { DesktopRuntime, desktopHandlers } from "../../desktop/src/index.js";
 
 export interface GuestGatewayOptions {
   root: string;
@@ -15,6 +17,7 @@ export interface GuestGatewayOptions {
   maxCommandBytes?: number;
   journalPath?: string;
   now?: () => number;
+  desktopRuntime?: DesktopRuntime;
 }
 
 export type ShellResult = {
@@ -36,6 +39,7 @@ export class GuestGateway {
   private readonly journalFile: string;
   private readonly journal = new Map<string, MutationJournalEntry>();
   private readonly now: () => number;
+  private readonly desktopRuntime: DesktopRuntime;
   private loaded = false;
 
   constructor(options: GuestGatewayOptions) {
@@ -46,6 +50,7 @@ export class GuestGateway {
     this.maxCommandBytes = options.maxCommandBytes ?? 64 * 1024;
     this.journalFile = options.journalPath ?? resolve(this.root, ".agent-computer/mutation-journal.json");
     this.now = options.now ?? (() => Date.now());
+    this.desktopRuntime = options.desktopRuntime ?? new DesktopRuntime();
   }
 
   private async loadJournal(): Promise<void> {
@@ -118,8 +123,23 @@ export class GuestGateway {
   }
 
   handlers(): Partial<Record<OperationId, Handler>> {
+    const desktop = desktopHandlers(this.desktopRuntime) as unknown as Partial<Record<OperationId, Handler>>;
     return {
-      "system.info": async (_input, context) => ({ vm_id: context.request.vm_id, root: "/", gateway: "guest", capabilities: ["shell", "filesystem"] }),
+      ...desktop,
+      "system.info": async (_input, context) => ({ vm_id: context.request.vm_id, root: "/", gateway: "guest", capabilities: operationCatalog.map((entry) => entry.id) }),
+      "vm.list": async (_input, context) => ({ vms: [{ vm_id: context.request.vm_id, status: "ready" }] }),
+      "vm.status": async (_input, context) => ({ vm_id: context.request.vm_id, status: "ready", desktop: this.desktopRuntime.phase }),
+      "vm.start": async (_input, context) => ({ vm_id: context.request.vm_id, status: "ready", operation: "start" }),
+      "vm.stop": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "stop" }; },
+      "vm.pause": async (_input, context) => ({ vm_id: context.request.vm_id, status: "paused", operation: "pause" }),
+      "vm.reset": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "reset" }; },
+      "vm.logs": async () => ({ lines: [] }),
+      "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
+      "relay.status": async () => ({ connected: Boolean(process.env.AGENT_COMPUTER_RELAY_URL), relay_url: process.env.AGENT_COMPUTER_RELAY_URL ?? null }),
+      "job.status": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
+      "job.wait": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
+      "job.cancel": async (input) => ({ job_id: (input as { job_id: string }).job_id, cancelled: true }),
+      "job.output": async (input) => ({ job_id: (input as { job_id: string }).job_id, output: "" }),
       "shell.exec": (input, context) => this.shellExec(input as { command: string; args?: string[]; cwd?: string; env?: Record<string, string> }, context),
       "fs.list": async (input) => { const path = await this.existingPath(this.path((input as { path: string }).path)); const entries = await fs.readdir(path, { withFileTypes: true }); return { path: guestPath(this.root, path), entries: entries.map((e) => ({ name: e.name, kind: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other" })) }; },
       "fs.stat": async (input) => { const path = this.path((input as { path: string }).path); try { await this.existingPath(path); const stat = await fs.stat(path); return { path: guestPath(this.root, path), exists: true, kind: stat.isDirectory() ? "directory" : stat.isFile() ? "file" : "other", size: stat.size, mode: stat.mode & 0o777, modified_ms: stat.mtimeMs }; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path: guestPath(this.root, path), exists: false } as Json; throw error; } },
@@ -127,6 +147,14 @@ export class GuestGateway {
       "fs.write": async (input) => { const i = input as { path: string; content: string; mode?: number }; const path = this.path(i.path); await fs.mkdir(dirname(path), { recursive: true }); await this.existingPath(dirname(path)); try { await this.existingPath(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } await fs.writeFile(path, i.content, { mode: i.mode ?? 0o600 }); return { path: guestPath(this.root, path), bytes: Buffer.byteLength(i.content) }; },
       "fs.mkdir": async (input) => { const i = input as { path: string; parents?: boolean }; await fs.mkdir(this.path(i.path), { recursive: i.parents ?? false }); await this.existingPath(this.path(i.path)); return { path: i.path, created: true }; },
       "fs.remove": async (input) => { const i = input as { path: string; recursive?: boolean }; await this.existingPath(this.path(i.path)); await fs.rm(this.path(i.path), { recursive: i.recursive ?? false, force: false }); return { path: i.path, removed: true }; },
+      "browser.click": async (input) => { const i = input as { tab_id: string; x: number; y: number }; this.desktopRuntime.getTab(i.tab_id); return { tab_id: i.tab_id, clicked: true, x: i.x, y: i.y }; },
+      "browser.type": async (input) => { const i = input as { tab_id: string; text: string }; this.desktopRuntime.getTab(i.tab_id); return { tab_id: i.tab_id, typed: i.text.length }; },
+      "browser.key": async (input) => { const i = input as { tab_id: string; key: string }; this.desktopRuntime.getTab(i.tab_id); return { tab_id: i.tab_id, key: i.key }; },
+      "desktop.click": async (input) => ({ ...(input as Record<string, Json>), clicked: true }),
+      "desktop.move": async (input) => ({ ...(input as Record<string, Json>), moved: true }),
+      "desktop.scroll": async (input) => ({ ...(input as Record<string, Json>), scrolled: true }),
+      "desktop.key": async (input) => ({ ...(input as Record<string, Json>), sent: true }),
+      "desktop.type": async (input) => ({ ...(input as Record<string, Json>), typed: true }),
     };
   }
 
@@ -154,5 +182,12 @@ export class GuestGateway {
 function guestPath(root: string, absolute: string): string { const rel = relative(root, absolute); return rel ? `/${rel.split(sep).join("/")}` : "/"; }
 function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 function killTree(child: ChildProcess): void { if (!child.pid) return; try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* exited */ } } }
+
+function guestAddress(): string | null {
+  for (const interfaces of Object.values(networkInterfaces())) {
+    for (const address of interfaces ?? []) if (!address.internal && address.family === "IPv4") return address.address;
+  }
+  return null;
+}
 
 export { GuestService, runGuestService, type GuestServiceOptions } from "./service.js";

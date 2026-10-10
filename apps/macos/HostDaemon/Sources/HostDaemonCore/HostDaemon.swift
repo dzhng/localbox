@@ -71,7 +71,9 @@ public actor HostDaemon {
     }
     public func markRelay(connected: Bool) { statusValue = DaemonStatus(lifecycle: statusValue.lifecycle, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: connected, detail: statusValue.detail) }
     public func start() async throws {
-        guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped || statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM cannot start from \(statusValue.lifecycle.rawValue)") }
+        if statusValue.lifecycle == .ready { return }
+        if statusValue.lifecycle == .paused { try await resume(); return }
+        guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped else { throw HostDaemonError.invalidState("VM cannot start from \(statusValue.lifecycle.rawValue)") }
         statusValue = DaemonStatus(lifecycle: .starting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: statusValue.relayConnected)
         do {
             try await backend.start()
@@ -88,7 +90,64 @@ public actor HostDaemon {
     public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM is not paused") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected) }
     public func stop() async throws { guard statusValue.lifecycle != .stopped else { return }; statusValue = DaemonStatus(lifecycle: .stopping, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false); await channel?.close(); try await backend.stop(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
     public func reset(confirm: String) async throws { guard confirm == "RESET" else { throw HostDaemonError.invalidState("reset requires confirmation RESET") }; statusValue = DaemonStatus(lifecycle: .resetting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false); await channel?.close(); try await backend.reset(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
-    public func request(_ envelope: Data) async throws -> Data { guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }; return try await channel.send(envelope) }
+    public func request(_ envelope: Data) async throws -> Data {
+        guard let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any],
+              let operation = object["operation"] as? String,
+              let vmID = object["vm_id"] as? String else {
+            guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
+            return try await channel.send(envelope)
+        }
+        guard vmID == statusValue.vmID else { return hostFailure(object, code: "vm_not_found", message: "request VM does not match host") }
+        switch operation {
+        case "system.info":
+            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "lifecycle": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "relay_connected": statusValue.relayConnected, "runtime": "host"])
+        case "vm.list":
+            return hostSuccess(object, result: ["vms": [["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]]])
+        case "vm.status":
+            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "relay_connected": statusValue.relayConnected])
+        case "vm.start":
+            do { try await start(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case "vm.stop":
+            do { try await stop(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case "vm.pause":
+            do { try await pause(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case "vm.reset":
+            guard let input = object["input"] as? [String: Any], input["discard_state"] as? Bool == true, input["confirm"] as? String == "RESET" else {
+                return hostFailure(object, code: "invalid_input", message: "reset requires discard_state=true and confirm=RESET")
+            }
+            do { try await reset(confirm: "RESET"); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "discarded": true]) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case "vm.logs":
+            return hostSuccess(object, result: ["lines": statusValue.detail.map { [$0] } ?? []])
+        case "relay.status":
+            return hostSuccess(object, result: ["connected": statusValue.relayConnected, "channel_epoch": statusValue.channelEpoch])
+        default:
+            guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
+            return try await channel.send(envelope)
+        }
+    }
+
+    private func hostSuccess(_ request: [String: Any], result: Any) -> Data {
+        hostEnvelope(request, values: ["ok": true, "result": result])
+    }
+
+    private func hostFailure(_ request: [String: Any], code: String, message: String) -> Data {
+        hostEnvelope(request, values: ["ok": false, "error": ["code": code, "message": message, "retryable": false]])
+    }
+
+    private func hostEnvelope(_ request: [String: Any], values: [String: Any]) -> Data {
+        let envelope: [String: Any] = [
+            "protocol_version": request["protocol_version"] as? String ?? "v1",
+            "request_id": request["request_id"] as? String ?? "unknown",
+            "operation": request["operation"] as? String ?? "unknown",
+            "vm_id": request["vm_id"] as? String ?? statusValue.vmID,
+            "release_id": "agent-computer-contract-v1",
+        ].merging(values) { _, latest in latest }
+        return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data("{}".utf8)
+    }
 }
 
 public actor FakeGuestChannel: GuestChannel {

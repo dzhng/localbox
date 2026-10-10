@@ -45,6 +45,25 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual(echoed, envelope)
     }
 
+    func testRequestRoutesHostLifecycleOperationsBeforeGuestChannel() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let statusRequest = Data(#"{"protocol_version":"v1","request_id":"status-1","operation":"vm.status","vm_id":"vm_01","deadline_ms":30000,"mutation_id":null,"input":{}}"#.utf8)
+        let status = try JSONSerialization.jsonObject(with: try await daemon.request(statusRequest)) as! [String: Any]
+        XCTAssertEqual(status["ok"] as? Bool, true)
+        XCTAssertEqual((status["result"] as? [String: Any])?["status"] as? String, "ready")
+
+        let stopRequest = Data(#"{"protocol_version":"v1","request_id":"stop-1","operation":"vm.stop","vm_id":"vm_01","deadline_ms":30000,"mutation_id":"stop-1","input":{}}"#.utf8)
+        let stopped = try JSONSerialization.jsonObject(with: try await daemon.request(stopRequest)) as! [String: Any]
+        XCTAssertEqual(stopped["ok"] as? Bool, true)
+        let stoppedStatus = await daemon.status()
+        XCTAssertEqual(stoppedStatus.lifecycle, .stopped)
+
+        let guestRequest = Data(#"{"protocol_version":"v1","request_id":"guest-1","operation":"shell.exec","vm_id":"vm_01","deadline_ms":30000,"mutation_id":"guest-1","input":{"command":"true"}}"#.utf8)
+        do { _ = try await daemon.request(guestRequest); XCTFail("stopped VM should reject guest work") } catch { }
+    }
+
     func testFramedGuestChannelSkipsReadinessAndReturnsResponse() async throws {
         let toGuest = Pipe(); let fromGuest = Pipe()
         let channel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting)

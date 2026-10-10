@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { GuestGateway } from "../packages/guest-gateway/src/index.js";
-import { PROTOCOL_VERSION, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { operationCatalog, PROTOCOL_VERSION, type Json, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { sampleInput } from "../packages/runtime/src/index.js";
 
-const request = (operation: RequestEnvelope["operation"], input: RequestEnvelope["input"], mutation_id: string | null = null): RequestEnvelope => ({ protocol_version: PROTOCOL_VERSION, request_id: `${operation}-${Math.random()}`, operation, vm_id: "vm_01", deadline_ms: 500, mutation_id, input });
+const request = (operation: RequestEnvelope["operation"], input: RequestEnvelope["input"], mutation_id: string | null = null, request_id = `${operation}-${Math.random()}`): RequestEnvelope => ({ protocol_version: PROTOCOL_VERSION, request_id, operation, vm_id: "vm_01", deadline_ms: 500, mutation_id, input });
 
 test("guest gateway confines filesystem operations to its root", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-"));
@@ -38,4 +39,27 @@ test("shell timeout terminates and reports bounded execution", async () => {
   const timed = await gateway.dispatch(request("shell.exec", { command: "sleep 5" }, "sleep-1"));
   assert.equal(timed.ok, false);
   if (!timed.ok) assert.equal(timed.error.code, "operation_timeout");
+});
+
+test("guest gateway implements every catalog operation", async () => {
+  for (const entry of operationCatalog) {
+    const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-catalog-"));
+    await mkdir(join(root, "tmp", "fixture"), { recursive: true });
+    await mkdir(join(root, "tmp", "remove"), { recursive: true });
+    await writeFile(join(root, "tmp", "file"), "fixture");
+    const gateway = new GuestGateway({ root });
+    let input = sampleInput(entry.id);
+    if (entry.id === "fs.list" || entry.id === "fs.stat") input = { path: "/tmp/fixture" };
+    if (entry.id === "fs.read") input = { path: "/tmp/file" };
+    if (entry.id === "fs.write") input = { path: "/tmp/write", content: "fixture" };
+    if (entry.id === "fs.mkdir") input = { path: "/tmp/new-dir" };
+    if (entry.id === "fs.remove") input = { path: "/tmp/remove", recursive: true };
+    if (entry.id.startsWith("browser.") && entry.id !== "browser.list_tabs" && entry.id !== "browser.open") {
+      const opened = await gateway.dispatch(request("browser.open", { url: "https://example.test" }, `open-${entry.id}`, `open-${entry.id}`));
+      assert.equal(opened.ok, true, entry.id);
+      if (opened.ok) input = { ...(input as Record<string, Json>), tab_id: (opened.result as { tab_id: string }).tab_id };
+    }
+    const response = await gateway.dispatch(request(entry.id, input, entry.idempotency === "required" ? `catalog-${entry.id}` : null, `catalog-${entry.id}`));
+    assert.equal(response.ok, true, entry.id);
+  }
 });
