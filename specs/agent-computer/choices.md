@@ -64,3 +64,10 @@ slice or an explicit user decision.
   response as one stable JSON document. Snapshots are committed under
   `snapshots/` and parity tests invoke every catalog entry through the same
   dispatcher.
+
+### Slice 05/08 implementation decisions
+
+- **The transport boundary is a small client package.** CLI parsing and output stay in `apps/cli`; `packages/client` creates the shared request envelope and selects local or remote transport. This keeps convenience commands from reimplementing catalog dispatch and lets the same fixture exercise both paths.
+- **Fixture transports simulate remote failure at the transport boundary.** A dropped response becomes `operation_uncertain`, while expired remote credentials return `unauthorized`; neither path silently replays a mutation. This preserves the envelope contract while keeping parity tests deterministic without a socket or hosted service.
+- **Remote login stores one local token file.** `auth login` writes a mode-600 JSON file under the configurable auth path, and the fixture remote transport only checks token presence. OAuth exchange and relay admission remain owned by their later slices; the CLI already has the recoverable auth-expiry shape.
+- **`vm probe` reads the deterministic host fixture.** The CLI does not duplicate Swift probe logic; it exposes the committed fake report until the host daemon owns a native invocation seam.
