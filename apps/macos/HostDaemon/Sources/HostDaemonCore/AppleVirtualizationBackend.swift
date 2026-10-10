@@ -34,8 +34,12 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: storage)]
         configuration.networkDevices = [VZVirtioNetworkDeviceConfiguration()]
         configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+        // Virtualization writes bytes to the guest through
+        // `fileHandleForReading`, and exposes guest bytes on
+        // `fileHandleForWriting`. Pass the pipe ends (rather than the read
+        // ends) so the guest's stdin/stdout cannot be inverted or deadlocked.
         let toGuest = Pipe(); let fromGuest = Pipe()
-        let attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: toGuest.fileHandleForReading, fileHandleForWriting: fromGuest.fileHandleForWriting)
+        let attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: toGuest.fileHandleForWriting, fileHandleForWriting: fromGuest.fileHandleForReading)
         let port = VZVirtioConsolePortConfiguration(); port.name = "org.agent-computer.guest"; port.isConsole = false; port.attachment = attachment
         let console = VZVirtioConsoleDeviceConfiguration(); console.ports[0] = port
         configuration.consoleDevices = [console]
