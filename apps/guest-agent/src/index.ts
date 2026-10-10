@@ -1,5 +1,6 @@
 import { stdin, stdout, stderr } from "node:process";
 import { GuestGateway, runGuestService } from "../../../packages/guest-gateway/src/index.js";
+import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
 
 const numberEnv = (name: string, fallback: number): number => {
@@ -20,7 +21,10 @@ export async function main(): Promise<void> {
   const channelEpoch = numberEnv("AGENT_COMPUTER_CHANNEL_EPOCH", 1);
   const readinessMarker = process.env.AGENT_COMPUTER_READINESS_MARKER ?? "/run/agent-computer/ready";
   const inventory = (process.env.AGENT_COMPUTER_INVENTORY ?? DUET_REQUIRED_TOOL_NAMES.join(",")).split(",").map((name) => name.trim()).filter(Boolean);
-  const gateway = new GuestGateway({ root });
+  const extraHandlers = process.env.AGENT_COMPUTER_DESKTOP_BACKEND === "production"
+    ? productionDesktopHandlers({ cdpUrl: process.env.AGENT_COMPUTER_CDP_URL, env: { DISPLAY: process.env.DISPLAY ?? ":0" } })
+    : undefined;
+  const gateway = new GuestGateway({ root, extraHandlers });
   await runGuestService({ input: stdin, output: stdout, gateway, vmId, channelEpoch, inventoryNames: inventory, readinessMarker, onProtocolError: (error) => stderr.write(`[agent-computer-guest] ${error.message}\n`) });
 }
 

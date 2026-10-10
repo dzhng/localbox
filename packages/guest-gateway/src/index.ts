@@ -7,7 +7,7 @@ import {
   ContractError, failure, type Json, type OperationId, success, type RequestEnvelope,
   type ResponseEnvelope, catalogById, operationCatalog, validateRequest,
 } from "../../contract/src/index.js";
-import { FixtureClock, type DispatchContext, type Handler } from "../../runtime/src/index.js";
+import { FixtureClock, type DispatchContext, type Handler, type HandlerRegistry } from "../../runtime/src/index.js";
 import { DesktopRuntime, desktopHandlers } from "../../desktop/src/index.js";
 
 export interface GuestGatewayOptions {
@@ -18,6 +18,8 @@ export interface GuestGatewayOptions {
   journalPath?: string;
   now?: () => number;
   desktopRuntime?: DesktopRuntime;
+  /** Optional production handlers. Fixture handlers remain the default. */
+  extraHandlers?: HandlerRegistry;
 }
 
 export type ShellResult = {
@@ -40,6 +42,7 @@ export class GuestGateway {
   private readonly journal = new Map<string, MutationJournalEntry>();
   private readonly now: () => number;
   private readonly desktopRuntime: DesktopRuntime;
+  private readonly extraHandlers: HandlerRegistry;
   private loaded = false;
 
   constructor(options: GuestGatewayOptions) {
@@ -51,6 +54,7 @@ export class GuestGateway {
     this.journalFile = options.journalPath ?? resolve(this.root, ".agent-computer/mutation-journal.json");
     this.now = options.now ?? (() => Date.now());
     this.desktopRuntime = options.desktopRuntime ?? new DesktopRuntime();
+    this.extraHandlers = options.extraHandlers ?? {};
   }
 
   private async loadJournal(): Promise<void> {
@@ -155,6 +159,7 @@ export class GuestGateway {
       "desktop.scroll": async (input) => ({ ...(input as Record<string, Json>), scrolled: true }),
       "desktop.key": async (input) => ({ ...(input as Record<string, Json>), sent: true }),
       "desktop.type": async (input) => ({ ...(input as Record<string, Json>), typed: true }),
+      ...this.extraHandlers,
     };
   }
 

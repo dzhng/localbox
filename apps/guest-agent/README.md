@@ -14,6 +14,11 @@ Configuration comes from environment variables:
 - `AGENT_COMPUTER_READINESS_MARKER` — marker written before the `ready` frame.
 - `AGENT_COMPUTER_INVENTORY` — comma-separated inventory names. The default is
   the Duet-compatible inventory contract.
+- `AGENT_COMPUTER_DESKTOP_BACKEND=production` — opt into the Chromium CDP and
+  X11 desktop backend. Chromium must expose loopback CDP (default
+  `http://127.0.0.1:9222`); `AGENT_COMPUTER_CDP_URL` overrides that endpoint,
+  and `DISPLAY` selects the X11 display. Without this variable the deterministic
+  fixture desktop remains active for probes and local tests.
 
 The first output frame is `ready`, containing the VM ID, channel epoch,
 inventory digest, and readiness marker. Requests with a stale epoch or VM ID

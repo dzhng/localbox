@@ -23,6 +23,14 @@ test("guest gateway confines filesystem operations to its root", async () => {
   if (!traversal.ok) assert.equal(traversal.error.code, "forbidden");
 });
 
+test("guest gateway accepts optional production handler overrides", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-"));
+  const gateway = new GuestGateway({ root, extraHandlers: { "desktop.status": async () => ({ backend: "production" }) } });
+  const response = await gateway.dispatch(request("desktop.status", {}));
+  assert.equal(response.ok, true);
+  if (response.ok) assert.deepEqual(response.result, { backend: "production" });
+});
+
 test("guest mutation journal replays a write after gateway restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-"));
   const first = new GuestGateway({ root });
