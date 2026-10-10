@@ -80,15 +80,16 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
 | G6 | MCP metadata/PKCE/tools list and tools call equal CLI behavior; MCP is optional. |
 | G7 | Sleep/network/guest-crash recovery, redacted audit/quotas, signed/notarized ARM64 app/CLI/image verification and rollback. |
 
-## Landmines carried into implementation
+## Remaining external gates
 
-- The native backend currently validates then throws unsupported (`apps/macos/VMProbe/Sources/VMProbeCore/AppleVirtualizationBackend.swift:14-23`).
-- Relay and OAuth are explicitly in-memory fixtures (`apps/relay/src/index.ts:19`, `apps/relay/src/oauth.ts:44`).
-- Current CLI auth only saves a fixture token (`apps/cli/src/index.ts:61-110`) and current transports are fixtures (`packages/client/src/index.ts:58-63`).
-- Image verification checks manifest metadata only (`packages/vm-image/src/index.ts:14-26`).
-- Guest and desktop adapters are host-side deterministic fixtures, not a Linux guest channel (`packages/guest-gateway/src/index.ts:133`, `packages/desktop/src/index.ts:7`).
-- `vm.reset` must gain canonical destructive confirmation in the contract before CLI/MCP parity can be safe.
-- The current relay frame model does not provide durable lease/claim/ack semantics or large-payload storage.
+- Apple Virtualization must boot the published ARM64 kernel/initrd/disk, attach
+  virtio-serial to `GuestService`, and exercise cold/warm persistence,
+  pause/resume, sleep recovery, and clean stop on Apple Silicon.
+- A real Convex deployment and Vercel project must be provisioned with the
+  environment variables in `README.md`; the local schema/function harness and
+  route contract already cover the transaction behavior.
+- Release infrastructure must provide Apple signing/notarization credentials,
+  package the daemon/CLI/image, and run upgrade interruption and rollback tests.
 
 ## Delegated implementation choices
 

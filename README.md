@@ -22,12 +22,11 @@ as convenience interfaces over the same operation contract.
 
 ## Status
 
-The host-testable implementation foundation is shipped and documented in the
-[closed rationale](specs/done/agent-computer/README.md). The native probe keeps
-real Apple Virtualization lifecycle work explicit: it needs a pinned Linux image
-and host daemon before it can claim a real VM boot. All contract, guest, relay,
-OAuth, MCP, recovery, registry, release, and CLI fixture gates are runnable on
-the host.
+The code-level production implementation is shipped and documented in the
+[production spec](specs/agent-computer-production/README.md). Contract, guest,
+Convex, relay, MCP, recovery, registry, image, release, and CLI gates are
+runnable locally. Apple Virtualization boot, deployed Convex/Vercel smoke, and
+signed distribution still require the release environment.
 
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
 `apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
