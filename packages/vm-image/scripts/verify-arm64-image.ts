@@ -30,7 +30,7 @@ if (architecture !== "arm64") throw new Error(`image architecture probe failed: 
 for (const name of DUET_REQUIRED_TOOL_NAMES) {
   const spec = DUET_TOOL_PROBES[name];
   const command = spec.kind === "python"
-    ? `python3 -c 'import ${spec.importName}; print(${JSON.stringify(spec.importName)}.__version__ if hasattr(${JSON.stringify(spec.importName)}, "__version__") else "ok")'`
+    ? `python3 -c 'import ${spec.importName} as module; print(getattr(module, "__version__", "ok"))'`
     : `command -v ${name} && ${spec.probe}`;
   try {
     const output = await run(["run", "--rm", "--platform", "linux/arm64", "--entrypoint", "/bin/sh", imageRef, "-lc", `set -eu; ${command}`]);
