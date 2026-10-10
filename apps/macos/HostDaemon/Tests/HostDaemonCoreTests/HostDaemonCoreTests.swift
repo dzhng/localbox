@@ -171,3 +171,27 @@ extension HostDaemonCoreTests {
         await server.stop()
     }
 }
+
+extension HostDaemonCoreTests {
+    func testUnixDomainSocketRejectsOversizedFrame() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let path = localSocketPath()
+        let endpoint = LocalIPCEndpoint(socketPath: path)
+        let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "socket-secret", endpoint: endpoint)
+        let server = UnixDomainSocketServer(ipc: ipc, endpoint: endpoint, maxFrameBytes: 16)
+        try await server.start()
+        defer { Task { await server.stop() } }
+
+        let fd = try connectLocalSocket(path)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var length = UInt32(17).bigEndian
+        try handle.write(contentsOf: Data(bytes: &length, count: 4))
+        try handle.write(contentsOf: Data(repeating: 0x41, count: 17))
+        let response = try JSONDecoder().decode(LocalIPCResponse.self, from: receiveSocketFrame(from: handle))
+        XCTAssertEqual(response.error, "frame_too_large")
+        try handle.close()
+        await server.stop()
+    }
+}
