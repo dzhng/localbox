@@ -5,6 +5,7 @@ type DbContext = { db: any };
 type Input = Record<string, any>;
 
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
+const MAX_QUERY_ROWS = 1_000;
 const now = (input: Input) => typeof input.now === "number" ? input.now : Date.now();
 const jsonHash = async (value: unknown): Promise<string> => {
   const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value));
@@ -22,6 +23,11 @@ const clean = <T extends Record<string, any>>(row: T): Omit<T, "_id" | "_creatio
   return rest;
 };
 const fail = (message: string): never => { throw new Error(message); };
+async function boundedRows(query: any, label: string): Promise<any[]> {
+  const rows = await query.take(MAX_QUERY_ROWS + 1);
+  if (rows.length > MAX_QUERY_ROWS) fail(`${label} exceeds the bounded read limit`);
+  return rows;
+}
 
 async function owner(ctx: DbContext, ownerId: string): Promise<any> {
   return await ctx.db.query("owners").withIndex("by_owner", (q: any) => q.eq("ownerId", ownerId)).first();
@@ -86,10 +92,21 @@ export const write = mutationGeneric({
       }
       case "claimRequests": {
         const limit = input.limit ?? 20; const leaseMs = input.leaseMs ?? 30_000;
-        const rows = await ctx.db.query("requests").withIndex("by_lease").filter((q: any) => q.or(q.eq(q.field("status"), "queued"), q.and(q.eq(q.field("status"), "leased"), q.lte(q.field("leaseExpiresAt"), at)))).collect();
-        const claimed = rows.filter((row: any) => (!input.ownerId || row.ownerId === input.ownerId) && (!input.vmId || row.vmId === input.vmId)).slice(0, limit);
-        for (const row of claimed) await ctx.db.patch(row._id, { status: "leased", leaseOwner: input.leaseOwner, leaseExpiresAt: at + leaseMs });
-        return claimed.map((row: any) => ({ ...clean(row), status: "leased", leaseOwner: input.leaseOwner, leaseExpiresAt: at + leaseMs }));
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_QUERY_ROWS) fail("claim limit exceeds the bounded read limit");
+        let rows: any[];
+        if (input.ownerId !== undefined && input.vmId !== undefined) {
+          const queued = await ctx.db.query("requests").withIndex("by_owner_vm_status_lease", (q: any) => q.eq("ownerId", input.ownerId).eq("vmId", input.vmId).eq("status", "queued")).take(limit);
+          const leased = await ctx.db.query("requests").withIndex("by_owner_vm_status_lease", (q: any) => q.eq("ownerId", input.ownerId).eq("vmId", input.vmId).eq("status", "leased").lte("leaseExpiresAt", at)).take(limit);
+          rows = [...queued, ...leased].sort((a, b) => a.createdAt - b.createdAt).slice(0, limit);
+        } else {
+          rows = await ctx.db.query("requests").withIndex("by_lease").filter((q: any) => q.and(
+            q.or(q.eq(q.field("status"), "queued"), q.and(q.eq(q.field("status"), "leased"), q.lte(q.field("leaseExpiresAt"), at))),
+            ...(input.ownerId === undefined ? [] : [q.eq(q.field("ownerId"), input.ownerId)]),
+            ...(input.vmId === undefined ? [] : [q.eq(q.field("vmId"), input.vmId)]),
+          )).take(limit);
+        }
+        for (const row of rows) await ctx.db.patch(row._id, { status: "leased", leaseOwner: input.leaseOwner, leaseExpiresAt: at + leaseMs });
+        return rows.map((row: any) => ({ ...clean(row), status: "leased", leaseOwner: input.leaseOwner, leaseExpiresAt: at + leaseMs }));
       }
       case "recordResponse": {
         const request = await byField(ctx, "requests", "by_request_id", "requestId", input.requestId); if (!request) fail("request not found");
@@ -133,7 +150,7 @@ export const write = mutationGeneric({
         const old = await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", refreshHash);
         if (!old || old.revokedAt !== undefined || old.refreshExpiresAt <= at) fail("refresh token invalid or revoked");
         if (old.refreshUsedAt !== undefined) {
-          const familyRows = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", old.familyId)).collect();
+          const familyRows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", old.familyId)), "OAuth token family");
           for (const row of familyRows) await ctx.db.patch(row._id, { revokedAt: at });
           fail("refresh replay revoked family");
         }
@@ -151,7 +168,7 @@ export const write = mutationGeneric({
         const updated = { ...next, used: next.used + amount, limit: input.limit }; if (row) await ctx.db.patch(row._id, { used: updated.used, limit: updated.limit }); else await ctx.db.insert("quotas", updated); return clean(updated);
       }
       case "revokeOAuthFamily": {
-        const rows = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", input.familyId)).collect();
+        const rows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", input.familyId)), "OAuth token family");
         for (const row of rows) await ctx.db.patch(row._id, { revokedAt: at });
         return null;
       }
@@ -164,7 +181,7 @@ export const write = mutationGeneric({
             : [await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", digest), await byField(ctx, "oauthTokens", "by_refresh_hash", "refreshTokenHash", digest)];
         const match = rows.find(Boolean);
         if (match) {
-          const family = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", match.familyId)).collect();
+          const family = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", match.familyId)), "OAuth token family");
           for (const row of family) await ctx.db.patch(row._id, { revokedAt: at });
         }
         return null;
@@ -180,14 +197,16 @@ export const read = queryGeneric({
     const input = args.input ?? {};
     switch (args.operation) {
       case "listVms": {
-        const rows = await ctx.db.query("vms").withIndex("by_owner", (q: any) => q.eq("ownerId", input.ownerId)).collect(); return rows.filter((row: any) => row.revokedAt === undefined).map(clean);
+        const rows = await boundedRows(ctx.db.query("vms").withIndex("by_owner", (q: any) => q.eq("ownerId", input.ownerId)), "VM list"); return rows.filter((row: any) => row.revokedAt === undefined).map(clean);
       }
+      case "getChannel": { const row = await byField(ctx, "channels", "by_channel", "channelId", input.channelId); return row ? clean(row) : undefined; }
+      case "getRequest": { const row = await byField(ctx, "requests", "by_request_id", "requestId", input.requestId); return row ? clean(row) : undefined; }
       case "getResponse": { const row = await byField(ctx, "responses", "by_request_id", "requestId", input.requestId); return row ? clean(row) : undefined; }
       case "validateChannelGrant": {
         const row = await byField(ctx, "channels", "by_channel", "channelId", input.channelId); if (!row || row.revokedAt !== undefined || row.expiresAt <= (input.now ?? Date.now()) || row.vmId !== input.vmId || row.epoch !== input.epoch || row.tokenHash !== await jsonHash(input.token)) fail("channel grant is stale, revoked, or VM-bound"); return clean(row);
       }
       case "snapshot": {
-        const table = async (name: string) => (await ctx.db.query(name).collect()).map(clean);
+        const table = async (name: string) => (await boundedRows(ctx.db.query(name), `${name} snapshot`)).map(clean);
         return { owners: await table("owners"), vms: await table("vms"), channels: await table("channels"), requests: await table("requests"), responses: await table("responses"), audit: await table("audit"), quotas: await table("quotas") };
       }
       case "validateAccessToken": {
@@ -195,6 +214,15 @@ export const read = queryGeneric({
         const row = await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", tokenHash);
         if (!row || row.revokedAt !== undefined || row.accessExpiresAt <= (input.now ?? Date.now()) || row.resource !== input.resource || (input.vmId && row.vmId !== input.vmId)) fail("access token invalid or expired");
         return { ownerId: row.ownerId, vmId: row.vmId, resource: row.resource, scope: row.scope, familyId: row.familyId, accessExpiresAt: row.accessExpiresAt };
+      }
+      case "ownerStatus": {
+        const allVms = input.vmId === undefined;
+        const [channelRows, queuedRows, leasedRows] = await Promise.all([
+          boundedRows(allVms ? ctx.db.query("channels").withIndex("by_owner", (q: any) => q.eq("ownerId", input.ownerId)) : ctx.db.query("channels").withIndex("by_owner_vm", (q: any) => q.eq("ownerId", input.ownerId).eq("vmId", input.vmId)), "active channel status"),
+          boundedRows(allVms ? ctx.db.query("requests").withIndex("by_owner_status", (q: any) => q.eq("ownerId", input.ownerId).eq("status", "queued")) : ctx.db.query("requests").withIndex("by_owner_vm_status_lease", (q: any) => q.eq("ownerId", input.ownerId).eq("vmId", input.vmId).eq("status", "queued")), "queued request status"),
+          boundedRows(allVms ? ctx.db.query("requests").withIndex("by_owner_status", (q: any) => q.eq("ownerId", input.ownerId).eq("status", "leased")) : ctx.db.query("requests").withIndex("by_owner_vm_status_lease", (q: any) => q.eq("ownerId", input.ownerId).eq("vmId", input.vmId).eq("status", "leased")), "leased request status"),
+        ]);
+        return { channels: channelRows.filter((row: any) => row.ownerId === input.ownerId && (!input.vmId || row.vmId === input.vmId) && row.revokedAt === undefined).length, queued: queuedRows.length + leasedRows.length };
       }
       default: fail(`unsupported relay query ${args.operation}`);
     }

@@ -10,6 +10,11 @@ Add a `RelayStateRepository` interface and Convex functions/schema for owner acc
 
 Add a Duet-inspired local Convex harness that starts an isolated deployment, pushes this schema, exposes a client, and cleans up. The local harness and Convex production adapter implement the same transaction semantics; in-memory fixtures may remain only as unit doubles.
 
+Production queries use indexes and bounded reads. Relay hot paths resolve one
+request or channel directly and claim only the requested owner/VM lease bucket;
+diagnostic snapshots and family-wide security operations fail closed at their
+explicit safety ceiling instead of silently loading unbounded history.
+
 ## Human runnable artifact
 
 A local test command boots Convex, creates one owner/VM/channel, enqueues and claims a request, records a response, restarts the harness, and resolves exact replay, lease expiry, stale epoch, revocation, and refresh rotation.

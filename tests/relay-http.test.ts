@@ -23,11 +23,16 @@ test("stateless relay routes submit, host poll/complete, replay, heartbeat and r
 
 test("relay rejects auth, VM mismatch, conflicting mutation and stale lease", async () => {
   let now = 1_700_000_000_000; const harness = await createLocalConvexHarness({ now: () => now }); const repo = harness.client(); const owner = await repo.createOwner({ subject: "user" }); await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
+  await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_02" }); await repo.issueChannelGrant({ ownerId: owner.ownerId, vmId: "vm_02", token: "token_2", channelId: "ch_2" });
   await repo.issueOAuthTokens({ ownerId: owner.ownerId, vmId: "vm_01", resource: "https://relay.test/mcp", accessToken: "access", refreshToken: "refresh", accessExpiresAt: now + 1000, refreshExpiresAt: now + 1000 }); await repo.issueChannelGrant({ ownerId: owner.ownerId, vmId: "vm_01", token: "token", channelId: "ch" });
   const relay = new RelayHttpAdapter({ repository: repo, resource: "https://relay.test/mcp" });
   assert.equal((await relay.handle({ method: "POST", url: "https://relay.test/agent/requests", body: {} })).status, 401);
   assert.equal((await relay.handle({ method: "POST", url: "https://relay.test/agent/requests", headers: { authorization: "Bearer access" }, body: { request_id: "r", operation: "x", vm_id: "other", payload: {} } })).status, 401);
   const base = { request_id: "r", operation: "x", vm_id: "vm_01", mutation_id: "m", payload: { x: 1 } }; assert.equal((await relay.handle({ method: "POST", url: "https://relay.test/agent/requests", headers: { authorization: "Bearer access" }, body: base })).status, 202);
+  await repo.enqueueRequest({ ownerId: owner.ownerId, vmId: "vm_02", requestId: "r2", operation: "x", payload: {} });
+  assert.equal((await relay.handle({ method: "GET", url: "https://relay.test/agent/responses/r2", headers: { authorization: "Bearer access" } })).status, 404);
+  assert.equal((await relay.handle({ method: "POST", url: "https://relay.test/channels/ch_2/revoke", headers: { authorization: "Bearer access" }, body: {} })).status, 404);
+  assert.equal(((await relay.handle({ method: "GET", url: "https://relay.test/status", headers: { authorization: "Bearer access" } })).body as any).queued, 1);
   assert.equal((await relay.handle({ method: "POST", url: "https://relay.test/agent/requests", headers: { authorization: "Bearer access" }, body: { ...base, payload: { x: 2 } } })).status, 409);
   const host = { "x-channel-id": "ch", "x-channel-token": "token", "x-channel-epoch": "1", "x-vm-id": "vm_01" }; await relay.handle({ method: "POST", url: "https://relay.test/host/poll", headers: host, body: { lease_owner: "a", lease_ms: 5 } }); now += 6; const redeliver = await relay.handle({ method: "POST", url: "https://relay.test/host/poll", headers: host, body: { lease_owner: "b" } }); assert.equal((redeliver.body as any).frames.length, 1);
 });

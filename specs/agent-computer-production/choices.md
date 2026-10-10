@@ -157,6 +157,20 @@ ceiling is finite and must be configured with the deployment's provider limit.
 Verdict: sound; it preserves the inline cap while making externalization
 possible. Confidence: high.
 
+### Convex relay reads are bounded and route-specific — high confidence
+
+Polling a host or checking one response must not scan every request, channel,
+and audit row owned by the deployment. The repository now uses indexes for the
+host's owner/VM/status lease query and targeted request/channel lookups; the
+diagnostic snapshot and family-wide security operations have an explicit row
+ceiling and fail closed when state exceeds it. The alternative was an
+unbounded database read in each HTTP request, which would grow with retention
+history and eventually make the relay slow or exhaust its query budget. This
+keeps the hot path proportional to the request being served while making an
+abnormally large administrative set visible instead of silently truncating it.
+Verdict: sound, because every production read has a bounded result or an index
+that selects the requested owner/status bucket. Confidence: high.
+
 ### Production blobs use private Vercel Blob storage — needs-user, medium confidence
 
 The relay now has a real `BlobProvider` implementation backed by Vercel Blob.
