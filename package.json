@@ -7,14 +7,20 @@
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test tests/**/*.test.ts",
     "contract:probe": "tsx apps/cli/src/index.ts contract probe",
-    "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots"
+    "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots",
+    "image:build": "tsx packages/vm-image/scripts/build-arm64-image.ts",
+    "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts"
   },
   "bin": {
     "agent-computer": "bin/agent-computer.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "convex-test": "^0.0.54",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "convex": "^1.42.1"
   }
 }

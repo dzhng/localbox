@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { makeFunctionReference } from "convex/server";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export interface Clock { now(): number }
@@ -132,8 +133,41 @@ export class LocalConvexHarness {
   private assertOpen(): void { if (this.closed || !this.repository) throw new StateConflictError("harness is closed"); }
 }
 export async function createLocalConvexHarness(options: LocalRepositoryOptions = {}): Promise<LocalConvexHarness> { return LocalConvexHarness.start(options); }
-export const ConvexRelayStateRepository = InMemoryRelayStateRepository;
+/** Minimal Convex client surface. ConvexHttpClient and convex-test both satisfy it. */
+export interface ConvexFunctionClient {
+  mutation(name: any, args: Record<string, unknown>): Promise<unknown>;
+  query(name: any, args: Record<string, unknown>): Promise<unknown>;
+}
+
+/** Production repository adapter backed by `convex/relay:write` and `convex/relay:read`. */
+export class ConvexRelayStateRepository implements RelayStateRepository {
+  constructor(private readonly client: ConvexFunctionClient, readonly deploymentId = "convex") {}
+  private async write<T>(operation: string, input: unknown): Promise<T> { return await this.client.mutation(makeFunctionReference("relay:write"), { operation, input }) as T; }
+  private async read<T>(operation: string, input: Record<string, unknown>): Promise<T> { return await this.client.query(makeFunctionReference("relay:read"), { operation, input }) as T; }
+  createOwner(input: OwnerInput) { return this.write<OwnerRecord>("createOwner", input); }
+  createVm(input: VmInput) { return this.write<VmRecord>("createVm", input); }
+  listVms(ownerId: string) { return this.read<VmRecord[]>("listVms", { ownerId }); }
+  issueChannelGrant(input: ChannelGrantInput) { return this.write<ChannelGrantRecord>("issueChannelGrant", input); }
+  rotateChannelGrant(channelId: string, expectedEpoch: number) { return this.write<ChannelGrantRecord>("rotateChannelGrant", { channelId, expectedEpoch }); }
+  async revokeChannel(channelId: string) { await this.write("revokeChannel", { channelId }); }
+  validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }) { return this.read<ChannelGrantRecord>("validateChannelGrant", input); }
+  enqueueRequest(input: RequestFrameInput) { return this.write<RequestFrameRecord>("enqueueRequest", input); }
+  claimRequests(input: ClaimInput) { return this.write<RequestFrameRecord[]>("claimRequests", input); }
+  recordResponse(input: ResponseFrameInput) { return this.write<ResponseFrameRecord>("recordResponse", input); }
+  getResponse(requestId: string) { return this.read<ResponseFrameRecord | undefined>("getResponse", { requestId }); }
+  async ackRequest(requestId: string, leaseOwner: string) { await this.write("ackRequest", { requestId, leaseOwner }); }
+  createAuthorizationCode(input: AuthorizationCodeInput) { return this.write<AuthorizationCodeRecord>("createAuthorizationCode", input); }
+  consumeAuthorizationCode(code: string, verifier: string) { return this.write<AuthorizationCodeRecord>("consumeAuthorizationCode", { code, verifier }); }
+  issueOAuthTokens(input: OAuthTokenInput) { return this.write<OAuthTokenRecord>("issueOAuthTokens", input); }
+  rotateRefreshToken(refreshToken: string) { return this.write<OAuthTokenRecord>("rotateRefreshToken", { refreshToken }); }
+  validateAccessToken(accessToken: string, resource: string, vmId?: string) { return this.read<AccessTokenRecord>("validateAccessToken", { accessToken, resource, vmId }); }
+  async revokeOAuthFamily(familyId: string) { await this.write("revokeOAuthFamily", { familyId }); }
+  appendAudit(input: AuditInput) { return this.write<AuditRecord>("appendAudit", input); }
+  quota(input: QuotaInput) { return this.write<QuotaRecord>("quota", input); }
+  snapshot() { return this.read<StateSnapshot>("snapshot", {}); }
+}
 
 export const pkceChallenge = (verifier: string): string => hash(verifier);
 
 export { relayStateSchema } from "../convex/schema.js";
+export { createConvexTestHarness } from "../convex/test-harness.js";
