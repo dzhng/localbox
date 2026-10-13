@@ -30,7 +30,8 @@ export interface SkillManagerOptions {
   home?: string;
   source?: string;
   sourceUrl?: string;
-  npxPath?: string;
+  nodePath?: string;
+  installerPath?: string;
   run?: Runner;
 }
 
@@ -63,13 +64,15 @@ export class SkillManager {
   private readonly home: string;
   private readonly source: string;
   private readonly sourceUrl: string;
-  private readonly npxPath?: string;
+  private readonly nodePath?: string;
+  private readonly installerPath?: string;
   private readonly run: Runner;
   constructor(options: SkillManagerOptions = {}) {
     this.home = resolve(options.home ?? process.env.LOCALBOX_SKILL_HOME ?? homedir());
     this.source = resolve(options.source ?? process.env.LOCALBOX_SKILL_SOURCE ?? bundledSkillSource());
     this.sourceUrl = options.sourceUrl ?? SOURCE_URL;
-    this.npxPath = options.npxPath;
+    this.nodePath = options.nodePath ?? process.env.LOCALBOX_NODE_PATH;
+    this.installerPath = options.installerPath ?? process.env.LOCALBOX_SKILLS_INSTALLER;
     this.run = options.run ?? defaultRun;
   }
   async status(explicit?: Partial<SkillStatus>): Promise<SkillStatus> {
@@ -128,9 +131,9 @@ export class SkillManager {
         const saved = join(backup, relative(this.home, this.receiptPath));
         await mkdir(dirname(saved), { recursive: true }); await copyPreservingSymlink(this.receiptPath, saved); backedUp.push(this.receiptPath); await rm(this.receiptPath, { force: true });
       }
-      const npx = await this.resolveNpx();
-      const result = await this.run(npx, ["--yes", INSTALLER, "add", this.source, "--skill", "localbox", "--agent", "codex", "claude-code", "--global", "--yes"], this.commandEnv(npx));
-      if (result.code !== 0) throw new Error(result.output.trim() || "npx skills failed");
+      const installer = await this.resolveInstaller();
+      const result = await this.run(installer.node, [installer.script, "add", this.source, "--all", "--global", "--yes"], this.commandEnv(installer.node));
+      if (result.code !== 0) throw new Error(result.output.trim() || "bundled skills installer failed");
       const after = await this.discover();
       const entries = after.entries.filter((entry) => entry.name === "localbox" && entry.scope === "global");
       const canonical = join(this.home, ".agents/skills/localbox");
@@ -148,20 +151,26 @@ export class SkillManager {
   }
   private async discover(): Promise<{ entries: Entry[]; error?: string }> {
     try {
-      const npx = await this.resolveNpx(); const result = await this.run(npx, ["--yes", INSTALLER, "ls", "--global", "--json"], this.commandEnv(npx));
+      const installer = await this.resolveInstaller(); const result = await this.run(installer.node, [installer.script, "ls", "--global", "--json"], this.commandEnv(installer.node));
       if (result.code !== 0) return { entries: await this.fallbackEntries(), error: result.output.trim() || "skill discovery failed" };
       const entries = JSON.parse(result.output) as Entry[]; return { entries: Array.isArray(entries) ? entries : [], error: undefined };
     } catch (error) { return { entries: await this.fallbackEntries(), error: error instanceof Error ? error.message : String(error) }; }
   }
   private async fallbackEntries(): Promise<Entry[]> { return (await Promise.all(KNOWN_PATHS.map(async (path): Promise<Entry | undefined> => { const full = join(this.home, path); return (await this.exists(full)) ? { name: "localbox", path: full, scope: "global" } : undefined; }))).filter((entry): entry is Entry => Boolean(entry)); }
-  private async resolveNpx(): Promise<string> {
-    if (this.npxPath) return this.npxPath;
-    for (const part of (process.env.PATH ?? "").split(":")) { const candidate = join(part, "npx"); if (await this.isExecutable(candidate)) return candidate; }
-    const candidates = [join(this.home, ".volta/bin/npx"), join(this.home, ".asdf/shims/npx"), join(this.home, ".local/bin/npx"), "/opt/homebrew/bin/npx", "/usr/local/bin/npx"];
-    for (const candidate of candidates) if (await this.isExecutable(candidate)) return candidate;
-    throw new Error("npx not found in the runtime environment");
+  private async resolveInstaller(): Promise<{ node: string; script: string }> {
+    const node = this.nodePath ?? process.execPath;
+    if (!(await this.isExecutable(node))) throw new Error("Localbox's bundled Node runtime is unavailable");
+    const scripts = [
+      this.installerPath,
+      join(this.home, ".localbox/skills-installer/cli.mjs"),
+      resolve(new URL("../../../node_modules/skills/bin/cli.mjs", import.meta.url).pathname),
+      resolve(new URL("../../../../node_modules/skills/bin/cli.mjs", import.meta.url).pathname),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+    const script = scripts.find((candidate) => existsSync(candidate));
+    if (!script) throw new Error(`${INSTALLER} is not bundled in this release`);
+    return { node, script };
   }
-  private commandEnv(npx: string): NodeJS.ProcessEnv { return { ...process.env, HOME: this.home, USERPROFILE: this.home, PATH: `${dirname(npx)}:${process.env.PATH ?? "/usr/bin:/bin"}` }; }
+  private commandEnv(node: string): NodeJS.ProcessEnv { return { ...process.env, HOME: this.home, USERPROFILE: this.home, DISABLE_TELEMETRY: "1", PATH: `${dirname(node)}:${process.env.PATH ?? "/usr/bin:/bin"}` }; }
   private get receiptPath(): string { return join(this.home, ".config/localbox/skill-install.json"); }
   private get statePath(): string { return join(this.home, ".config/localbox/skill-state.json"); }
   private async readReceipt(): Promise<Receipt | undefined> { try { return JSON.parse(await readFile(this.receiptPath, "utf8")) as Receipt; } catch { return undefined; } }

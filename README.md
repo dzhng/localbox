@@ -93,6 +93,13 @@ managed global skill. Use
 `scripts/rollback-release.sh VERSION` to select an older verified tree; use
 `scripts/uninstall.sh` to remove launchd and the CLI link while preserving VM
 state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or fixture install.
+The CLI archive carries its own ARM64 Node runtime and pinned `skills@1.7.0`
+installer, so skill install/update never depends on the agent's host `node`,
+`npm`, `npx`, or a network fetch.
+
+The bundled Localbox skill is the agent-facing installation path: when the CLI
+is missing, the agent downloads the tagged release kit, verifies it, and invokes
+the release installer. There is no browser app download or drag-and-drop step.
 
 The tagged-release workflow is `.github/workflows/release.yml`. It expects
 repository variables for the pinned ARM64 kernel, initrd, template disk, image

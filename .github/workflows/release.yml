@@ -36,6 +36,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
+      - run: npm ci
       - name: Validate release inputs
         env:
           RELEASE_PRIVATE_KEY: ${{ secrets.LOCALBOX_RELEASE_PRIVATE_KEY }}

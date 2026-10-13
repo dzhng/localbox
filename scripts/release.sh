@@ -188,10 +188,18 @@ SELF=$0
 if [ -L "$SELF" ]; then SELF=$(readlink "$SELF"); fi
 ROOT=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
 export LOCALBOX_SKILL_SOURCE="${LOCALBOX_SKILL_SOURCE:-$ROOT/skill}"
+export LOCALBOX_NODE_PATH="${LOCALBOX_NODE_PATH:-$ROOT/node}"
+export LOCALBOX_SKILLS_INSTALLER="${LOCALBOX_SKILLS_INSTALLER:-$ROOT/skills-installer/bin/cli.mjs}"
 exec "$ROOT/node" "$ROOT/dist/apps/cli/src/index.js" "$@"
 EOF
 chmod 0755 "$CLI/bin/localbox"
 npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
+if [ ! -f "$CLI/node_modules/skills/bin/cli.mjs" ]; then
+  echo "the release CLI is missing the pinned skills installer" >&2
+  exit 1
+fi
+cp -R "$CLI/node_modules/skills" "$CLI/skills-installer"
+rm -rf "$CLI/skills-installer/node_modules" "$CLI/skills-installer/.cache"
 
 sign_code() {
   if [ -n "$SIGNING_KEYCHAIN" ]; then

@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/**
+      - package.json
+      - package-lock.json
+      - .node-version
       - apps/cli/**
       - apps/macos/HostDaemon/**
       - packages/vm-image/**
@@ -16,6 +19,9 @@ on:
     branches: [main]
     paths:
       - .github/workflows/**
+      - package.json
+      - package-lock.json
+      - .node-version
       - apps/cli/**
       - apps/macos/HostDaemon/**
       - packages/vm-image/**

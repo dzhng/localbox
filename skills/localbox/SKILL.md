@@ -5,10 +5,13 @@ description: Install and operate Localbox through its CLI, with optional MCP.
 
 # Localbox
 
-Install the signed arm64 release, verify `release.json` and `SHA256SUMS`, then
-run `localbox status`. The installer places the app at
+When `localbox` is missing, install the signed arm64 CLI release from the
+selected GitHub tag with the repository installer; the agent performs this
+bootstrap and verifies `release.json` and `SHA256SUMS`. Then run
+`localbox status`. The installer places the app at
 `~/Library/Application Support/Localbox/releases/active/Localbox.app` and the
 CLI at `~/.local/bin/localbox`.
+For the complete bootstrap, read [installation](references/installation.md).
 
 ## Everyday use
 
@@ -20,7 +23,11 @@ Use `localbox update check` to inspect GitHub Releases and
 job performs the same check automatically every six hours. Use
 `localbox skill status`, `localbox skill install`, and `localbox skill update`
 to manage the global Localbox skill for Codex and Claude; managed skills are
-refreshed after an app update.
+refreshed after an app update. The release carries its own Node runtime and
+pinned `skills@1.7.0` installer, so these operations do not call host `npx` or
+download a skill package.
+For replacement, rollback, and unmanaged-skill rules, read
+[skill lifecycle](references/skill-lifecycle.md).
 
 ## Recovery
 

@@ -26,6 +26,7 @@
   "dependencies": {
     "@vercel/blob": "^2.8.1",
     "convex": "^1.42.1",
+    "skills": "1.7.0",
     "undici": "^6.29.0"
   }
 }
