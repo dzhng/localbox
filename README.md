@@ -103,7 +103,8 @@ the release installer. There is no browser app download or drag-and-drop step.
 
 The tagged-release workflow is `.github/workflows/release.yml`. It expects
 repository variables for the pinned ARM64 kernel, initrd, template disk, image
-digest, and release public key, plus secrets for the Ed25519 release key,
+digest, and the release public key in
+`skills/localbox/release-public.pem`, plus secrets for the Ed25519 release key,
 Apple signing identity, and password. The workflow publishes the app, CLI,
 manifest, and checksums to GitHub Releases. The updater trusts the public key
 configured by the installer and refuses unsigned or mismatched artifacts. The

@@ -27,10 +27,12 @@ shasum -a 256 -c SHA256SUMS
 tar -xzf "$archive" -C "$download"
 ```
 
-Pass the pinned release public key supplied by the deployment to the installer:
+The bundled skill carries the pinned release public key. If the agent already
+has this skill in one of the global harness directories, the installer finds it
+automatically. Pass it explicitly when bootstrapping from another environment:
 
 ```sh
-RELEASE_PUBLIC_KEY=/path/to/localbox-release-public.pem \
+RELEASE_PUBLIC_KEY="$HOME/.agents/skills/localbox/release-public.pem" \
   "$download/localbox-cli/scripts/install-release.sh" "$download"
 ```
 

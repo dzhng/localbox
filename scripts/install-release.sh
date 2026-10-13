@@ -15,6 +15,19 @@ DISK_PATH=${LOCALBOX_DISK:-$INSTALL_ROOT/vm/disk.img}
 PUBLIC_KEY_FILE=${LOCALBOX_RELEASE_PUBLIC_KEY_FILE:-$INSTALL_ROOT/release-public.pem}
 RELEASE_REPOSITORY=${LOCALBOX_RELEASE_REPOSITORY:-dzhng/agent-computer}
 
+if [ -z "${RELEASE_PUBLIC_KEY:-}" ]; then
+  for candidate in \
+    "${LOCALBOX_SKILL_SOURCE:-}/release-public.pem" \
+    "$HOME/.agents/skills/localbox/release-public.pem" \
+    "$HOME/.codex/skills/localbox/release-public.pem" \
+    "$HOME/.claude/skills/localbox/release-public.pem"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+      RELEASE_PUBLIC_KEY="$candidate"
+      break
+    fi
+  done
+fi
+
 if [ -z "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR" ]; then
   echo "usage: scripts/install-release.sh RELEASE_DIR" >&2
   exit 2
