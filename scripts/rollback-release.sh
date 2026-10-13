@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/localbox-path.sh"
+
 VERSION=${1:-}
 ALLOW_UNSIGNED=${ALLOW_UNSIGNED:-0}
 INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox}
@@ -63,6 +66,7 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_REPOSITORY' -string "$REL
 if [ -f "$PUBLIC_KEY_FILE" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_PUBLIC_KEY' -string "$PUBLIC_KEY_FILE" "$UPDATER_PLIST"; fi
 chmod 600 "$UPDATER_PLIST"
 ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
+localbox_add_path
 
 if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"

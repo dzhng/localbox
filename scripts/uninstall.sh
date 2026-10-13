@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/localbox-path.sh"
+
 INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox}
 RELEASE_ROOT="$INSTALL_ROOT/releases"
 BIN_DIR=${LOCALBOX_BIN_DIR:-$HOME/.local/bin}
@@ -16,6 +19,7 @@ fi
 if [ -e "$PLIST" ]; then rm -f "$PLIST"; fi
 if [ -e "$UPDATER_PLIST" ]; then rm -f "$UPDATER_PLIST"; fi
 if [ -L "$BIN_DIR/localbox" ] || [ -e "$BIN_DIR/localbox" ]; then rm -f "$BIN_DIR/localbox"; fi
+localbox_remove_path
 if [ "${LOCALBOX_REMOVE_RELEASES:-0}" = "1" ]; then rm -rf "$RELEASE_ROOT"; fi
 
 echo "uninstalled Localbox host integration"

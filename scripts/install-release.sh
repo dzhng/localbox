@@ -3,6 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+. "$SCRIPT_DIR/localbox-path.sh"
 SOURCE_DIR=${1:-}
 ALLOW_UNSIGNED=${ALLOW_UNSIGNED:-0}
 INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox}
@@ -147,6 +148,7 @@ if [ ! -s "$TOKEN_FILE" ]; then
 fi
 chmod 600 "$TOKEN_FILE"
 ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
+localbox_add_path
 
 if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"

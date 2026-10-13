@@ -96,6 +96,9 @@ state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or fixture install.
 The CLI archive carries its own ARM64 Node runtime and pinned `skills@1.7.0`
 installer, so skill install/update never depends on the agent's host `node`,
 `npm`, `npx`, or a network fetch.
+It also adds a marked `~/.local/bin` PATH line only when the account's login
+shell does not already cover that directory; uninstall removes only that marked
+block.
 
 The bundled Localbox skill is the agent-facing installation path: when the CLI
 is missing, the agent downloads the tagged release kit, verifies it, and invokes

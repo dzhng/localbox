@@ -50,4 +50,5 @@ localbox help --json
 ```
 
 If the command is not on the current shell's `PATH`, use
-`~/.local/bin/localbox` directly. A new login shell sees the symlink.
+`~/.local/bin/localbox` directly. The installer adds a marked PATH block for a
+future login shell when the account does not already cover `~/.local/bin`.

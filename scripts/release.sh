@@ -167,7 +167,7 @@ cp -R "$ROOT/dist/apps" "$CLI/dist/apps"
 cp -R "$ROOT/dist/packages" "$CLI/dist/packages"
 cp -R "$ROOT/dist/scripts" "$CLI/dist/scripts"
 mkdir -p "$CLI/scripts"
-cp "$ROOT/scripts/install-release.sh" "$ROOT/scripts/rollback-release.sh" "$CLI/scripts/"
+cp "$ROOT/scripts/install-release.sh" "$ROOT/scripts/rollback-release.sh" "$ROOT/scripts/localbox-path.sh" "$CLI/scripts/"
 cp -R "$ROOT/skills/localbox" "$CLI/skill"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$CLI/"
 NODE_BIN=${LOCALBOX_NODE_BIN:-}

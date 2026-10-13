@@ -11,6 +11,8 @@ bootstrap and verifies `release.json` and `SHA256SUMS`. Then run
 `localbox status`. The installer places the app at
 `~/Library/Application Support/Localbox/releases/active/Localbox.app` and the
 CLI at `~/.local/bin/localbox`.
+The installer adds `~/.local/bin` to the login shell profile only when it is not
+already covered, using a marked block that can be removed safely on uninstall.
 For the complete bootstrap, read [installation](references/installation.md).
 
 ## Everyday use
