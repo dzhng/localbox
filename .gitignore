@@ -8,3 +8,5 @@ apps/macos/VMProbe/.build/
 .turbo/
 
 apps/macos/**/.build/
+.vercel
+.env*
