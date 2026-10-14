@@ -3,6 +3,16 @@
 Localbox runs a durable, preconfigured Linux VM on a user's Mac and
 makes that VM available to AI agents through a CLI and an optional MCP adapter.
 
+## Agent setup
+
+Tell your agent:
+
+> Install Localbox for me by following https://localbox.dev/llms.txt
+
+The agent downloads and verifies the tagged release, installs the CLI and
+managed skill, and registers the local HostDaemon. There is no browser app
+download step.
+
 The VM provides the execution boundary. The agent can use shell access as the
 authority, with filesystem, browser, screenshots, and virtual-desktop controls
 as convenience interfaces over the same operation contract.
@@ -103,6 +113,11 @@ block.
 The bundled Localbox skill is the agent-facing installation path: when the CLI
 is missing, the agent downloads the tagged release kit, verifies it, and invokes
 the release installer. There is no browser app download or drag-and-drop step.
+
+The public landing page lives in `apps/site`. Run `npm run site:build` to render
+the static page and `/llms.txt`; `npm run site:test` checks their shared install
+prompt, canonical metadata, sitemap and agent-only install route. Deploy the
+site as a separate Vercel project with Root Directory `apps/site`.
 
 The tagged-release workflow is `.github/workflows/release.yml`. It expects
 repository variables for the pinned ARM64 kernel, initrd, template disk, image
