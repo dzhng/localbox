@@ -95,19 +95,20 @@ retried.
 The fastest agents run with permission prompts off, and that's exactly what nobody
 wants on their own laptop. Inside a sandbox, let it. The sandbox is the boundary,
 so there's nothing inside worth prompting about: install anything, run untrusted
-scripts, break things. The worst case is deleting the sandbox.
+scripts, break things. The worst case is deleting the sandbox. Each sandbox is a
+full Linux virtual machine on Apple's own Virtualization framework, the one built
+into macOS, with its own kernel, disk and network.
 
-## Coming next: share a folder, see every access
+## Share a folder, see every access
 
 <p align="center">
   <img src=".github/readme/06-share-a-folder.png" alt="One shared folder reaches the sandbox through a tube while Xiaohei logs every access in a ledger" width="85%">
 </p>
 
-A sandbox sees nothing on your Mac, and today that's the whole story: no host
-folder is shared. Next, your agent will be able to share exactly the folder it
-needs, read-only unless you say otherwise, with Localbox logging every file the
-sandbox reads or writes through it. Your processes, credentials and screen are
-never shared. The [security model](SECURITY.md) spells out the boundary.
+A sandbox sees nothing on your Mac until you say so. Your agent shares exactly
+the folder it needs, read-only unless you say otherwise, and Localbox logs every
+file the sandbox reads or writes through it. Your processes, credentials and
+screen are never shared. The [security model](SECURITY.md) spells out the boundary.
 
 ## One catalog, two ways in
 
@@ -130,18 +131,7 @@ make room, the output it trimmed. Your agent never has to guess.
 | **Files** | List, read, write, create and remove paths inside the sandbox |
 | **Browser** | Open, navigate and close tabs; click, type, send keys and take screenshots |
 | **Desktop** | Screenshot, move, click, scroll and type on a 1440×900 virtual display |
-| **Shared folders** | Coming next: share a host folder read-only or read-write, and read its access log |
-
-## What works today
-
-Everything above except shared folders is built, and proven end to end on one
-Mac with real VMs and a simulated second Mac: email sign-in, many sandboxes per
-Mac, placement across your machines, shell, files, browser and desktop from the
-CLI or MCP, idle sleep and wake, and signed releases that keep themselves
-current. Idle sandboxes free their RAM on a Mac whose screen lock asks for no
-password ([why](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
-Sign-in emails start once the mail domain is set up. The
-[positioning](positioning.md) doc tracks each use case.
+| **Shared folders** | Share a host folder read-only or read-write, and read its access log |
 
 ## Get started
 
@@ -151,10 +141,8 @@ Open Claude Code or Codex and say:
 
 > Install Localbox for me by following https://localbox.sh/llms.txt
 
-Then ask for something that needs a sandbox.
-
-Installs work once the first signed [release](https://github.com/dzhng/localbox/releases)
-is published. The [agent setup](#agent-setup) below is what your agent follows.
+Then ask for something that needs a sandbox. The [agent setup](#agent-setup)
+below is what your agent follows.
 
 ## Agent setup
 
