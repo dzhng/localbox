@@ -28,8 +28,8 @@
     }
   ],
   "create_local": {
-    "sandbox_id": "sandbox_c3712c43-bb53-44de-843d-857ef3d4715b",
-    "name": "bright-ibis",
+    "sandbox_id": "sandbox_2fef810e-04b9-47ab-94ac-09cf8fa3825c",
+    "name": "sunny-ibis",
     "machine": "proof-a",
     "placement_reason": "on proof-a, this machine (6 GiB free)",
     "cpus": 1,
@@ -39,8 +39,8 @@
     "delete_after_ms": null
   },
   "create_on_b": {
-    "sandbox_id": "sandbox_ba6e2479-eaf3-40ec-8393-8148d0f1014c",
-    "name": "quick-lynx",
+    "sandbox_id": "sandbox_ff161d7f-189c-4f48-8970-7c1617dd2575",
+    "name": "jolly-lemur",
     "machine": "proof-b",
     "placement_reason": "on proof-b, as asked (12 GiB free)",
     "cpus": 1,
@@ -50,8 +50,8 @@
     "delete_after_ms": null
   },
   "create_auto": {
-    "sandbox_id": "sandbox_e355b638-accb-4441-a574-33406eca66a5",
-    "name": "bold-quokka",
+    "sandbox_id": "sandbox_81aa2d6d-d5cd-4207-a201-6efc9115c841",
+    "name": "swift-badger",
     "machine": "proof-b",
     "placement_reason": "on proof-b, the machine with the most room (10 GiB free)",
     "cpus": 1,
@@ -64,54 +64,54 @@
   "relayed_round_trip_ms": [
     158,
     115,
-    114,
-    115,
-    114
+    112,
+    113,
+    112
   ],
   "mcp_shell_exec": {
-    "sandbox": "bright-ibis",
+    "sandbox": "sunny-ibis",
     "stdout": "arm64",
     "actions": [
       {
-        "detail": "woke bright-ibis from sleep",
+        "detail": "woke sunny-ibis from sleep",
         "kind": "woke"
       }
     ]
   },
   "machine_offline": {
-    "ms": 3181,
-    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T18:27:34.329Z"
+    "ms": 3175,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T19:01:09.006Z"
   },
   "asleep": {
-    "last_boot": {
-      "kind": "cold_booted",
-      "detail": "cold-booted bright-ibis"
-    },
     "lifecycle": "paused",
     "cpus": 1,
+    "last_boot": {
+      "kind": "cold_booted",
+      "detail": "cold-booted sunny-ibis"
+    },
+    "sandbox_id": "sandbox_2fef810e-04b9-47ab-94ac-09cf8fa3825c",
     "sleep_after_ms": 5000,
-    "memory_bytes": 2147483648,
-    "name": "bright-ibis",
     "channel_epoch": 2,
-    "delete_after_ms": null,
-    "sandbox_id": "sandbox_c3712c43-bb53-44de-843d-857ef3d4715b",
-    "state": "sleeping"
+    "state": "sleeping",
+    "name": "sunny-ibis",
+    "memory_bytes": 2147483648,
+    "delete_after_ms": null
   },
   "woke": [
     {
-      "detail": "woke bright-ibis from sleep",
+      "detail": "woke sunny-ibis from sleep",
       "kind": "woke"
     }
   ],
   "connector_exit": {
     "code": 0,
-    "ms": 111,
+    "ms": 108,
     "log": [
       "Uncaught Error: Forbidden: machine revoked or unknown",
       "Uncaught Error: Forbidden: machine revoked or unknown",
-      "2026-10-15T18:27:46.860Z connector: machine credential revoked: machine token refused (401); stopping",
-      "2026-10-15T18:27:46.860Z connector: state revoked: machine token refused (401)",
-      "2026-10-15T18:27:46.861Z connector: ended: revoked"
+      "2026-10-15T19:01:21.523Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T19:01:21.523Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T19:01:21.523Z connector: ended: revoked"
     ]
   },
   "checks": [

@@ -74,12 +74,13 @@ export async function runOps(principal: Principal, input: Record<string, unknown
 }
 
 /**
- * Account operations run against the catalog. `sandbox.create`, `.rename` and `.delete` change the catalog and tell
- * the sandbox's machine. Machine-level host operations (relay status, agent setup) go to one machine
- * (`resolveMachine`). Every other operation names a sandbox (`sandbox`: name or id; omitted only when the account has
- * exactly one) and is enqueued for the connector of the machine holding it; this call waits on a Convex subscription
- * for up to min(deadline, 50 s). A request no connector claims within 3 s is abandoned and reported `machine_offline`;
- * one still running when the wait ends comes back as a continuation the client resumes with `{continue: request_id}`.
+ * A request names what it is for with two selectors beside the operation: `sandbox` and `machine`, each a name or id.
+ * Account operations run against the catalog. `sandbox.create` places on the named machine, and `.rename` and
+ * `.delete` change the catalog and tell the sandbox's machine. Machine-level host operations (relay status, agent
+ * setup) go to one machine (`resolveMachine`). Every other operation acts on a sandbox (`sandbox`; omitted only when
+ * the account has exactly one) and is enqueued for the connector of the machine holding it; this call waits on a
+ * Convex subscription for up to min(deadline, 50 s). A request no connector claims within 3 s is abandoned and
+ * reported `machine_offline`; one still running when the wait ends comes back as a continuation the client resumes with `{continue: request_id}`.
  */
 async function handleOps(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<OpsResponse> {
   if (typeof input.continue === "string") return await waitFor(principal, input.continue, Number(input.deadline_at ?? 0), deps);
@@ -87,19 +88,22 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
   const payload = (input.input ?? {}) as Record<string, Json>;
   const entry = catalogById.get(operation as OperationId);
   const base = requestFromInvocation({ operation, request_id: typeof input.request_id === "string" ? input.request_id : `req_${crypto.randomUUID()}`, deadline_ms: typeof input.deadline_ms === "number" ? input.deadline_ms : undefined, mutation_id: typeof input.mutation_id === "string" ? input.mutation_id : null, input: payload });
-  const wanted = typeof input.sandbox === "string" ? input.sandbox : undefined;
+  const sandbox = typeof input.sandbox === "string" ? input.sandbox : undefined;
+  const machine = typeof input.machine === "string" ? input.machine : undefined;
   try {
     if (!entry) throw new ContractError("invalid_input", `unsupported operation: ${operation}`);
     validateJson(payload, entry.input_schema);
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
-    if (entry.id === "sandbox.create") return await createSandbox(principal, base, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
-    if (entry.executor === "host" && !entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, input, deps), base, deps);
-    const target = await resolveSandbox(principal, wanted, deps).catch((error) => {
+    if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
+    if (!entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, sandbox, machine, deps), base, deps);
+    const target = await resolveSandbox(principal, sandbox, deps).catch((error) => {
       // A delete of a sandbox that is already gone has nothing left to do.
-      if (entry.id === "sandbox.delete" && wanted && error instanceof ContractError && error.code === "sandbox_not_found") return undefined;
+      if (entry.id === "sandbox.delete" && sandbox && error instanceof ContractError && error.code === "sandbox_not_found") return undefined;
       throw error;
     });
-    if (!target) return answer(success(base, alreadyDeleted(payload, wanted!) as unknown as Json));
+    if (!target) return answer(success(base, alreadyDeleted(payload, sandbox!) as unknown as Json));
+    // Both selectors given: they must agree, or the caller meant something we would silently not do.
+    if (machine && (await findMachine(principal, machine, deps)).machineId !== target.machine_id) throw new ContractError("invalid_input", `${target.name} is on ${target.machine_name ?? target.machine_id}, not ${machine}; leave out machine for a sandbox`);
     const request = { ...base, sandbox_id: target.sandbox_id };
     if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
     if (entry.id === "sandbox.delete") return await deleteSandbox(principal, request, target, deps);
@@ -143,13 +147,14 @@ async function findMachine(principal: Principal, wanted: string, deps: OpsDeps):
   throw new ContractError("machine_not_found", `no machine ${wanted} on this account; ${names.length ? `machines: ${names.join(", ")}` : "it has none"}`, { names });
 }
 
-/**
- * The machine a machine-level operation runs on: `machine` (name or id), else the named `sandbox`'s machine, else the
- * calling machine, else the account's only machine.
- */
-async function resolveMachine(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<string> {
-  if (typeof input.machine === "string") return (await findMachine(principal, input.machine, deps)).machineId;
-  if (typeof input.sandbox === "string") return (await resolveSandbox(principal, input.sandbox, deps)).machine_id;
+/** The machine a machine-level operation runs on: the named sandbox's, else the named machine, else the calling machine, else the account's only machine. */
+async function resolveMachine(principal: Principal, sandbox: string | undefined, machine: string | undefined, deps: OpsDeps): Promise<string> {
+  if (sandbox) {
+    const target = await resolveSandbox(principal, sandbox, deps);
+    if (machine && (await findMachine(principal, machine, deps)).machineId !== target.machine_id) throw new ContractError("invalid_input", `${target.name} is on ${target.machine_name ?? target.machine_id}, not ${machine}; name one or the other`);
+    return target.machine_id;
+  }
+  if (machine) return (await findMachine(principal, machine, deps)).machineId;
   if (principal.machineId) return principal.machineId;
   const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
   const names = rows.map((row) => row.name);
@@ -159,13 +164,13 @@ async function resolveMachine(principal: Principal, input: Record<string, unknow
 }
 
 /**
- * Place the sandbox (`place`), reserve its identity in Convex, then have the machine create it; a machine that
- * refuses releases the name. `callerMachineId` is the calling machine, sent by a CLI whose local daemon answers; a
- * machine can only name itself, and agents have no machine. A replay (the same mutation id) relays the first create
+ * Place the sandbox (`place`: on `named`, the machine the request names, else by placement), reserve its identity in
+ * Convex, then have the machine create it; a machine that refuses releases the name. `callerMachineId` is the calling
+ * machine, sent by a CLI whose local daemon answers; a machine can only name itself, and agents have no machine. A replay (the same mutation id) relays the first create
  * again, so the relay's and the machine's dedupe answer with its result instead of making a second sandbox.
  */
-async function createSandbox(principal: Principal, base: RequestEnvelope, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
-  const asked = base.input as { name?: string; machine?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
+async function createSandbox(principal: Principal, base: RequestEnvelope, named: string | undefined, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { name?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
   const policy = { ...(asked.sleep_after_ms ? { sleep_after_ms: asked.sleep_after_ms } : {}), ...(asked.delete_after_ms ? { delete_after_ms: asked.delete_after_ms } : {}) };
   if (callerMachineId !== undefined && callerMachineId !== principal.machineId) throw new ContractError("invalid_input", "caller_machine_id must be the calling machine's own id");
   if (base.mutation_id) {
@@ -188,7 +193,7 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, caller
   });
   const tried = new Set<string>();
   for (;;) {
-    const placed = place({ flags: { machine: asked.machine, placement: asked.placement }, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes });
+    const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes });
     if ("error" in placed) throw new ContractError(placed.error, placed.message, { machines: placed.machines as unknown as Json }, placed.error === "machine_offline");
     const machine = rows.find((row) => row.machineId === placed.machineId)!;
     const { cpus: hostCpus, total_bytes: hostMemory } = machine.capacity ?? {};
@@ -202,7 +207,7 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, caller
     const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}) } };
     const relayed = await relay(principal, machine.machineId, request, deps);
     const response = (relayed.body as { response?: ResponseEnvelope }).response;
-    if (response && !response.ok && response.error.code === "machine_offline" && asked.placement && !asked.machine) {
+    if (response && !response.ok && response.error.code === "machine_offline" && asked.placement) {
       await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id }); tried.add(machine.machineId); continue;
     }
     const release = () => deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id });

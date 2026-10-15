@@ -76,7 +76,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "machine.list": ["List machines in the account.", empty(), true, false, "none"],
   "machine.rename": ["Rename an account machine.", object({ machine_id: string(), name: string() }, ["machine_id", "name"]), false, true, "required"],
   "machine.remove": ["Remove an account machine.", object({ machine_id: string() }, ["machine_id"]), false, true, "required"],
-  "sandbox.create": ["Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.", object({ name: string(), machine: string(), placement: { type: "string", enum: ["auto", "remote"] }, cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 }, sleep_after_ms: { type: "integer", minimum: 1000 }, delete_after_ms: { type: "integer", minimum: 1000 } }), false, true, "required"],
+  "sandbox.create": ["Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.", object({ name: string(), placement: { type: "string", enum: ["auto", "remote"] }, cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 }, sleep_after_ms: { type: "integer", minimum: 1000 }, delete_after_ms: { type: "integer", minimum: 1000 } }), false, true, "required"],
   "sandbox.list": ["List the account's sandboxes with their machine and last reported state.", empty(), true, false, "none"],
   "sandbox.rename": ["Rename a sandbox.", object({ name: string() }, ["name"]), false, true, "required"],
   "sandbox.delete": ["Delete a sandbox; `confirm`, when given, must be its name.", object({ confirm: string() }), false, true, "required"],
@@ -149,6 +149,8 @@ export interface RequestEnvelope<T extends Json = Json> {
   request_id: string;
   operation: OperationId | string;
   sandbox_id: string | null;
+  /** The machine the request is for (a name or id), when the caller names one; the agent API resolves it and never relays it. */
+  machine?: string;
   deadline_ms: number;
   mutation_id: string | null;
   input: T;
@@ -157,6 +159,7 @@ export interface RequestEnvelope<T extends Json = Json> {
 export interface Invocation<T extends Json = Json> {
   operation: OperationId | string;
   sandbox_id?: string | null;
+  machine?: string;
   deadline_ms?: number;
   mutation_id?: string | null;
   request_id?: string;
@@ -168,6 +171,7 @@ export function requestFromInvocation<T extends Json>(invocation: Invocation<T>,
     request_id: invocation.request_id ?? defaults.request_id ?? "request-1",
     operation: invocation.operation,
     sandbox_id: invocation.sandbox_id ?? null,
+    ...(invocation.machine ? { machine: invocation.machine } : {}),
     deadline_ms: invocation.deadline_ms ?? defaults.deadline_ms ?? 30_000,
     mutation_id: invocation.mutation_id ?? null,
     input: invocation.input,

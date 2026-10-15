@@ -6,37 +6,37 @@ const GIB = 1024 ** 3;
 const machine = (id: string, name: string, room: number, total: number, reported = true): PlacementMachine => ({ id, name, reported, roomBytes: room * GIB, totalBytes: total * GIB, lastReportAt: Date.UTC(2026, 9, 15) });
 const studio = machine("m_studio", "Studio", 4, 8); const attic = machine("m_attic", "attic", 10, 16); const garage = machine("m_garage", "garage", 20, 32, false);
 const fleet = [studio, attic, garage];
-const where = (input: Partial<PlacementInput>) => place({ flags: {}, machines: fleet, neededBytes: 2 * GIB, ...input });
+const where = (input: Partial<PlacementInput>) => place({ machines: fleet, neededBytes: 2 * GIB, ...input });
 const chosen = (input: Partial<PlacementInput>) => { const result = where(input); assert.ok("machineId" in result, JSON.stringify(result)); return result.machineId; };
 const refused = (input: Partial<PlacementInput>) => { const result = where(input); assert.ok("error" in result, JSON.stringify(result)); return result; };
 
 test("each rule picks the machine it names", () => {
   const cases: Array<[string, Partial<PlacementInput>, string]> = [
-    ["no flags: the caller's own machine", { callerMachineId: "m_studio" }, "m_studio"],
-    ["no flags, own machine full: still the caller's (its host makes room)", { callerMachineId: "m_studio", neededBytes: 6 * GIB }, "m_studio"],
-    ["--machine by name, any case", { callerMachineId: "m_studio", flags: { machine: "ATTIC" } }, "m_attic"],
-    ["--machine by id", { flags: { machine: "m_attic" } }, "m_attic"],
-    ["--machine full: still that machine", { flags: { machine: "studio" }, neededBytes: 6 * GIB }, "m_studio"],
-    ["auto: the online machine with the most room (offline garage skipped)", { callerMachineId: "m_studio", flags: { placement: "auto" } }, "m_attic"],
-    ["auto with no caller machine", { flags: { placement: "auto" } }, "m_attic"],
-    ["remote: most room excluding the caller", { callerMachineId: "m_attic", flags: { placement: "remote" } }, "m_studio"],
-    ["auto: a machine too small for the sandbox is skipped", { flags: { placement: "auto" }, machines: [machine("m_small", "small", 6, 6), studio], neededBytes: 7 * GIB }, "m_studio"],
+    ["no machine or placement: the caller's own machine", { callerMachineId: "m_studio" }, "m_studio"],
+    ["no machine or placement, own machine full: still the caller's (its host makes room)", { callerMachineId: "m_studio", neededBytes: 6 * GIB }, "m_studio"],
+    ["a named machine, by name in any case", { callerMachineId: "m_studio", machine: "ATTIC" }, "m_attic"],
+    ["a named machine, by id", { machine: "m_attic" }, "m_attic"],
+    ["a named machine that is full: still that machine", { machine: "studio", neededBytes: 6 * GIB }, "m_studio"],
+    ["auto: the online machine with the most room (offline garage skipped)", { callerMachineId: "m_studio", placement: "auto" }, "m_attic"],
+    ["auto with no caller machine", { placement: "auto" }, "m_attic"],
+    ["remote: most room excluding the caller", { callerMachineId: "m_attic", placement: "remote" }, "m_studio"],
+    ["auto: a machine too small for the sandbox is skipped", { placement: "auto", machines: [machine("m_small", "small", 6, 6), studio], neededBytes: 7 * GIB }, "m_studio"],
   ];
   for (const [label, input, expected] of cases) assert.equal(chosen(input), expected, label);
 });
 
 test("ties go to the caller's machine, then name order", () => {
   const twins = [machine("m_b", "bravo", 8, 16), machine("m_a", "alpha", 8, 16), machine("m_c", "charlie", 8, 16)];
-  assert.equal(chosen({ machines: twins, callerMachineId: "m_c", flags: { placement: "auto" } }), "m_c");
-  assert.equal(chosen({ machines: twins, flags: { placement: "auto" } }), "m_a");
-  assert.equal(chosen({ machines: twins, callerMachineId: "m_a", flags: { placement: "remote" } }), "m_b");
+  assert.equal(chosen({ machines: twins, callerMachineId: "m_c", placement: "auto" }), "m_c");
+  assert.equal(chosen({ machines: twins, placement: "auto" }), "m_a");
+  assert.equal(chosen({ machines: twins, callerMachineId: "m_a", placement: "remote" }), "m_b");
 });
 
 test("the reason is one sentence naming the machine, its room and what was skipped", () => {
-  const auto = where({ callerMachineId: "m_studio", flags: { placement: "auto" } });
+  const auto = where({ callerMachineId: "m_studio", placement: "auto" });
   assert.ok("reason" in auto);
   assert.equal(auto.reason, "on attic, the machine with the most room (10 GiB free); skipped offline garage");
-  const full = where({ flags: { placement: "auto" }, neededBytes: 12 * GIB });
+  const full = where({ placement: "auto", neededBytes: 12 * GIB });
   assert.ok("reason" in full); assert.match(full.reason, /none has 12 GiB free, so attic makes room/);
   const own = where({ callerMachineId: "m_studio" });
   assert.ok("reason" in own); assert.equal(own.reason, "on Studio, this machine (4 GiB free)");
@@ -44,14 +44,14 @@ test("the reason is one sentence naming the machine, its room and what was skipp
 
 test("refusals name the code and list every machine with its room", () => {
   const cases: Array<[string, Partial<PlacementInput>, string, RegExp]> = [
-    ["no caller machine and no flags", {}, "invalid_input", /name a machine or use --placement auto: attic \(10 GiB free of 16 GiB\), garage \(offline, last report 2026-10-15T00:00:00.000Z\), Studio \(4 GiB free of 8 GiB\)/],
-    ["a named machine that is offline", { flags: { machine: "garage" } }, "machine_offline", /garage is offline \(last report 2026-10-15/],
-    ["an unknown machine", { flags: { machine: "attic2" } }, "machine_not_found", /no machine attic2 on this account; machines: attic/],
-    ["remote with only the caller's machine", { machines: [studio], callerMachineId: "m_studio", flags: { placement: "remote" } }, "machine_not_found", /no machine other than this one/],
-    ["remote where every other machine is offline", { callerMachineId: "m_studio", machines: [studio, garage], flags: { placement: "remote" } }, "machine_offline", /no other machine is online/],
-    ["auto where no machine is big enough", { flags: { placement: "auto" }, neededBytes: 40 * GIB }, "machine_full", /no online machine has 40 GiB in all/],
-    ["a named machine smaller than the sandbox", { flags: { machine: "studio" }, neededBytes: 9 * GIB }, "machine_full", /Studio has 8 GiB in all/],
-    ["machine and placement together", { flags: { machine: "studio", placement: "auto" } }, "invalid_input", /either a machine or a placement/],
+    ["no caller machine, no machine and no placement", {}, "invalid_input", /name a machine or use --placement auto: attic \(10 GiB free of 16 GiB\), garage \(offline, last report 2026-10-15T00:00:00.000Z\), Studio \(4 GiB free of 8 GiB\)/],
+    ["a named machine that is offline", { machine: "garage" }, "machine_offline", /garage is offline \(last report 2026-10-15/],
+    ["an unknown machine", { machine: "attic2" }, "machine_not_found", /no machine attic2 on this account; machines: attic/],
+    ["remote with only the caller's machine", { machines: [studio], callerMachineId: "m_studio", placement: "remote" }, "machine_not_found", /no machine other than this one/],
+    ["remote where every other machine is offline", { callerMachineId: "m_studio", machines: [studio, garage], placement: "remote" }, "machine_offline", /no other machine is online/],
+    ["auto where no machine is big enough", { placement: "auto", neededBytes: 40 * GIB }, "machine_full", /no online machine has 40 GiB in all/],
+    ["a named machine smaller than the sandbox", { machine: "studio", neededBytes: 9 * GIB }, "machine_full", /Studio has 8 GiB in all/],
+    ["machine and placement together", { machine: "studio", placement: "auto" }, "invalid_input", /either a machine or a placement/],
   ];
   for (const [label, input, code, message] of cases) {
     const result = refused(input);

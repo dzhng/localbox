@@ -39,7 +39,7 @@ export interface AgentApiTransportOptions {
 }
 
 /**
- * Runs a request through the agent API, which finds the machine that holds the request's sandbox. The server waits up to 50 s per call
+ * Runs a request through the agent API, which finds the machine the request's selectors name (`sandbox`, `machine`). The server waits up to 50 s per call
  * and hands back a continuation for longer requests; this transport resumes it until the request's deadline.
  * It never replays a mutation on its own.
  */
@@ -61,7 +61,7 @@ export class AgentApiTransport implements ClientTransport {
     const token = this.accessTokenProvider ? await this.accessTokenProvider() : this.accessToken;
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (token) headers.authorization = `Bearer ${token}`;
-    let body: Record<string, unknown> = { operation: request.operation, input: request.input, sandbox: request.sandbox_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms, ...(this.callerMachineId ? { caller_machine_id: this.callerMachineId } : {}) };
+    let body: Record<string, unknown> = { operation: request.operation, input: request.input, sandbox: request.sandbox_id, ...(request.machine ? { machine: request.machine } : {}), request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms, ...(this.callerMachineId ? { caller_machine_id: this.callerMachineId } : {}) };
     for (;;) {
       let response: Response;
       try {

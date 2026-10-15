@@ -10,9 +10,10 @@ export interface PlacementMachine {
   /** When the machine last reported (ms), so an offline one can say how long it has been gone. */
   lastReportAt?: number;
 }
-export interface PlacementFlags { machine?: string; placement?: "auto" | "remote" }
 export interface PlacementInput {
-  flags: PlacementFlags;
+  /** The machine the request names (an id or a case-insensitive name). */
+  machine?: string;
+  placement?: "auto" | "remote";
   /** The machine the caller runs on, when it has one (a CLI whose local daemon answers); agents have none. */
   callerMachineId?: string;
   machines: PlacementMachine[];
@@ -36,28 +37,28 @@ export function byNameOrId<T extends { name: string }>(rows: readonly T[], wante
 }
 
 /**
- * `machine` (an id or a case-insensitive name) wins; `placement: auto` takes the online machine with the most room,
+ * The named `machine` wins; `placement: auto` takes the online machine with the most room,
  * `remote` the same without the caller's machine; no flag means the caller's own machine. Ties go to the caller's
  * machine, then by name. A named or default machine is used even when full: its host makes room when it starts the
  * sandbox. A machine whose whole memory is smaller than the sandbox is never chosen.
  */
 export function place(input: PlacementInput): Placement {
-  const { flags, callerMachineId, machines, neededBytes } = input;
+  const { machine: named, placement, callerMachineId, machines, neededBytes } = input;
   const all = [...machines].sort((a, b) => a.name.localeCompare(b.name));
   const fail = (error: PlacementErrorCode, message: string): Placement => ({ error, message, machines: rooms(all) });
   const listed = all.length ? all.map(room).join(", ") : "this account has no machines";
   const tooSmall = (machine: PlacementMachine) => machine.totalBytes > 0 && machine.totalBytes < neededBytes;
 
-  if (flags.machine !== undefined && flags.placement !== undefined) return fail("invalid_input", "pass either a machine or a placement, not both");
-  if (flags.machine !== undefined) {
-    const machine = byNameOrId(all, flags.machine, (candidate) => candidate.id);
-    if (!machine) return fail("machine_not_found", `no machine ${flags.machine} on this account; machines: ${listed}`);
+  if (named !== undefined && placement !== undefined) return fail("invalid_input", "pass either a machine or a placement, not both");
+  if (named !== undefined) {
+    const machine = byNameOrId(all, named, (candidate) => candidate.id);
+    if (!machine) return fail("machine_not_found", `no machine ${named} on this account; machines: ${listed}`);
     if (!machine.reported) return fail("machine_offline", `${machine.name} is offline (${lastReport(machine)}); machines: ${listed}`);
     if (tooSmall(machine)) return fail("machine_full", `${machine.name} has ${gib(machine.totalBytes)} in all, less than the ${gib(neededBytes)} this sandbox needs`);
     return { machineId: machine.id, reason: `on ${machine.name}, as asked (${gib(machine.roomBytes)} free)` };
   }
-  if (flags.placement !== undefined) {
-    const remote = flags.placement === "remote";
+  if (placement !== undefined) {
+    const remote = placement === "remote";
     const pool = all.filter((machine) => !(remote && machine.id === callerMachineId));
     if (!pool.length) return fail("machine_not_found", remote ? "this account has no machine other than this one" : "this account has no machines");
     const candidates = pool.filter((machine) => machine.reported && !tooSmall(machine));

@@ -163,8 +163,11 @@ uses this Mac's real install.
 
 Sandboxes are an account catalog in Convex (`sandboxes`): `localbox sandbox
 create` reserves a generated name there, then asks the machine that
-`packages/placement` chose (this one by default, `--machine NAME`, or
-`--placement auto|remote` by the room each machine last reported) to create it.
+`packages/placement` chose (the machine the request names with `--machine NAME`,
+else `--placement auto|remote` by the room each machine last reported, else this
+one) to create it. `--machine` and `--sandbox` are request selectors, never
+operation input: on the wire they travel beside the operation as `machine` and
+`sandbox`, and a named sandbox's own machine wins.
 The daemon admits each start against 75% of its RAM, sleeping its least recently
 used idle sandboxes to make room; it keeps each sandbox's identity, read-only, in
 its own directory next to its disk (the [host daemon](apps/macos/HostDaemon/README.md)

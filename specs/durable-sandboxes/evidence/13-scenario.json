@@ -28,8 +28,8 @@
     }
   ],
   "create_local": {
-    "sandbox_id": "sandbox_4692bc5c-889a-457d-b1d9-76b371bec73c",
-    "name": "kind-newt",
+    "sandbox_id": "sandbox_a60dd7b9-64b7-42e3-8a72-66217cb2b975",
+    "name": "amber-zebra",
     "machine": "proof-a",
     "placement_reason": "on proof-a, this machine (18 GiB free)",
     "cpus": 1,
@@ -38,10 +38,10 @@
     "sleep_after_ms": 5000,
     "delete_after_ms": null
   },
-  "node_server_pid": "300",
+  "node_server_pid": "301",
   "create_on_b": {
-    "sandbox_id": "sandbox_34f10974-dd37-4d7f-9907-72726b790a2d",
-    "name": "amber-badger",
+    "sandbox_id": "sandbox_58ed07e8-ca66-42d4-910e-33df067a8295",
+    "name": "fuzzy-robin",
     "machine": "proof-b",
     "placement_reason": "on proof-b, as asked (384 GiB free)",
     "cpus": 1,
@@ -51,8 +51,8 @@
     "delete_after_ms": null
   },
   "create_auto": {
-    "sandbox_id": "sandbox_e133db1d-43ef-4355-af33-f79fb202829f",
-    "name": "zesty-moose",
+    "sandbox_id": "sandbox_a0abffd4-c50f-40b1-8df0-356b46b45a9b",
+    "name": "humble-beaver",
     "machine": "proof-b",
     "placement_reason": "on proof-b, the machine with the most room (382 GiB free)",
     "cpus": 1,
@@ -61,43 +61,43 @@
     "sleep_after_ms": 1800000,
     "delete_after_ms": null
   },
-  "convex_calls_per_relayed_request": 13,
+  "convex_calls_per_relayed_request": 13.4,
   "relayed_round_trip_ms": [
-    166,
-    116,
+    158,
     115,
+    116,
     114,
-    115
+    114
   ],
   "mcp_shell_exec": {
-    "sandbox": "kind-newt",
+    "sandbox": "amber-zebra",
     "stdout": "aarch64",
     "actions": [
       {
-        "detail": "restored kind-newt from its saved state",
+        "detail": "restored amber-zebra from its saved state",
         "kind": "woke"
       }
     ]
   },
   "machine_offline": {
-    "ms": 3181,
-    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T18:29:39.489Z"
+    "ms": 3178,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T19:07:05.525Z"
   },
   "asleep": {
-    "name": "kind-newt",
-    "memory_bytes": 2147483648,
-    "sleep_after_ms": 5000,
+    "sandbox_id": "sandbox_a60dd7b9-64b7-42e3-8a72-66217cb2b975",
+    "delete_after_ms": null,
     "lifecycle": "asleep",
+    "cpus": 1,
+    "name": "amber-zebra",
+    "channel_epoch": 4,
+    "sleep_after_ms": 5000,
     "detail": "hibernated: state saved, memory released",
-    "sandbox_id": "sandbox_4692bc5c-889a-457d-b1d9-76b371bec73c",
+    "memory_bytes": 2147483648,
     "last_boot": {
       "kind": "woke",
-      "detail": "restored kind-newt from its saved state"
+      "detail": "restored amber-zebra from its saved state"
     },
-    "state": "sleeping",
-    "channel_epoch": 4,
-    "cpus": 1,
-    "delete_after_ms": null
+    "state": "sleeping"
   },
   "asleep_on_daemon": {
     "lifecycle": "asleep",
@@ -105,8 +105,8 @@
   },
   "woke": [
     {
-      "kind": "woke",
-      "detail": "restored kind-newt from its saved state"
+      "detail": "restored amber-zebra from its saved state",
+      "kind": "woke"
     }
   ],
   "connector_exit": {
@@ -115,9 +115,9 @@
     "log": [
       "Uncaught Error: Forbidden: machine revoked or unknown",
       "Uncaught Error: Forbidden: machine revoked or unknown",
-      "2026-10-15T18:29:55.584Z connector: machine credential revoked: machine token refused (401); stopping",
-      "2026-10-15T18:29:55.584Z connector: state revoked: machine token refused (401)",
-      "2026-10-15T18:29:55.585Z connector: ended: revoked"
+      "2026-10-15T19:07:25.099Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T19:07:25.099Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T19:07:25.100Z connector: ended: revoked"
     ]
   },
   "checks": [

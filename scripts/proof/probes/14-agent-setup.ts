@@ -205,7 +205,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const { metadata, clientId } = await registerClient("Proof Agent 14");
       const token = (await signInAgent(ctx.root, metadata, clientId, email)).access_token;
       const tools = (await mcp(token, "tools/list")).body.result.tools;
-      assert.ok(tools.find((tool: any) => tool.name === "skill.status").inputSchema.properties.machine, "machine-level tools take a machine");
+      assert.ok(tools.find((tool: any) => tool.name === "skill.status").inputSchema.properties.machine, "every tool takes the machine selector");
       const viaCli = async (args: string[]) => {
         const result = await asMachine("a", [...args, "--json"], { cwd: ctx.root, env: { HOME: home } });
         const envelope = JSON.parse(result.stdout); assert.equal(envelope.ok, true, result.stdout); return envelope.result;

@@ -95,23 +95,23 @@ const ops = async (deps: any, body: Record<string, unknown>, principal: any = fr
 
 test("sandbox.create reserves the name, has the machine create it, and reports the size and why", async () => {
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });
-  const created = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", name: "build-box" } });
+  const created = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
   assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: 1_800_000, delete_after_ms: null });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
   assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 1_800_000 }]);
   assert.equal(sandboxes.length, 1);
-  const taken = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", name: "build-box" } });
+  const taken = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(!taken.ok && taken.error.code, "name_conflict"); assert.match(!taken.ok ? taken.error.message : "", /sandboxes: build-box/);
   const agent = await ops(deps, { operation: "sandbox.create", input: {} }, { accountId: "acct", familyId: "f" });
   assert.equal(!agent.ok && agent.error.code, "invalid_input"); assert.match(!agent.ok ? agent.error.message : "", /name a machine/);
-  const idle = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", sleep_after_ms: 5_000, delete_after_ms: 10_000 } });
+  const idle = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { sleep_after_ms: 5_000, delete_after_ms: 10_000 } });
   assert.deepEqual([(idle as any).result.produced.sleep_after_ms, (idle as any).result.produced.delete_after_ms], [5_000, 10_000]);
   assert.deepEqual(b.seen.at(-1)!.input, { name: "generated-2", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 5_000, delete_after_ms: 10_000 }, "the machine applies the idle policy");
 });
 
-test("sandbox.create places by the caller's machine, --machine or --placement, and says why", async () => {
+test("sandbox.create places on the named machine, by placement or on the caller's machine, and says why", async () => {
   const capacity = (total: number, room: number) => ({ cpus: 8, total_bytes: total * GIB, reserved_bytes: (total * 0.75 - room) * GIB, room_bytes: room * GIB, running: 0, revision: 1 });
   const fleet = [
     { machineId: "m_a", name: "studio", lastSeenAt: Date.now(), capacity: capacity(8, 6) },
@@ -125,7 +125,7 @@ test("sandbox.create places by the caller's machine, --machine or --placement, a
   assert.deepEqual(pick(await where({ input: {}, caller_machine_id: "m_a" })), ["studio", "on studio, this machine (6 GiB free)"]);
   assert.deepEqual(pick(await where({ input: { placement: "auto" }, caller_machine_id: "m_a" })), ["attic", "on attic, the machine with the most room (12 GiB free); skipped offline garage"]);
   assert.deepEqual(pick(await where({ input: { placement: "remote" }, caller_machine_id: "m_b" }, { accountId: "acct", machineId: "m_b" })), ["studio", "on studio, the remote machine with the most room (6 GiB free); skipped offline garage"]);
-  const offline = await where({ input: { machine: "garage" } });
+  const offline = await where({ machine: "garage", input: {} });
   assert.equal(offline.code, "machine_offline"); assert.match(offline.message, /did not pick up the request/);
   // No caller machine (an agent, or a CLI whose local daemon did not answer): the error lists every machine with its room.
   const agent = await where({ input: {} }, { accountId: "acct", familyId: "f" });
@@ -138,7 +138,7 @@ const pick = (produced: any) => [produced.machine, produced.placement_reason];
 
 test("a machine that refuses the create releases the reserved name", async () => {
   const b = machine(true); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });
-  const refused = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", cpus: 2, memory_bytes: 2 * GIB } });
+  const refused = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { cpus: 2, memory_bytes: 2 * GIB } });
   assert.equal(!refused.ok && refused.error.code, "sandbox_not_ready");
   assert.equal(sandboxes.length, 0);
 });
@@ -186,7 +186,7 @@ test("a create's mutation id finds its reservation, with the input it relayed", 
 
 test("a replayed create relays the first create again and makes no second sandbox", async () => {
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });
-  const body = { operation: "sandbox.create", mutation_id: "cli-same", input: { machine: "attic", cpus: 2, memory_bytes: 2 * GIB } };
+  const body = { operation: "sandbox.create", mutation_id: "cli-same", machine: "attic", input: { cpus: 2, memory_bytes: 2 * GIB } };
   const first = await ops(deps, { ...body, request_id: "r-1" });
   const replay = await ops(deps, { ...body, request_id: "r-2" });
   assert.equal(first.ok && replay.ok, true, JSON.stringify(replay));
@@ -198,12 +198,12 @@ test("a replayed create relays the first create again and makes no second sandbo
 test("a create that outlives its deadline keeps its reservation and says it may still complete", async () => {
   let finish!: () => void; const b = machine();
   const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: async (request) => { await new Promise<void>((resolve) => { finish = resolve; }); return await b.answer(request); } } });
-  const late = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", deadline_ms: 100, input: { machine: "attic", name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
+  const late = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", deadline_ms: 100, machine: "attic", input: { name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
   assert.equal(!late.ok && late.error.code, "operation_uncertain");
   assert.match(!late.ok ? late.error.message : "", /the create may still complete on attic: slow-box stays reserved \(replay with mutation id cli-late/);
   assert.deepEqual(sandboxes.map((row) => row.name), ["slow-box"]);
   finish();
-  const replay = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", input: { machine: "attic", name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
+  const replay = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", machine: "attic", input: { name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
   assert.equal(replay.ok, true, JSON.stringify(replay)); assert.equal(sandboxes.length, 1);
 });
 
@@ -231,4 +231,12 @@ test("deleting a sandbox that is already gone succeeds; another account's sandbo
   assert.equal(again.ok, true, JSON.stringify(again));
   assert.deepEqual((again as any).result.actions, [{ kind: "left_alone", detail: "quiet-otter is already deleted: this account has no sandbox by that name or id" }]);
   assert.equal(b.seen.length, 1, "nothing is relayed for a sandbox that is gone");
+});
+
+test("a sandbox and a machine selector that disagree are refused, not silently resolved by the sandbox", async () => {
+  const b = machine(); const { deps } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
+  const other = machines.find((row) => row.machineId !== "m_b")!.name;
+  const refused = await ops(deps, { operation: "sandbox.status", sandbox: "quiet-otter", machine: other, input: {} });
+  assert.equal(!refused.ok && refused.error.code, "invalid_input"); assert.match(!refused.ok ? refused.error.message : "", /quiet-otter is on attic/);
+  assert.equal((await ops(deps, { operation: "sandbox.status", sandbox: "quiet-otter", machine: "attic", input: {} })).ok, true, "agreeing selectors are fine");
 });

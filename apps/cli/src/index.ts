@@ -30,7 +30,7 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["login --email EMAIL [--code CODE]", "Sign this Mac in with an email code"],
   ["logout", "Sign this Mac out and remove it from the account"],
   ["status [--sandbox NAME]", "Show a sandbox's state, the relay and egress"],
-  ["invoke OPERATION [--sandbox NAME] [--input-json JSON] [--mutation-id ID]", "Invoke any catalog operation"],
+  ["invoke OPERATION [--sandbox NAME] [--machine NAME] [--input-json JSON] [--mutation-id ID]", "Invoke any catalog operation"],
   ["help [OPERATION]", "Show this help, or one operation's schema"],
   ["mcp install", "Print the MCP server config"],
   ["update check|install", "Check for or install the latest release"],
@@ -67,6 +67,7 @@ function usage(): string {
   for (const entry of operationCatalog) { const prefix = entry.id.split(".")[0]; groups.set(prefix, [...(groups.get(prefix) ?? []), entry]); }
   const out = ["localbox <command> [options]", "",
     "Operations on one sandbox take --sandbox NAME; leave it out when the account has exactly one sandbox.",
+    "--machine NAME names the machine a request is for: sandbox create puts the sandbox there; relay, skill and agent setup operations run there.",
     "--json prints the response envelope; text prints the same facts.", ""];
   for (const [prefix, entries] of groups) {
     out.push(prefix);
@@ -164,6 +165,8 @@ async function target(wanted: string | undefined): Promise<{ sandbox: string | u
 async function run(request: RequestEnvelope, wanted: string | undefined): Promise<ResponseEnvelope> {
   const entry = catalogById.get(request.operation as OperationId)!;
   try {
+    // A machine-level operation for a named machine or sandbox goes to the agent API, which finds the machine, even when it is this Mac.
+    if ((request.machine || wanted) && entry.executor === "host" && !entry.sandbox_scoped) return await (await accountTransport()).dispatch({ ...request, sandbox_id: wanted ?? null });
     // Agent setup acts on this Mac's skill and link, so the CLI answers it itself (the daemon runs this CLI for remote callers).
     if (isAgentSetupOperation(entry.id)) { validateRequest(request); return success(request, await new AgentSetup().handle(entry.id, request.input)); }
     if (entry.sandbox_scoped) {
@@ -206,7 +209,7 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
   const { flags, positional } = parse(words, schema);
   const input: Record<string, Json> = { ...(typeof flags["input-json"] === "string" ? JSON.parse(flags["input-json"]) : {}), ...implied };
   for (const [flag, value] of Object.entries(flags)) {
-    if (CONTROL_FLAGS.has(flag) && !(flag === "machine" && entry.id === "sandbox.create")) continue;
+    if (CONTROL_FLAGS.has(flag)) continue;
     const key = flag.replaceAll("-", "_");
     if (!properties[key]) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
     input[key] = coerce(value, properties[key], flag);
@@ -218,7 +221,6 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
     if (!properties[key]) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
     input[key] = milliseconds(value, flag);
   }
-  if (typeof flags.machine === "string" && entry.id !== "sandbox.create") throw new ContractError("invalid_input", "--machine only applies to sandbox create; name an existing sandbox with --sandbox");
   let sandbox = typeof flags.sandbox === "string" ? flags.sandbox : undefined;
   const required = (schema.required ?? []).filter((key) => !(key in input));
   // `sandbox rename OLD NEW`, `sandbox delete NAME`: a leading extra word names the sandbox.
@@ -231,7 +233,7 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
     if (positional.length > required.length) throw new ContractError("invalid_input", `unexpected ${positional.slice(required.length).join(" ")}; see localbox help ${entry.id}`);
     required.forEach((key, index) => { if (positional[index] !== undefined) input[key] = coerce(positional[index], properties[key], key); });
   }
-  const request = requestFromInvocation({ operation: entry.id, input, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : undefined, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : entry.idempotency === "required" ? newId("cli") : null });
+  const request = requestFromInvocation({ operation: entry.id, input, machine: typeof flags.machine === "string" ? flags.machine : undefined, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : undefined, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : entry.idempotency === "required" ? newId("cli") : null });
   print(await run(request, sandbox));
 }
 
@@ -335,7 +337,7 @@ async function main(): Promise<void> {
     const { flags } = parse(head.slice(2));
     let input: Json = {};
     try { input = JSON.parse(typeof flags["input-json"] === "string" ? flags["input-json"] : "{}") as Json; } catch { input = null; }
-    const request = requestFromInvocation({ operation: subcommand, input, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : undefined, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : null });
+    const request = requestFromInvocation({ operation: subcommand, input, machine: typeof flags.machine === "string" ? flags.machine : undefined, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : undefined, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : null });
     if (!entry) { print(failure(request, new ContractError("invalid_input", `unknown operation: ${subcommand}`))); return; }
     print(await run(request, typeof flags.sandbox === "string" ? flags.sandbox : undefined)); return;
   }

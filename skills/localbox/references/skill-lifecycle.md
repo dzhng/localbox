@@ -34,8 +34,8 @@ Inspecting never changes anything.
 
 ## Operations
 
-They are catalog operations, so the CLI and MCP (as tools with an optional
-`machine` argument) answer the same thing. Results report what was installed,
+They are catalog operations, so the CLI (`--machine NAME` for another Mac) and
+MCP (the `machine` argument) answer the same thing. Results report what was installed,
 replaced (with the backup path) or left alone, and why.
 
 - `localbox skill status`: `state` is `installed`, `updating`, `missing`,

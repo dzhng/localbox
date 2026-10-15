@@ -16,22 +16,16 @@ export interface McpAdapterOptions {
 }
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
-const SANDBOX_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The sandbox to act on: a name or id from sandbox.list. May be left out when the account has exactly one sandbox." };
-const MACHINE_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The machine to act on: a name or id from machine.list. May be left out when the account has exactly one machine." };
-/** Machine-level host operations (relay status, agent setup) act on one machine rather than a sandbox. */
-const machineLevel = (entry: Pick<OperationCatalogEntry, "executor" | "sandbox_scoped">) => entry.executor === "host" && !entry.sandbox_scoped;
+/** The request's selectors: what it is for. Every tool takes both; they are the agent API's, not the operation's input. */
+const SELECTORS: Record<"sandbox" | "machine", JsonSchema & { description: string }> = {
+  sandbox: { type: "string", minLength: 1, description: "The sandbox the request is for: a name or id from sandbox.list. May be left out when the account has exactly one sandbox." },
+  machine: { type: "string", minLength: 1, description: "The machine the request is for: a name or id from machine.list. sandbox.create puts the sandbox there; relay, skill and agent setup tools run there; a named sandbox's own machine wins. May be left out when the account has exactly one machine." },
+};
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
-/**
- * The catalog as MCP tools. Tools that act on one sandbox gain a `sandbox` argument, and machine-level host tools a
- * `machine` argument; they are the adapter's, not the catalog's. The agent API finds the machine.
- */
+/** The catalog as MCP tools, each with the request selectors beside its input. The agent API finds the machine. */
 export function mcpTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
-  return helpSnapshot().map((tool) => ({
-    name: tool.id, description: tool.description,
-    inputSchema: tool.sandbox_scoped ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, sandbox: SANDBOX_ARGUMENT } }
-      : machineLevel(tool) ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, machine: MACHINE_ARGUMENT } } : tool.input_schema,
-  }));
+  return helpSnapshot().map((tool) => ({ name: tool.id, description: tool.description, inputSchema: { ...tool.input_schema, properties: { ...tool.input_schema.properties, ...SELECTORS } } }));
 }
 
 /** Streamable HTTP MCP adapter over the agent API; every call acts as the signed-in account. */
@@ -73,10 +67,8 @@ export class McpAdapter {
     if (rpc.method === "tools/call") {
       const name = String(rpc.params?.name ?? ""); const entry = catalogById.get(name as never);
       if (!entry) return this.rpcResponse(id, undefined, { code: -32602, message: `Unknown tool: ${name}` });
-      const { sandbox, machine, ...rest } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
-      // `machine` is the adapter's only for machine-level tools; for sandbox.create it is the catalog's own input.
-      const input = machineLevel(entry) || machine === undefined ? rest : { ...rest, machine };
-      try { return this.rpcResponse(id, await this.call(principal, entry, { sandbox: entry.sandbox_scoped ? sandbox : undefined, machine: machineLevel(entry) ? machine : undefined }, input)); }
+      const { sandbox, machine, ...input } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
+      try { return this.rpcResponse(id, await this.call(principal, entry, { sandbox, machine }, input)); }
       catch (error) { return this.rpcResponse(id, this.toolError(error instanceof Error ? error.message : "the operation failed")); }
     }
     return this.rpcResponse(id, undefined, { code: -32601, message: `Method not found: ${rpc.method}` });

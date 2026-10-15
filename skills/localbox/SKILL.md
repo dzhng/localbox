@@ -41,6 +41,9 @@ localbox login --email you@example.com --code NNNNNN   # ask the user for the co
 Every per-sandbox command takes `--sandbox NAME` (or the name as its first word
 for `sandbox …` commands). Leave it out only when the account has exactly one
 sandbox. A sandbox on another Mac needs no `--machine`; the name is enough.
+`--machine NAME` names the machine any command is for: where `sandbox create`
+puts the sandbox, or which Mac `relay status`, `skill …` and `agents setup …`
+act on.
 
 ## Running things
 
@@ -85,9 +88,9 @@ sandbox's browser and its 1440×900 desktop.
 ## MCP
 
 The CLI needs no MCP. When a client wants tool discovery, `localbox mcp install`
-prints the server config; tools are the same operations with a `sandbox`
-argument (or `machine` for machine-level tools), and the client signs in with the
-user's email code.
+prints the server config; tools are the same operations, each with optional
+`sandbox` and `machine` arguments that name what the call is for (as `--sandbox`
+and `--machine` do), and the client signs in with the user's email code.
 
 ## Keeping Localbox current
 

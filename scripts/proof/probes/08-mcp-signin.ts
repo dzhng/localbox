@@ -49,8 +49,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("MCP tools/call shell.exec with sandbox = B's sandbox runs on B; with one sandbox it may be left out", async () => {
       const listed = await mcp(tokens.access_token, "tools/list");
-      assert.ok(listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties.sandbox);
-      assert.ok(!listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties.machine);
+      const selectors = listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties;
+      assert.ok(selectors.sandbox && selectors.machine, "every tool takes the sandbox and machine selectors");
       const marker = `mcp-${run}`;
       const called = await mcp(tokens.access_token, "tools/call", { name: "shell.exec", arguments: { sandbox: sandboxB, command: "touch", args: [marker], cwd: "/" } });
       assert.equal(called.status, 200); assert.notEqual(called.body.result.isError, true, JSON.stringify(called.body));
