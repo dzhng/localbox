@@ -1,0 +1,32 @@
+// Every public Convex function, the identity kind it requires, and valid-shaped args.
+// tests/convex-auth.test.ts asserts this list matches the exported functions exactly.
+export type Kind = "service" | "machine";
+export type Call = { name: string; kind: Kind; args: Record<string, unknown>; mutation?: boolean };
+export const calls: Call[] = [
+  { name: "owners:create", kind: "service", mutation: true, args: { subject: "s" } },
+  { name: "owners:list", kind: "service", args: {} },
+  { name: "vms:create", kind: "service", mutation: true, args: { ownerId: "o" } },
+  { name: "vms:list", kind: "service", args: { ownerId: "o" } },
+  { name: "channels:issue", kind: "service", mutation: true, args: { ownerId: "o", vmId: "v" , token: "t"} },
+  { name: "channels:rotate", kind: "service", mutation: true, args: { channelId: "c", expectedEpoch: 1, token: "t" } },
+  { name: "channels:revoke", kind: "service", mutation: true, args: { channelId: "c" } },
+  { name: "channels:get", kind: "service", args: { channelId: "c" } },
+  { name: "channels:validate", kind: "service", args: { channelId: "c", token: "t", vmId: "v", epoch: 1 } },
+  { name: "requests:enqueue", kind: "service", mutation: true, args: { ownerId: "o", vmId: "v", requestId: "r", operation: "x", payload: {} } },
+  { name: "requests:get", kind: "service", args: { requestId: "r" } },
+  { name: "requests:claim", kind: "service", mutation: true, args: { leaseOwner: "m" } },
+  { name: "requests:recordResponse", kind: "service", mutation: true, args: { requestId: "r", response: {} } },
+  { name: "requests:getResponse", kind: "service", args: { requestId: "r" } },
+  { name: "requests:ack", kind: "service", mutation: true, args: { requestId: "r", leaseOwner: "m" } },
+  { name: "authCodes:create", kind: "service", mutation: true, args: { ownerId: "o", clientId: "c", redirectUri: "u", resource: "r", vmId: "v", codeChallenge: "h" } },
+  { name: "authCodes:consume", kind: "service", mutation: true, args: { code: "c", verifier: "v" } },
+  { name: "oauth:issue", kind: "service", mutation: true, args: { ownerId: "o", vmId: "v", resource: "r", accessToken: "a", refreshToken: "f", accessExpiresAt: 1, refreshExpiresAt: 1 } },
+  { name: "oauth:rotateRefresh", kind: "service", mutation: true, args: { refreshToken: "f" } },
+  { name: "oauth:revokeToken", kind: "service", mutation: true, args: { token: "f" } },
+  { name: "oauth:revokeFamily", kind: "service", mutation: true, args: { familyId: "f" } },
+  { name: "oauth:validateAccess", kind: "service", args: { accessToken: "a", resource: "r" } },
+  { name: "audit:append", kind: "service", mutation: true, args: { operation: "x", outcome: "success" } },
+  { name: "quotas:consume", kind: "service", mutation: true, args: { ownerId: "o", bucket: "b", limit: 1 } },
+  { name: "status:owner", kind: "service", args: { ownerId: "o" } },
+  { name: "machines:self", kind: "machine", args: {} },
+];

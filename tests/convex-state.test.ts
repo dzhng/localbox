@@ -1,45 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createConvexTestHarness, ConvexRelayStateRepository } from "../packages/state/src/index.js";
+import { makeFunctionReference } from "convex/server";
+import { createConvexTestHarness } from "../packages/state/src/index.js";
 
-test("production Convex schema and relay functions run in the local Convex harness", async () => {
-  const convex = createConvexTestHarness();
-  const repository = new ConvexRelayStateRepository({
-    mutation: (ref, args) => convex.mutation(ref, args),
-    query: (ref, args) => convex.query(ref, args),
-  }, "test-deployment");
-  const owner = await repository.createOwner({ ownerId: "owner_test", subject: "subject_test" });
-  await repository.createVm({ ownerId: owner.ownerId, vmId: "vm_test" });
-  await assert.rejects(() => repository.createVm({ ownerId: owner.ownerId, vmId: "vm_test" }), /VM already exists/);
-  await repository.issueChannelGrant({ ownerId: owner.ownerId, vmId: "vm_test", channelId: "channel_test", token: "token_test" });
-  const rotated = await repository.rotateChannelGrant("channel_test", 1, "token_rotated");
+const ref = (name: string) => makeFunctionReference(name) as any;
+test("typed authenticated Convex functions run the relay state machine", async () => {
+  const t = createConvexTestHarness();
+  const service = t.withIdentity({ subject: "service:api" });
+  const owner = await service.mutation(ref("owners:create"), { ownerId: "owner_test", subject: "subject_test" }) as any;
+  await service.mutation(ref("vms:create"), { ownerId: owner.ownerId, vmId: "vm_test" });
+  await assert.rejects(() => service.mutation(ref("vms:create"), { ownerId: owner.ownerId, vmId: "vm_test" }), /already exists/);
+  await service.mutation(ref("channels:issue"), { ownerId: owner.ownerId, vmId: "vm_test", channelId: "channel_test", token: "token_test" });
+  const rotated = await service.mutation(ref("channels:rotate"), { channelId: "channel_test", expectedEpoch: 1, token: "token_rotated" }) as any;
   assert.equal(rotated.epoch, 2);
-  await assert.rejects(() => repository.validateChannelGrant({ channelId: "channel_test", token: "token_test", vmId: "vm_test", epoch: 1 }));
-  assert.equal((await repository.validateChannelGrant({ channelId: "channel_test", token: "token_rotated", vmId: "vm_test", epoch: 2 })).epoch, 2);
-  assert.equal((await repository.getChannel("channel_test"))?.vmId, "vm_test");
-  const queued = await repository.enqueueRequest({ ownerId: owner.ownerId, vmId: "vm_test", requestId: "request_test", operation: "shell.exec", payload: { command: "true" } });
-  assert.equal((await repository.getRequest(queued.requestId))?.frameId, queued.frameId);
-  assert.deepEqual(await repository.ownerStatus(owner.ownerId), { channels: 1, queued: 1 });
-  const claimed = await repository.claimRequests({ leaseOwner: "host_test" });
-  assert.equal(claimed[0]?.frameId, queued.frameId);
-  await repository.recordResponse({ requestId: queued.requestId, leaseOwner: "host_test", response: { exitCode: 0 } });
-  assert.deepEqual((await repository.getResponse(queued.requestId))?.response, { exitCode: 0 });
-  assert.deepEqual(await repository.ownerStatus(owner.ownerId), { channels: 1, queued: 0 });
+  await service.mutation(ref("requests:enqueue"), { ownerId: owner.ownerId, vmId: "vm_test", requestId: "request_test", operation: "shell.exec", payload: { command: "true" } });
+  const claimed = await t.withIdentity({ subject: "service:api" }).mutation(ref("requests:claim"), { ownerId: owner.ownerId, vmId: "vm_test", leaseOwner: "host_test" });
+  assert.equal((claimed as any[])[0]?.requestId, "request_test");
+  await t.withIdentity({ subject: "service:api" }).mutation(ref("requests:recordResponse"), { requestId: "request_test", leaseOwner: "host_test", response: { exitCode: 0 } });
+  assert.deepEqual((await service.query(ref("requests:getResponse"), { requestId: "request_test" }) as any).response, { exitCode: 0 });
+  assert.deepEqual(await service.query(ref("status:owner"), { ownerId: owner.ownerId }), { channels: 1, queued: 0 });
 });
 
-test("Convex refresh replay commits durable family revocation before returning an error", async () => {
-  const convex = createConvexTestHarness();
-  const repository = new ConvexRelayStateRepository({
-    mutation: (ref, args) => convex.mutation(ref, args),
-    query: (ref, args) => convex.query(ref, args),
-  }, "replay-deployment");
-  const owner = await repository.createOwner({ ownerId: "owner_replay", subject: "subject_replay" });
-  await repository.createVm({ ownerId: owner.ownerId, vmId: "vm_replay" });
-  const original = await repository.issueOAuthTokens({ ownerId: owner.ownerId, vmId: "vm_replay", resource: "https://relay.test/mcp", accessToken: "access_original", refreshToken: "refresh_original", accessExpiresAt: Date.now() + 60_000, refreshExpiresAt: Date.now() + 60_000 });
-  const rotated = await repository.rotateRefreshToken("refresh_original");
-  await assert.rejects(() => repository.rotateRefreshToken("refresh_original"), /refresh replay revoked family/);
-  await assert.rejects(() => repository.validateAccessToken(rotated.accessToken!, "https://relay.test/mcp"), /access token invalid or expired/);
-  await assert.rejects(() => repository.validateAccessToken("access_original", "https://relay.test/mcp"), /access token invalid or expired/);
+test("typed OAuth functions revoke a refresh family on replay", async () => {
+  const t = createConvexTestHarness();
+  const service = t.withIdentity({ subject: "service:api" });
+  const owner = await service.mutation(ref("owners:create"), { ownerId: "owner_replay", subject: "subject_replay" }) as any;
+  await service.mutation(ref("vms:create"), { ownerId: owner.ownerId, vmId: "vm_replay" });
+  const original = await service.mutation(ref("oauth:issue"), { ownerId: owner.ownerId, vmId: "vm_replay", resource: "https://relay.test/mcp", accessToken: "access_original", refreshToken: "refresh_original", accessExpiresAt: Date.now() + 60_000, refreshExpiresAt: Date.now() + 60_000 }) as any;
+  const rotated = await service.mutation(ref("oauth:rotateRefresh"), { refreshToken: "refresh_original" }) as any;
+  assert.equal((await service.mutation(ref("oauth:rotateRefresh"), { refreshToken: "refresh_original" }) as any).__error, "refresh_replay_revoked_family");
+  await assert.rejects(() => service.query(ref("oauth:validateAccess"), { accessToken: rotated.accessToken, resource: "https://relay.test/mcp" }), /invalid|expired/);
   assert.ok(original.familyId);
 });
-

@@ -3,15 +3,17 @@ import { VercelBlobProvider } from "../../../packages/blob/src/vercel.js";
 import { InMemoryBlobProvider } from "../../../packages/blob/src/index.js";
 import { ConvexRelayStateRepository, InMemoryRelayStateRepository } from "../../../packages/state/src/index.js";
 import { createVercelRelayHandler } from "../src/vercel.js";
+import { signServiceToken } from "../../../packages/tokens/src/index.js";
 import { PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 
 // This module is the deployable adapter. Convex is selected whenever its URL is
 // present; the explicit local-services flag only permits the local test doubles.
 const localServices = process.env.LOCALBOX_LOCAL_SERVICES === "1";
 if (process.env.VERCEL && !localServices && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed relay");
+if (process.env.VERCEL && process.env.CONVEX_URL && !process.env.LOCALBOX_JWT_PRIVATE_KEY) throw new Error("LOCALBOX_JWT_PRIVATE_KEY is required for the deployed relay");
 if (process.env.VERCEL && !localServices && !process.env.BLOB_READ_WRITE_TOKEN) throw new Error("BLOB_READ_WRITE_TOKEN is required for the deployed relay");
 const repository = process.env.CONVEX_URL
-  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }))
+  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }), "convex", signServiceToken)
   : new InMemoryRelayStateRepository({ deploymentId: "vercel-local" });
 const blobProvider = process.env.BLOB_READ_WRITE_TOKEN ? new VercelBlobProvider({
   token: process.env.BLOB_READ_WRITE_TOKEN,
@@ -34,4 +36,3 @@ function numberEnv(name: string, fallback: number): number {
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`);
   return parsed;
 }
-

@@ -18,17 +18,17 @@ test("in-memory response recording requires the active lease owner", async () =>
   await repository.recordResponse({ requestId: "request-1", leaseOwner: "host-a", response: { ok: true } });
 });
 
-test("Convex response mutation rejects an unleased or unowned request", async () => {
-  const harness = createConvexTestHarness();
-  const write = makeFunctionReference("relay:write") as any;
-  const owner = await harness.mutation(write, { operation: "createOwner", input: { subject: "convex-lease-owner" } }) as { ownerId: string };
-  await harness.mutation(write, { operation: "createVm", input: { ownerId: owner.ownerId, vmId: "vm_01" } });
-  await harness.mutation(write, { operation: "enqueueRequest", input: { ownerId: owner.ownerId, vmId: "vm_01", requestId: "request-1", operation: "system.info", payload: {} } });
-
-  await assert.rejects(() => harness.mutation(write, { operation: "recordResponse", input: { requestId: "request-1", response: { ok: true } } }));
-  await harness.mutation(write, { operation: "claimRequests", input: { ownerId: owner.ownerId, vmId: "vm_01", leaseOwner: "host-a" } });
-  await assert.rejects(() => harness.mutation(write, { operation: "recordResponse", input: { requestId: "request-1", leaseOwner: "host-b", response: { ok: true } } }));
-  await harness.mutation(write, { operation: "recordResponse", input: { requestId: "request-1", leaseOwner: "host-a", response: { ok: true } } });
+test("typed Convex response mutation rejects an unleased or unowned request", async () => {
+  const t = createConvexTestHarness();
+  const service = t.withIdentity({ subject: "service:api" });
+  const owner = await service.mutation(makeFunctionReference("owners:create") as any, { subject: "convex-lease-owner" }) as any;
+  await service.mutation(makeFunctionReference("vms:create") as any, { ownerId: owner.ownerId, vmId: "vm_01" });
+  await service.mutation(makeFunctionReference("requests:enqueue") as any, { ownerId: owner.ownerId, vmId: "vm_01", requestId: "request-1", operation: "system.info", payload: {} });
+  const relay = t.withIdentity({ subject: "service:api" });
+  await assert.rejects(() => relay.mutation(makeFunctionReference("requests:recordResponse") as any, { requestId: "request-1", response: {} }));
+  await relay.mutation(makeFunctionReference("requests:claim") as any, { ownerId: owner.ownerId, vmId: "vm_01", leaseOwner: "host-a" });
+  await assert.rejects(() => relay.mutation(makeFunctionReference("requests:recordResponse") as any, { requestId: "request-1", leaseOwner: "host-b", response: {} }));
+  await relay.mutation(makeFunctionReference("requests:recordResponse") as any, { requestId: "request-1", leaseOwner: "host-a", response: {} });
 });
 
 test("relay host response route requires lease_owner before completing a frame", async () => {

@@ -30,7 +30,6 @@ export interface RelayStateRepository {
   appendAudit(input: AuditInput): Promise<AuditRecord>;
   quota(input: QuotaInput): Promise<QuotaRecord>;
   ownerStatus(ownerId: string, vmId?: string): Promise<{ channels: number; queued: number }>;
-  snapshot(): Promise<StateSnapshot>;
 }
 
 export interface OwnerInput { ownerId?: string; subject: string; displayName?: string }
@@ -136,6 +135,8 @@ export class LocalConvexHarness {
   static async start(options: LocalRepositoryOptions = {}): Promise<LocalConvexHarness> { const harness = new LocalConvexHarness(options); harness.repository = new InMemoryRelayStateRepository(harness.options); return harness; }
   async pushSchema(): Promise<{ deploymentId: string; version: number }> { this.assertOpen(); return { deploymentId: this.deploymentId, version: this.schemaVersion }; }
   client(): RelayStateRepository { this.assertOpen(); return this.repository!; }
+  /** Whole-store view for tests; deployed Convex exposes the same only as the internal `snapshots:get`. */
+  snapshot(): Promise<StateSnapshot> { this.assertOpen(); return this.repository!.snapshot(); }
   async restart(): Promise<RelayStateRepository> { this.assertOpen(); this.repository = new InMemoryRelayStateRepository({ ...this.options, store: (this.repository as any).store }); return this.repository; }
   async close(): Promise<void> { this.closed = true; this.repository = undefined; }
   private assertOpen(): void { if (this.closed || !this.repository) throw new StateConflictError("harness is closed"); }
@@ -143,44 +144,46 @@ export class LocalConvexHarness {
 export async function createLocalConvexHarness(options: LocalRepositoryOptions = {}): Promise<LocalConvexHarness> { return LocalConvexHarness.start(options); }
 /** Minimal Convex client surface. ConvexHttpClient and convex-test both satisfy it. */
 export interface ConvexFunctionClient {
-  mutation(name: any, args: Record<string, unknown>): Promise<unknown>;
-  query(name: any, args: Record<string, unknown>): Promise<unknown>;
+  mutation(name: any, args: Record<string, unknown> | object): Promise<unknown>;
+  query(name: any, args: Record<string, unknown> | object): Promise<unknown>;
 }
 
-/** Production repository adapter backed by `convex/relay:write` and `convex/relay:read`. */
+/** Production repository adapter backed by typed authenticated Convex functions. */
 export class ConvexRelayStateRepository implements RelayStateRepository {
-  constructor(private readonly client: ConvexFunctionClient, readonly deploymentId = "convex") {}
-  private async write<T>(operation: string, input: unknown): Promise<T> { return await this.client.mutation(makeFunctionReference("relay:write"), { operation, input }) as T; }
-  private async read<T>(operation: string, input: Record<string, unknown>): Promise<T> { return await this.client.query(makeFunctionReference("relay:read"), { operation, input }) as T; }
-  createOwner(input: OwnerInput) { return this.write<OwnerRecord>("createOwner", input); }
-  createVm(input: VmInput) { return this.write<VmRecord>("createVm", input); }
-  listVms(ownerId: string) { return this.read<VmRecord[]>("listVms", { ownerId }); }
-  issueChannelGrant(input: ChannelGrantInput) { return this.write<ChannelGrantRecord>("issueChannelGrant", input); }
-  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string) { return this.write<ChannelGrantRecord>("rotateChannelGrant", { channelId, expectedEpoch, token }); }
-  async revokeChannel(channelId: string) { await this.write("revokeChannel", { channelId }); }
-  getChannel(channelId: string) { return this.read<ChannelGrantRecord | undefined>("getChannel", { channelId }); }
-  validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }) { return this.read<ChannelGrantRecord>("validateChannelGrant", input); }
-  enqueueRequest(input: RequestFrameInput) { return this.write<RequestFrameRecord>("enqueueRequest", input); }
-  getRequest(requestId: string) { return this.read<RequestFrameRecord | undefined>("getRequest", { requestId }); }
-  claimRequests(input: ClaimInput) { return this.write<RequestFrameRecord[]>("claimRequests", input); }
-  recordResponse(input: ResponseFrameInput) { return this.write<ResponseFrameRecord>("recordResponse", input); }
-  getResponse(requestId: string) { return this.read<ResponseFrameRecord | undefined>("getResponse", { requestId }); }
-  async ackRequest(requestId: string, leaseOwner: string) { await this.write("ackRequest", { requestId, leaseOwner }); }
-  createAuthorizationCode(input: AuthorizationCodeInput) { return this.write<AuthorizationCodeRecord>("createAuthorizationCode", input); }
-  consumeAuthorizationCode(code: string, verifier: string) { return this.write<AuthorizationCodeRecord>("consumeAuthorizationCode", { code, verifier }); }
-  issueOAuthTokens(input: OAuthTokenInput) { return this.write<OAuthTokenRecord>("issueOAuthTokens", input); }
+  constructor(private readonly client: ConvexFunctionClient, readonly deploymentId = "convex", private readonly refreshAuth?: () => string) {}
+  private async call<T>(kind: "mutation" | "query", name: string, args: Record<string, unknown> | object): Promise<T> {
+    if (this.refreshAuth && typeof (this.client as any).setAuth === "function") (this.client as any).setAuth(this.refreshAuth());
+    const ref = makeFunctionReference(name) as any;
+    return await this.client[kind](ref, args) as T;
+  }
+  createOwner(input: OwnerInput) { return this.call<OwnerRecord>("mutation", "owners:create", input); }
+  createVm(input: VmInput) { return this.call<VmRecord>("mutation", "vms:create", input); }
+  listVms(ownerId: string) { return this.call<VmRecord[]>("query", "vms:list", { ownerId }); }
+  issueChannelGrant(input: ChannelGrantInput) { return this.call<ChannelGrantRecord>("mutation", "channels:issue", input); }
+  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string) { return this.call<ChannelGrantRecord>("mutation", "channels:rotate", { channelId, expectedEpoch, token }); }
+  async revokeChannel(channelId: string) { await this.call("mutation", "channels:revoke", { channelId }); }
+  getChannel(channelId: string) { return this.call<ChannelGrantRecord | undefined>("query", "channels:get", { channelId }); }
+  validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }) { return this.call<ChannelGrantRecord>("query", "channels:validate", input); }
+  enqueueRequest(input: RequestFrameInput) { return this.call<RequestFrameRecord>("mutation", "requests:enqueue", input); }
+  getRequest(requestId: string) { return this.call<RequestFrameRecord | undefined>("query", "requests:get", { requestId }); }
+  claimRequests(input: ClaimInput) { return this.call<RequestFrameRecord[]>("mutation", "requests:claim", input); }
+  recordResponse(input: ResponseFrameInput) { return this.call<ResponseFrameRecord>("mutation", "requests:recordResponse", input); }
+  getResponse(requestId: string) { return this.call<ResponseFrameRecord | undefined>("query", "requests:getResponse", { requestId }); }
+  async ackRequest(requestId: string, leaseOwner: string) { await this.call("mutation", "requests:ack", { requestId, leaseOwner }); }
+  createAuthorizationCode(input: AuthorizationCodeInput) { return this.call<AuthorizationCodeRecord>("mutation", "authCodes:create", input); }
+  consumeAuthorizationCode(code: string, verifier: string) { return this.call<AuthorizationCodeRecord>("mutation", "authCodes:consume", { code, verifier }); }
+  issueOAuthTokens(input: OAuthTokenInput) { return this.call<OAuthTokenRecord>("mutation", "oauth:issue", input); }
   async rotateRefreshToken(refreshToken: string): Promise<OAuthTokenRecord> {
-    const result = await this.write<OAuthTokenRecord | { __error?: string }>("rotateRefreshToken", { refreshToken });
+    const result = await this.call<OAuthTokenRecord | { __error?: string }>("mutation", "oauth:rotateRefresh", { refreshToken });
     if (result && typeof result === "object" && (result as { __error?: string }).__error === "refresh_replay_revoked_family") throw new StateUnauthorizedError("refresh replay revoked family");
     return result as OAuthTokenRecord;
   }
-  async revokeOAuthToken(token: string, hint?: "access_token" | "refresh_token") { await this.write("revokeOAuthToken", { token, hint }); }
-  validateAccessToken(accessToken: string, resource: string, vmId?: string) { return this.read<AccessTokenRecord>("validateAccessToken", { accessToken, resource, vmId }); }
-  async revokeOAuthFamily(familyId: string) { await this.write("revokeOAuthFamily", { familyId }); }
-  appendAudit(input: AuditInput) { return this.write<AuditRecord>("appendAudit", input); }
-  quota(input: QuotaInput) { return this.write<QuotaRecord>("quota", input); }
-  ownerStatus(ownerId: string, vmId?: string) { return this.read<{ channels: number; queued: number }>("ownerStatus", { ownerId, vmId }); }
-  snapshot() { return this.read<StateSnapshot>("snapshot", {}); }
+  async revokeOAuthToken(token: string, hint?: "access_token" | "refresh_token") { await this.call("mutation", "oauth:revokeToken", { token, hint }); }
+  validateAccessToken(accessToken: string, resource: string, vmId?: string) { return this.call<AccessTokenRecord>("query", "oauth:validateAccess", { accessToken, resource, vmId }); }
+  async revokeOAuthFamily(familyId: string) { await this.call("mutation", "oauth:revokeFamily", { familyId }); }
+  appendAudit(input: AuditInput) { return this.call<AuditRecord>("mutation", "audit:append", input); }
+  quota(input: QuotaInput) { return this.call<QuotaRecord>("mutation", "quotas:consume", input); }
+  ownerStatus(ownerId: string, vmId?: string) { return this.call<{ channels: number; queued: number }>("query", "status:owner", { ownerId, vmId }); }
 }
 
 export const pkceChallenge = (verifier: string): string => hash(verifier);
