@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { PROTOCOL_VERSION, RELEASE_ID, type Json } from "../packages/contract/src/index.js";
 import { GuestGateway } from "../packages/guest-gateway/src/index.js";
 
-const request = (operation: string, input: Json, id: string, mutation: string | null = null) => ({ protocol_version: PROTOCOL_VERSION, release_id: RELEASE_ID, request_id: id, operation, vm_id: "vm_01", deadline_ms: 120_000, mutation_id: mutation, input }) as any;
+const request = (operation: string, input: Json, id: string, mutation: string | null = null) => ({ protocol_version: PROTOCOL_VERSION, release_id: RELEASE_ID, request_id: id, operation, sandbox_id: "sandbox_1", deadline_ms: 120_000, mutation_id: mutation, input }) as any;
 const result = async (gateway: GuestGateway, operation: string, input: Json, id: string, mutation: string | null = null) => {
   const response = await gateway.dispatch(request(operation, input, id, mutation)); assert.equal(response.ok, true, JSON.stringify(response)); return response.result as any;
 };

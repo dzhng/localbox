@@ -17,10 +17,15 @@ For the complete bootstrap, read [installation](references/installation.md).
 
 ## Everyday use
 
-Use `localbox vm start`, `localbox shell exec -- <command>`, and
-`localbox status`. The CLI works without MCP. Run `localbox login --email
-<address>` before remote use, then repeat it with the six-digit code from the
-user; configure MCP OAuth only when a client needs tool discovery.
+Run `localbox login --email <address>`, then repeat it with the six-digit
+code from the user. Create a sandbox with `localbox sandbox create` (it reports
+the generated name and the size it chose; `--name`, `--machine`, `--cpus` and
+`--memory 4G` override), then use `localbox shell exec --sandbox NAME --
+<command>`, `localbox fs read --sandbox NAME PATH` and `localbox sandbox list`.
+`--sandbox` may be left out only when the account has exactly one sandbox; a
+sandbox on another Mac needs no `--machine`. Every command prints short text
+by default and the same facts as JSON with `--json`. The CLI works without MCP;
+configure MCP OAuth only when a client needs tool discovery.
 Use `localbox update check` to inspect GitHub Releases and
 `localbox update install` to install a verified update. The installed launchd
 job performs the same check automatically every six hours. Use
@@ -37,12 +42,12 @@ For replacement, rollback, and unmanaged-skill rules, read
 After sleep or a network change, rerun `localbox status` and wait for the
 relay to reconnect. Reads may retry; never blindly repeat a mutation after an
 `operation_uncertain` result. Use the same mutation ID or query status first.
-Use `vm pause` for a temporary stop, `localbox login` after a machine is
-revoked, and
-`vm reset --discard-state` only with explicit confirmation when all guest state
-should be removed.
+Use `localbox sandbox sleep` for a temporary stop and `localbox login` after a
+machine is revoked. To start over, `localbox sandbox delete NAME --confirm NAME`
+and create a new one, only with explicit confirmation from the user.
 
 ## Capability discovery
 
 `localbox help` is generated from the shared operation catalog. MCP and CLI
-expose the same operations, schemas, VM selection, and errors.
+expose the same operations, schemas, sandbox selection, and errors;
+`localbox help OPERATION` shows one operation's schema.

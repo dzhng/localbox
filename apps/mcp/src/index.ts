@@ -17,14 +17,14 @@ export interface McpAdapterOptions {
 }
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
-const MACHINE_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The machine to run on: a name or id from machine.list." };
+const SANDBOX_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The sandbox to act on: a name or id from sandbox.list. May be left out when the account has exactly one sandbox." };
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
-/** The catalog as MCP tools. Machine-bound tools gain a `machine` argument; it is the adapter's, not the catalog's. */
+/** The catalog as MCP tools. Tools that act on one sandbox gain a `sandbox` argument; it is the adapter's, not the catalog's. The agent API finds the sandbox's machine. */
 export function mcpTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
   return mcpToolsSnapshot().map((tool) => ({
     name: tool.id, description: tool.description,
-    inputSchema: tool.executor === "account" ? tool.input_schema : { ...tool.input_schema, properties: { ...tool.input_schema.properties, machine: MACHINE_ARGUMENT } },
+    inputSchema: tool.sandbox_scoped ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, sandbox: SANDBOX_ARGUMENT } } : tool.input_schema,
   }));
 }
 
@@ -70,26 +70,23 @@ export class McpAdapter {
     if (rpc.method === "tools/call") {
       const name = String(rpc.params?.name ?? ""); const entry = catalogById.get(name as never);
       if (!entry) return this.rpcResponse(id, undefined, { code: -32602, message: `Unknown tool: ${name}` });
-      const { machine, ...input } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
-      try { return this.rpcResponse(id, await this.call(principal, entry, machine, input)); }
+      const { sandbox, ...input } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
+      try { return this.rpcResponse(id, await this.call(principal, entry, entry.sandbox_scoped ? sandbox : undefined, input)); }
       catch (error) { return this.rpcResponse(id, this.toolError(error instanceof Error ? error.message : "the operation failed")); }
     }
     return this.rpcResponse(id, undefined, { code: -32601, message: `Method not found: ${rpc.method}` });
   }
-  private async call(principal: Principal, entry: OperationCatalogEntry, machine: unknown, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async call(principal: Principal, entry: OperationCatalogEntry, sandbox: unknown, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     const operation = entry.id;
-    if (entry.executor === "account") {
-      const result = await this.ops(principal, { operation, input });
-      return result.status === 200 ? this.toolResult(result.body) : this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
-    }
-    if (typeof machine !== "string" || !machine) return this.toolError(`${operation} runs on a machine: pass \`machine\` (a name or id; call machine.list to see them).`);
     // MCP has no idempotency key of its own: each tool call is one mutation.
     const mutationId = entry.idempotency === "required" ? `mcp_${crypto.randomUUID()}` : null;
-    let result = await this.ops(principal, { operation, input, machine, request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
+    let result = await this.ops(principal, { operation, input, ...(typeof sandbox === "string" && sandbox ? { sandbox } : {}), request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
     // A long request comes back as a continuation; resume it until the machine answers or its deadline passes.
     while (result.status === 202) { const pending = result.body as { request_id: string; deadline_at: number }; result = await this.ops(principal, { continue: pending.request_id, deadline_at: pending.deadline_at }); }
+    if (result.status !== 200) return this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
+    // Account operations answer with the catalog's value; everything else with a response envelope.
     const envelope = (result.body as { response?: ResponseEnvelope } | undefined)?.response;
-    if (result.status !== 200 || !envelope) return this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
+    if (!envelope) return this.toolResult(result.body);
     return envelope.ok ? this.toolResult(envelope.result) : { ...this.toolError(envelope.error.message), structuredContent: envelope.error };
   }
   private toolResult(value: unknown): Record<string, unknown> { return { content: [{ type: "text", text: JSON.stringify(value) }], ...(isObject(value) ? { structuredContent: value } : {}) }; }

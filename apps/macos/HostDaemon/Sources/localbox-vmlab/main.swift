@@ -31,9 +31,10 @@ struct VMLabMain {
                 extraKernelArguments: option("--kernel-args", in: arguments) ?? ""
             )
             let backend = AppleVirtualizationBackend(image: image); lab = backend
-            let daemon = HostDaemon(vmID: "vm_01", backend: backend)
+            let daemon = HostDaemon(backend: backend)
             try await daemon.start()
-            let request = Data(#"{"protocol_version":"v1","request_id":"vmlab-uname","operation":"shell.exec","vm_id":"vm_01","deadline_ms":30000,"mutation_id":"vmlab-uname","input":{"command":"uname -m"}}"#.utf8)
+            _ = try await daemon.request(Data(#"{"protocol_version":"v1","request_id":"vmlab-create","operation":"sandbox.create","sandbox_id":"sandbox_vmlab","deadline_ms":30000,"mutation_id":"vmlab-create","input":{"name":"vmlab"}}"#.utf8))
+            let request = Data(#"{"protocol_version":"v1","request_id":"vmlab-uname","operation":"shell.exec","sandbox_id":"sandbox_vmlab","deadline_ms":30000,"mutation_id":"vmlab-uname","input":{"command":"uname -m"}}"#.utf8)
             let response = try await daemon.request(request)
             let object = try JSONSerialization.jsonObject(with: response) as? [String: Any]
             guard let result = object?["result"] as? [String: Any], object?["ok"] as? Bool == true else {

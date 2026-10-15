@@ -51,7 +51,7 @@ test("local IPC transport speaks the HostDaemon length-prefixed protocol", async
 test("a dropped response is an explicit uncertain mutation", async () => {
   const transport = new LocalFixtureTransport();
   transport.dropNextResponse();
-  const response = await new AgentClient({ transport }).invoke("vm.start", {}, { mutationId: "uncertain-1" });
+  const response = await new AgentClient({ transport }).invoke("sandbox.start", {}, { sandboxId: "sandbox_fixture", mutationId: "uncertain-1" });
   assert.equal(response.ok, false);
   if (!response.ok) { assert.equal(response.error.code, "operation_uncertain"); assert.equal(response.error.retryable, true); }
 });
@@ -59,10 +59,10 @@ test("a dropped response is an explicit uncertain mutation", async () => {
 test("remote authentication expiry is recoverable and visible", async () => {
   const transport = new RemoteFixtureTransport();
   transport.setUnauthorized();
-  const response = await new AgentClient({ transport }).invoke("vm.status");
+  const response = await new AgentClient({ transport, sandboxId: "sandbox_fixture" }).invoke("sandbox.status");
   assert.equal(response.ok, false);
   if (!response.ok) assert.equal(response.error.code, "unauthorized");
   transport.setUnauthorized(false);
-  const recovered = await new AgentClient({ transport }).invoke("vm.status");
+  const recovered = await new AgentClient({ transport, sandboxId: "sandbox_fixture" }).invoke("sandbox.status");
   assert.equal(recovered.ok, true);
 });

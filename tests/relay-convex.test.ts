@@ -11,6 +11,7 @@ async function setup() {
     const now = Date.now();
     await ctx.db.insert("machines", { machineId: "m1", accountId: "a1", credentialHash: "h1", name: "one", createdAt: now, lastSeenAt: now });
     await ctx.db.insert("machines", { machineId: "m2", accountId: "a1", credentialHash: "h2", name: "two", createdAt: now, lastSeenAt: now });
+    await ctx.db.insert("sandboxes", { sandboxId: "s", accountId: "a1", machineId: "m1", name: "quiet-otter", cpus: 2, memoryBytes: 2 * 1024 ** 3, sleepAfterMs: 1_800_000, createdAt: now });
   });
   return t;
 }
@@ -27,11 +28,11 @@ test("relay claim window and service abandonment are atomic", async () => {
 
 test("machines only see and claim their own rows; mutation replay deduplicates", async () => {
   const t = await setup(); const service = t.withIdentity({ subject: "service:api" }); const m1 = t.withIdentity({ subject: "machine:m1", account: "a1" }); const m2 = t.withIdentity({ subject: "machine:m2", account: "a1" });
-  const first = await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r1", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 1 } }) as any;
-  const replay = await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r2", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 1 } }) as any;
+  const first = await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r1", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 1, sandbox_id: "s" } }) as any;
+  const replay = await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r2", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 1, sandbox_id: "s" } }) as any;
   assert.equal(replay.requestId, first.requestId); assert.deepEqual(await m2.query(ref("relay:pendingForMachine"), {}), []);
   await assert.rejects(() => m2.mutation(ref("relay:claim"), { requestId: "r1" }), /not found/);
-  await assert.rejects(() => service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r3", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 2 } }), /mutation id conflicts/);
+  await assert.rejects(() => service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "r3", operation: "x", mutationId: "mut", sandboxId: "s", payload: { a: 2, sandbox_id: "s" } }), /mutation id conflicts/);
 });
 
 test("relay completion enforces the output cap and daily request limit", async () => {
@@ -62,4 +63,14 @@ test("request and mutation ids never match across machines, and a machine re-cla
   assert.deepEqual(await machine.mutation(ref("relay:claim"), { requestId: "shared" }), { claimed: true, status: "claimed" });
   assert.deepEqual((await machine.query(ref("relay:pendingForMachine"), {}) as any[]).map((row) => [row.requestId, row.status]), [["shared", "claimed"]]);
   assert.deepEqual(await machine.mutation(ref("relay:claim"), { requestId: "shared" }), { claimed: true, status: "claimed" });
+});
+
+test("a request reaches only the machine and account that hold its sandbox", async () => {
+  const t = await setup(); const service = t.withIdentity({ subject: "service:api" });
+  await t.run(async (ctx) => { await ctx.db.insert("machines", { machineId: "m3", accountId: "a2", credentialHash: "h3", name: "three", createdAt: Date.now(), lastSeenAt: Date.now() }); });
+  const enqueue = (accountId: string, machineId: string, requestId: string, sandboxId: string) => service.mutation(ref("relay:enqueue"), { accountId, machineId, requestId, operation: "fs.stat", sandboxId, payload: { sandbox_id: sandboxId, input: {} } });
+  await enqueue("a1", "m1", "own", "s");
+  await assert.rejects(() => enqueue("a1", "m2", "other-machine", "s"), /sandbox not found/);
+  await assert.rejects(() => enqueue("a2", "m3", "other-account", "s"), /sandbox not found/);
+  await assert.rejects(() => service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "mismatch", operation: "fs.stat", sandboxId: "s", payload: { sandbox_id: "elsewhere" } }), /does not match/);
 });

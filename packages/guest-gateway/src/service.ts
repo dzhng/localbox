@@ -22,7 +22,6 @@ export interface GuestServiceOptions {
   /** Framed output (virtio-serial in production; stdout is useful for probes). */
   output: Writable;
   gateway: GuestGateway;
-  vmId: string;
   channelEpoch: number;
   inventoryNames?: readonly string[];
   readinessMarker?: string;
@@ -39,13 +38,13 @@ export interface GuestServiceOptions {
  * The service intentionally contains no operation handlers: GuestGateway is the
  * sole owner of dispatch, path confinement, deadlines, and mutation replay. This
  * class only authenticates the channel epoch, bounds work, and adapts streams to
- * the length-prefixed protocol used by HostDaemon.
+ * the length-prefixed protocol used by HostDaemon. Which sandbox a request is
+ * for is HostDaemon's decision; the guest serves whatever reaches its channel.
  */
 export class GuestService {
   private readonly input: Readable;
   private readonly output: Writable;
   private readonly gateway: GuestGateway;
-  private readonly vmId: string;
   private readonly channelEpoch: number;
   private readonly inventoryNames: readonly string[];
   private readonly readinessMarker: string;
@@ -64,12 +63,10 @@ export class GuestService {
   readonly finished: Promise<void>;
 
   constructor(options: GuestServiceOptions) {
-    if (!options.vmId) throw new TypeError("guest service vmId must be non-empty");
     if (!Number.isInteger(options.channelEpoch) || options.channelEpoch < 0) throw new TypeError("guest service channelEpoch must be a non-negative integer");
     this.input = options.input;
     this.output = options.output;
     this.gateway = options.gateway;
-    this.vmId = options.vmId;
     this.channelEpoch = options.channelEpoch;
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
     this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
@@ -88,8 +85,8 @@ export class GuestService {
     if (this.started) return this;
     this.started = true;
     await fs.mkdir(dirname(this.readinessMarker), { recursive: true });
-    await fs.writeFile(this.readinessMarker, `${this.vmId}\n${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
-    await this.write({ kind: "ready", channel_epoch: this.channelEpoch, vm_id: this.vmId, inventory_digest: inventoryDigest(this.inventoryNames), readiness_marker: this.readinessMarker });
+    await fs.writeFile(this.readinessMarker, `${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
+    await this.write({ kind: "ready", channel_epoch: this.channelEpoch, inventory_digest: inventoryDigest(this.inventoryNames), readiness_marker: this.readinessMarker });
     this.input.on("data", (chunk: Buffer | string) => {
       this.inputChain = this.inputChain.then(() => this.consume(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))).catch((error) => this.protocolError(error));
     });
@@ -150,10 +147,6 @@ export class GuestService {
     const request = frame.request;
     if (frame.channel_epoch !== this.channelEpoch) {
       await this.respond(request, failure(request, new ContractError("forbidden", "guest channel epoch is stale")));
-      return;
-    }
-    if (request.vm_id !== this.vmId) {
-      await this.respond(request, failure(request, new ContractError("forbidden", "request VM does not match guest")));
       return;
     }
     if (this.pending >= this.maxPending) {

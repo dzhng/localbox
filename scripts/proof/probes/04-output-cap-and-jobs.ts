@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
-import { asMachine } from "../lib/as-machine.js";
+import { stopConnector } from "../lib/login.js";
+import { cli, guestRoot as guestRootOf, signedInWithSandboxes } from "../lib/sandboxes.js";
 
 export const id = "04";
 export const tiers = ["u", "l"];
@@ -18,20 +19,22 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(result.code, 0, result.stdout.slice(-2000));
     })];
   }
-  // Tier l: the same contract through fixture machine A's CLI, over local IPC and the guest frame protocol.
+  // Tier l: the same contract through fixture machine A's CLI, over local IPC and the guest frame protocol, on A's one sandbox.
   const up = await ctx.stack("up", ["a"]);
   if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
   const run = Date.now(); let call = 0;
   const invoke = async (operation: string, input: unknown, mutating = false): Promise<any> => {
     const args = ["invoke", "--json", operation, "--input-json", JSON.stringify(input), "--request-id", `p04-${run}-${call++}`, ...(mutating ? ["--mutation-id", `p04-${run}-${call}`] : [])];
-    const result = await asMachine("a", args, { cwd: ctx.root, env: { LOCALBOX_TRANSPORT: "local" } });
-    const envelope = JSON.parse(result.stdout.trim() || "{}");
+    const result = await cli(ctx.root, "a", args);
+    const envelope = result.envelope;
     assert.equal(envelope.ok, true, `${operation}: ${result.stdout.slice(0, 1500)}${result.stderr}`);
     return envelope.result;
   };
-  const guestRoot = join(ctx.root, ".localbox/proof/machines/a/sandboxes/vm_01/root");
+  const guestRoot = guestRootOf(ctx.root, "a");
+  let setup: Awaited<ReturnType<typeof signedInWithSandboxes>> | undefined;
   try {
     const checks: Check[] = [];
+    checks.push(await ctx.check("A signs in and gets one sandbox", async () => { setup = await signedInWithSandboxes(ctx.root, ["a"], `proof-04-${run}@example.com`); }));
     checks.push(await ctx.check("a 2 MiB fs.read is capped at 900 KiB and pages back to the exact sha256", async () => {
       await invoke("shell.exec", { command: "head -c 1572864 /dev/urandom | base64 | tr -d '\\n' | head -c 2097152 > big.txt", cwd: "/" }, true);
       const first = await invoke("fs.read", { path: "/big.txt" });
@@ -60,5 +63,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(survivors.stdout.trim(), "", "no process from the cancelled job's group survives");
     }));
     return checks;
-  } finally { if (!ctx.keep) await ctx.stack("down"); }
+  } finally {
+    stopConnector(setup?.connectors.a);
+    if (!ctx.keep) await ctx.stack("down");
+  }
 }

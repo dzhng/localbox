@@ -2,7 +2,7 @@ import { ConvexClient } from "convex/browser";
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { machinePaths } from "../../../packages/config/src/machine-paths.js";
 import { readCredentials } from "../../../packages/credentials/src/index.js";
-import { Connector, hostRequest } from "./connector.js";
+import { Connector, hostRequest, type HostChange } from "./connector.js";
 import { MachineTokenSource, RevokedError } from "./token.js";
 
 export { Connector } from "./connector.js";
@@ -33,7 +33,7 @@ export async function runConnector(env: NodeJS.ProcessEnv = process.env): Promis
       hostWatch: async (since) => {
         const response = await watcher.dispatch(hostRequest("host.watch", { since, timeout_ms: WATCH_TIMEOUT_MS }, `host-watch-${++watchSeq}`, WATCH_TIMEOUT_MS + 10_000));
         if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
-        return response.result as { version: number; capacity?: unknown };
+        return response.result as unknown as HostChange;
       },
     });
     const stop = () => { log("stopping on signal"); void connector.stop(); };

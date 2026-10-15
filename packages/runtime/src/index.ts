@@ -22,12 +22,14 @@ export interface DispatchContext {
 }
 export type Handler = (input: Json, context: DispatchContext) => Json | Promise<Json>;
 export type HandlerRegistry = Partial<Record<OperationId, Handler>>;
+/** The one sandbox the in-process fixture runtime pretends to have. */
+export const FIXTURE_SANDBOX_ID = "sandbox_fixture";
 
 function defaultResult(request: RequestEnvelope, clock: FixtureClock): Json {
   switch (request.operation) {
-    case "system.info": return { protocol_version: PROTOCOL_VERSION, release_id: RELEASE_ID, vm_id: request.vm_id, runtime: "fake", clock_ms: clock.now() };
-    case "vm.list": return { vms: [{ vm_id: request.vm_id, status: "ready" }] };
-    case "vm.status": return { vm_id: request.vm_id, status: "ready", clock_ms: clock.now() };
+    case "system.info": return { protocol_version: PROTOCOL_VERSION, release_id: RELEASE_ID, sandbox_id: request.sandbox_id, runtime: "fake", clock_ms: clock.now() };
+    case "sandbox.list": return { sandboxes: [{ sandbox_id: FIXTURE_SANDBOX_ID, name: "fixture", state: "running" }] };
+    case "sandbox.status": return { sandbox_id: request.sandbox_id, name: "fixture", state: "running", clock_ms: clock.now() };
     case "network.egress": return { connected: true, address: "198.51.100.42", source: "fixture" };
     case "relay.status": return { connected: true, relay_id: "relay_fixture" };
     case "job.status": return { job_id: (request.input as { job_id: string }).job_id, status: "completed" };
@@ -39,7 +41,7 @@ function defaultResult(request: RequestEnvelope, clock: FixtureClock): Json {
     case "browser.list_tabs": return { tabs: [] };
     case "browser.screenshot": return { mime_type: "image/png", data: "fixture-screenshot" };
     case "desktop.screenshot": return { mime_type: "image/png", data: "fixture-screenshot" };
-    default: return { ok: true, operation: request.operation, vm_id: request.vm_id, fixture: true, clock_ms: clock.now() };
+    default: return { ok: true, operation: request.operation, sandbox_id: request.sandbox_id, fixture: true, clock_ms: clock.now() };
   }
 }
 
@@ -60,12 +62,12 @@ export class FakeDispatcher {
     try { validateRequest(request); } catch (error) {
       if (error instanceof ContractError) {
         const candidate = request as Partial<RequestEnvelope>;
-        if (typeof candidate.request_id === "string" && typeof candidate.operation === "string" && typeof candidate.vm_id === "string") return failure(candidate as RequestEnvelope, error);
+        if (typeof candidate.request_id === "string" && typeof candidate.operation === "string") return failure(candidate as RequestEnvelope, error);
       }
       throw error;
     }
     const entry = catalogById.get(request.operation as OperationId)!;
-    const key = request.mutation_id ? `${request.vm_id}:${request.operation}:${request.mutation_id}` : undefined;
+    const key = request.mutation_id ? `${request.sandbox_id}:${request.operation}:${request.mutation_id}` : undefined;
     if (key && this.mutationResults.has(key)) return this.mutationResults.get(key)!;
     if (key && this.mutationsInFlight.has(key)) return await this.mutationsInFlight.get(key)!;
     if (!key) return await this.run(request, entry, key, options);
@@ -99,11 +101,11 @@ export class FakeDispatcher {
       return response;
     }
   }
-  async invokeAll(vmId = "vm_01"): Promise<ResponseEnvelope[]> {
+  async invokeAll(sandboxId = FIXTURE_SANDBOX_ID): Promise<ResponseEnvelope[]> {
     const responses: ResponseEnvelope[] = [];
     for (const entry of operationCatalog) {
       const input = sampleInput(entry.id);
-      const request: RequestEnvelope = { protocol_version: PROTOCOL_VERSION, request_id: `parity-${entry.id.replaceAll(".", "-")}`, operation: entry.id, vm_id: vmId, deadline_ms: 30_000, mutation_id: entry.idempotency === "required" ? `mutation-${entry.id.replaceAll(".", "-")}` : null, input };
+      const request: RequestEnvelope = { protocol_version: PROTOCOL_VERSION, request_id: `parity-${entry.id.replaceAll(".", "-")}`, operation: entry.id, sandbox_id: entry.sandbox_scoped ? sandboxId : null, deadline_ms: 30_000, mutation_id: entry.idempotency === "required" ? `mutation-${entry.id.replaceAll(".", "-")}` : null, input };
       responses.push(await this.dispatch(request));
     }
     return responses;
@@ -114,7 +116,7 @@ export function sampleInput(operation: OperationId): Json {
   if (operation === "account.rename") return { name: "account-name" };
   if (operation === "machine.rename") return { machine_id: "machine_fixture", name: "machine-name" };
   if (operation === "machine.remove") return { machine_id: "machine_fixture" };
-  if (operation === "vm.reset") return { discard_state: true, confirm: "RESET" };
+  if (operation === "sandbox.rename") return { name: "sandbox-name" };
   if (["shell.exec"].includes(operation)) return { command: "true" };
   if (["job.status", "job.wait", "job.cancel", "job.output"].includes(operation)) return { job_id: "job_fixture" };
   if (["fs.list", "fs.stat", "fs.read"].includes(operation)) return { path: "/tmp/fixture" };

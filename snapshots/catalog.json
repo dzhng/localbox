@@ -18,7 +18,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "account"
+    "executor": "account",
+    "sandbox_scoped": false
   },
   {
     "id": "account.rename",
@@ -47,7 +48,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "account"
+    "executor": "account",
+    "sandbox_scoped": false
   },
   {
     "id": "machine.list",
@@ -68,7 +70,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "account"
+    "executor": "account",
+    "sandbox_scoped": false
   },
   {
     "id": "machine.rename",
@@ -102,7 +105,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "account"
+    "executor": "account",
+    "sandbox_scoped": false
   },
   {
     "id": "machine.remove",
@@ -131,153 +135,85 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "account"
+    "executor": "account",
+    "sandbox_scoped": false
   },
   {
-    "id": "system.info",
-    "description": "Describe the contract and fake runtime.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": false,
-    "mutation": false,
-    "idempotency": "none",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.list",
-    "description": "List available virtual machines.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": true,
-    "mutation": false,
-    "idempotency": "none",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.status",
-    "description": "Read VM lifecycle status.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": true,
-    "mutation": false,
-    "idempotency": "none",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.start",
-    "description": "Start a VM.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": false,
-    "mutation": true,
-    "idempotency": "required",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.stop",
-    "description": "Stop a VM.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": false,
-    "mutation": true,
-    "idempotency": "required",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.pause",
-    "description": "Pause a VM.",
-    "input_schema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "retryable": false,
-    "mutation": true,
-    "idempotency": "required",
-    "limits": {
-      "deadline_ms": {
-        "min": 1,
-        "max": 120000
-      },
-      "max_input_bytes": 65536,
-      "max_output_bytes": 921600
-    },
-    "executor": "host"
-  },
-  {
-    "id": "vm.reset",
-    "description": "Reset a VM and discard its guest state.",
+    "id": "sandbox.create",
+    "description": "Create a sandbox on a machine of the account; reports its name and size.",
     "input_schema": {
       "type": "object",
       "properties": {
-        "discard_state": {
-          "type": "boolean"
-        },
-        "confirm": {
+        "name": {
           "type": "string",
-          "enum": [
-            "RESET"
-          ]
+          "minLength": 1
+        },
+        "machine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1073741824
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "sandbox.list",
+    "description": "List the account's sandboxes with their machine and last reported state.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "sandbox.rename",
+    "description": "Rename a sandbox.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
-        "discard_state",
-        "confirm"
+        "name"
       ],
       "additionalProperties": false
     },
@@ -292,11 +228,183 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "host"
+    "executor": "account",
+    "sandbox_scoped": true
   },
   {
-    "id": "vm.logs",
-    "description": "Read recent VM logs.",
+    "id": "sandbox.delete",
+    "description": "Delete a sandbox; `confirm`, when given, must be its name.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "system.info",
+    "description": "Describe the contract and runtime.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.status",
+    "description": "Read a sandbox's state and size.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.resize",
+    "description": "Change a sandbox's CPUs or memory.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1073741824
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.start",
+    "description": "Start or wake a sandbox.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.stop",
+    "description": "Stop a sandbox.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.sleep",
+    "description": "Put a sandbox to sleep.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "host",
+    "sandbox_scoped": true
+  },
+  {
+    "id": "sandbox.logs",
+    "description": "Read recent sandbox logs.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -320,7 +428,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "host"
+    "executor": "host",
+    "sandbox_scoped": true
   },
   {
     "id": "network.egress",
@@ -341,7 +450,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "host"
+    "executor": "host",
+    "sandbox_scoped": true
   },
   {
     "id": "relay.status",
@@ -362,7 +472,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "host"
+    "executor": "host",
+    "sandbox_scoped": false
   },
   {
     "id": "shell.exec",
@@ -410,7 +521,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "job.status",
@@ -439,7 +551,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "job.wait",
@@ -473,7 +586,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "job.cancel",
@@ -502,7 +616,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "job.output",
@@ -538,7 +653,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "guest.activity",
@@ -559,7 +675,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.list",
@@ -588,7 +705,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.stat",
@@ -617,7 +735,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.read",
@@ -653,7 +772,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.write",
@@ -691,7 +811,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.mkdir",
@@ -723,7 +844,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "fs.remove",
@@ -755,7 +877,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.list_tabs",
@@ -776,7 +899,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.open",
@@ -805,7 +929,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.navigate",
@@ -839,7 +964,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.focus",
@@ -868,7 +994,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.close",
@@ -897,7 +1024,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.screenshot",
@@ -926,7 +1054,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.click",
@@ -963,7 +1092,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.type",
@@ -996,7 +1126,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "browser.key",
@@ -1030,7 +1161,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.status",
@@ -1051,7 +1183,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.screenshot",
@@ -1072,7 +1205,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.click",
@@ -1108,7 +1242,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.move",
@@ -1140,7 +1275,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.scroll",
@@ -1179,7 +1315,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.key",
@@ -1208,7 +1345,8 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   },
   {
     "id": "desktop.type",
@@ -1236,6 +1374,7 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "guest"
+    "executor": "guest",
+    "sandbox_scoped": true
   }
 ]

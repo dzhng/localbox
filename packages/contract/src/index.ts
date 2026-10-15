@@ -4,7 +4,8 @@ export const RELEASE_ID = "agent-computer-contract-v1" as const;
 
 export const operationIds = [
   "account.status", "account.rename", "machine.list", "machine.rename", "machine.remove",
-  "system.info", "vm.list", "vm.status", "vm.start", "vm.stop", "vm.pause", "vm.reset", "vm.logs",
+  "sandbox.create", "sandbox.list", "sandbox.rename", "sandbox.delete",
+  "system.info", "sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs",
   "network.egress", "relay.status", "shell.exec", "job.status", "job.wait", "job.cancel", "job.output", "guest.activity",
   "fs.list", "fs.stat", "fs.read", "fs.write", "fs.mkdir", "fs.remove",
   "browser.list_tabs", "browser.open", "browser.navigate", "browser.focus", "browser.close", "browser.screenshot",
@@ -30,10 +31,10 @@ export type JsonSchema = {
 };
 
 export type ErrorCode =
-  | "invalid_input" | "unauthorized" | "forbidden" | "vm_not_found" | "vm_not_ready"
+  | "invalid_input" | "unauthorized" | "forbidden" | "sandbox_not_found" | "sandbox_not_ready" | "sandbox_ambiguous" | "name_conflict"
   | "guest_unreachable" | "operation_timeout" | "operation_cancelled" | "operation_uncertain"
   | "conflict" | "rate_limited" | "resource_exhausted" | "host_denied" | "unsupported" | "internal"
-  | "machine_offline" | "machine_not_found";
+  | "machine_offline" | "machine_not_found" | "machine_full" | "quota_exceeded";
 
 export type Idempotency = "none" | "optional" | "required";
 export interface OperationLimits {
@@ -50,6 +51,8 @@ export interface OperationCatalogEntry {
   idempotency: Idempotency;
   limits: OperationLimits;
   executor: "account" | "host" | "guest";
+  /** Whether the request names one sandbox (`sandbox_id` set) or none (`sandbox_id: null`). */
+  sandbox_scoped: boolean;
 }
 
 const empty = (): JsonSchema => ({ type: "object", properties: {}, additionalProperties: false });
@@ -70,14 +73,17 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "machine.list": ["List machines in the account.", empty(), true, false, "none"],
   "machine.rename": ["Rename an account machine.", object({ machine_id: string(), name: string() }, ["machine_id", "name"]), false, true, "required"],
   "machine.remove": ["Remove an account machine.", object({ machine_id: string() }, ["machine_id"]), false, true, "required"],
-  "system.info": ["Describe the contract and fake runtime.", empty(), false, false, "none"],
-  "vm.list": ["List available virtual machines.", empty(), true, false, "none"],
-  "vm.status": ["Read VM lifecycle status.", empty(), true, false, "none"],
-  "vm.start": ["Start a VM.", empty(), false, true, "required"],
-  "vm.stop": ["Stop a VM.", empty(), false, true, "required"],
-  "vm.pause": ["Pause a VM.", empty(), false, true, "required"],
-  "vm.reset": ["Reset a VM and discard its guest state.", object({ discard_state: bool(), confirm: { type: "string", enum: ["RESET"] } }, ["discard_state", "confirm"]), false, true, "required"],
-  "vm.logs": ["Read recent VM logs.", object({ limit: { type: "integer", minimum: 1, maximum: 1000 } }), true, false, "none"],
+  "sandbox.create": ["Create a sandbox on a machine of the account; reports its name and size.", object({ name: string(), machine: string(), cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required"],
+  "sandbox.list": ["List the account's sandboxes with their machine and last reported state.", empty(), true, false, "none"],
+  "sandbox.rename": ["Rename a sandbox.", object({ name: string() }, ["name"]), false, true, "required"],
+  "sandbox.delete": ["Delete a sandbox; `confirm`, when given, must be its name.", object({ confirm: string() }), false, true, "required"],
+  "system.info": ["Describe the contract and runtime.", empty(), false, false, "none"],
+  "sandbox.status": ["Read a sandbox's state and size.", empty(), true, false, "none"],
+  "sandbox.resize": ["Change a sandbox's CPUs or memory.", object({ cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required"],
+  "sandbox.start": ["Start or wake a sandbox.", empty(), false, true, "required"],
+  "sandbox.stop": ["Stop a sandbox.", empty(), false, true, "required"],
+  "sandbox.sleep": ["Put a sandbox to sleep.", empty(), false, true, "required"],
+  "sandbox.logs": ["Read recent sandbox logs.", object({ limit: { type: "integer", minimum: 1, maximum: 1000 } }), true, false, "none"],
   "network.egress": ["Inspect guest egress identity.", empty(), true, false, "none"],
   "relay.status": ["Read relay connectivity status.", empty(), true, false, "none"],
   "shell.exec": ["Execute a command in the guest shell.", object({ command: string(), args: arrayOfStrings(), cwd: string(), env: { type: "object", additionalProperties: true }, background: bool() }, ["command"]), false, true, "required"],
@@ -110,10 +116,19 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "desktop.type": ["Type into the desktop.", object({ text: { type: "string" } }, ["text"]), false, true, "required"]
 };
 
+/** Catalog-level sandbox operations: they change the account catalog in Convex, then tell the machine. */
+const ACCOUNT_SANDBOX_OPERATIONS: readonly string[] = ["sandbox.create", "sandbox.list", "sandbox.rename", "sandbox.delete"];
+const HOST_OPERATIONS: readonly string[] = ["sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs", "system.info", "network.egress", "relay.status"];
+function executorOf(id: OperationId): OperationCatalogEntry["executor"] {
+  if (id.startsWith("account.") || id.startsWith("machine.") || ACCOUNT_SANDBOX_OPERATIONS.includes(id)) return "account";
+  return HOST_OPERATIONS.includes(id) ? "host" : "guest";
+}
+/** Account, machine, create and list name no sandbox; everything else acts on exactly one. */
+const sandboxScoped = (id: OperationId) => !id.startsWith("account.") && !id.startsWith("machine.") && id !== "sandbox.create" && id !== "sandbox.list" && id !== "relay.status";
+
 export const operationCatalog: OperationCatalogEntry[] = operationIds.map((id) => {
   const [description, input_schema, retryable, mutation, idempotency] = definitions[id];
-  const executor = id.startsWith("account.") || id.startsWith("machine.") ? "account" : (id.startsWith("vm.") || id === "system.info" || id === "network.egress" || id === "relay.status" ? "host" : "guest");
-  return { id, description, input_schema, retryable, mutation, idempotency, limits: defaultLimits, executor };
+  return { id, description, input_schema, retryable, mutation, idempotency, limits: defaultLimits, executor: executorOf(id), sandbox_scoped: sandboxScoped(id) };
 });
 export const catalogById = new Map(operationCatalog.map((entry) => [entry.id, entry]));
 
@@ -121,7 +136,7 @@ export interface RequestEnvelope<T extends Json = Json> {
   protocol_version: typeof PROTOCOL_VERSION;
   request_id: string;
   operation: OperationId | string;
-  vm_id: string;
+  sandbox_id: string | null;
   deadline_ms: number;
   mutation_id: string | null;
   input: T;
@@ -129,18 +144,18 @@ export interface RequestEnvelope<T extends Json = Json> {
 /** Transport-neutral input accepted by CLI, MCP, and future adapters. */
 export interface Invocation<T extends Json = Json> {
   operation: OperationId | string;
-  vm_id?: string;
+  sandbox_id?: string | null;
   deadline_ms?: number;
   mutation_id?: string | null;
   request_id?: string;
   input: T;
 }
-export function requestFromInvocation<T extends Json>(invocation: Invocation<T>, defaults: { vm_id?: string; request_id?: string; deadline_ms?: number } = {}): RequestEnvelope<T> {
+export function requestFromInvocation<T extends Json>(invocation: Invocation<T>, defaults: { request_id?: string; deadline_ms?: number } = {}): RequestEnvelope<T> {
   return {
     protocol_version: PROTOCOL_VERSION,
     request_id: invocation.request_id ?? defaults.request_id ?? "request-1",
     operation: invocation.operation,
-    vm_id: invocation.vm_id ?? defaults.vm_id ?? "vm_01",
+    sandbox_id: invocation.sandbox_id ?? null,
     deadline_ms: invocation.deadline_ms ?? defaults.deadline_ms ?? 30_000,
     mutation_id: invocation.mutation_id ?? null,
     input: invocation.input,
@@ -150,7 +165,7 @@ export interface EnvelopeIdentity {
   protocol_version: typeof PROTOCOL_VERSION;
   request_id: string;
   operation: string;
-  vm_id: string;
+  sandbox_id: string | null;
   release_id: typeof RELEASE_ID;
 }
 export interface SuccessEnvelope<T extends Json = Json> extends EnvelopeIdentity {
@@ -196,16 +211,18 @@ export function validateRequest(request: unknown): asserts request is RequestEnv
   if (typeof request !== "object" || request === null || Array.isArray(request)) throw new ContractError("invalid_input", "request must be an object");
   const r = request as Record<string, unknown>;
   if (r.protocol_version !== PROTOCOL_VERSION) throw new ContractError("invalid_input", `protocol_version must be ${PROTOCOL_VERSION}`);
-  for (const key of ["request_id", "operation", "vm_id"] as const) if (typeof r[key] !== "string" || !(r[key] as string).length) throw new ContractError("invalid_input", `${key} must be a non-empty string`);
+  for (const key of ["request_id", "operation"] as const) if (typeof r[key] !== "string" || !(r[key] as string).length) throw new ContractError("invalid_input", `${key} must be a non-empty string`);
   if (typeof r.deadline_ms !== "number" || !Number.isInteger(r.deadline_ms) || r.deadline_ms < 1 || r.deadline_ms > 120_000) throw new ContractError("invalid_input", "deadline_ms must be an integer between 1 and 120000");
   if (r.mutation_id !== null && (typeof r.mutation_id !== "string" || !r.mutation_id.length)) throw new ContractError("invalid_input", "mutation_id must be a non-empty string or null");
   const entry = catalogById.get(r.operation as OperationId);
   if (!entry) throw new ContractError("invalid_input", `unknown operation: ${String(r.operation)}`);
+  if (entry.sandbox_scoped && (typeof r.sandbox_id !== "string" || !r.sandbox_id.length)) throw new ContractError("invalid_input", `${entry.id} needs a sandbox_id`);
+  if (!entry.sandbox_scoped && r.sandbox_id !== null) throw new ContractError("invalid_input", `${entry.id} takes no sandbox; sandbox_id must be null`);
   validateJson(r.input, entry.input_schema);
   if (entry.idempotency === "required" && r.mutation_id === null) throw new ContractError("invalid_input", `${entry.id} requires mutation_id`);
 }
 
-export function identityFromRequest(request: RequestEnvelope): EnvelopeIdentity { return { protocol_version: PROTOCOL_VERSION, request_id: request.request_id, operation: request.operation, vm_id: request.vm_id, release_id: RELEASE_ID }; }
+export function identityFromRequest(request: RequestEnvelope): EnvelopeIdentity { return { protocol_version: PROTOCOL_VERSION, request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id ?? null, release_id: RELEASE_ID }; }
 export function success<T extends Json>(request: RequestEnvelope, result: T): SuccessEnvelope<T> { return { ...identityFromRequest(request), ok: true, result }; }
 export function failure(request: RequestEnvelope, error: ContractError | ErrorBody): ErrorEnvelope {
   const body: ErrorBody = error instanceof ContractError ? { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) } : error;
@@ -248,8 +265,35 @@ function utf8Prefix(value: Uint8Array, limit: number): Buffer {
   return Buffer.from(value.subarray(0, end));
 }
 
-export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; executor: "account" | "host" | "guest"; }
+export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; executor: "account" | "host" | "guest"; sandbox_scoped: boolean; }
 export function helpSnapshot(): HelpSnapshotEntry[] { return operationCatalog.map(({ limits: _limits, ...entry }) => entry); }
 export function cliHelpSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }
 export function mcpToolsSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }
 export function catalogSnapshot(): OperationCatalogEntry[] { return JSON.parse(JSON.stringify(operationCatalog)) as OperationCatalogEntry[]; }
+
+/** What a reversible request did (P1): what was asked, what resulted, and every side effect taken on the way. */
+export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed";
+export interface ActionReport { requested: Json; produced: Json; actions: Array<{ kind: ActionKind; detail?: string; [key: string]: Json | undefined }> }
+
+const GIB = 1024 ** 3;
+/** A new sandbox's size when none is asked for: half the cores and a quarter of RAM (whole GiB), at least 2 CPUs and 2 GiB. HostDaemon's `defaultSize` is the same table. */
+export function defaultSize(hostCpus: number, hostMemoryBytes: number): { cpus: number; memory_bytes: number } {
+  return { cpus: Math.max(2, Math.floor(hostCpus / 2)), memory_bytes: Math.max(2 * GIB, Math.floor(hostMemoryBytes / 4 / GIB) * GIB) };
+}
+
+/** Operations HostDaemon answers itself (the rest go to the guest): the host executor plus the catalog-level sandbox operations it mirrors. */
+export function hostOperationIds(): OperationId[] { return operationCatalog.filter((entry) => entry.executor === "host" || entry.id.startsWith("sandbox.")).map((entry) => entry.id); }
+
+/** `HostOperation` for HostDaemon, so the daemon routes on the catalog's IDs. Written by `contract generate-snapshots`. */
+export function swiftHostOperations(): string {
+  const caseName = (id: string) => id.split(/[._]/).map((part, index) => index === 0 ? part : part[0].toUpperCase() + part.slice(1)).join("");
+  return [
+    "// Generated by `npm run generate:snapshots` from packages/contract. Do not edit.",
+    "",
+    "/// Catalog operations HostDaemon routes itself; the rest go straight to the guest.",
+    "public enum HostOperation: String, CaseIterable, Sendable {",
+    ...hostOperationIds().map((id) => `    case ${caseName(id)} = "${id}"`),
+    "}",
+    "",
+  ].join("\n");
+}

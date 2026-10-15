@@ -16,7 +16,6 @@ const numberEnv = (name: string, fallback: number): number => {
  * serial; using standard streams also makes the guest protocol probeable in CI.
  */
 export async function main(): Promise<void> {
-  const vmId = process.env.LOCALBOX_VM_ID ?? "vm_01";
   const root = process.env.LOCALBOX_ROOT ?? "/";
   const channelEpoch = numberEnv("LOCALBOX_CHANNEL_EPOCH", 1);
   const readinessMarker = process.env.LOCALBOX_READINESS_MARKER ?? "/run/localbox/ready";
@@ -25,7 +24,7 @@ export async function main(): Promise<void> {
     ? productionDesktopHandlers({ cdpUrl: process.env.LOCALBOX_CDP_URL, env: { DISPLAY: process.env.DISPLAY ?? ":0" } })
     : undefined;
   const gateway = new GuestGateway({ root, extraHandlers });
-  await runGuestService({ input: stdin, output: stdout, gateway, vmId, channelEpoch, inventoryNames: inventory, readinessMarker, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  await runGuestService({ input: stdin, output: stdout, gateway, channelEpoch, inventoryNames: inventory, readinessMarker, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -1,4 +1,7 @@
-import { catalogById, failure, requestFromInvocation, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import {
+  catalogById, ContractError, defaultSize, failure, requestFromInvocation, success, validateJson,
+  type ActionReport, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
+} from "../../../packages/contract/src/index.js";
 
 /** The caller: one of the account's machines (machine credential) or a signed-in agent (OAuth token family). */
 export interface Principal { accountId: string; machineId?: string; familyId?: string }
@@ -21,48 +24,155 @@ export interface OpsDeps {
 
 export interface OpsResponse { status: number; body: unknown }
 
-/** Operations about the account itself; they run against the catalog and are never relayed to a machine. */
+/** A row of `sandboxes:list`. */
+export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; state: string }
+
+/** Operations that only read or change the account catalog; they are never relayed to a machine. */
 export const ACCOUNT_OPERATIONS: Record<string, ["mutation" | "query", string]> = {
   "account.status": ["query", "accounts:status"], "account.rename": ["mutation", "accounts:rename"],
   "machine.list": ["query", "machines:list"], "machine.rename": ["mutation", "machines:rename"], "machine.remove": ["mutation", "machines:remove"],
+  "sandbox.list": ["query", "sandboxes:list"],
 };
 
+const GIB = 1024 ** 3;
+const errorCodes: ErrorCode[] = ["name_conflict", "sandbox_not_found", "machine_not_found", "quota_exceeded", "invalid_input"];
+/** Convex functions signal contract errors as `<code>: message`; anything else is not the caller's to see. */
+function contractError(error: unknown): ContractError {
+  const text = error instanceof Error ? error.message : String(error);
+  const coded = text.match(new RegExp(`(${errorCodes.join("|")}): ([^\\n]*)`));
+  if (coded) return new ContractError(coded[1] as ErrorCode, coded[2].trim());
+  const label = text.match(/label must be [^\n]*/);
+  if (label) return new ContractError("invalid_input", `sandbox name: ${label[0]}`);
+  throw error;
+}
+const answer = (response: ResponseEnvelope): OpsResponse => ({ status: 200, body: { response } });
+
 /**
- * `POST /api/v1/ops`. Account operations run against the catalog directly. Every other operation is bound to a
- * machine: it is enqueued for that machine's connector, and this call waits on a Convex subscription for up to
- * min(deadline, 50 s). A request no connector claims within 3 s is abandoned and reported `machine_offline`; one
- * still running when the wait ends comes back as a continuation the client resumes with `{continue: request_id}`.
+ * `POST /api/v1/ops`. Account operations run against the catalog. `sandbox.create`, `.rename` and `.delete` change
+ * the catalog and tell the sandbox's machine. Every other operation names a sandbox (`sandbox`: name or id; omitted
+ * only when the account has exactly one) and is enqueued for the connector of the machine holding it; this call
+ * waits on a Convex subscription for up to min(deadline, 50 s). A request no connector claims within 3 s is
+ * abandoned and reported `machine_offline`; one still running when the wait ends comes back as a continuation the
+ * client resumes with `{continue: request_id}`.
  */
 export async function handleOps(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<OpsResponse> {
   if (typeof input.continue === "string") return await waitFor(principal, input.continue, Number(input.deadline_at ?? 0), deps);
   const operation = String(input.operation ?? "");
+  const payload = (input.input ?? {}) as Record<string, Json>;
   const account = ACCOUNT_OPERATIONS[operation];
   if (account) {
-    const payload = (input.input ?? {}) as Record<string, unknown>;
     const args = operation === "machine.rename" || operation === "machine.remove" ? (({ machine_id: machineId, ...rest }) => ({ ...rest, machineId }))(payload) : payload;
-    return { status: 200, body: await deps.accountCall(principal, account[0], account[1], args) };
+    const result = await deps.accountCall(principal, account[0], account[1], args);
+    return { status: 200, body: operation === "sandbox.list" ? { sandboxes: result } : result };
   }
-  if (!catalogById.has(operation as OperationId)) return { status: 400, body: { error: `unsupported operation: ${operation}` } };
-  const request = requestFromInvocation({ operation: operation as OperationId, vm_id: typeof input.vm_id === "string" ? input.vm_id : "vm_01", request_id: typeof input.request_id === "string" ? input.request_id : `req_${crypto.randomUUID()}`, deadline_ms: typeof input.deadline_ms === "number" ? input.deadline_ms : undefined, mutation_id: typeof input.mutation_id === "string" ? input.mutation_id : null, input: (input.input ?? {}) as Json });
-  const machine = await resolveMachine(principal, String(input.machine ?? ""), deps);
-  if (!machine) return { status: 200, body: { response: failure(request, { code: "machine_not_found", message: `no machine named ${String(input.machine ?? "")} on this account`, retryable: false }) } };
+  const entry = catalogById.get(operation as OperationId);
+  if (!entry) return { status: 400, body: { error: `unsupported operation: ${operation}` } };
+  const base = requestFromInvocation({ operation: entry.id, request_id: typeof input.request_id === "string" ? input.request_id : `req_${crypto.randomUUID()}`, deadline_ms: typeof input.deadline_ms === "number" ? input.deadline_ms : undefined, mutation_id: typeof input.mutation_id === "string" ? input.mutation_id : null, input: payload });
+  try {
+    validateJson(payload, entry.input_schema);
+    if (entry.id === "sandbox.create") return await createSandbox(principal, base, deps);
+    const target = await resolveSandbox(principal, typeof input.sandbox === "string" ? input.sandbox : undefined, deps);
+    const request = { ...base, sandbox_id: target.sandbox_id };
+    if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
+    if (entry.id === "sandbox.delete") return await deleteSandbox(principal, request, target, deps);
+    return await relay(principal, target.machine_id, request, deps);
+  } catch (error) {
+    return answer(failure(base, error instanceof ContractError ? error : contractError(error)));
+  }
+}
+
+/** The named sandbox (name or id) on the caller's account; omitted, the account's only sandbox. */
+export async function resolveSandbox(principal: Principal, wanted: string | undefined, deps: OpsDeps): Promise<SandboxRow> {
+  const rows = await deps.accountCall(principal, "query", "sandboxes:list", {}) as SandboxRow[];
+  const names = rows.map((row) => row.name);
+  if (wanted) {
+    const row = rows.find((candidate) => candidate.sandbox_id === wanted || candidate.name === wanted);
+    if (!row) throw new ContractError("sandbox_not_found", `no sandbox ${wanted} on this account; ${names.length ? `sandboxes: ${names.join(", ")}` : "it has none"}`, { names });
+    return row;
+  }
+  if (rows.length === 1) return rows[0];
+  if (!rows.length) throw new ContractError("sandbox_not_found", "this account has no sandboxes; create one with sandbox create", { names });
+  throw new ContractError("sandbox_ambiguous", `this account has ${rows.length} sandboxes; name one: ${names.join(", ")}`, { names });
+}
+
+async function resolveMachine(principal: Principal, wanted: string, deps: OpsDeps): Promise<{ machineId: string; name: string; capacity?: { cpus?: number; memory_bytes?: number } } | undefined> {
+  const machines = await deps.accountCall(principal, "query", "machines:list", {}) as Array<{ machineId: string; name: string; capacity?: { cpus?: number; memory_bytes?: number } }>;
+  return machines.find((row) => row.machineId === wanted) ?? machines.find((row) => row.name.toLowerCase() === wanted.toLowerCase());
+}
+
+const gib = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
+
+/** Reserve the identity in Convex, then have the machine create it; a machine that refuses releases the name. */
+async function createSandbox(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { name?: string; machine?: string; cpus?: number; memory_bytes?: number };
+  const wanted = asked.machine ?? principal.machineId;
+  if (!wanted) throw new ContractError("invalid_input", "name a machine: pass machine (a name or id from machine.list)");
+  const machine = await resolveMachine(principal, wanted, deps);
+  if (!machine) throw new ContractError("machine_not_found", `no machine ${wanted} on this account`);
+  const { cpus: hostCpus, memory_bytes: hostMemory } = machine.capacity ?? {};
+  if ((asked.cpus === undefined || asked.memory_bytes === undefined) && (!hostCpus || !hostMemory)) throw new ContractError("machine_offline", `${machine.name} has not connected yet, so its size is unknown; start its connector or pass cpus and memory_bytes`, undefined, true);
+  const fallback = hostCpus && hostMemory ? defaultSize(hostCpus, hostMemory) : undefined;
+  const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
+  const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
+    : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: half its ${hostCpus} CPUs and a quarter of its ${gib(hostMemory!)}, at least 2 CPUs and 2 GiB`;
+  const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes }) as SandboxRow;
+  const request: RequestEnvelope = { ...base, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes } };
+  const relayed = await relay(principal, machine.machineId, request, deps);
+  const response = (relayed.body as { response?: ResponseEnvelope }).response;
+  // A pending create keeps its reservation: the machine took the request and its answer arrives by continuation.
+  if (!response) return relayed;
+  if (!response.ok) { await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id }); return answer({ ...response, request_id: base.request_id, sandbox_id: null }); }
+  const machineReport = response.result as unknown as ActionReport;
+  const report: ActionReport = {
+    requested: asked as Json,
+    produced: { sandbox_id: row.sandbox_id, name: row.name, machine: machine.name, cpus, memory_bytes: memoryBytes, size_reason: sizeReason },
+    actions: machineReport.actions ?? [],
+  };
+  return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));
+}
+
+/** Rename in the catalog, then tell the machine; an offline machine takes the name from its mirror when it reconnects. */
+async function renameSandbox(principal: Principal, request: RequestEnvelope, target: SandboxRow, deps: OpsDeps): Promise<OpsResponse> {
+  const renamed = await deps.accountCall(principal, "mutation", "sandboxes:rename", { sandboxId: target.sandbox_id, name: (request.input as { name: string }).name }) as { name: string; previous_name: string };
+  const told = await relayedResponse(principal, target.machine_id, request, deps);
+  const machine = target.machine_name ?? target.machine_id;
+  const detail = `renamed ${renamed.previous_name} to ${renamed.name}${told?.ok ? ` on ${machine}` : `; ${machine} did not answer (${told ? told.error.code : "still pending"}) and takes the name when it reconnects`}`;
+  const report: ActionReport = { requested: request.input, produced: { sandbox_id: target.sandbox_id, name: renamed.name, previous_name: renamed.previous_name, machine }, actions: [{ kind: "renamed", detail }] };
+  return answer(success(request, report as unknown as Json));
+}
+
+/** The machine drops the sandbox first (and reports what it removed), then the catalog row goes. */
+async function deleteSandbox(principal: Principal, request: RequestEnvelope, target: SandboxRow, deps: OpsDeps): Promise<OpsResponse> {
+  const confirm = (request.input as { confirm?: string }).confirm;
+  if (confirm !== undefined && confirm !== target.name) throw new ContractError("invalid_input", `confirm must be the sandbox's name, ${target.name}`);
+  const told = await relayedResponse(principal, target.machine_id, request, deps);
+  if (told && !told.ok && !["machine_offline", "sandbox_not_found"].includes(told.error.code)) return answer(told);
+  await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: target.sandbox_id });
+  const machine = target.machine_name ?? target.machine_id;
+  const fromMachine = told?.ok ? ((told.result as unknown as ActionReport).produced as { removed?: Json[] }).removed ?? [] : [];
+  const removed = ["account catalog entry", ...fromMachine.map((item) => `${item} on ${machine}`)];
+  const detail = `deleted ${target.name}: removed ${removed.join(", ")}${told?.ok ? "" : `; ${machine} did not answer and drops it when it reconnects`}`;
+  const report: ActionReport = { requested: request.input, produced: { sandbox_id: target.sandbox_id, name: target.name, machine, removed }, actions: [{ kind: "deleted", detail }] };
+  return answer(success(request, report as unknown as Json));
+}
+
+/** The machine's answer, or undefined when it is still running past this call's wait. */
+async function relayedResponse(principal: Principal, machineId: string, request: RequestEnvelope, deps: OpsDeps): Promise<ResponseEnvelope | undefined> {
+  const mutationId = request.mutation_id ?? `${request.operation}-${request.request_id}`;
+  return ((await relay(principal, machineId, { ...request, mutation_id: mutationId }, deps)).body as { response?: ResponseEnvelope }).response;
+}
+
+async function relay(principal: Principal, machineId: string, request: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
   let queued: { requestId: string };
   try {
-    queued = await deps.serviceMutation("relay:enqueue", { accountId: principal.accountId, machineId: machine.machineId, ...(typeof input.sandbox_id === "string" ? { sandboxId: input.sandbox_id } : {}), requestId: request.request_id, operation, ...(request.mutation_id ? { mutationId: request.mutation_id } : {}), payload: request });
+    queued = await deps.serviceMutation("relay:enqueue", { accountId: principal.accountId, machineId, ...(request.sandbox_id ? { sandboxId: request.sandbox_id } : {}), requestId: request.request_id, operation: request.operation, ...(request.mutation_id ? { mutationId: request.mutation_id } : {}), payload: request });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const limit = message.match(/relay_daily_limit:\s*(.*)/);
-    if (limit) return { status: 200, body: { response: failure(request, { code: "rate_limited", message: limit[1].trim(), retryable: true }) } };
+    if (limit) return answer(failure(request, { code: "rate_limited", message: limit[1].trim(), retryable: true }));
     throw error;
   }
   return await waitFor(principal, queued.requestId, Date.now() + request.deadline_ms, deps, request);
-}
-
-async function resolveMachine(principal: Principal, wanted: string, deps: OpsDeps): Promise<{ machineId: string; name: string } | undefined> {
-  if (!wanted) return undefined;
-  const machines = await deps.accountCall(principal, "query", "machines:list", {}) as Array<{ machineId?: string; machine_id?: string; name?: string; machine_name?: string }>;
-  const normalized = machines.map((row) => ({ machineId: row.machineId ?? row.machine_id ?? "", name: row.name ?? row.machine_name ?? "" }));
-  return normalized.find((row) => row.machineId === wanted) ?? normalized.find((row) => row.name.toLowerCase() === wanted.toLowerCase());
 }
 
 async function waitFor(principal: Principal, requestId: string, deadlineAt: number, deps: OpsDeps, request?: RequestEnvelope): Promise<OpsResponse> {
@@ -90,8 +200,8 @@ async function waitFor(principal: Principal, requestId: string, deadlineAt: numb
     // The subscription can report `abandoned` before our own abandon call returns the machine's last-seen time.
     const lastSeenAt = (await abandonCall)?.lastSeenAt;
     const seen = lastSeenAt === undefined ? "" : `; last seen ${new Date(lastSeenAt).toISOString()}`;
-    return { status: 200, body: { response: failure(envelope, { code: "machine_offline", message: `the machine did not pick up the request within ${claimWindowMs / 1000} s${seen}`, retryable: true }) } };
+    return answer(failure(envelope, { code: "machine_offline", message: `the machine did not pick up the request within ${claimWindowMs / 1000} s${seen}`, retryable: true }));
   }
-  if (deadlineAt && Date.now() >= deadlineAt) return { status: 200, body: { response: failure(envelope, { code: "operation_uncertain", message: `the machine took the request but did not answer before the deadline; replay with the same mutation id to get its result`, retryable: true }) } };
+  if (deadlineAt && Date.now() >= deadlineAt) return answer(failure(envelope, { code: "operation_uncertain", message: `the machine took the request but did not answer before the deadline; replay with the same mutation id to get its result`, retryable: true }));
   return { status: 202, body: { status: "pending", request_id: requestId, deadline_at: deadlineAt } };
 }

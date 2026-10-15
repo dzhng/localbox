@@ -93,7 +93,7 @@ export class GuestGateway {
     if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new ContractError("forbidden", "guest path escapes the VM filesystem");
     return candidate;
   }
-  private journalKey(request: RequestEnvelope): string { return `${request.vm_id}:${request.operation}:${request.mutation_id ?? ""}`; }
+  private journalKey(request: RequestEnvelope): string { return `${request.sandbox_id}:${request.operation}:${request.mutation_id ?? ""}`; }
   private async existingPath(candidate: string): Promise<string> {
     let real: string;
     try { real = await fs.realpath(candidate); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error; throw error; }
@@ -184,14 +184,7 @@ export class GuestGateway {
     const desktop = desktopHandlers(this.desktopRuntime) as unknown as Partial<Record<OperationId, Handler>>;
     return {
       ...desktop,
-      "system.info": async (_input, context) => ({ vm_id: context.request.vm_id, root: "/", gateway: "guest", capabilities: operationCatalog.map((entry) => entry.id) }),
-      "vm.list": async (_input, context) => ({ vms: [{ vm_id: context.request.vm_id, status: "ready" }] }),
-      "vm.status": async (_input, context) => ({ vm_id: context.request.vm_id, status: "ready", desktop: this.desktopRuntime.phase }),
-      "vm.start": async (_input, context) => ({ vm_id: context.request.vm_id, status: "ready", operation: "start" }),
-      "vm.stop": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "stop" }; },
-      "vm.pause": async (_input, context) => ({ vm_id: context.request.vm_id, status: "paused", operation: "pause" }),
-      "vm.reset": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "reset" }; },
-      "vm.logs": async () => ({ lines: [] }),
+      "system.info": async (_input, context) => ({ sandbox_id: context.request.sandbox_id, root: "/", gateway: "guest", capabilities: operationCatalog.map((entry) => entry.id) }),
       "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
       "job.status": async (input) => { const j = this.job(input); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
       "job.wait": async (input) => { const i = input as { job_id: string; timeout_ms: number }; const j = this.job(i); await Promise.race([j.done, new Promise<void>((resolve) => setTimeout(resolve, i.timeout_ms))]); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },

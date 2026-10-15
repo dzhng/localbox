@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { waitForCode } from "../lib/codes.js";
-import { API_ORIGIN, login, machineRoot, startConnector, stopConnector } from "../lib/login.js";
+import { API_ORIGIN, machineRoot, stopConnector } from "../lib/login.js";
+import { guestRoot, signedInWithSandboxes } from "../lib/sandboxes.js";
 import { shootSignInPages } from "../lib/shoot.js";
 
 export const id = "08";
@@ -13,7 +14,6 @@ export const tiers = ["u", "l"];
 
 const MCP = `${API_ORIGIN}/api/mcp`;
 const REDIRECT = "http://127.0.0.1:47123/callback";
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const text = (html: string) => html.replace(/<style>[\s\S]*?<\/style>/, "").replace(/<[^>]+>/g, "").replace(/&#39;/g, "'").replace(/\s+/g, " ");
 const form = (fields: Record<string, string>): RequestInit => ({ method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString(), redirect: "manual" });
 
@@ -34,7 +34,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
   const run = Date.now(); const devLog = join(ctx.root, ".localbox/proof/dev-local.log");
   const email = `proof-08-${run}@example.com`;
-  let machineB = ""; let connector: ChildProcess | undefined;
+  let machineB = ""; let sandboxB = ""; let sandboxIdB = ""; let connector: ChildProcess | undefined;
   let metadata: Record<string, any> = {}; let clientId = "";
   let tokens: Record<string, any> = {}; let refreshed: Record<string, any> = {};
   const mcp = async (token: string, method: string, params?: unknown) => {
@@ -60,12 +60,11 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     return await exchanged.json() as Record<string, any>;
   };
   try {
-    checks.push(await ctx.check("B signs in and its connector connects", async () => {
-      const signed = await login(ctx.root, "b", email); assert.equal(signed.code, 0, signed.stderr);
+    checks.push(await ctx.check("B signs in, its connector connects, and it gets a sandbox", async () => {
+      const setup = await signedInWithSandboxes(ctx.root, ["b"], email);
+      connector = setup.connectors.b; sandboxB = setup.sandboxes.b;
       machineB = JSON.parse(readFileSync(join(machineRoot(ctx.root, "b"), "credentials.json"), "utf8")).machine_id;
-      const log = join(machineRoot(ctx.root, "b"), "logs/connector.log"); writeFileSync(log, ""); connector = startConnector(ctx.root, "b");
-      for (let attempt = 0; attempt < 60 && !readFileSync(log, "utf8").includes("state connected"); attempt++) await sleep(250);
-      assert.match(readFileSync(log, "utf8"), /state connected/);
+      sandboxIdB = JSON.parse(readFileSync(join(machineRoot(ctx.root, "b"), "sandboxes.json"), "utf8"))[0].sandbox_id;
     }));
     checks.push(await ctx.check("a client discovers metadata from the 401 and registers", async () => {
       const unauthenticated = await fetch(MCP, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }) });
@@ -84,25 +83,29 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       tokens = await signInAgent(email, clientId, (page) => assert.match(page, /Signing in gives Proof Agent \(127\.0\.0\.1:47123\) full access to account [a-z]+-[a-z]+-\d+: it can create, use and delete sandboxes on all your machines\./));
       assert.equal(tokens.scope, "account"); assert.equal(tokens.token_type, "Bearer");
     }));
-    checks.push(await ctx.check("MCP tools/call shell.exec with machine = B runs on B", async () => {
+    checks.push(await ctx.check("MCP tools/call shell.exec with sandbox = B's sandbox runs on B; with one sandbox it may be left out", async () => {
       const listed = await mcp(tokens.access_token, "tools/list");
-      assert.ok(listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties.machine);
+      assert.ok(listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties.sandbox);
+      assert.ok(!listed.body.result.tools.find((tool: any) => tool.name === "shell.exec").inputSchema.properties.machine);
       const marker = `mcp-${run}`;
-      const called = await mcp(tokens.access_token, "tools/call", { name: "shell.exec", arguments: { machine: machineB, command: "touch", args: [marker], cwd: "/" } });
+      const called = await mcp(tokens.access_token, "tools/call", { name: "shell.exec", arguments: { sandbox: sandboxB, command: "touch", args: [marker], cwd: "/" } });
       assert.equal(called.status, 200); assert.notEqual(called.body.result.isError, true, JSON.stringify(called.body));
-      const guest = (machine: string) => join(machineRoot(ctx.root, machine), "sandboxes/vm_01/root", marker);
-      assert.ok(existsSync(guest("b")), "the command ran in B's guest"); assert.ok(!existsSync(guest("a")), "and not in A's");
-      const unnamed = await mcp(tokens.access_token, "tools/call", { name: "fs.stat", arguments: { path: "/" } });
-      assert.equal(unnamed.body.result.isError, true); assert.match(unnamed.body.result.content[0].text, /machine/);
+      assert.ok(existsSync(join(guestRoot(ctx.root, "b"), marker)), "the command ran in B's guest"); assert.ok(!existsSync(join(guestRoot(ctx.root, "a"), marker)), "and not in A's");
+      const unnamed = await mcp(tokens.access_token, "tools/call", { name: "fs.stat", arguments: { path: `/${marker}` } });
+      assert.notEqual(unnamed.body.result.isError, true, JSON.stringify(unnamed.body)); assert.equal(unnamed.body.result.structuredContent.exists, true);
     }));
     checks.push(await ctx.check("the agent token also works on the agent API (/api/v1/ops)", async () => {
       const response = await fetch(`${API_ORIGIN}/api/v1/ops`, { method: "POST", headers: { authorization: `Bearer ${tokens.access_token}`, "content-type": "application/json" }, body: JSON.stringify({ operation: "machine.list", input: {} }) });
       assert.equal(response.status, 200); assert.ok((await response.json() as any[]).some((row) => row.machineId === machineB));
     }));
-    checks.push(await ctx.check("another account's agent cannot reach B", async () => {
+    checks.push(await ctx.check("another account's agent cannot reach B's sandbox by name or id, nor create one on B", async () => {
       const other = await signInAgent(`proof-08-other-${run}@example.com`, clientId, (page) => assert.match(page, /full access to your new account/));
-      const called = await mcp(other.access_token, "tools/call", { name: "fs.stat", arguments: { machine: machineB, path: "/" } });
-      assert.equal(called.body.result.isError, true); assert.equal(called.body.result.structuredContent?.code, "machine_not_found", JSON.stringify(called.body));
+      for (const sandbox of [sandboxB, sandboxIdB, undefined]) {
+        const called = await mcp(other.access_token, "tools/call", { name: "fs.stat", arguments: { ...(sandbox ? { sandbox } : {}), path: "/" } });
+        assert.equal(called.body.result.isError, true); assert.equal(called.body.result.structuredContent?.code, "sandbox_not_found", JSON.stringify(called.body));
+      }
+      const created = await mcp(other.access_token, "tools/call", { name: "sandbox.create", arguments: { machine: machineB } });
+      assert.equal(created.body.result.isError, true); assert.equal(created.body.result.structuredContent?.code, "machine_not_found", JSON.stringify(created.body));
     }));
     checks.push(await ctx.check("refresh rotates; replaying the old refresh token is refused and revokes the family", async () => {
       const refresh = (token: string) => fetch(metadata.token_endpoint, form({ grant_type: "refresh_token", refresh_token: token, client_id: clientId }));

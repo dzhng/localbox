@@ -1,6 +1,7 @@
 import {
   ContractError,
   failure,
+  success,
   PROTOCOL_VERSION,
   type ErrorCode,
   type Json,
@@ -16,7 +17,7 @@ import { machinePaths } from "../../config/src/machine-paths.js";
 export type TransportKind = "local" | "remote";
 
 export interface ClientRequestOptions {
-  vmId?: string;
+  sandboxId?: string | null;
   deadlineMs?: number;
   mutationId?: string | null;
   requestId?: string;
@@ -31,28 +32,24 @@ export interface ClientTransport {
 export interface RelayHttpTransportOptions {
   /** API origin, e.g. https://localbox.sh; requests go to `${apiOrigin}/api/v1/ops`. */
   apiOrigin: string;
-  /** The target machine (name or id). Remote calls always name one; there is no implicit routing. */
-  machine: string;
   accessToken?: string;
   accessTokenProvider?: () => Promise<string | undefined>;
   fetchImpl?: typeof fetch;
 }
 
 /**
- * Runs a request on another machine of the account through the agent API. The server waits up to 50 s per call
+ * Runs a request through the agent API, which finds the machine that holds the request's sandbox. The server waits up to 50 s per call
  * and hands back a continuation for longer requests; this transport resumes it until the request's deadline.
  * It never replays a mutation on its own.
  */
 export class RelayHttpTransport implements ClientTransport {
   readonly kind = "remote" as const;
   private readonly endpoint: string;
-  private readonly machine: string;
   private readonly accessTokenProvider?: () => Promise<string | undefined>;
   private readonly fetchImpl: typeof fetch;
   private readonly accessToken?: string;
   constructor(options: RelayHttpTransportOptions) {
     this.endpoint = `${options.apiOrigin.replace(/\/$/, "")}/api/v1/ops`;
-    this.machine = options.machine;
     this.accessToken = options.accessToken;
     this.accessTokenProvider = options.accessTokenProvider;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -61,7 +58,7 @@ export class RelayHttpTransport implements ClientTransport {
     const token = this.accessTokenProvider ? await this.accessTokenProvider() : this.accessToken;
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (token) headers.authorization = `Bearer ${token}`;
-    let body: Record<string, unknown> = { operation: request.operation, input: request.input, machine: this.machine, vm_id: request.vm_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms };
+    let body: Record<string, unknown> = { operation: request.operation, input: request.input, sandbox: request.sandbox_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms };
     for (;;) {
       let response: Response;
       try {
@@ -75,10 +72,15 @@ export class RelayHttpTransport implements ClientTransport {
         body = { continue: pending.request_id, deadline_at: pending.deadline_at };
         continue;
       }
-      if (!response.ok) return failure(request, { code: response.status === 429 ? "rate_limited" : "internal", message: await response.text(), retryable: response.status >= 500 || response.status === 429 });
-      const result = await response.json() as { response?: ResponseEnvelope };
-      if (result.response) return result.response;
-      return failure(request, { code: "internal", message: "the agent API returned no response", retryable: false });
+      if (!response.ok) {
+        const body = await response.text(); let message = body;
+        try { message = (JSON.parse(body) as { error?: string }).error ?? body; } catch { /* plain text */ }
+        return failure(request, { code: response.status === 429 ? "rate_limited" : response.status >= 500 ? "internal" : "invalid_input", message, retryable: response.status >= 500 || response.status === 429 });
+      }
+      const result = await response.json() as Json;
+      // Account operations answer with the catalog's value; everything else with the machine's envelope.
+      const envelope = result && typeof result === "object" && !Array.isArray(result) ? result.response as unknown as ResponseEnvelope | undefined : undefined;
+      return envelope ?? success(request, result);
     }
   }
 }
@@ -230,19 +232,19 @@ export class TransportError extends Error {
 
 export interface AgentClientOptions {
   transport: ClientTransport;
-  vmId?: string;
+  sandboxId?: string | null;
   requestIds?: () => string;
 }
 
 export class AgentClient {
   readonly transport: ClientTransport;
-  readonly vmId: string;
+  readonly sandboxId: string | null;
   private readonly nextRequestId: () => string;
   private sequence = 0;
 
   constructor(options: AgentClientOptions) {
     this.transport = options.transport;
-    this.vmId = options.vmId ?? "vm_01";
+    this.sandboxId = options.sandboxId ?? null;
     this.nextRequestId = options.requestIds ?? (() => `cli-${++this.sequence}`);
   }
 
@@ -251,7 +253,7 @@ export class AgentClient {
       protocol_version: PROTOCOL_VERSION,
       request_id: options.requestId ?? this.nextRequestId(),
       operation,
-      vm_id: options.vmId ?? this.vmId,
+      sandbox_id: options.sandboxId === undefined ? this.sandboxId : options.sandboxId,
       deadline_ms: options.deadlineMs ?? 30_000,
       mutation_id: options.mutationId ?? null,
       input,
@@ -271,20 +273,20 @@ export class AgentClient {
   }
 
   async status(options: ClientRequestOptions = {}): Promise<ResponseEnvelope> {
-    const [info, vm, relay, egress] = await Promise.all([
+    const [info, sandbox, relay, egress] = await Promise.all([
       this.invoke("system.info", {}, options),
-      this.invoke("vm.status", {}, options),
+      this.invoke("sandbox.status", {}, options),
       this.invoke("relay.status", {}, options),
       this.invoke("network.egress", {}, options),
     ]);
-    const firstError = [info, vm, relay, egress].find((result) => !result.ok);
+    const firstError = [info, sandbox, relay, egress].find((result) => !result.ok);
     if (firstError && !firstError.ok) return firstError;
     return {
       ...(info as Extract<typeof info, { ok: true }>),
       operation: "system.info",
       result: {
         system: (info as Extract<typeof info, { ok: true }>).result,
-        vm: (vm as Extract<typeof vm, { ok: true }>).result,
+        sandbox: (sandbox as Extract<typeof sandbox, { ok: true }>).result,
         relay: (relay as Extract<typeof relay, { ok: true }>).result,
         egress: (egress as Extract<typeof egress, { ok: true }>).result,
       },

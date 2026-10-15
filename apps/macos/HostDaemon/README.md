@@ -1,12 +1,17 @@
-# Host daemon status model
+# Host daemon
 
-`HostStatusStore` is the app/daemon seam for first-run, starting, ready,
-disconnected, paused, and reset states. Lifecycle controls delegate to the
-catalog client and registry; this model carries status only and adds no policy.
+`HostDaemon` is the only owner of the runtime's lifecycle and of this Mac's
+sandbox identity mirror (`LOCALBOX_SANDBOX_MIRROR`, a read-only copy of the
+account catalog's sandboxes here; the connector keeps it following Convex).
+Every request names a sandbox in the mirror or is refused `sandbox_not_found`.
+It routes on `HostOperation`, which `npm run generate:snapshots` writes from the
+contract catalog; every other operation goes to the guest. Until each sandbox
+gets its own runtime, all sandboxes on a Mac share one runtime, so sleep, start
+and stop act on all of them.
 
-`HostDaemon` is the only VM lifecycle owner. `AuthenticatedLocalIPC` is the
-local CLI boundary: it checks the injected owner-only IPC token and forwards the
-envelope to `HostDaemon.request` without duplicating lifecycle state.
+`AuthenticatedLocalIPC` is the local CLI boundary: it checks the injected
+owner-only IPC token and forwards the envelope to `HostDaemon.request` without
+duplicating lifecycle state.
 
 `UnixDomainSocketServer` is the launchd-compatible local transport around that
 seam. It creates the configured socket path (expanding `~`), refuses to replace
@@ -19,17 +24,18 @@ cannot stall other clients. `stop()` cancels the listener and removes the
 socket path; launchd packaging can own process startup and call the same
 server lifecycle in the signed product bundle.
 
-`AppleVirtualizationBackend` configures a named virtio-console port and attaches
-the framed `GuestService` channel after VM start; a hardware run still must
+`AppleVirtualizationBackend` attaches the framed `GuestService` channel after
+VM start; a hardware run still must
 prove that the published guest kernel/initrd and service actually boot and emit
 readiness. Destructive reset requires an immutable template disk and replaces
 the persistent disk from that template, so a failed or interrupted reset never
 leaves an empty disk image attached to the VM.
 
 The `localbox-hostd` executable is the launchd process boundary. It reads
-the VM image paths and an owner-only IPC token file from environment variables,
-starts the same `HostDaemon` and `UnixDomainSocketServer` used by tests, and
-stops both on `SIGTERM`/`SIGINT`. The checked-in
+the VM image paths, the sandbox mirror path and an owner-only IPC token file
+from environment variables, starts the same `HostDaemon` and
+`UnixDomainSocketServer` used by tests (booting the runtime only when the mirror
+holds a sandbox), and stops both on `SIGTERM`/`SIGINT`. The checked-in
 `Resources/com.localbox.hostd.plist` is a bundle template; an installer
 must materialize its paths, create the token file with mode `0600`, load it with
 `launchctl`, and unload it before replacement.

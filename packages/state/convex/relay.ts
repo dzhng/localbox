@@ -20,6 +20,9 @@ async function machineFor(ctx: any, accountId: string, machineId: string) {
 export const enqueue = mutationGeneric({ args: { accountId: v.string(), machineId: v.string(), sandboxId: v.optional(v.string()), requestId: v.string(), operation: v.string(), mutationId: v.optional(v.union(v.string(), v.null())), payload: v.any() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
   const at = Date.now(); await machineFor(ctx, args.accountId, args.machineId);
+  // The envelope's sandbox is the one routed on, and it must live on this account's chosen machine.
+  if ((args.payload?.sandbox_id ?? undefined) !== args.sandboxId) fail("sandbox id does not match the request");
+  if (args.sandboxId !== undefined) { const sandbox = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId); if (!sandbox || sandbox.accountId !== args.accountId || sandbox.machineId !== args.machineId) fail("sandbox not found"); }
   // The payload is a whole request envelope; a replay carries a new request id and deadline, so only what would
   // run (operation and input) decides whether two requests are the same.
   const payloadHash = await jsonHash({ operation: args.operation, input: args.payload?.input ?? args.payload });

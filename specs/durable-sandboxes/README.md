@@ -15,7 +15,7 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01 and 03–08 done. A cloud agent signs in over MCP with an email code and runs commands on any machine of the account (`npm run proof -- 08 --tier l`). In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked; an unlocked run is pending. Next: 09.*
+*Status 2026-10-15: slices 00, 01 and 03–09 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); until slice 10 all sandboxes on a Mac share one runtime. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked; an unlocked run is pending. Next: 10 (needs 02's channel and save decisions), then 11.*
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).
@@ -48,7 +48,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [x] [06 email identity](slices/06-email-identity.md)
 - [x] [07 relay mailbox and connector](slices/07-relay-connector.md)
 - [x] [08 MCP sign-in](slices/08-mcp-signin.md)
-- [ ] [09 sandbox catalog and CLI](slices/09-sandbox-catalog.md)
+- [x] [09 sandbox catalog and CLI](slices/09-sandbox-catalog.md)
 - [ ] [10 multi-sandbox daemon](slices/10-multi-sandbox-daemon.md)
 - [ ] [11 placement and capacity](slices/11-placement-capacity.md)
 - [ ] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)

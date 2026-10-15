@@ -14,13 +14,14 @@ struct HostDaemonMain {
         // default action kills the process silently.
         Darwin.signal(SIGPIPE, SIG_IGN)
         do {
-            let vmID = required("LOCALBOX_VM_ID", defaultValue: "vm_01")
             let token = try loadToken()
-            let daemon = HostDaemon(vmID: vmID, backend: try backend(vmID: vmID))
+            let daemon = HostDaemon(backend: try backend(), mirrorFile: pathURL("LOCALBOX_SANDBOX_MIRROR"),
+                                    hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init))
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
             try await server.start()
-            try await daemon.start()
+            // A Mac with no sandboxes keeps its runtime down; the first create cold-boots it.
+            if !(await daemon.sandboxes().isEmpty) { try await daemon.start() }
             installSignalHandlers(server: server, daemon: daemon)
             // An async main already services the main queue; dispatchMain() here traps. Park the main task instead.
             while true { try? await Task.sleep(nanoseconds: 3_600 * 1_000_000_000) }
@@ -36,7 +37,7 @@ struct HostDaemonMain {
 
     #if os(macOS)
     /// A real VM unless the fixture is explicitly selected; an unknown value is an error, never a fallback.
-    private static func backend(vmID: String) throws -> any VMBackend {
+    private static func backend() throws -> any VMBackend {
         switch ProcessInfo.processInfo.environment["LOCALBOX_VM_BACKEND"] ?? "apple" {
         case "apple":
             return AppleVirtualizationBackend(image: AppleVMConfiguration(
@@ -52,10 +53,7 @@ struct HostDaemonMain {
             return try ProcessFixtureBackend(configuration: ProcessFixtureConfiguration(
                 sandboxDirectory: pathURL("LOCALBOX_SANDBOX_DIR"),
                 guestCommand: ["/usr/bin/env", "node", "--import", "tsx", repo.appendingPathComponent("apps/guest-agent/src/index.ts").path],
-                workingDirectory: repo,
-                vmID: vmID,
-                hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init),
-                hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS")
+                workingDirectory: repo
             ))
         case let other:
             throw HostDaemonError.unsupported("unknown LOCALBOX_VM_BACKEND \(other); expected apple or process-fixture")

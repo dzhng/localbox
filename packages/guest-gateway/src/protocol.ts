@@ -4,7 +4,7 @@ import type { Json, RequestEnvelope, ResponseEnvelope } from "../../contract/src
 export type GuestFrame =
   | { kind: "request"; request: RequestEnvelope; channel_epoch: number }
   | { kind: "response"; response: ResponseEnvelope; channel_epoch: number }
-  | { kind: "ready"; channel_epoch: number; vm_id: string; inventory_digest: string; readiness_marker: string }
+  | { kind: "ready"; channel_epoch: number; inventory_digest: string; readiness_marker: string }
   | { kind: "cancel"; request_id: string; channel_epoch: number };
 
 export function encodeGuestFrame(frame: GuestFrame): Buffer {

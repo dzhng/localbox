@@ -12,12 +12,8 @@ public struct ProcessFixtureConfiguration: Sendable {
     /// argv for the guest agent; it must speak the guest frame protocol on stdin/stdout.
     public let guestCommand: [String]
     public let workingDirectory: URL?
-    public let vmID: String
-    /// Host capacity the placement code sees on a fixture machine (`LOCALBOX_DEV_HOST_*`).
-    public let hostMemoryBytes: UInt64?
-    public let hostCPUs: Int?
-    public init(sandboxDirectory: URL, guestCommand: [String], workingDirectory: URL? = nil, vmID: String = "vm_01", hostMemoryBytes: UInt64? = nil, hostCPUs: Int? = nil) {
-        self.sandboxDirectory = sandboxDirectory; self.guestCommand = guestCommand; self.workingDirectory = workingDirectory; self.vmID = vmID; self.hostMemoryBytes = hostMemoryBytes; self.hostCPUs = hostCPUs
+    public init(sandboxDirectory: URL, guestCommand: [String], workingDirectory: URL? = nil) {
+        self.sandboxDirectory = sandboxDirectory; self.guestCommand = guestCommand; self.workingDirectory = workingDirectory
     }
     public var guestRoot: URL { sandboxDirectory.appendingPathComponent("root", isDirectory: true) }
 
@@ -56,7 +52,6 @@ public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
         if let directory = configuration.workingDirectory { child.currentDirectoryURL = directory }
         var environment = ProcessInfo.processInfo.environment
         environment["LOCALBOX_ROOT"] = configuration.guestRoot.path
-        environment["LOCALBOX_VM_ID"] = configuration.vmID
         environment["LOCALBOX_READINESS_MARKER"] = configuration.sandboxDirectory.appendingPathComponent("ready").path
         child.environment = environment
         let toGuest = Pipe(); let fromGuest = Pipe()

@@ -7,6 +7,8 @@ export interface MachinePaths {
   ipcToken: string;
   socket: string;
   sandboxes: string;
+  /** HostDaemon's read-only copy of the account catalog's sandboxes on this machine. */
+  sandboxMirror: string;
   logs: string;
 }
 
@@ -20,6 +22,7 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env): MachinePaths
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
     sandboxes: join(root, "sandboxes"),
+    sandboxMirror: join(root, "sandboxes.json"),
     logs: join(root, "logs"),
   };
 }

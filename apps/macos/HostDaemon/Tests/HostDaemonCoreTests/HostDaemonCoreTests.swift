@@ -3,20 +3,75 @@ import XCTest
 
 final class HostDaemonCoreTests: XCTestCase {
     func testFakeLifecycleAndGuestChannel() async throws {
-        let backend = FakeVMBackend()
-        let daemon = HostDaemon(backend: backend)
-        try await daemon.start()
-        let channel = FakeGuestChannel { data in data }
-        await daemon.attach(channel: channel)
+        let daemon = try await daemonWithSandbox(echo: true)
         let started = await daemon.status(); XCTAssertEqual(started.lifecycle, .ready)
-        let echoed = try await daemon.request(Data("ping".utf8)); XCTAssertEqual(echoed, Data("ping".utf8))
+        let request = envelope("shell.exec", #"{"command":"true"}"#, mutation: "e1")
+        let echoed = try await daemon.request(request); XCTAssertEqual(echoed, request)
         try await daemon.pause(); let paused = await daemon.status(); XCTAssertEqual(paused.lifecycle, .paused)
         try await daemon.resume(); let resumed = await daemon.status(); XCTAssertEqual(resumed.lifecycle, .ready)
         try await daemon.stop(); let stopped = await daemon.status(); XCTAssertEqual(stopped.lifecycle, .stopped)
     }
-    func testResetRequiresConfirmation() async throws {
-        let daemon = HostDaemon(backend: FakeVMBackend())
-        await XCTAssertThrowsErrorAsync(try await daemon.reset(confirm: "no"))
+
+    func testDefaultSizeIsHalfTheCoresAndAQuarterOfMemory() {
+        let gib: UInt64 = 1024 * 1024 * 1024
+        for (cpus, memory, expected) in [(12, 24 * gib, (6, 6 * gib)), (4, 8 * gib, (2, 2 * gib)), (2, 4 * gib, (2, 2 * gib)), (10, 64 * gib, (5, 16 * gib))] {
+            let size = defaultSize(hostCPUs: cpus, hostMemoryBytes: memory)
+            XCTAssertEqual(size.cpus, expected.0, "\(cpus) cores"); XCTAssertEqual(size.memoryBytes, expected.1, "\(memory) bytes")
+        }
+    }
+
+    func testEveryRequestNamesASandboxInTheMirror() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend(), hostCPUs: 12, hostMemoryBytes: 24 * 1024 * 1024 * 1024)
+        let unknown = try await call(daemon, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertEqual((unknown["error"] as? [String: Any])?["code"] as? String, "sandbox_not_found")
+        let missing = try await call(daemon, Data(#"{"protocol_version":"v1","request_id":"r","operation":"sandbox.status","sandbox_id":null,"deadline_ms":1000,"mutation_id":null,"input":{}}"#.utf8))
+        XCTAssertEqual((missing["error"] as? [String: Any])?["code"] as? String, "invalid_input")
+        let malformed = try await call(daemon, Data("ping".utf8))
+        XCTAssertEqual((malformed["error"] as? [String: Any])?["code"] as? String, "invalid_input")
+    }
+
+    func testCreateColdBootsReportsSizeAndTheMirrorPersists() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mirror-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("sandboxes.json")
+        let daemon = HostDaemon(backend: FakeVMBackend(), mirrorFile: file, hostCPUs: 12, hostMemoryBytes: 24 * 1024 * 1024 * 1024)
+        let created = try await hostCall(daemon, "sandbox.create", #"{"name":"quiet-otter"}"#, sandboxID: "sandbox_1")
+        XCTAssertEqual((created["produced"] as? [String: Any])?["cpus"] as? Int, 6)
+        XCTAssertEqual((created["produced"] as? [String: Any])?["memory_bytes"] as? Int, 6 * 1024 * 1024 * 1024)
+        XCTAssertEqual((created["actions"] as? [[String: Any]])?.compactMap { $0["kind"] as? String }, ["created", "cold_booted"])
+        let second = try await hostCall(daemon, "sandbox.create", #"{"name":"brave-fox","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_2")
+        XCTAssertEqual((second["actions"] as? [[String: Any]])?.compactMap { $0["kind"] as? String }, ["created"], "the runtime is already up")
+        let renamed = try await hostCall(daemon, "sandbox.rename", #"{"name":"calm-heron"}"#, sandboxID: "sandbox_1")
+        XCTAssertEqual((renamed["produced"] as? [String: Any])?["previous_name"] as? String, "quiet-otter")
+        let deleted = try await hostCall(daemon, "sandbox.delete", "{}", sandboxID: "sandbox_2")
+        XCTAssertEqual((deleted["produced"] as? [String: Any])?["removed"] as? [String], ["sandbox identity"])
+        let reloaded = HostDaemon(backend: FakeVMBackend(), mirrorFile: file)
+        let identities = await reloaded.sandboxes()
+        XCTAssertEqual(identities, [SandboxIdentity(sandboxID: "sandbox_1", name: "calm-heron", cpus: 6, memoryBytes: 6 * 1024 * 1024 * 1024)])
+        let listed = try await hostCall(reloaded, "sandbox.list", "{}", sandboxID: nil)
+        XCTAssertEqual((listed["sandboxes"] as? [[String: Any]])?.first?["name"] as? String, "calm-heron")
+    }
+
+    func testTheMirrorFollowsTheCatalogButKeepsTheSizeItRuns() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend(), hostCPUs: 4, hostMemoryBytes: 8 * 1024 * 1024 * 1024)
+        _ = try await hostCall(daemon, "sandbox.create", #"{"name":"one","cpus":3,"memory_bytes":3221225472}"#, sandboxID: "sandbox_1")
+        let version = try await hostCall(daemon, "host.watch", #"{"since":0}"#)["version"] as! Int
+        _ = try await hostCall(daemon, "sandbox.mirror", #"{"sandboxes":[{"sandbox_id":"sandbox_1","name":"renamed","cpus":2,"memory_bytes":2147483648},{"sandbox_id":"sandbox_9","name":"new","cpus":2,"memory_bytes":2147483648}]}"#)
+        let identities = await daemon.sandboxes()
+        XCTAssertEqual(identities.map(\.name), ["renamed", "new"])
+        XCTAssertEqual(identities.first?.cpus, 3, "the daemon keeps the size it runs a sandbox at")
+        let watched = try await hostCall(daemon, "host.watch", #"{"since":\#(version),"timeout_ms":50}"#)
+        XCTAssertGreaterThan(watched["version"] as? Int ?? 0, version, "a mirror change bumps the watch version")
+        XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.map { $0["state"] as? String }, ["running", "running"])
+    }
+
+    func testSleepAndStartReportWhatTheyDid() async throws {
+        let daemon = try await daemonWithSandbox(echo: true)
+        let slept = try await hostCall(daemon, "sandbox.sleep", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual((slept["actions"] as? [[String: Any]])?.first?["kind"] as? String, "slept")
+        let woke = try await hostCall(daemon, "sandbox.start", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual((woke["actions"] as? [[String: Any]])?.first?["kind"] as? String, "woke")
+        XCTAssertEqual((woke["produced"] as? [String: Any])?["state"] as? String, "running")
     }
 
     #if os(macOS)
@@ -35,33 +90,22 @@ final class HostDaemonCoreTests: XCTestCase {
     #endif
 
     func testAuthenticatedLocalIPCRejectsWrongTokenAndForwardsEnvelope() async throws {
-        let daemon = HostDaemon(backend: FakeVMBackend())
-        try await daemon.start()
-        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let daemon = try await daemonWithSandbox(echo: true)
         let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "secret")
-        let envelope = Data("request".utf8)
-        do { _ = try await ipc.handle(LocalIPCRequest(token: "wrong", envelope: envelope)); XCTFail("expected authentication failure") } catch { }
-        let echoed = try await ipc.handle(LocalIPCRequest(token: "secret", envelope: envelope))
-        XCTAssertEqual(echoed, envelope)
+        let request = envelope("shell.exec", #"{"command":"true"}"#, mutation: "e1")
+        do { _ = try await ipc.handle(LocalIPCRequest(token: "wrong", envelope: request)); XCTFail("expected authentication failure") } catch { }
+        let echoed = try await ipc.handle(LocalIPCRequest(token: "secret", envelope: request))
+        XCTAssertEqual(echoed, request)
     }
 
     func testRequestRoutesHostLifecycleOperationsBeforeGuestChannel() async throws {
-        let daemon = HostDaemon(backend: FakeVMBackend())
-        try await daemon.start()
-        await daemon.attach(channel: FakeGuestChannel { data in data })
-        let statusRequest = Data(#"{"protocol_version":"v1","request_id":"status-1","operation":"vm.status","vm_id":"vm_01","deadline_ms":30000,"mutation_id":null,"input":{}}"#.utf8)
-        let status = try JSONSerialization.jsonObject(with: try await daemon.request(statusRequest)) as! [String: Any]
-        XCTAssertEqual(status["ok"] as? Bool, true)
-        XCTAssertEqual((status["result"] as? [String: Any])?["status"] as? String, "ready")
-
-        let stopRequest = Data(#"{"protocol_version":"v1","request_id":"stop-1","operation":"vm.stop","vm_id":"vm_01","deadline_ms":30000,"mutation_id":"stop-1","input":{}}"#.utf8)
-        let stopped = try JSONSerialization.jsonObject(with: try await daemon.request(stopRequest)) as! [String: Any]
-        XCTAssertEqual(stopped["ok"] as? Bool, true)
+        let daemon = try await daemonWithSandbox(echo: true)
+        let status = try await hostCall(daemon, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(status["state"] as? String, "running")
+        _ = try await hostCall(daemon, "sandbox.stop", "{}", sandboxID: "sandbox_1")
         let stoppedStatus = await daemon.status()
         XCTAssertEqual(stoppedStatus.lifecycle, .stopped)
-
-        let guestRequest = Data(#"{"protocol_version":"v1","request_id":"guest-1","operation":"shell.exec","vm_id":"vm_01","deadline_ms":30000,"mutation_id":"guest-1","input":{"command":"true"}}"#.utf8)
-        do { _ = try await daemon.request(guestRequest); XCTFail("stopped VM should reject guest work") } catch { }
+        do { _ = try await daemon.request(envelope("shell.exec", #"{"command":"true"}"#, mutation: "guest-1")); XCTFail("stopped runtime should reject guest work") } catch { }
     }
 
     func testHostWatchAnswersImmediatelyWhenTheCallerIsBehind() async throws {
@@ -92,14 +136,15 @@ final class HostDaemonCoreTests: XCTestCase {
     func testRelayStatusAnswersFromTheConnectorReport() async throws {
         let clock = TestClock()
         let daemon = HostDaemon(backend: FakeVMBackend(), now: { clock.now })
-        let none = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        _ = try await hostCall(daemon, "sandbox.mirror", #"{"sandboxes":[{"sandbox_id":"sandbox_1","name":"one","cpus":2,"memory_bytes":2147483648}]}"#)
+        let none = try await hostCall(daemon, "relay.status", "{}", sandboxID: "sandbox_1")
         XCTAssertEqual(none["connector"] as? String, "not_running"); XCTAssertEqual(none["connected"] as? Bool, false)
         _ = try await hostCall(daemon, "connector.report", #"{"state":"connected"}"#)
-        let connected = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        let connected = try await hostCall(daemon, "relay.status", "{}", sandboxID: "sandbox_1")
         XCTAssertEqual(connected["connector"] as? String, "connected"); XCTAssertEqual(connected["connected"] as? Bool, true)
         XCTAssertNotNil(connected["reported_at"] as? String)
         clock.now = clock.now.addingTimeInterval(121)
-        let stale = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        let stale = try await hostCall(daemon, "relay.status", "{}", sandboxID: "sandbox_1")
         XCTAssertEqual(stale["connector"] as? String, "not_running"); XCTAssertEqual(stale["connected"] as? Bool, false)
     }
 
@@ -133,16 +178,14 @@ extension HostDaemonCoreTests {
         ProcessFixtureConfiguration(sandboxDirectory: sandbox, guestCommand: ["/usr/bin/env", "node", "--import", "tsx", Self.repoRoot.appendingPathComponent("apps/guest-agent/src/index.ts").path], workingDirectory: Self.repoRoot)
     }
 
-    private func envelope(_ operation: String, _ input: String, mutation: String? = nil) -> Data {
-        Data(#"{"protocol_version":"v1","request_id":"\#(operation)-1","operation":"\#(operation)","vm_id":"vm_01","deadline_ms":30000,"mutation_id":\#(mutation.map { "\"\($0)\"" } ?? "null"),"input":\#(input)}"#.utf8)
-    }
 
     func testProcessFixtureBackendRoundTrip() async throws {
         let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent("lb-fixture-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: sandbox) }
         let backend = try ProcessFixtureBackend(configuration: fixtureConfiguration(sandbox), environment: ["LOCALBOX_VM_BACKEND": "process-fixture"])
         let daemon = HostDaemon(backend: backend)
-        try await daemon.start()
+        let created = try await hostCall(daemon, "sandbox.create", #"{"name":"fixture"}"#, sandboxID: "sandbox_1")
+        XCTAssertEqual((created["actions"] as? [[String: Any]])?.last?["kind"] as? String, "cold_booted")
         let ready = await daemon.status()
         XCTAssertEqual(ready.lifecycle, .ready)
 
@@ -179,16 +222,28 @@ private final class TestClock: @unchecked Sendable {
     var now = Date(timeIntervalSince1970: 1_800_000_000)
 }
 
-private func hostCall(_ daemon: HostDaemon, _ operation: String, _ input: String, vmID: String = "host") async throws -> [String: Any] {
-    let request = Data(#"{"protocol_version":"v1","request_id":"r-\#(operation)","operation":"\#(operation)","vm_id":"\#(vmID)","deadline_ms":60000,"mutation_id":null,"input":\#(input)}"#.utf8)
-    let response = try JSONSerialization.jsonObject(with: try await daemon.request(request)) as! [String: Any]
+private func envelope(_ operation: String, _ input: String, mutation: String? = nil, sandboxID: String? = "sandbox_1") -> Data {
+    Data(#"{"protocol_version":"v1","request_id":"\#(operation)-1","operation":"\#(operation)","sandbox_id":\#(sandboxID.map { "\"\($0)\"" } ?? "null"),"deadline_ms":60000,"mutation_id":\#(mutation.map { "\"\($0)\"" } ?? "null"),"input":\#(input)}"#.utf8)
+}
+
+private func call(_ daemon: HostDaemon, _ request: Data) async throws -> [String: Any] {
+    try JSONSerialization.jsonObject(with: try await daemon.request(request)) as! [String: Any]
+}
+
+private func hostCall(_ daemon: HostDaemon, _ operation: String, _ input: String, sandboxID: String? = nil) async throws -> [String: Any] {
+    let response = try await call(daemon, envelope(operation, input, sandboxID: sandboxID))
     XCTAssertEqual(response["ok"] as? Bool, true, "\(operation): \(response)")
     return response["result"] as? [String: Any] ?? [:]
 }
 
-private func XCTAssertThrowsErrorAsync(_ expression: @autoclosure () async throws -> Void) async {
-    do { try await expression(); XCTFail("expected error") } catch {}
+/// A started daemon holding `sandbox_1`; with `echo`, a guest channel that answers each envelope with itself.
+private func daemonWithSandbox(echo: Bool) async throws -> HostDaemon {
+    let daemon = HostDaemon(backend: FakeVMBackend(), hostCPUs: 4, hostMemoryBytes: 8 * 1024 * 1024 * 1024)
+    _ = try await hostCall(daemon, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
+    if echo { await daemon.attach(channel: FakeGuestChannel { data in data }) }
+    return daemon
 }
+
 
 #if canImport(Darwin)
 import Darwin
@@ -257,9 +312,7 @@ private func receiveSocketFrame(from handle: FileHandle) throws -> Data {
 
 extension HostDaemonCoreTests {
     func testUnixDomainSocketForwardsAuthenticatedRequest() async throws {
-        let daemon = HostDaemon(backend: FakeVMBackend())
-        try await daemon.start()
-        await daemon.attach(channel: FakeGuestChannel { data in data })
+        let daemon = try await daemonWithSandbox(echo: true)
         let path = localSocketPath()
         let endpoint = LocalIPCEndpoint(socketPath: path)
         let ipc = AuthenticatedLocalIPC(daemon: daemon, token: "socket-secret", endpoint: endpoint)
@@ -269,10 +322,11 @@ extension HostDaemonCoreTests {
 
         let fd = try connectLocalSocket(path)
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        let request = LocalIPCRequest(token: "socket-secret", envelope: Data("ping".utf8))
+        let sent = envelope("shell.exec", #"{"command":"true"}"#, mutation: "e1")
+        let request = LocalIPCRequest(token: "socket-secret", envelope: sent)
         try sendSocketFrame(try JSONEncoder().encode(request), to: handle)
         let response = try JSONDecoder().decode(LocalIPCResponse.self, from: receiveSocketFrame(from: handle))
-        XCTAssertEqual(response.envelope, Data("ping".utf8))
+        XCTAssertEqual(response.envelope, sent)
         XCTAssertNil(response.error)
         try handle.close()
         await server.stop()

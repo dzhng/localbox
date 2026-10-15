@@ -25,40 +25,41 @@ test("MCP requires a valid bearer and points clients at the protected-resource m
   assert.equal((await new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }), maxBodyBytes: 8 }).handle({ method: "POST", url: ENDPOINT, body: "123456789" })).status, 413);
 });
 
-test("machine-bound tools gain a machine argument; account tools and the catalog do not", async () => {
+test("tools on one sandbox gain a sandbox argument; machine stays only on sandbox.create; the catalog is unchanged", async () => {
   const tools = mcpTools();
   assert.equal(tools.length, catalogById.size);
   for (const tool of tools) {
-    const accountTool = catalogById.get(tool.name as never)!.executor === "account";
-    assert.equal("machine" in (tool.inputSchema.properties ?? {}), !accountTool, tool.name);
+    assert.equal("sandbox" in (tool.inputSchema.properties ?? {}), catalogById.get(tool.name as never)!.sandbox_scoped, tool.name);
+    assert.equal("machine" in (tool.inputSchema.properties ?? {}), tool.name === "sandbox.create", tool.name);
   }
-  assert.ok(!("machine" in (catalogById.get("shell.exec")!.input_schema.properties ?? {})), "the catalog itself is unchanged");
+  assert.ok(!("sandbox" in (catalogById.get("shell.exec")!.input_schema.properties ?? {})), "the catalog itself is unchanged");
   const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }) });
   assert.deepEqual(result(await rpc(adapter, "tools/list")).tools, tools);
 });
 
-test("tools/call runs the agent API in-process as the token's account, on the named machine", async () => {
+test("tools/call runs the agent API in-process as the token's account, on the named sandbox's machine", async () => {
   const machineB = new FakeDispatcher(); const ran: RequestEnvelope[] = [];
-  const { deps } = memoryMailbox({ machines: [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic" }], connectors: { m_b: async (request) => { ran.push(request); return await machineB.dispatch(request); } } });
+  const sandboxes = [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }, { sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_a", machine_name: "studio" }];
+  const { deps } = memoryMailbox({ machines: [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic" }], sandboxes, connectors: { m_b: async (request) => { ran.push(request); return await machineB.dispatch(request); } } });
   const seen: Principal[] = [];
   const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: (principal, input) => { seen.push(principal); return handleOps(principal, input, deps); } });
 
   const unnamed = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { path: "/" } }));
-  assert.equal(unnamed.isError, true); assert.match(unnamed.content[0].text, /machine\.list/);
-  assert.equal(seen.length, 0, "nothing runs without a machine");
+  assert.equal(unnamed.isError, true); assert.equal(unnamed.structuredContent.code, "sandbox_ambiguous"); assert.match(unnamed.content[0].text, /quiet-otter, brave-fox/);
+  assert.equal(ran.length, 0, "nothing runs without a sandbox");
 
   const listed = result(await rpc(adapter, "tools/call", { name: "machine.list", arguments: {} }));
   assert.deepEqual(JSON.parse(listed.content[0].text).map((row: any) => row.name), ["studio", "attic"]);
 
-  const called = result(await rpc(adapter, "tools/call", { name: "system.info", arguments: { machine: "attic" } }));
+  const called = result(await rpc(adapter, "tools/call", { name: "system.info", arguments: { sandbox: "quiet-otter" } }));
   assert.equal(called.isError, undefined, JSON.stringify(called));
-  assert.equal(ran.length, 1); assert.equal(ran[0].operation, "system.info");
+  assert.equal(ran.length, 1); assert.equal(ran[0].operation, "system.info"); assert.equal(ran[0].sandbox_id, "sandbox_1", "it ran on the sandbox's machine, B");
   assert.equal(called.structuredContent.protocol_version, "v1");
-  assert.deepEqual(ran[0].input, {}, "the machine argument is stripped before the operation input is built");
+  assert.deepEqual(ran[0].input, {}, "the sandbox argument is stripped before the operation input is built");
   assert.ok(seen.every((principal) => principal === agent));
 
-  const missing = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { machine: "nowhere", path: "/" } }));
-  assert.equal(missing.isError, true); assert.equal(missing.structuredContent.code, "machine_not_found");
+  const missing = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { sandbox: "nowhere", path: "/" } }));
+  assert.equal(missing.isError, true); assert.equal(missing.structuredContent.code, "sandbox_not_found");
   assert.equal(((await rpc(adapter, "tools/call", { name: "nope", arguments: {} })).body as any).error.code, -32602);
 });
 
@@ -68,13 +69,13 @@ test("tools/call resumes continuations and reports API failures as tool errors",
     calls.push(input);
     if (calls.length === 1) return { status: 202, body: { status: "pending", request_id: "req_1", deadline_at: 123 } };
     if (input.operation === "account.rename") throw new Error("label must be 3–40 lowercase letters");
-    return { status: 200, body: { response: success({ protocol_version: "v1", request_id: "req_1", operation: "fs.stat", vm_id: "vm_01", deadline_ms: 1, mutation_id: null, input: {} }, { size: 1 }) } };
+    return { status: 200, body: { response: success({ protocol_version: "v1", request_id: "req_1", operation: "fs.stat", sandbox_id: "sandbox_1", deadline_ms: 1, mutation_id: null, input: {} }, { size: 1 }) } };
   } });
-  const done = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { machine: "attic", path: "/" } }));
+  const done = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { sandbox: "quiet-otter", path: "/" } }));
   assert.deepEqual(done.structuredContent, { size: 1 });
   assert.deepEqual(calls[1], { continue: "req_1", deadline_at: 123 });
   assert.equal(calls[0].mutation_id, null, "a read carries no mutation id");
-  await rpc(adapter, "tools/call", { name: "shell.exec", arguments: { machine: "attic", command: "true" } });
+  await rpc(adapter, "tools/call", { name: "shell.exec", arguments: { sandbox: "quiet-otter", command: "true" } });
   assert.match(String(calls[2].mutation_id), /^mcp_/, "each mutating call is its own mutation");
   const failed = result(await rpc(adapter, "tools/call", { name: "account.rename", arguments: { name: "X" } }));
   assert.equal(failed.isError, true); assert.match(failed.content[0].text, /label/);

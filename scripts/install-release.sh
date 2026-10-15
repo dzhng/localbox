@@ -12,6 +12,7 @@ BIN_DIR=${LOCALBOX_BIN_DIR:-$HOME/.local/bin}
 LAUNCH_AGENTS_DIR=${LOCALBOX_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
 TOKEN_FILE=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/ipc-token
 SOCKET_PATH=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/agent.sock
+SANDBOX_MIRROR=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/sandboxes.json
 DISK_PATH=${LOCALBOX_DISK:-${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/vm/disk.img}
 PUBLIC_KEY_FILE=${LOCALBOX_RELEASE_PUBLIC_KEY_FILE:-$INSTALL_ROOT/release-public.pem}
 RELEASE_REPOSITORY=${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}
@@ -133,6 +134,7 @@ cp "$ACTIVE_APP/Contents/Resources/com.localbox.connector.plist" "$CONNECTOR_PLI
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_PATH' -string "$TOKEN_FILE" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOX_MIRROR' -string "$SANDBOX_MIRROR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_DISK' -string "$DISK_PATH" "$PLIST"

@@ -37,7 +37,7 @@ test("image verification checks inventory and readiness metadata", () => {
 });
 
 test("guest frames use bounded length-prefix framing and preserve partial buffers", () => {
-  const frame: GuestFrame = { kind: "ready", channel_epoch: 3, vm_id: "vm_01", inventory_digest: inventoryDigest(["node", "python3"]), readiness_marker: "READY" };
+  const frame: GuestFrame = { kind: "ready", channel_epoch: 3, inventory_digest: inventoryDigest(["node", "python3"]), readiness_marker: "READY" };
   const encoded = encodeGuestFrame(frame);
   const first = decodeGuestFrames(encoded.subarray(0, 5));
   assert.deepEqual(first.frames, []);

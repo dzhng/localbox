@@ -9,7 +9,6 @@ VM.
 Configuration comes from environment variables:
 
 - `LOCALBOX_ROOT` — guest filesystem root (defaults to `/`).
-- `LOCALBOX_VM_ID` — VM identity (defaults to `vm_01`).
 - `LOCALBOX_CHANNEL_EPOCH` — host-issued channel epoch (defaults to `1`).
 - `LOCALBOX_READINESS_MARKER` — marker written before the `ready` frame.
 - `LOCALBOX_INVENTORY` — comma-separated inventory names. The default is
@@ -22,8 +21,8 @@ Configuration comes from environment variables:
   ARM64 image sets this automatically after starting its loopback Xvfb, XFCE,
   VNC, and Chromium services.
 
-The first output frame is `ready`, containing the VM ID, channel epoch,
-inventory digest, and readiness marker. Requests with a stale epoch or VM ID
+The first output frame is `ready`, containing the channel epoch,
+inventory digest, and readiness marker. Requests with a stale epoch
 are rejected. Work is bounded by the gateway's shell/filesystem limits and the
 service's pending-request and input-buffer limits. `cancel` frames abort the
 matching request through its `AbortSignal`.

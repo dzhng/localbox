@@ -30,7 +30,7 @@ test("an MCP call with a signed-in token reaches the agent API as that account, 
   const response = await handle(mcp(tokens.access_token, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "machine.list", arguments: {} } }));
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse((await response.json() as any).result.content[0].text), [{ machineId: "m_b", name: "attic" }]);
-  assert.deepEqual(calls, [{ principal: { accountId: grant.accountId, familyId: grant.familyId }, input: { operation: "machine.list", input: {} } }]);
+  assert.deepEqual(calls.map((call) => [call.principal, call.input.operation, call.input.input]), [[{ accountId: grant.accountId, familyId: grant.familyId }, "machine.list", {}]]);
   await oauth.revoke(tokens.access_token, "access_token");
   assert.equal((await handle(mcp(tokens.access_token, { jsonrpc: "2.0", id: 3, method: "tools/list" }))).status, 401);
 });

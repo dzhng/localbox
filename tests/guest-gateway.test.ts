@@ -7,7 +7,7 @@ import { GuestGateway } from "../packages/guest-gateway/src/index.js";
 import { operationCatalog, PROTOCOL_VERSION, type Json, type RequestEnvelope } from "../packages/contract/src/index.js";
 import { sampleInput } from "../packages/runtime/src/index.js";
 
-const request = (operation: RequestEnvelope["operation"], input: RequestEnvelope["input"], mutation_id: string | null = null, request_id = `${operation}-${Math.random()}`): RequestEnvelope => ({ protocol_version: PROTOCOL_VERSION, request_id, operation, vm_id: "vm_01", deadline_ms: 500, mutation_id, input });
+const request = (operation: RequestEnvelope["operation"], input: RequestEnvelope["input"], mutation_id: string | null = null, request_id = `${operation}-${Math.random()}`): RequestEnvelope => ({ protocol_version: PROTOCOL_VERSION, request_id, operation, sandbox_id: "sandbox_1", deadline_ms: 500, mutation_id, input });
 
 test("guest gateway confines filesystem operations to its root", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-"));

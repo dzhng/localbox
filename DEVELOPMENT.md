@@ -106,12 +106,13 @@ npm install
 npm run build        # full TypeScript graph
 npm test             # host test suite
 npm run build:workspaces && npm run test:workspaces   # Turbo per-workspace tasks
-swift test --package-path apps/macos/VMProbe          # native probe package
+swift test --package-path apps/macos/HostDaemon       # host daemon package
 ```
 
-`node bin/localbox.js contract probe`, `vm probe --json`, `status --json`,
-`shell exec -- …` and `recovery probe --json` are deterministic smoke entry
-points. The [website](apps/site/README.md) has its own build and checks.
+`node bin/localbox.js contract probe`, `status --json`, `shell exec -- …` and
+`recovery probe --json` are smoke entry points; set
+`LOCALBOX_LOCAL_TRANSPORT=fixture` to run them against the in-process fixture
+sandbox instead of a daemon. The [website](apps/site/README.md) has its own build and checks.
 
 ## Local control-plane smoke
 
@@ -131,9 +132,15 @@ without Convex configuration.
 plus one fixture HostDaemon per simulated machine
 (`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`.
 
-### How a request reaches another machine
+### How a request reaches a sandbox
 
-`localbox shell exec --machine NAME -- …` posts to the agent API
+Sandboxes are an account catalog in Convex (`sandboxes`): `localbox sandbox
+create` reserves a generated name there, then asks the chosen machine (this one
+by default, `--machine NAME` otherwise) to create it; the daemon keeps a
+read-only mirror. `--sandbox NAME` is looked up on this Mac's daemon first, then
+in the account; it may be left out when the account has exactly one sandbox.
+A sandbox on this Mac is reached through the daemon socket. A sandbox on another
+machine is reached through the agent API, which finds its machine: the CLI posts to the agent API
 (`POST /api/v1/ops`, `apps/relay/src/ops.ts`), which enqueues a row in Convex's
 `relay` module for that machine and waits on a Convex subscription for up to
 min(deadline, 50 s); longer requests come back as a continuation the client
@@ -143,7 +150,7 @@ the machine credential for a 24-hour machine token at
 `POST /api/relay/machine-token`, subscribes to `relay:pendingForMachine`, claims
 each row and forwards it to the daemon's socket. A row nobody claims within
 3 s is abandoned and the caller gets `machine_offline`; abandoned rows never run.
-Without `--machine`, commands run on this Mac only.
+Without a sign-in, only this Mac's sandboxes are reachable, and none can be created.
 
 On the Mac, the CLI uses the authenticated HostDaemon Unix socket. The daemon
 reads the owner-only token at

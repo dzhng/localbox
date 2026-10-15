@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getFunctionName } from "convex/server";
-import { Connector, type ConvexLike, type PendingRow } from "../apps/connector/src/connector.js";
+import { Connector, type ConvexLike, type HostChange, type PendingRow } from "../apps/connector/src/connector.js";
 import { MachineTokenSource, RevokedError } from "../apps/connector/src/token.js";
 import { OUTPUT_CAP_BYTES, PROTOCOL_VERSION, success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
 
@@ -13,11 +13,11 @@ class FakeConvex implements ConvexLike {
   closed = false;
   fetchToken?: (args: { forceRefreshToken: boolean }) => Promise<string | null | undefined>;
   onAuth?: (authenticated: boolean) => void;
-  private listener?: (rows: PendingRow[]) => unknown;
+  private listeners = new Map<string, (rows: any) => unknown>();
   claimAnswer: (requestId: string) => Promise<{ claimed: boolean; status: string }> = async () => ({ claimed: true, status: "claimed" });
   setAuth(fetchToken: FakeConvex["fetchToken"], onChange?: (authenticated: boolean) => void): void { this.fetchToken = fetchToken; this.onAuth = onChange; }
   onUpdate(query: any, args: any, callback: (rows: any) => unknown): () => void {
-    this.calls.push({ name: getFunctionName(query), args }); this.listener = callback; return () => { this.listener = undefined; };
+    const name = getFunctionName(query); this.calls.push({ name, args }); this.listeners.set(name, callback); return () => { this.listeners.delete(name); };
   }
   async mutation(fn: any, args: any): Promise<any> {
     const name = getFunctionName(fn); this.calls.push({ name, args });
@@ -25,7 +25,8 @@ class FakeConvex implements ConvexLike {
     return null;
   }
   async close(): Promise<void> { this.closed = true; }
-  push(rows: PendingRow[]): void { this.listener?.(rows); }
+  push(rows: PendingRow[]): void { this.listeners.get("relay:pendingForMachine")?.(rows); }
+  pushSandboxes(rows: unknown[]): void { this.listeners.get("sandboxes:forMachine")?.(rows); }
   named(name: string) { return this.calls.filter((call) => call.name === name); }
 }
 
@@ -34,24 +35,24 @@ class FakeDaemon {
   respond: (request: RequestEnvelope) => Promise<ResponseEnvelope> = async (request) => success(request, { ran: request.request_id });
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.requests.push(request);
-    if (request.operation === "connector.report") return success(request, { recorded: true });
+    if (request.operation === "connector.report" || request.operation === "sandbox.mirror") return success(request, { recorded: true });
     return await this.respond(request);
   }
-  work() { return this.requests.filter((request) => request.operation !== "connector.report"); }
+  work() { return this.requests.filter((request) => !["connector.report", "sandbox.mirror"].includes(request.operation)); }
   reports() { return this.requests.filter((request) => request.operation === "connector.report").map((request) => (request.input as { state: string }).state); }
 }
 
 /** A host.watch that blocks until the test releases the next value, like the daemon's long poll. */
 class FakeWatch {
   sinces: number[] = [];
-  private queue: Array<{ version: number; capacity?: unknown }> = [];
-  private waiting?: (value: { version: number; capacity?: unknown }) => void;
-  watch = (since: number) => { this.sinces.push(since); const next = this.queue.shift(); return next ? Promise.resolve(next) : new Promise<{ version: number; capacity?: unknown }>((resolve) => { this.waiting = resolve; }); };
-  emit(value: { version: number; capacity?: unknown }): void { const waiting = this.waiting; this.waiting = undefined; if (waiting) waiting(value); else this.queue.push(value); }
+  private queue: HostChange[] = [];
+  private waiting?: (value: HostChange) => void;
+  watch = (since: number) => { this.sinces.push(since); const next = this.queue.shift(); return next ? Promise.resolve(next) : new Promise<HostChange>((resolve) => { this.waiting = resolve; }); };
+  emit(value: HostChange): void { const waiting = this.waiting; this.waiting = undefined; if (waiting) waiting(value); else this.queue.push(value); }
 }
 
 function envelope(requestId: string, operation = "shell.exec"): RequestEnvelope {
-  return { protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, vm_id: "vm_01", deadline_ms: 30_000, mutation_id: `m-${requestId}`, input: { command: "hostname" } };
+  return { protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, sandbox_id: "sandbox_1", deadline_ms: 30_000, mutation_id: `m-${requestId}`, input: { command: "hostname" } };
 }
 function row(requestId: string, status = "queued"): PendingRow {
   return { requestId, operation: "shell.exec", mutationId: `m-${requestId}`, status, payload: envelope(requestId), claimDeadlineAt: Date.now() + 3_000 };
@@ -179,7 +180,7 @@ test("an idle connector makes no Convex calls", async () => {
   await new Promise((resolve) => setTimeout(resolve, 200));
   await settle();
   assert.equal(convex.calls.length, before);
-  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "relay:reportCapacity"]);
+  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "sandboxes:forMachine", "relay:reportCapacity"]);
   await connector.stop();
 });
 
@@ -202,4 +203,30 @@ test("the machine token is cached until five minutes before expiry and 401 is a 
   assert.equal((await source.get(true)).token, "jwt-3");
   status = 401;
   await assert.rejects(source.get(true), RevokedError);
+});
+
+test("the daemon's sandbox mirror follows the catalog subscription", async () => {
+  const { convex, daemon, connector } = harness();
+  const rows = [{ sandbox_id: "sandbox_1", name: "quiet-otter", cpus: 2, memory_bytes: 2147483648 }];
+  convex.pushSandboxes(rows);
+  await settle();
+  const mirrored = daemon.requests.filter((request) => request.operation === "sandbox.mirror");
+  assert.equal(mirrored.length, 1); assert.deepEqual(mirrored[0].input, { sandboxes: rows }); assert.equal(mirrored[0].sandbox_id, null);
+  await connector.stop();
+});
+
+test("sandbox states are reported to Convex only when one changes", async () => {
+  const { convex, watch, connector } = harness();
+  const running = { sandbox_id: "sandbox_1", state: "running", cpus: 2, memory_bytes: 2147483648 };
+  watch.emit({ version: 1, sandboxes: [running] });
+  await settle();
+  watch.emit({ version: 2, sandboxes: [{ ...running }] });
+  await settle();
+  watch.emit({ version: 3, sandboxes: [{ ...running, state: "sleeping" }, { sandbox_id: "sandbox_2", state: "running" }] });
+  await settle();
+  assert.deepEqual(convex.named("sandboxes:reportState").map((call) => call.args.states), [
+    [{ sandboxId: "sandbox_1", state: "running", cpus: 2, memoryBytes: 2147483648 }],
+    [{ sandboxId: "sandbox_1", state: "sleeping", cpus: 2, memoryBytes: 2147483648 }, { sandboxId: "sandbox_2", state: "running" }],
+  ]);
+  await connector.stop();
 });

@@ -4,7 +4,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
-import { API_ORIGIN, login, machineRoot, startConnector, stopConnector } from "../lib/login.js";
+import { API_ORIGIN, startConnector, stopConnector } from "../lib/login.js";
+import { guestRoot as guestRootOf, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
 
 export const id = "07";
 export const tiers = ["u", "l"];
@@ -22,12 +23,12 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   }
   const up = await ctx.stack("up", ["a", "b"]);
   if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
-  const run = Date.now(); let calls = 0; let machineB = "";
+  const run = Date.now(); let calls = 0; let sandboxB = "";
   const env = { LOCALBOX_API_ORIGIN: API_ORIGIN };
-  const guestRoot = (machine: string) => join(machineRoot(ctx.root, machine), "sandboxes/vm_01/root");
-  /** `invoke --machine b` from machine A; returns the parsed envelope. */
+  const guestRoot = (machine: string) => guestRootOf(ctx.root, machine);
+  /** `invoke --sandbox <B's sandbox>` from machine A; returns the parsed envelope. */
   const onB = async (operation: string, input: unknown, options: { mutation?: string; deadlineMs?: number } = {}) => {
-    const args = ["invoke", "--json", operation, "--machine", machineB, "--input-json", JSON.stringify(input), "--request-id", `p07-${run}-${calls++}`, ...(options.mutation ? ["--mutation-id", options.mutation] : []), ...(options.deadlineMs ? ["--deadline-ms", String(options.deadlineMs)] : [])];
+    const args = ["invoke", "--json", operation, "--sandbox", sandboxB, "--input-json", JSON.stringify(input), "--request-id", `p07-${run}-${calls++}`, ...(options.mutation ? ["--mutation-id", options.mutation] : []), ...(options.deadlineMs ? ["--deadline-ms", String(options.deadlineMs)] : [])];
     const started = Date.now(); const result = await asMachine("a", args, { cwd: ctx.root, env });
     return { ms: Date.now() - started, envelope: JSON.parse(result.stdout.trim() || "{}"), stderr: result.stderr };
   };
@@ -45,23 +46,17 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     return count;
   };
   const connectors: Record<string, ChildProcess | undefined> = {};
-  const waitConnected = async (machine: string) => {
-    for (let attempt = 0; attempt < 60; attempt++) { if (readFileSync(join(machineRoot(ctx.root, machine), "logs/connector.log"), "utf8").split("started for machine").at(-1)?.includes("state connected")) return; await sleep(250); }
-    throw new Error(`machine ${machine}'s connector never reported connected`);
-  };
   try {
     const checks: Check[] = [];
     const email = `proof-07-${run}@example.com`;
-    checks.push(await ctx.check("A and B sign in and their connectors connect", async () => {
-      for (const machine of ["a", "b"]) { const signed = await login(ctx.root, machine, email); assert.equal(signed.code, 0, signed.stderr); }
-      machineB = JSON.parse(readFileSync(join(machineRoot(ctx.root, "b"), "credentials.json"), "utf8")).machine_id;
-      for (const machine of ["a", "b"]) { writeFileSync(join(machineRoot(ctx.root, machine), "logs/connector.log"), ""); connectors[machine] = startConnector(ctx.root, machine); }
-      await waitConnected("a"); await waitConnected("b");
+    checks.push(await ctx.check("A and B sign in, their connectors connect, and each gets a sandbox", async () => {
+      const setup = await signedInWithSandboxes(ctx.root, ["a", "b"], email);
+      Object.assign(connectors, setup.connectors); sandboxB = setup.sandboxes.b;
     }));
     const budget: Record<string, unknown> = {};
-    checks.push(await ctx.check("from A, shell exec --machine b runs on B; median claim latency under 1 s over 10 runs", async () => {
+    checks.push(await ctx.check("from A, shell exec --sandbox <B's sandbox> runs on B; median claim latency under 1 s over 10 runs", async () => {
       const marker = `from-a-${run}`;
-      const exec = await asMachine("a", ["shell", "exec", "--machine", machineB, "--json", "--", "touch", marker], { cwd: ctx.root, env });
+      const exec = await asMachine("a", ["shell", "exec", "--sandbox", sandboxB, "--json", "--", "touch", marker], { cwd: ctx.root, env });
       assert.equal(JSON.parse(exec.stdout).ok, true, exec.stdout + exec.stderr);
       assert.ok(existsSync(join(guestRoot("b"), marker)), "the command ran in B's guest"); assert.ok(!existsSync(join(guestRoot("a"), marker)), "and not in A's");
       const timings: number[] = [];
@@ -82,7 +77,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(result.envelope.error?.code, "machine_offline", JSON.stringify(result.envelope)); assert.ok(result.ms < 5000, `took ${result.ms} ms`);
       assert.match(result.envelope.error.message, /last seen/);
       assert.equal((await rows()).find((row) => row.mutationId === `offline-${run}`)?.status, "abandoned");
-      connectors.b = startConnector(ctx.root, "b"); await waitConnected("b"); await sleep(2000);
+      connectors.b = startConnector(ctx.root, "b"); await waitConnected(ctx.root, "b"); await sleep(2000);
       assert.ok(!existsSync(join(guestRoot("b"), marker)), "an abandoned request must never run later");
     }));
     checks.push(await ctx.check("connector killed after claim: operation_uncertain, then replaying the mutation id returns the original result", async () => {
@@ -92,7 +87,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       for (let attempt = 0; attempt < 40; attempt++) { if ((await rows()).find((row) => row.mutationId === mutation)?.status === "claimed") break; await sleep(100); }
       stopConnector(connectors.b, "SIGKILL");
       const first = await pending; assert.equal(first.envelope.error?.code, "operation_uncertain", JSON.stringify(first.envelope));
-      connectors.b = startConnector(ctx.root, "b"); await waitConnected("b");
+      connectors.b = startConnector(ctx.root, "b"); await waitConnected(ctx.root, "b");
       const replay = await onB("shell.exec", input, { mutation, deadlineMs: 30_000 });
       assert.equal(replay.envelope.ok, true, JSON.stringify(replay.envelope));
       assert.equal(replay.envelope.result.stdout.trim(), readFileSync(join(guestRoot("b"), marker), "utf8").trim(), "the replay returns the one run's output");

@@ -22,18 +22,24 @@ export interface PendingRow {
 export interface ConnectorDeps {
   convex: ConvexLike;
   daemon: { dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> };
-  hostWatch(since: number): Promise<{ version: number; capacity?: unknown }>;
+  hostWatch(since: number): Promise<HostChange>;
   /** Machine JWT for Convex; throws `RevokedError` when the machine was removed. */
   fetchToken(forceRefresh: boolean): Promise<string>;
   log(line: string): void;
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** One `host.watch` answer: the daemon's state version, host capacity and each sandbox's runtime state. */
+export interface HostChange { version: number; capacity?: unknown; sandboxes?: SandboxState[] }
+export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
+
 export const relay = {
   pendingForMachine: makeFunctionReference<"query">("relay:pendingForMachine"),
   claim: makeFunctionReference<"mutation">("relay:claim"),
   complete: makeFunctionReference<"mutation">("relay:complete"),
   reportCapacity: makeFunctionReference<"mutation">("relay:reportCapacity"),
+  forMachine: makeFunctionReference<"query">("sandboxes:forMachine"),
+  reportState: makeFunctionReference<"mutation">("sandboxes:reportState"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
@@ -54,6 +60,8 @@ export class Connector {
   private readonly recent = new Set<string>();
   private readonly sleep: (ms: number) => Promise<void>;
   private unsubscribe?: () => void;
+  private unsubscribeMirror?: () => void;
+  private mirrorSeq = 0;
   private lastReportAt = 0;
   private reportSeq = 0;
   private settle!: { resolve(state: ConnectorState): void; reject(error: Error): void };
@@ -74,6 +82,9 @@ export class Connector {
     });
     this.unsubscribe = this.deps.convex.onUpdate(relay.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
       (error) => { if (!this.ended) this.setState(this.status.state, `subscription error: ${message(error)}`); });
+    // The daemon's identity mirror follows the catalog, so a rename or delete made while this Mac was offline lands on reconnect.
+    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[]) => void this.mirror(rows ?? []),
+      (error) => { if (!this.ended) this.deps.log(`sandbox mirror subscription error: ${message(error)}`); });
     void this.watch();
   }
 
@@ -84,7 +95,7 @@ export class Connector {
   private async end(state: "revoked" | "stopped", error?: Error): Promise<void> {
     if (this.ended) return;
     this.setState(state, error?.message);
-    this.unsubscribe?.();
+    this.unsubscribe?.(); this.unsubscribeMirror?.();
     try { await this.deps.convex.close(); } catch (closeError) { this.deps.log(`close failed: ${message(closeError)}`); }
     if (error && !(error instanceof RevokedError)) this.settle.reject(error); else this.settle.resolve(state);
   }
@@ -134,8 +145,16 @@ export class Connector {
     if (this.recent.size > RECENT_LIMIT) this.recent.delete(this.recent.values().next().value!);
   }
 
+  private async mirror(rows: Json[]): Promise<void> {
+    try {
+      const response = await this.deps.daemon.dispatch(hostRequest("sandbox.mirror", { sandboxes: rows }, `sandbox-mirror-${++this.mirrorSeq}`));
+      if (!response.ok) this.deps.log(`sandbox mirror refused: ${response.error.code}: ${response.error.message}`);
+    } catch (error) { this.deps.log(`sandbox mirror failed: ${message(error)}`); }
+  }
+
   private async watch(): Promise<void> {
     let since = 0; let reported = false; let capacity: unknown; let backoff = 1_000;
+    const states = new Map<string, SandboxState>();
     while (!this.ended) {
       try {
         const change = await this.deps.hostWatch(since);
@@ -143,6 +162,11 @@ export class Connector {
         if ("capacity" in change && (!reported || !isDeepStrictEqual(change.capacity, capacity))) {
           await this.deps.convex.mutation(relay.reportCapacity, { capacity: change.capacity });
           reported = true; capacity = change.capacity;
+        }
+        const changed = (change.sandboxes ?? []).filter((sandbox) => !isDeepStrictEqual(states.get(sandbox.sandbox_id), sandbox));
+        if (changed.length) {
+          await this.deps.convex.mutation(relay.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}) })) });
+          for (const sandbox of changed) states.set(sandbox.sandbox_id, sandbox);
         }
         since = change.version; backoff = 1_000;
         if (Date.now() - this.lastReportAt >= REPORT_HEARTBEAT_MS) void this.report();
@@ -173,7 +197,7 @@ function tooLarge(request: RequestEnvelope, bytes: number): ResponseEnvelope {
   return failure(request, { code: "resource_exhausted", message: `response is ${bytes} bytes, over the ${OUTPUT_CAP_BYTES}-byte relay cap`, retryable: false });
 }
 
-/** Host-internal socket operations are machine-level, so they carry no real VM id. */
+/** Host-internal socket operations are machine-level, so they name no sandbox. */
 export function hostRequest(operation: string, input: Json, requestId: string, deadlineMs = 30_000): RequestEnvelope {
-  return { protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, vm_id: "host", deadline_ms: deadlineMs, mutation_id: null, input };
+  return { protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, sandbox_id: null, deadline_ms: deadlineMs, mutation_id: null, input };
 }

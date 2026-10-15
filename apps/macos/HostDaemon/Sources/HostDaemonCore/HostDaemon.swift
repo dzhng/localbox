@@ -8,17 +8,25 @@ public enum DaemonLifecycle: String, Codable, Sendable {
     case paused
     case stopping
     case stopped
-    case resetting
     case error
+
+    /// The runtime state reported for each sandbox on it.
+    var sandboxState: String {
+        switch self {
+        case .ready: return "running"
+        case .paused: return "sleeping"
+        case .firstRun, .stopped: return "stopped"
+        default: return rawValue
+        }
+    }
 }
 
 public struct DaemonStatus: Codable, Equatable, Sendable {
     public let lifecycle: DaemonLifecycle
-    public let vmID: String
     public let channelEpoch: Int
     public let detail: String?
-    public init(lifecycle: DaemonLifecycle, vmID: String, channelEpoch: Int = 0, detail: String? = nil) {
-        self.lifecycle = lifecycle; self.vmID = vmID; self.channelEpoch = channelEpoch; self.detail = detail
+    public init(lifecycle: DaemonLifecycle, channelEpoch: Int = 0, detail: String? = nil) {
+        self.lifecycle = lifecycle; self.channelEpoch = channelEpoch; self.detail = detail
     }
 }
 
@@ -54,30 +62,40 @@ public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
     }
 }
 
-/// The single owner of VM lifecycle, guest-channel epoch, and readiness.
+/// The single owner of runtime lifecycle, guest-channel epoch, readiness and the sandbox identity mirror.
+/// Until each sandbox gets its own runtime, every sandbox on this Mac shares the one runtime.
 public actor HostDaemon {
     private let backend: any VMBackend
     private var channel: (any GuestChannel)?
     private var statusValue: DaemonStatus { didSet { if statusValue.lifecycle != oldValue.lifecycle { bumpStateVersion() } } }
-    private var stateVersion = 0
+    private var mirror: SandboxMirror
+    /// Starts above 0 so a connector's first watch (`since: 0`) answers at once.
+    private var stateVersion = 1
     private var watchers: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var connectorReport: ConnectorReport?
+    private let hostCPUs: Int
+    private let hostMemoryBytes: UInt64
     private let now: @Sendable () -> Date
-    public init(vmID: String = "vm_01", backend: any VMBackend, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// `mirrorFile` persists the identity mirror; nil keeps it in memory. Host capacity defaults to this Mac's.
+    public init(backend: any VMBackend, mirrorFile: URL? = nil, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
         self.backend = backend
-        self.statusValue = DaemonStatus(lifecycle: .firstRun, vmID: vmID)
+        self.statusValue = DaemonStatus(lifecycle: .firstRun)
+        self.mirror = SandboxMirror(file: mirrorFile)
+        self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
+        self.hostMemoryBytes = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.now = now
     }
     public func status() -> DaemonStatus { statusValue }
+    public func sandboxes() -> [SandboxIdentity] { mirror.identities }
     public func attach(channel: any GuestChannel) {
         self.channel = channel
-        statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1)
+        statusValue = DaemonStatus(lifecycle: .ready, channelEpoch: statusValue.channelEpoch + 1)
     }
     public func start() async throws {
         if statusValue.lifecycle == .ready { return }
         if statusValue.lifecycle == .paused { try await resume(); return }
-        guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped else { throw HostDaemonError.invalidState("VM cannot start from \(statusValue.lifecycle.rawValue)") }
-        statusValue = DaemonStatus(lifecycle: .starting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch)
+        guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped || statusValue.lifecycle == .error else { throw HostDaemonError.invalidState("runtime cannot start from \(statusValue.lifecycle.rawValue)") }
+        statusValue = DaemonStatus(lifecycle: .starting, channelEpoch: statusValue.channelEpoch)
         do {
             try await backend.start()
             if let provider = backend as? any GuestChannelProvider {
@@ -85,75 +103,138 @@ public actor HostDaemon {
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
             }
-            statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1)
+            statusValue = DaemonStatus(lifecycle: .ready, channelEpoch: statusValue.channelEpoch + 1)
         }
-        catch { await channel?.close(); channel = nil; try? await backend.stop(); statusValue = DaemonStatus(lifecycle: .error, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, detail: String(describing: error)); throw error }
+        catch { await channel?.close(); channel = nil; try? await backend.stop(); statusValue = DaemonStatus(lifecycle: .error, channelEpoch: statusValue.channelEpoch, detail: String(describing: error)); throw error }
     }
-    public func pause() async throws { guard statusValue.lifecycle == .ready else { throw HostDaemonError.invalidState("VM is not ready") }; try await backend.pause(); statusValue = DaemonStatus(lifecycle: .paused, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch) }
-    public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM is not paused") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
-    public func stop() async throws { guard statusValue.lifecycle != .stopped else { return }; statusValue = DaemonStatus(lifecycle: .stopping, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch); await channel?.close(); try await backend.stop(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
-    public func reset(confirm: String) async throws { guard confirm == "RESET" else { throw HostDaemonError.invalidState("reset requires confirmation RESET") }; statusValue = DaemonStatus(lifecycle: .resetting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch); await channel?.close(); try await backend.reset(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
+    public func pause() async throws { guard statusValue.lifecycle == .ready else { throw HostDaemonError.invalidState("runtime is not running") }; try await backend.pause(); statusValue = DaemonStatus(lifecycle: .paused, channelEpoch: statusValue.channelEpoch) }
+    public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("runtime is not asleep") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, channelEpoch: statusValue.channelEpoch + 1) }
+    public func stop() async throws { guard statusValue.lifecycle != .stopped else { return }; statusValue = DaemonStatus(lifecycle: .stopping, channelEpoch: statusValue.channelEpoch); await channel?.close(); try await backend.stop(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, channelEpoch: statusValue.channelEpoch + 1) }
+
     public func request(_ envelope: Data) async throws -> Data {
-        guard let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any],
-              let operation = object["operation"] as? String,
-              let vmID = object["vm_id"] as? String else {
-            guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
-            return try await channel.send(envelope)
+        guard let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any], let operation = object["operation"] as? String else {
+            return hostFailure([:], code: "invalid_input", message: "the request is not a JSON envelope with an operation")
         }
-        // Machine-level operations for the connector; they are not in the public catalog and ignore vm_id.
+        let input = object["input"] as? [String: Any] ?? [:]
+        // Machine-level operations for the connector; they are not in the public catalog and name no sandbox.
         switch operation {
         case "host.watch":
-            let input = object["input"] as? [String: Any] ?? [:]
             let since = (input["since"] as? NSNumber)?.intValue ?? 0
             let timeout = min(max((input["timeout_ms"] as? NSNumber)?.intValue ?? 25_000, 0), 50_000)
             await waitForChange(since: since, timeoutMs: timeout)
-            return hostSuccess(object, result: ["version": stateVersion, "lifecycle": statusValue.lifecycle.rawValue, "capacity": ["memory_bytes": ProcessInfo.processInfo.physicalMemory, "cpus": ProcessInfo.processInfo.activeProcessorCount]])
+            let states = mirror.identities.map { ["sandbox_id": $0.sandboxID, "state": statusValue.lifecycle.sandboxState, "cpus": $0.cpus, "memory_bytes": $0.memoryBytes] as [String: Any] }
+            return hostSuccess(object, result: ["version": stateVersion, "lifecycle": statusValue.lifecycle.rawValue, "capacity": ["memory_bytes": hostMemoryBytes, "cpus": hostCPUs], "sandboxes": states])
         case "connector.report":
-            guard let input = object["input"] as? [String: Any], let state = input["state"] as? String, !state.isEmpty else {
-                return hostFailure(object, code: "invalid_input", message: "connector.report requires state")
-            }
+            guard let state = input["state"] as? String, !state.isEmpty else { return hostFailure(object, code: "invalid_input", message: "connector.report requires state") }
             connectorReport = ConnectorReport(state: state, detail: input["detail"] as? String, reportedAt: now())
             return hostSuccess(object, result: ["recorded": true])
+        case "sandbox.mirror":
+            guard let rows = input["sandboxes"] as? [[String: Any]] else { return hostFailure(object, code: "invalid_input", message: "sandbox.mirror requires sandboxes") }
+            let catalog = rows.compactMap { row -> SandboxIdentity? in
+                guard let id = row["sandbox_id"] as? String, let name = row["name"] as? String else { return nil }
+                return SandboxIdentity(sandboxID: id, name: name, cpus: (row["cpus"] as? NSNumber)?.intValue ?? 2, memoryBytes: (row["memory_bytes"] as? NSNumber)?.uint64Value ?? 2 * 1024 * 1024 * 1024)
+            }
+            do { if try mirror.follow(catalog) { bumpStateVersion() } } catch { return hostFailure(object, code: "internal", message: "could not write the sandbox mirror: \(error)") }
+            return hostSuccess(object, result: ["sandboxes": mirror.identities.count])
         default: break
         }
-        guard vmID == statusValue.vmID else { return hostFailure(object, code: "vm_not_found", message: "request VM does not match host") }
-        switch operation {
-        case "system.info":
-            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "lifecycle": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "runtime": "host"])
-        case "vm.list":
-            return hostSuccess(object, result: ["vms": [["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]]])
-        case "vm.status":
-            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch])
-        case "vm.start":
-            do { try await start(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
-            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
-        case "vm.stop":
-            do { try await stop(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
-            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
-        case "vm.pause":
-            do { try await pause(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
-            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
-        case "vm.reset":
-            guard let input = object["input"] as? [String: Any], input["discard_state"] as? Bool == true, input["confirm"] as? String == "RESET" else {
-                return hostFailure(object, code: "invalid_input", message: "reset requires discard_state=true and confirm=RESET")
-            }
-            do { try await reset(confirm: "RESET"); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "discarded": true]) }
-            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
-        case "vm.logs":
-            return hostSuccess(object, result: ["lines": statusValue.detail.map { [$0] } ?? []])
-        case "relay.status":
-            let fresh = connectorReport.map { now().timeIntervalSince($0.reportedAt) <= Self.connectorReportTTL } ?? false
-            let state = fresh ? connectorReport!.state : "not_running"
-            var result: [String: Any] = ["connector": state, "connected": state == "connected", "detail": NSNull(), "reported_at": NSNull()]
-            if let report = connectorReport {
-                result["reported_at"] = ISO8601DateFormatter().string(from: report.reportedAt)
-                result["detail"] = fresh ? (report.detail as Any? ?? NSNull()) : "last connector report is older than 120 s"
-            }
+        let host = HostOperation(rawValue: operation)
+        if host == .sandboxList { return hostSuccess(object, result: ["sandboxes": mirror.identities.map(view)]) }
+        if host == .relayStatus { return relayStatus(object) }
+        guard let sandboxID = object["sandbox_id"] as? String, !sandboxID.isEmpty else { return hostFailure(object, code: "invalid_input", message: "\(operation) needs a sandbox_id") }
+        if host == .sandboxCreate { return await create(object, sandboxID: sandboxID, input: input) }
+        guard let sandbox = mirror.find(sandboxID) else { return hostFailure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
+        guard let host else { return try await forward(envelope) }
+        switch host {
+        case .sandboxCreate, .sandboxList: preconditionFailure("answered above")
+        case .networkEgress: return try await forward(envelope)
+        case .systemInfo:
+            return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "runtime": "host"])
+        case .sandboxStatus:
+            var result = view(sandbox); result["lifecycle"] = statusValue.lifecycle.rawValue; result["channel_epoch"] = statusValue.channelEpoch
+            if let detail = statusValue.detail { result["detail"] = detail }
             return hostSuccess(object, result: result)
-        default:
-            guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
-            return try await channel.send(envelope)
+        case .sandboxLogs:
+            return hostSuccess(object, result: ["lines": statusValue.detail.map { [$0] } ?? []])
+        case .sandboxRename:
+            guard let name = input["name"] as? String, !name.isEmpty else { return hostFailure(object, code: "invalid_input", message: "sandbox.rename requires name") }
+            var renamed = sandbox; renamed.name = name
+            do { try mirror.upsert(renamed) } catch { return hostFailure(object, code: "internal", message: "could not write the sandbox mirror: \(error)") }
+            bumpStateVersion()
+            return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": name, "previous_name": sandbox.name], actions: [["kind": "renamed", "detail": "renamed \(sandbox.name) to \(name)"]]))
+        case .sandboxResize:
+            var resized = sandbox
+            if let cpus = (input["cpus"] as? NSNumber)?.intValue { resized.cpus = cpus }
+            if let memory = (input["memory_bytes"] as? NSNumber)?.uint64Value { resized.memoryBytes = memory }
+            do { try mirror.upsert(resized) } catch { return hostFailure(object, code: "internal", message: "could not write the sandbox mirror: \(error)") }
+            bumpStateVersion()
+            return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "cpus": resized.cpus, "memory_bytes": resized.memoryBytes, "applies": "at the next cold boot"], actions: []))
+        case .sandboxDelete:
+            do { try mirror.remove(sandboxID) } catch { return hostFailure(object, code: "internal", message: "could not write the sandbox mirror: \(error)") }
+            bumpStateVersion()
+            return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": sandbox.name, "removed": ["sandbox identity"]], actions: [["kind": "deleted", "detail": "removed \(sandbox.name) from this machine"]]))
+        case .sandboxStart:
+            do {
+                let action = try await bringUp()
+                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": statusValue.lifecycle.sandboxState], actions: action.map { [$0] } ?? []))
+            } catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case .sandboxStop:
+            do { try await stop(); return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": statusValue.lifecycle.sandboxState], actions: [])) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case .sandboxSleep:
+            do { try await pause(); return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": statusValue.lifecycle.sandboxState], actions: [["kind": "slept", "detail": "\(sandbox.name) is asleep"]])) }
+            catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
+        case .relayStatus: return relayStatus(object)
         }
+    }
+
+    /// The connector's last report; machine-level, so it answers with or without sandboxes.
+    private func relayStatus(_ object: [String: Any]) -> Data {
+        let fresh = connectorReport.map { now().timeIntervalSince($0.reportedAt) <= Self.connectorReportTTL } ?? false
+        let state = fresh ? connectorReport!.state : "not_running"
+        var result: [String: Any] = ["connector": state, "connected": state == "connected", "detail": NSNull(), "reported_at": NSNull()]
+        if let report = connectorReport {
+            result["reported_at"] = ISO8601DateFormatter().string(from: report.reportedAt)
+            result["detail"] = fresh ? (report.detail as Any? ?? NSNull()) : "last connector report is older than 120 s"
+        }
+        return hostSuccess(object, result: result)
+    }
+
+    /// Adds the sandbox the agent API reserved, at the asked size or this Mac's default, and starts the runtime if it is down.
+    private func create(_ object: [String: Any], sandboxID: String, input: [String: Any]) async -> Data {
+        guard let name = input["name"] as? String, !name.isEmpty else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name") }
+        let fallback = defaultSize(hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes)
+        let cpus = (input["cpus"] as? NSNumber)?.intValue ?? fallback.cpus
+        let memory = (input["memory_bytes"] as? NSNumber)?.uint64Value ?? fallback.memoryBytes
+        do { try mirror.upsert(SandboxIdentity(sandboxID: sandboxID, name: name, cpus: cpus, memoryBytes: memory)) }
+        catch { return hostFailure(object, code: "internal", message: "could not write the sandbox mirror: \(error)") }
+        bumpStateVersion()
+        var actions: [[String: Any]] = [["kind": "created", "detail": "created \(name) with \(cpus) CPUs and \(memory / (1024 * 1024 * 1024)) GiB"]]
+        do { if let action = try await bringUp() { actions.append(action) } }
+        catch { _ = try? mirror.remove(sandboxID); bumpStateVersion(); return hostFailure(object, code: "sandbox_not_ready", message: "\(name) could not start: \(error)") }
+        return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": name, "cpus": cpus, "memory_bytes": memory, "state": statusValue.lifecycle.sandboxState], actions: actions))
+    }
+
+    /// Runs the runtime and says what that took: nothing, a wake, or a cold boot.
+    private func bringUp() async throws -> [String: Any]? {
+        switch statusValue.lifecycle {
+        case .ready: return nil
+        case .paused: try await resume(); return ["kind": "woke", "detail": "woke the runtime from sleep"]
+        default: try await start(); return ["kind": "cold_booted", "detail": "cold-booted the runtime"]
+        }
+    }
+
+    private func forward(_ envelope: Data) async throws -> Data {
+        guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
+        return try await channel.send(envelope)
+    }
+
+    private func view(_ sandbox: SandboxIdentity) -> [String: Any] {
+        ["sandbox_id": sandbox.sandboxID, "name": sandbox.name, "cpus": sandbox.cpus, "memory_bytes": sandbox.memoryBytes, "state": statusValue.lifecycle.sandboxState]
+    }
+
+    private func report(_ requested: [String: Any], produced: [String: Any], actions: [[String: Any]]) -> [String: Any] {
+        ["requested": requested, "produced": produced, "actions": actions]
     }
 
     /// Returns once the state version passes `since`, or at the timeout.
@@ -191,7 +272,7 @@ public actor HostDaemon {
             "protocol_version": request["protocol_version"] as? String ?? "v1",
             "request_id": request["request_id"] as? String ?? "unknown",
             "operation": request["operation"] as? String ?? "unknown",
-            "vm_id": request["vm_id"] as? String ?? statusValue.vmID,
+            "sandbox_id": request["sandbox_id"] as? String as Any? ?? NSNull(),
             "release_id": "agent-computer-contract-v1",
         ].merging(values) { _, latest in latest }
         return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data("{}".utf8)
