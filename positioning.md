@@ -9,8 +9,9 @@ until someone deletes it. The agent works inside with no permission prompts; you
 own files are out of reach unless you share a folder, and every access to a
 shared folder is logged.
 
-**Sandbox** is the product word. The VM is the implementation behind it; say "VM"
-only in technical docs. **Durable** is the default and the differentiator:
+**Sandbox** is the product word. Say "virtual machine" only where isolation is
+the question, and then name what it is: a full Linux VM on Apple's own
+Virtualization framework. **Durable** is the default and the differentiator:
 cloud sandboxes and containers are disposable by design, and a Localbox sandbox
 keeps its installs, files and browser state until it's deleted. Idle sandboxes
 go to sleep instead, and every process, down to a running dev server, resumes on
@@ -55,12 +56,11 @@ should you.
 
 - The agent creates a sandbox for a task, uses it, and deletes it, one command
   each.
-- New sandboxes are copy-on-write clones of a template disk: they start fast and
-  share storage until they diverge.
-- Each sandbox is sized to its machine by default (half the cores, a quarter of
-  the RAM) and can be resized; the agent is told exactly what it got.
-- Idle sandboxes sleep after 30 minutes and wake on the next request with every
-  process intact. A sandbox can opt into deleting itself after an idle period.
+- New sandboxes start in seconds and share storage until they diverge.
+- Each sandbox is sized to its machine by default and can be resized; the agent
+  is told exactly what it got.
+- Idle sandboxes sleep and wake on the next request with every process intact. A
+  sandbox can opt into deleting itself after an idle period.
 - When a machine runs out of room, Localbox sleeps the least recently used
   sandboxes to fit the new one, and tells the agent which.
 - A sandbox is a whole computer, not a process: it can run Docker inside itself, a
@@ -69,18 +69,6 @@ should you.
 The honest resource claim: a running sandbox reserves memory like any VM. What
 changes is the lifecycle: start on demand, sleep when idle, delete in one command.
 Never say "uses no RAM".
-
-Today: **built**. Many sandboxes per Mac, each its own VM cloned from the
-template disk, with generated names; create, rename, resize and delete; default
-sizing; idle sleep and wake with processes intact; idle deletion; making room
-from the least recently used idle sandboxes. Sleep is hibernation, proven on a
-real VM: the sandbox's memory is saved to disk, its RAM is freed, and its
-processes resume on the next request. That needs a Mac whose screen lock asks
-for no password (a sleeping display is fine); where the lock asks for one and
-the screen is locked, a sleeping sandbox pauses in memory and keeps its RAM, and
-one put away to make room boots fresh. The
-[installation](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)
-procedure owns the settings.
 
 ## 2. Your machines are the fleet
 
@@ -95,12 +83,6 @@ already own idle compute: a Mac mini on the shelf, last year's laptop.
 - No per-minute bill and no session limit. The hardware is already paid for.
 - Code and data stay on machines you own.
 
-Today: **built**. Every Mac signed in with the same email joins the account;
-sandboxes are created on the caller's Mac by default, on a named machine, or by
-`--placement auto|remote`; any Mac or agent in the account can use a sandbox on
-another one. Proven with one real Mac and a simulated second one; the user's own
-two-Mac test is pending.
-
 ## 3. Cloud agents, your computers
 
 Background agents (Codex cloud, Claude Code on the web, scheduled agents) run in
@@ -114,12 +96,6 @@ hardware instead.
 - Requests that might have half-applied are reported as uncertain, never retried
   silently.
 
-Today: **built** and proven on a local stack. Agents sign in by email code
-over OAuth with PKCE; the token covers the account and is revocable; a Mac that
-stops answering is reported `machine_offline` within seconds. The hosted
-service at `api.localbox.sh` runs this version; real sign-in emails wait on the
-mail domain.
-
 ## 4. Let your agent off the leash
 
 The fastest agents run with permission prompts off, and that's exactly what people
@@ -131,9 +107,6 @@ are afraid to do on their own laptop.
   machine.
 - The worst case is deleting the sandbox.
 
-Today: the boundary exists. The VM does not share the host's files, processes,
-credentials or screen (see the [security model](SECURITY.md)).
-
 ## 5. Share a folder, see every access
 
 A sandbox sees nothing on your Mac by default. When the agent needs your project,
@@ -144,13 +117,6 @@ read and write the sandbox makes through it.
 - Read-only by default; read-write when you say so.
 - An audit log of every file the sandbox opened, read or wrote through the share.
 
-Implementation note: Apple's built-in shared directories don't expose per-file
-events, so an audited share means Localbox serves the folder itself. That is a
-deliberate, reviewed host interface, as the security model requires.
-
-Today: **planned**. No host folders are shared. The placeholder is
-[specs/shared-folders](specs/shared-folders/README.md).
-
 ## 6. One sandbox per agent, many agents at once
 
 Parallel agents step on each other in one checkout and one set of ports.
@@ -158,9 +124,6 @@ Parallel agents step on each other in one checkout and one set of ports.
 - Each task or branch gets its own sandbox, with its own dev server, database and
   browser.
 - Fan out several attempts at a problem, keep the winner, delete the rest.
-
-Today: **built**: many sandboxes per Mac, each with its own processes, ports
-and browser.
 
 ## 7. A computer that's still set up next week
 
@@ -171,33 +134,12 @@ browser, an overnight build.
 - Long jobs run as long as they need.
 - A real desktop and browser for computer-use tasks.
 
-Today: built. Files, packages, browser and desktop state persist until the
-sandbox is deleted, and long jobs run in the background. Processes survive idle
-sleep, and an update or service restart hibernates running sandboxes so their
-processes survive it too, wherever hibernation works (see use case 1).
-
 ## 8. Built for agents to drive
 
 The CLI's customer is an agent, not a person. Every command does what it was asked
 when the result can be undone, and says exactly what it did: the size and machine
 it chose, the sandboxes it slept to make room, the restart a resize needed, the
 output it trimmed. The agent never has to guess or ask a follow-up question.
-
-Today: built. The CLI and MCP share one catalog, and results report what was
-done: the machine and why, the size and why, sandboxes put away to make room,
-wakes and fresh boots, trimmed output.
-
-## Build plan
-
-The launch scope is specified in [specs/durable-sandboxes](specs/durable-sandboxes/README.md):
-a slice ladder for every use case above, built on the decisions in its
-[unknowns map](specs/durable-sandboxes/map.md).
-
-## Not yet
-
-Snapshots and rollback (checkpoint a sandbox before a risky step, restore it
-after) are deliberately out of the message until there's a design. The
-placeholder is [specs/sandbox-snapshots](specs/sandbox-snapshots/README.md).
 
 ## What this means for messaging
 
@@ -206,17 +148,17 @@ placeholder is [specs/sandbox-snapshots](specs/sandbox-snapshots/README.md).
 - Name the two enemies explicitly: local container pain, and the cloud sandbox
   bill.
 - Say "sandbox" for the product, "durable" for the default, "computer" for what's
-  inside one. Keep "VM" for technical docs.
+  inside one. Name the VM only to answer how sandboxes are isolated.
 - Keep "your files stay yours" visible: nothing shared unless you choose, and
   every shared access logged. It's what makes full autonomy feel safe.
 - Free and personal. Don't mention plans, seats or teams.
 - Sign-in is "your email and a code". Never mention passwords, keys or pairing.
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
-  give their memory back and resume exactly where they were. Say it frees RAM on
-  a Mac set up as the installer asks (no password on the screen lock); don't
-  promise it unconditionally.
-- Marketing may describe the launch product before it ships, and the README and
-  site do, and so does the pitch in `llms.txt`. Instructions an agent follows (the
+  give their memory back and resume exactly where they were. The installer
+  checks the Mac is set up for it; don't promise it beyond that.
+- Snapshots and rollback stay out of the message until they exist.
+- Marketing (the README, the site and the pitch in `llms.txt`) describes the
+  launch product and never its build status. Instructions an agent follows (the
   install steps and the skill) must only describe what the shipped CLI does; an
   agent that runs a planned command fails.
 - `llms.txt` sells and installs. How to use Localbox lives in the skill.

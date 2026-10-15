@@ -13,7 +13,7 @@ invariants and rejected alternatives.
 Localbox gives an agent durable sandboxes on the user's own machines. A sandbox
 is a Linux VM: product copy says "sandbox", and "VM" belongs to technical docs
 and code. The [positioning](positioning.md) doc
-owns the product message, the use cases and what each one needs before it ships.
+owns the product message and the use cases; what is built is the code.
 
 Shell is the authority inside the VM; filesystem, browser, screenshot and desktop
 operations are convenience interfaces over that same authority. Do not add
