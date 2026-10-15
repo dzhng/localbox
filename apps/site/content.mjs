@@ -26,7 +26,7 @@ export const meta = {
   title: "Localbox — a computer your agent can use",
   description:
     "Localbox gives Claude Code, Codex and any agent a durable Linux computer on your Mac: shell, files, browser and desktop through one CLI, with optional MCP.",
-  imageAlt: "Xiaohei leans out of a little box on a laptop, typing on its own tiny computer",
+  imageAlt: "Xiaohei sits in a little house on a laptop, typing on its own tiny computer",
 };
 
 export const hero = {
@@ -76,7 +76,7 @@ export const features = [
   },
   {
     image: "03-outbound-only.png",
-    alt: "The house's front door stays padlocked while Xiaohei reels a string from the chimney up to the relay",
+    alt: "The house's front door stays padlocked while Xiaohei sits on the roof reeling a line up to the relay",
     kicker: "outbound only",
     title: "Reachable from anywhere, open to nothing",
     body: "Locally the CLI talks to the daemon over an authenticated socket. Remote agents go through a hosted relay that your Mac connects out to: no port forwarding, no VPN, no Tailscale. OAuth access can be revoked at any time.",

@@ -88,7 +88,7 @@ same thing whether it comes from a shell, Claude Code, Codex or a script.
 ## Reachable from anywhere, open to nothing
 
 <p align="center">
-  <img src=".github/readme/03-outbound-only.png" alt="The Mac's front door stays padlocked while a string runs out of the chimney to the relay" width="85%">
+  <img src=".github/readme/03-outbound-only.png" alt="The Mac's front door stays padlocked while a line runs from the roof to the relay" width="85%">
 </p>
 
 On your Mac, the CLI talks to the daemon over an authenticated local socket.
