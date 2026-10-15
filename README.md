@@ -3,6 +3,12 @@
 Localbox runs a durable, preconfigured Linux VM on a user's Mac and
 makes that VM available to AI agents through a CLI and an optional MCP adapter.
 
+The repository is an npm workspace monorepo. `apps/*` contains product
+surfaces, `packages/*` contains shared runtime and protocol owners, and the
+root TypeScript project builds their shared source graph. Use `npm run build`
+and `npm test` for the complete graph; `npm run build:workspaces` and
+`npm run test:workspaces` run the Turbo workspace tasks.
+
 ## Agent setup
 
 Tell your agent:
@@ -39,14 +45,17 @@ are runnable locally. Apple Virtualization boot and deployed Convex/Vercel
 internet smoke still require the release environment.
 
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
-`apps/mcp/api/[...path].ts`. Set `CONVEX_URL`, `CONVEX_DEPLOYMENT`,
-`LOCALBOX_RESOURCE`, and `LOCALBOX_RELAY_URL` in Vercel; deployed
-functions fail closed when Convex is not configured. For repository-backed
-MCP OAuth, also set `LOCALBOX_ISSUER`, `LOCALBOX_OWNER_SUBJECT`,
-and `LOCALBOX_VM_ID` (or provision the owner and VM in Convex first).
-Set `BLOB_READ_WRITE_TOKEN` for the relay's private Vercel Blob provider;
-`LOCALBOX_BLOB_THRESHOLD_BYTES`, `LOCALBOX_BLOB_TTL_MS`, and
-`LOCALBOX_BLOB_MAX_BYTES` tune its bounded externalization policy.
+`apps/mcp/api/[...path].ts`. The Vercel backend needs four production values:
+`CONVEX_URL` selects the durable Convex deployment, `LOCALBOX_RESOURCE` is the
+MCP OAuth audience and public resource URL, `LOCALBOX_OWNER_SUBJECT` selects
+the configured Localbox owner, and `BLOB_READ_WRITE_TOKEN` authorizes private
+Vercel Blob storage for oversized results. The MCP issuer and relay URL are
+derived from `LOCALBOX_RESOURCE`; the owner ID and VM ID come from Convex
+records, and the deployment label is only an internal repository identifier.
+Deployed functions fail closed when Convex, the resource, owner subject, or
+private Blob configuration is missing. `LOCALBOX_BLOB_THRESHOLD_BYTES`,
+`LOCALBOX_BLOB_TTL_MS`, and `LOCALBOX_BLOB_MAX_BYTES` are optional knobs for
+bounded result externalization.
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes. Build an image with
 `LOCALBOX_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum

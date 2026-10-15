@@ -2,10 +2,17 @@
   "name": "localbox",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@11.19.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:workspaces": "turbo run build",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:workspaces": "turbo run test",
     "contract:probe": "tsx apps/cli/src/index.ts contract probe",
     "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots",
     "dev:local": "tsx scripts/local-vercel.ts",
@@ -22,6 +29,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "convex-test": "^0.0.54",
+    "turbo": "^2.11.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
