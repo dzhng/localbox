@@ -93,7 +93,7 @@ Slices 01 and 02 may use the existing fake backend for deterministic tests, but 
   `com.apple.security.virtualization` entitlement. The next run must use the
   signed entitlement-bearing product bundle.
 - A real Convex deployment and Vercel project must be provisioned with the
-  environment variables in `README.md`; the local schema/function harness,
+  environment variables in `DEVELOPMENT.md`; the local schema/function harness,
   local Convex deployment, and local route contract cover the transaction
   behavior, including repository-backed OAuth authorization, token rotation,
   and revocation.

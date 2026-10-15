@@ -2,27 +2,36 @@
 const root = document.documentElement;
 
 for (const button of document.querySelectorAll("[data-set-mode]")) {
+  button.setAttribute("aria-pressed", String(root.dataset.mode === button.dataset.setMode));
   button.addEventListener("click", () => {
     root.dataset.mode = button.dataset.setMode;
     localStorage.setItem("localbox-mode", button.dataset.setMode);
+    for (const other of document.querySelectorAll("[data-set-mode]"))
+      other.setAttribute("aria-pressed", String(other === button));
     window.scrollTo({ top: 0 });
   });
 }
 
 for (const button of document.querySelectorAll("[data-copy]")) {
   button.addEventListener("click", async () => {
-    const text = document.getElementById(button.dataset.copy).textContent;
+    const source = document.getElementById(button.dataset.copy);
     const done = button.querySelector(".copy-done");
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(source.textContent);
       done.textContent = "✓ copied";
     } catch {
-      getSelection().selectAllChildren(document.getElementById(button.dataset.copy));
+      getSelection().selectAllChildren(source);
       done.textContent = "selected, press ⌘C";
     }
     setTimeout(() => (done.textContent = ""), 2400);
   });
 }
+
+// The header gains a rule once the page scrolls under it.
+const bar = document.querySelector(".bar");
+const onScroll = () => bar?.classList.toggle("scrolled", scrollY > 8);
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
 
 // The blobs watch the cursor.
 const eyes = [...document.querySelectorAll(".blob .eyes")];

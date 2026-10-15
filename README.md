@@ -1,152 +1,174 @@
-# Localbox
+<p align="center">
+  <img src=".github/readme/header.png" alt="Localbox — a computer your agent can use" width="100%">
+</p>
 
-Localbox runs a durable, preconfigured Linux VM on a user's Mac and
-makes that VM available to AI agents through a CLI and an optional MCP adapter.
+<p align="center">
+  <a href="https://github.com/dzhng/localbox/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dzhng/localbox?label=release"></a>
+  <img alt="macOS 13+ on Apple Silicon" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20Silicon-black">
+  <img alt="Works with Claude Code, Codex and MCP agents" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20MCP-blue">
+  <img alt="Runs on your Mac" src="https://img.shields.io/badge/runs%20on-your%20Mac-green">
+</p>
 
-The repository is an npm workspace monorepo. `apps/*` contains product
-surfaces, `packages/*` contains shared runtime and protocol owners, and the
-root TypeScript project builds their shared source graph. Use `npm run build`
-and `npm test` for the complete graph; `npm run build:workspaces` and
-`npm run test:workspaces` run the Turbo workspace tasks.
+---
 
-## Agent setup
+**Localbox gives your AI agent a computer of its own.**
 
-Tell your agent:
+Agents are good at real work: installing toolchains, running test suites,
+clicking through a staging site, leaving a long build running overnight. What
+they lack is a place to do it. Your laptop is too precious to hand over, and a
+throwaway cloud sandbox forgets everything the moment the session ends.
+
+Localbox is that place. It runs a durable Linux VM on your Mac and hands it to
+**Claude Code, Codex, or any agent harness** through one CLI, with an optional
+MCP endpoint for clients that want tool discovery. The agent gets a shell, a
+filesystem, a browser and a desktop. You keep your Mac.
+
+**Your agent gets a computer. You keep yours.**
+
+## A computer, not a sandbox
+
+Most agent sandboxes are disposable by design: spin up, run a command, throw it
+away. That is fine for a one-liner and painful for anything real. Every session
+starts by reinstalling the world.
+
+The Localbox VM is the agent's machine. Files, installed packages, browser
+profiles and desktop state persist across sessions, sleep, VM stops and
+reconnects. Set it up once and it is still set up next week.
+
+**[Get started →](#get-started)** Your agent installs it for you.
+
+## Things you can ask for
+
+> "Install Postgres and Node in the VM and get this repo's tests passing."
+
+> "Open the staging site in the VM's browser and click through checkout."
+
+> "Run this untrusted script somewhere that isn't my laptop and show me what it did."
+
+> "Kick off the full build, then screenshot the desktop when it finishes."
+
+> "Pick up where we left off yesterday. The dev server should still be configured."
+
+> "Connect from my cloud agent and run the integration suite on my Mac."
+
+## How it works
+
+<p align="center">
+  <img src=".github/readme/01-still-there-next-week.png" alt="The agent leaves its desk at the end of a session and finds everything exactly where it left it" width="85%">
+</p>
+
+1. **Ask your agent to install it.** It downloads one signed release, verifies
+   its checksums and signature, installs the CLI and skill, and registers a
+   small host daemon. No app to drag into a folder.
+2. **Your agent starts the VM** and works in it like any computer: shell
+   commands, files, a browser, the desktop.
+3. **Come back any time.** The VM keeps its state, so the next session, or the
+   next agent, picks up exactly where the last one stopped.
+
+## One catalog, two ways in
+
+<p align="center">
+  <img src=".github/readme/02-two-handles-one-door.png" alt="One door with a CLI knob and an MCP handle; the same operations wait behind it" width="85%">
+</p>
+
+The CLI is the product. MCP is an adapter over the same operation catalog:
+identical operations, schemas, errors and permissions, so a request means the
+same thing whether it comes from a shell, Claude Code, Codex or a script.
+
+| | What your agent can use |
+| --- | --- |
+| **Lifecycle** | Start, stop, pause and reset the VM; status, logs and egress identity |
+| **Shell** | Run bounded commands, or start long jobs and wait, poll, cancel or read their output |
+| **Files** | List, read, write, create and remove paths inside the VM |
+| **Browser** | Open, navigate and close tabs; click, type, send keys and take screenshots |
+| **Desktop** | Screenshot, move, click, scroll and type on a 1440×900 virtual display |
+
+`localbox help` is generated from that catalog, and so is the MCP tool list.
+
+## Reachable from anywhere, open to nothing
+
+<p align="center">
+  <img src=".github/readme/03-outbound-only.png" alt="The Mac's front door stays padlocked while a string runs out of the chimney to the relay" width="85%">
+</p>
+
+On your Mac, the CLI talks to the daemon over an authenticated local socket.
+When your agent runs somewhere else, a hosted relay carries its requests to your
+Mac over a connection **your Mac opens outward**. No port forwarding, no VPN, no
+Tailscale. Remote access uses OAuth, can be revoked at any time, and lost
+mutations are reported as uncertain instead of being silently retried.
+
+## Your Mac stays outside
+
+<p align="center">
+  <img src=".github/readme/04-host-stays-outside.png" alt="The agent builds freely inside a glass jar while your files sit untouched outside it" width="85%">
+</p>
+
+The VM is the security boundary. Inside it, an authorized agent can do anything a
+shell can, so there are no per-tool approval prompts to click through. Outside
+it, your files, processes, credentials and screen are not shared with the VM.
+The [security model](SECURITY.md) spells out the boundary and what the relay can
+see.
+
+## Get started
+
+Requires **Apple Silicon and macOS 13 or newer**.
+
+Open Claude Code or Codex and say:
 
 > Install Localbox for me by following https://localbox.sh/llms.txt
 
-The agent downloads and verifies the tagged release, installs the CLI and
-managed skill, and registers the local HostDaemon. There is no browser app
-download step.
+Then ask for something that needs a computer.
 
-The VM provides the execution boundary. The agent can use shell access as the
-authority, with filesystem, browser, screenshots, and virtual-desktop controls
-as convenience interfaces over the same operation contract.
+Localbox is pre-release: the first signed build has not been published yet, so
+installs succeed once a [release](https://github.com/dzhng/localbox/releases)
+exists. The [agent setup](#agent-setup) below is what your agent follows.
 
-## Product direction
+## Agent setup
 
-- Apple silicon macOS is the first host target.
-- One VM is created by default; the model can support multiple VMs later.
-- The VM persists files, installed software, browser state, and desktop state.
-- A hosted outbound relay avoids port forwarding and Tailscale setup.
-- MCP uses Streamable HTTP and OAuth; OAuth selects or scopes the VM when the
-  client flow supports resource selection.
-- The CLI and MCP expose the exact same operation catalog, schemas, behavior,
-  errors, and permissions. MCP is optional.
-- The consumer skill teaches an agent how to install the app and CLI, configure
-  MCP when desired, and use and recover the product.
+These steps are written for the agent doing the install, so they are precise.
 
-## Status
+1. **Install from a signed release.** Resolve one stable tag from
+   [GitHub Releases](https://github.com/dzhng/localbox/releases/latest), download
+   the release kit with its `release.json` and `SHA256SUMS`, verify them against
+   the pinned [release public key](skills/localbox/release-public.pem), and run
+   the bundled installer. The [installation procedure](skills/localbox/references/installation.md)
+   holds the exact commands. Do not build from source for a user install.
+2. **Check the install.** The installer places the CLI at `~/.local/bin/localbox`,
+   registers the host daemon and a six-hour updater with launchd, and installs the
+   global [Localbox skill](skills/localbox/SKILL.md). It bundles its own Node
+   runtime, so it never calls the host's `npx` or `npm`. Then run:
 
-The code-level production implementation is shipped and documented in the
-[production spec](specs/agent-computer-production/README.md). Contract, guest,
-local Convex, relay, MCP, recovery, registry, image, release, and CLI gates
-are runnable locally. Apple Virtualization boot and deployed Convex/Vercel
-internet smoke still require the release environment.
+   ```sh
+   ~/.local/bin/localbox status
+   ~/.local/bin/localbox skill status --json
+   ~/.local/bin/localbox help --json
+   ```
 
-The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
-`apps/mcp/api/[...path].ts`. The public API origin is one production setting, `LOCALBOX_API_ORIGIN` (normally
-`https://api.localbox.sh`). Code derives the MCP resource and relay URLs from
-that origin. The Vercel backend also needs `CONVEX_URL` for the durable Convex
-deployment, `LOCALBOX_OWNER_SUBJECT` to select the configured Localbox owner,
-and `BLOB_READ_WRITE_TOKEN` for private Vercel Blob storage. The owner ID and
-VM ID come from Convex records; there is no second deployment-name setting.
-Deployed functions fail closed when Convex, the API origin, owner subject, or
-private Blob configuration is missing. `LOCALBOX_BLOB_THRESHOLD_BYTES`,
-`LOCALBOX_BLOB_TTL_MS`, and `LOCALBOX_BLOB_MAX_BYTES` are optional knobs for
-bounded result externalization.
-The OAuth route returns raw access and refresh tokens only at issuance or
-rotation; Convex stores hashes. Build an image with
-`LOCALBOX_BASE_IMAGE` pinned to an ARM64 digest plus the six checksum
-and version variables documented by `packages/vm-image/scripts/build-arm64-image.ts`
-(`NODE_*`, `BUN_*`, and `STATIC_WEB_SERVER_*`).
+3. **Use it.** `localbox vm start`, then `localbox shell exec -- <command>`.
+   Run `localbox auth login` before remote use. `localbox mcp install --json`
+   prints optional MCP configuration; nothing else depends on MCP.
 
-For a local control-plane smoke, start an isolated Convex deployment and the
-same Web Request handlers used by the Vercel functions:
+Updates arrive automatically and verify before replacing anything;
+`localbox update check` and `localbox update install` do the same on demand.
+The [skill lifecycle](skills/localbox/references/skill-lifecycle.md) covers
+replacement, rollback and unmanaged skills.
+
+## Contributing
+
+Localbox is an npm workspace monorepo: `apps/*` holds product surfaces (CLI,
+macOS host daemon, guest agent, relay, MCP, website) and `packages/*` holds the
+shared contract, runtime and protocol owners.
 
 ```sh
-npx convex dev --typecheck disable --codegen disable
-npm run dev:local
+npm install
+npm run build
+npm test
 ```
 
-The local server listens on `http://127.0.0.1:3000/api/{relay,mcp}` and reads
-the Convex URL written to `.env.local`. It enables the local in-memory blob
-provider explicitly; deployed functions still fail closed without Convex and
-private Blob configuration.
-
-After deployment, `localbox mcp install --json` prints the optional MCP
-configuration for agents. CLI login and catalog operations remain independent
-of MCP.
-
-On the Mac, the installed CLI uses the authenticated HostDaemon Unix socket by
-default. The daemon reads the owner-only token at
-`~/Library/Application Support/Localbox/ipc-token`; set
-`LOCALBOX_SOCKET_PATH` or `LOCALBOX_IPC_TOKEN_FILE` only when an
-installer materializes a different location. The in-process fixture transport
-is available only with `LOCALBOX_LOCAL_TRANSPORT=fixture` for local tests.
-
-On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
-app bundle, compiled CLI, VM artifacts, checksums, and release manifest. Set
-`LOCALBOX_KERNEL`, `LOCALBOX_INITRD`, and
-`LOCALBOX_TEMPLATE_DISK` to the published VM inputs, then provide
-`APPLE_SIGNING_IDENTITY`, `NOTARY_PROFILE`, and `RELEASE_PRIVATE_KEY` (a path to
-the Ed25519 private-key file) for a production release. `ALLOW_UNSIGNED=1` is
-reserved for local packaging checks;
-it cannot satisfy the virtualization or distribution gates.
-When `APPLE_SIGNING_IDENTITY` is omitted, the script imports the local
-screen-recorder PKCS#12 from `~/dev/screen-recorder/.release-signing` (or
-`LOCALBOX_SIGNING_DIR`) into a disposable keychain, authorizes headless
-`codesign`, and deletes that keychain on exit. If those local files are absent,
-it creates a throwaway self-signed identity instead. `RELEASE_PRIVATE_KEY` is
-still required for the signed release manifest; `ALLOW_UNSIGNED=1` is only for
-explicit unsigned packaging checks.
-
-Install a signed release with `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`. The
-installer verifies checksums and the Ed25519 manifest, keeps versioned app/CLI
-trees behind an atomic `releases/active` link, materializes the launchd plist,
-creates the owner-only IPC token, and loads the daemon plus the automatic
-GitHub release updater. `localbox update check` inspects the latest release;
-`localbox update install` downloads, verifies, installs, and then refreshes a
-managed global skill. Use
-`scripts/rollback-release.sh VERSION` to select an older verified tree; use
-`scripts/uninstall.sh` to remove launchd and the CLI link while preserving VM
-state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or fixture install.
-The CLI archive carries its own ARM64 Node runtime and pinned `skills@1.7.0`
-installer, so skill install/update never depends on the agent's host `node`,
-`npm`, `npx`, or a network fetch.
-It also adds a marked `~/.local/bin` PATH line only when the account's login
-shell does not already cover that directory; uninstall removes only that marked
-block.
-
-The bundled Localbox skill is the agent-facing installation path: when the CLI
-is missing, the agent downloads the tagged release kit, verifies it, and invokes
-the release installer. There is no browser app download or drag-and-drop step.
-
-The public landing page lives in `apps/site` at [localbox.sh](https://localbox.sh),
-with the agent-readable install surface at
-[`/llms.txt`](https://localbox.sh/llms.txt). Run `npm run site:build` to render
-the static page and `npm run site:test` to check their shared install prompt,
-canonical metadata, sitemap and agent-only install route. The Convex-backed
-relay and optional MCP endpoint live at [api.localbox.sh](https://api.localbox.sh)
-and deploy from the same public repository.
-
-The tagged-release workflow is `.github/workflows/release.yml`. It expects
-repository variables for the pinned ARM64 kernel, initrd, template disk, image
-digest, and the release public key in
-`skills/localbox/release-public.pem`, plus secrets for the Ed25519 release key,
-Apple signing identity, and password. The workflow publishes the app, CLI,
-manifest, and checksums to GitHub Releases. The updater trusts the public key
-configured by the installer and refuses unsigned or mismatched artifacts. The
-manifest may carry public-key metadata for inspection, but it is never used as
-the trust root for its own signature. Set `LOCALBOX_RELEASE_REPOSITORY` during
-installation when the release repository is not the default
-`dzhng/localbox`. Automatic installs leave the running updater job loaded
-while the new active release is switched, so the updater cannot terminate its
-own install process.
-
-## References
-
-- [Localbox rationale](specs/done/agent-computer/README.md)
-- [Security model](SECURITY.md)
-- Duet VM desktop reference: `~/dev/duet/specs/done/vm-desktop/README.md`
-- Screen-recorder CLI and skill reference: `~/dev/screen-recorder/README.md`
+The [development guide](DEVELOPMENT.md) records the principles behind the public
+contracts, plus local control-plane smoke tests, deployment configuration and the
+release process. The [security model](SECURITY.md) defines the trust boundaries,
+and the [rationale](specs/done/agent-computer/README.md) explains why the system
+has this shape. The [website](apps/site/README.md) is the public page at
+[localbox.sh](https://localbox.sh), with the same instructions as plain text for
+agents. README artwork lives in [.github/readme](.github/readme).

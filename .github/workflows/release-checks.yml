@@ -8,6 +8,8 @@ on:
       - package-lock.json
       - .node-version
       - apps/site/**
+      - README.md
+      - .github/readme/**
       - apps/cli/**
       - apps/macos/HostDaemon/**
       - packages/vm-image/**
@@ -24,6 +26,8 @@ on:
       - package-lock.json
       - .node-version
       - apps/site/**
+      - README.md
+      - .github/readme/**
       - apps/cli/**
       - apps/macos/HostDaemon/**
       - packages/vm-image/**
