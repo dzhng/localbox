@@ -4,13 +4,18 @@ export async function serveWebRequest(
   handler: (request: Request) => Promise<Response>,
   req: IncomingMessage,
   res: ServerResponse,
+  pathPrefix = "",
 ): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   const protocol = header(req, "x-forwarded-proto") ?? "https";
   const host = header(req, "host") ?? "localhost";
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.concat(chunks);
-  const request = new Request(`${protocol}://${host}${req.url ?? "/"}`, {
+  const incomingUrl = new URL(req.url ?? "/", `${protocol}://${host}`);
+  if (pathPrefix && incomingUrl.pathname.startsWith(pathPrefix)) {
+    incomingUrl.pathname = incomingUrl.pathname.slice(pathPrefix.length) || "/";
+  }
+  const request = new Request(incomingUrl, {
     method: req.method ?? "GET",
     headers: Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value ?? ""])),
     body: body?.byteLength ? body : undefined,
