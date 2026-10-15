@@ -1,13 +1,13 @@
 import { catalogById, failure, requestFromInvocation, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 
-/** The caller, resolved from a machine credential (slice 08 adds agent tokens). */
-export interface Principal { accountId: string; machineId: string }
+/** The caller: one of the account's machines (machine credential) or a signed-in agent (OAuth token family). */
+export interface Principal { accountId: string; machineId?: string; familyId?: string }
 
 export interface RelayResult { accountId?: string; status: "queued" | "claimed" | "completed" | "abandoned"; response?: ResponseEnvelope }
 
 /** Everything the agent API needs from Convex, injected so the waiting logic is testable without it. */
 export interface OpsDeps {
-  /** Account-catalog call made as the caller's machine. */
+  /** Account-catalog call made as the caller (its machine, or its agent token family). */
   accountCall(principal: Principal, kind: "mutation" | "query", name: string, args: Record<string, unknown>): Promise<any>;
   /** Service-identity mutation (`relay:enqueue`, `relay:abandonIfUnclaimed`). */
   serviceMutation(name: string, args: Record<string, unknown>): Promise<any>;

@@ -45,3 +45,8 @@ export function signMachineToken(machineId: string, accountId: string): string {
   return sign({ iss: process.env.LOCALBOX_API_ORIGIN ?? "http://127.0.0.1:3000", aud: "localbox-convex", sub: `machine:${machineId}`, account: accountId, iat: now, exp: now + 86_400 });
 }
 
+/** Convex identity for an MCP agent's OAuth token family; Convex re-checks the family's revocation on every call. */
+export function signAgentToken(familyId: string, accountId: string): string {
+  const now = times();
+  return sign({ iss: process.env.LOCALBOX_API_ORIGIN ?? "http://127.0.0.1:3000", aud: "localbox-convex", sub: `agent:${familyId}`, account: accountId, iat: now, exp: now + 300 });
+}

@@ -159,9 +159,8 @@ The relay and MCP endpoint deploy from `apps/relay/api/[...path].ts` and
 | Setting | Purpose |
 | --- | --- |
 | `LOCALBOX_API_ORIGIN` | Public API origin, normally `https://api.localbox.sh`. The MCP resource and relay URLs derive from it. |
-| `CONVEX_URL` | Durable Convex deployment. Owner and VM IDs come from its records. |
+| `CONVEX_URL` | Durable Convex deployment: accounts, machines, relay rows and OAuth state. |
 | `LOCALBOX_JWT_PRIVATE_KEY` | ES256 (P-256) private key, PEM. Vercel signs short-lived Convex tokens with it; deployed functions refuse to start without it. |
-| `LOCALBOX_OWNER_SUBJECT` | Selects the configured Localbox owner. |
 
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes.

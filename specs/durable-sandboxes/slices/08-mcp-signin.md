@@ -56,3 +56,8 @@ sentence.
 ## Feedback that would change it
 
 Sign-in page copy and look.
+
+## Review decision (2026-10-15)
+
+The user was away during the checkpoint, so the agent decided on the evidence in
+`.localbox/proof/runs/*-08/08-signin-*.png`: kept as built. See `choices.md`.

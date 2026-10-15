@@ -1,77 +1,100 @@
-import { AgentClient, type ClientRequestOptions, type ClientTransport } from "../../../packages/client/src/index.js";
-import { mcpToolsSnapshot, PROTOCOL_VERSION, type Json, type OperationId } from "../../../packages/contract/src/index.js";
-import { OAuthAuthorizationServer, OAuthError } from "../../relay/src/oauth.js";
+import { catalogById, mcpToolsSnapshot, PROTOCOL_VERSION, type JsonSchema, type OperationCatalogEntry, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import type { OpsResponse, Principal } from "../../relay/src/ops.js";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export interface McpHttpRequest { method: string; url: string; headers?: Record<string, string | undefined>; body?: unknown; signal?: AbortSignal }
 export interface McpHttpResponse { status: number; headers: Record<string, string>; body?: unknown }
-export interface McpAdapterOptions { client?: AgentClient; transport?: ClientTransport; oauth?: OAuthAuthorizationServer; allowedOrigins?: string[]; protocolVersion?: string; endpoint?: string; maxBodyBytes?: number }
-export interface McpAccessIdentity { vm_id: string }
+export interface McpAdapterOptions {
+  /** The MCP resource URL; its protected-resource metadata is advertised on 401. */
+  endpoint: string;
+  /** Resolves an OAuth access token to its account; throws when the token is invalid, expired or revoked. */
+  authenticate(token: string): Promise<Principal>;
+  /** The agent API (`handleOps`), called in-process as the token's account. */
+  ops(principal: Principal, input: Record<string, unknown>): Promise<OpsResponse>;
+  allowedOrigins?: string[];
+  protocolVersion?: string;
+  maxBodyBytes?: number;
+}
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
-/** Streamable HTTP MCP adapter generated from the canonical operation catalog. */
+const MACHINE_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The machine to run on: a name or id from machine.list." };
+const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+
+/** The catalog as MCP tools. Machine-bound tools gain a `machine` argument; it is the adapter's, not the catalog's. */
+export function mcpTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
+  return mcpToolsSnapshot().map((tool) => ({
+    name: tool.id, description: tool.description,
+    inputSchema: tool.executor === "account" ? tool.input_schema : { ...tool.input_schema, properties: { ...tool.input_schema.properties, machine: MACHINE_ARGUMENT } },
+  }));
+}
+
+/** Streamable HTTP MCP adapter over the agent API; every call acts as the signed-in account. */
 export class McpAdapter {
-  readonly client: AgentClient;
-  readonly oauth: OAuthAuthorizationServer;
   readonly endpoint: string;
-  private readonly allowedOrigins: Set<string>;
   readonly protocolVersion: string;
   readonly maxBodyBytes: number;
-  private readonly accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity;
-  constructor(options: McpAdapterOptions & { accessTokenValidator?: (token: string) => Promise<McpAccessIdentity> | McpAccessIdentity } = {}) {
-    this.oauth = options.oauth ?? new OAuthAuthorizationServer();
-    this.client = options.client ?? new AgentClient({ transport: options.transport ?? ({ kind: "local", dispatch: async () => { throw new Error("MCP adapter requires a client or transport"); } } as ClientTransport) });
+  private readonly allowedOrigins: Set<string>;
+  private readonly authenticate: McpAdapterOptions["authenticate"];
+  private readonly ops: McpAdapterOptions["ops"];
+  constructor(options: McpAdapterOptions) {
+    this.endpoint = options.endpoint.replace(/\/$/, "");
+    this.authenticate = options.authenticate;
+    this.ops = options.ops;
     this.allowedOrigins = new Set(options.allowedOrigins ?? []);
     this.protocolVersion = options.protocolVersion ?? MCP_PROTOCOL_VERSION;
-    this.endpoint = options.endpoint ?? this.oauth.resource;
     this.maxBodyBytes = options.maxBodyBytes ?? 1024 * 1024;
-    this.accessTokenValidator = options.accessTokenValidator;
   }
-  protectedResourceMetadata(): Record<string, unknown> { return this.oauth.protectedResourceMetadata(); }
   async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
     const headers = request.headers ?? {};
     if (request.body !== undefined && Buffer.byteLength(typeof request.body === "string" ? request.body : JSON.stringify(request.body)) > this.maxBodyBytes) return this.httpError(413, "payload_too_large", "MCP request exceeds the configured size limit");
     const origin = headers.origin ?? headers.Origin;
     if (origin && this.allowedOrigins.size > 0 && !this.allowedOrigins.has(origin)) return this.httpError(403, "forbidden", "origin is not allowed");
-    const url = new URL(request.url, this.endpoint);
-    if (url.pathname.endsWith("/.well-known/oauth-protected-resource")) return { status: 200, headers: { "content-type": "application/json" }, body: this.oauth.protectedResourceMetadata() };
-    if (url.pathname.endsWith("/.well-known/oauth-authorization-server")) return { status: 200, headers: { "content-type": "application/json" }, body: this.oauth.authorizationServerMetadata() };
     if (request.method !== "POST" && request.method !== "GET") return { status: 405, headers: { allow: "POST, GET", "content-type": "application/json" }, body: { error: "method_not_allowed" } };
-    const token = this.bearer(headers.authorization ?? headers.Authorization);
+    const token = (headers.authorization ?? headers.Authorization)?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!token) return this.unauthorized();
-    let auth: McpAccessIdentity & Partial<ReturnType<OAuthAuthorizationServer["validateAccessToken"]>>;
-    try {
-      auth = this.accessTokenValidator ? await this.accessTokenValidator(token) : this.oauth.validateAccessToken(token);
-    } catch (error) { return this.oauthHttpError(error); }
-    if (request.method === "GET") return { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "mcp-protocol-version": this.protocolVersion }, body: "" };
+    let principal: Principal;
+    try { principal = await this.authenticate(token); } catch { return this.unauthorized(); }
+    if (request.method === "GET") return { status: 405, headers: { allow: "POST", "content-type": "application/json" }, body: { error: "method_not_allowed", error_description: "this server does not open an SSE stream" } };
     const rpc = request.body as RpcRequest;
-    if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") return this.rpcResponse(rpc?.id ?? null, undefined, { code: -32600, message: "Invalid Request" });
-    const response = await this.dispatch(rpc, auth.vm_id, request.signal);
+    if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") return { status: 200, headers: { "content-type": "application/json" }, body: this.rpcResponse(rpc?.id ?? null, undefined, { code: -32600, message: "Invalid Request" }) };
+    const response = await this.dispatch(rpc, principal);
+    if (response === undefined) return { status: 202, headers: { "mcp-protocol-version": this.protocolVersion } };
     return { status: 200, headers: { "content-type": "application/json", "mcp-protocol-version": this.protocolVersion }, body: response };
   }
-  private async dispatch(rpc: RpcRequest, vmId: string, signal?: AbortSignal): Promise<any> {
-    try {
-      if (rpc.method === "initialize") return this.rpcResponse(rpc.id ?? null, { protocolVersion: this.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "localbox", version: PROTOCOL_VERSION } });
-      if (rpc.method === "notifications/initialized") return undefined;
-      if (rpc.method === "tools/list") return this.rpcResponse(rpc.id ?? null, { tools: mcpToolsSnapshot().map((tool) => ({ name: tool.id, description: tool.description, inputSchema: tool.input_schema })) });
-      if (rpc.method === "tools/call") {
-        const name = rpc.params?.name as OperationId; const args = (rpc.params?.arguments ?? {}) as Json;
-        const tool = mcpToolsSnapshot().find((entry) => entry.id === name); if (!tool) return this.rpcResponse(rpc.id ?? null, undefined, { code: -32602, message: `Unknown tool: ${name}` });
-        const options: ClientRequestOptions = { vmId, signal };
-        const result = await this.client.invoke(name, args, options);
-        if (!result.ok) return this.rpcResponse(rpc.id ?? null, { isError: true, content: [{ type: "text", text: result.error.message }], structuredContent: result.error });
-        return this.rpcResponse(rpc.id ?? null, { content: [{ type: "text", text: JSON.stringify(result.result) }], structuredContent: result.result });
-      }
-      return this.rpcResponse(rpc.id ?? null, undefined, { code: -32601, message: `Method not found: ${rpc.method}` });
-    } catch (error) { return this.rpcResponse(rpc.id ?? null, undefined, { code: -32603, message: error instanceof Error ? error.message : "Internal error" }); }
+  private async dispatch(rpc: RpcRequest, principal: Principal): Promise<any> {
+    const id = rpc.id ?? null;
+    if (rpc.method === "initialize") return this.rpcResponse(id, { protocolVersion: this.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "localbox", version: PROTOCOL_VERSION } });
+    if (rpc.method.startsWith("notifications/")) return undefined;
+    if (rpc.method === "ping") return this.rpcResponse(id, {});
+    if (rpc.method === "tools/list") return this.rpcResponse(id, { tools: mcpTools() });
+    if (rpc.method === "tools/call") {
+      const name = String(rpc.params?.name ?? ""); const entry = catalogById.get(name as never);
+      if (!entry) return this.rpcResponse(id, undefined, { code: -32602, message: `Unknown tool: ${name}` });
+      const { machine, ...input } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
+      try { return this.rpcResponse(id, await this.call(principal, entry, machine, input)); }
+      catch (error) { return this.rpcResponse(id, this.toolError(error instanceof Error ? error.message : "the operation failed")); }
+    }
+    return this.rpcResponse(id, undefined, { code: -32601, message: `Method not found: ${rpc.method}` });
   }
+  private async call(principal: Principal, entry: OperationCatalogEntry, machine: unknown, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const operation = entry.id;
+    if (entry.executor === "account") {
+      const result = await this.ops(principal, { operation, input });
+      return result.status === 200 ? this.toolResult(result.body) : this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
+    }
+    if (typeof machine !== "string" || !machine) return this.toolError(`${operation} runs on a machine: pass \`machine\` (a name or id; call machine.list to see them).`);
+    // MCP has no idempotency key of its own: each tool call is one mutation.
+    const mutationId = entry.idempotency === "required" ? `mcp_${crypto.randomUUID()}` : null;
+    let result = await this.ops(principal, { operation, input, machine, request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
+    // A long request comes back as a continuation; resume it until the machine answers or its deadline passes.
+    while (result.status === 202) { const pending = result.body as { request_id: string; deadline_at: number }; result = await this.ops(principal, { continue: pending.request_id, deadline_at: pending.deadline_at }); }
+    const envelope = (result.body as { response?: ResponseEnvelope } | undefined)?.response;
+    if (result.status !== 200 || !envelope) return this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
+    return envelope.ok ? this.toolResult(envelope.result) : { ...this.toolError(envelope.error.message), structuredContent: envelope.error };
+  }
+  private toolResult(value: unknown): Record<string, unknown> { return { content: [{ type: "text", text: JSON.stringify(value) }], ...(isObject(value) ? { structuredContent: value } : {}) }; }
+  private toolError(message: string): Record<string, unknown> { return { isError: true, content: [{ type: "text", text: message }] }; }
   private rpcResponse(id: string | number | null, result?: unknown, error?: { code: number; message: string }): any { return { jsonrpc: "2.0", id, ...(error ? { error } : { result }) }; }
-  private bearer(value?: string): string | undefined { const match = value?.match(/^Bearer\s+(.+)$/i); return match?.[1]; }
   private unauthorized(): McpHttpResponse { return { status: 401, headers: { "content-type": "application/json", "www-authenticate": `Bearer resource_metadata="${this.endpoint}/.well-known/oauth-protected-resource"` }, body: { error: "unauthorized" } }; }
-  private oauthHttpError(error: unknown): McpHttpResponse { if (error instanceof OAuthError && error.status === 401) return this.unauthorized(); const status = error instanceof OAuthError ? error.status : 401; return { status, headers: { "content-type": "application/json" }, body: { error: error instanceof Error ? error.message : "unauthorized" } }; }
   private httpError(status: number, code: string, message: string): McpHttpResponse { return { status, headers: { "content-type": "application/json" }, body: { error: code, error_description: message } }; }
 }
-export const McpStreamableHttpAdapter = McpAdapter;
-export function createMcpAdapter(options: McpAdapterOptions = {}): McpAdapter { return new McpAdapter(options); }
-
-export const McpServer = McpAdapter;

@@ -34,7 +34,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       process.env.LOCALBOX_API_ORIGIN = "http://127.0.0.1:3000";
       const { signServiceToken } = await import("../../../packages/tokens/src/index.js");
       const service = new ConvexHttpClient(url, { skipConvexDeploymentUrlCheck: true }); service.setAuth(signServiceToken());
-      assert.ok(Array.isArray(await service.query(makeFunctionReference("owners:list") as any, {})));
+      assert.equal(await service.query(makeFunctionReference("oauth:client") as any, { clientId: "client_none" }), null);
     }));
     return checks;
   } finally { if (!ctx.keep) await ctx.stack("down"); }

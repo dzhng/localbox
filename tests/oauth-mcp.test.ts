@@ -1,63 +1,81 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FixtureTransport, AgentClient } from "../packages/client/src/index.js";
-import { OAuthAuthorizationServer, OAuthError, pkceChallenge } from "../apps/relay/src/oauth.js";
-import { McpAdapter } from "../apps/mcp/src/index.js";
+import { McpAdapter, mcpTools } from "../apps/mcp/src/index.js";
+import { handleOps, type Principal } from "../apps/relay/src/ops.js";
+import { catalogById, success, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { FakeDispatcher } from "../packages/runtime/src/index.js";
+import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
-test("OAuth metadata, PKCE, VM binding, rotation and family revocation", () => {
-  let now = 1_700_000_000;
-  const oauth = new OAuthAuthorizationServer({ issuer: "https://relay.test", now: () => now, accessTokenTtlSeconds: 10, refreshReplayGraceSeconds: 2 });
-  assert.deepEqual(oauth.protectedResourceMetadata().authorization_servers, ["https://relay.test"]);
-  const verifier = "verifier-value";
-  const started = oauth.authorize({ response_type: "code", client_id: "client", redirect_uri: "https://client.test/cb", code_challenge: pkceChallenge(verifier), resource: "https://relay.test/mcp", vm_id: "vm_02" });
-  const tokens = oauth.token({ grant_type: "authorization_code", code: started.code, client_id: "client", redirect_uri: "https://client.test/cb", code_verifier: verifier, resource: "https://relay.test/mcp" });
-  assert.equal(tokens.vm_id, "vm_02");
-  assert.equal(oauth.validateAccessToken(tokens.access_token).vm_id, "vm_02");
-  assert.throws(() => oauth.validateAccessToken(tokens.access_token, "https://other.test/mcp"), OAuthError);
-  assert.throws(() => oauth.validateAccessToken(tokens.access_token, undefined, "vm_01"), OAuthError);
-  const rotated = oauth.token({ grant_type: "refresh_token", refresh_token: tokens.refresh_token });
-  assert.notEqual(rotated.refresh_token, tokens.refresh_token);
-  const grace = oauth.token({ grant_type: "refresh_token", refresh_token: tokens.refresh_token });
-  assert.equal(grace.vm_id, "vm_02");
-  now += 3;
-  assert.throws(() => oauth.token({ grant_type: "refresh_token", refresh_token: tokens.refresh_token }), OAuthError);
-  assert.throws(() => oauth.validateAccessToken(rotated.access_token), OAuthError);
+const ENDPOINT = "https://api.test/api/mcp";
+const agent: Principal = { accountId: "acct", familyId: "family_1" };
+const authenticate = async (token: string) => { if (token !== "good") throw new Error("invalid token"); return agent; };
+const rpc = (adapter: McpAdapter, method: string, params?: unknown, token = "good") => adapter.handle({ method: "POST", url: ENDPOINT, headers: { authorization: `Bearer ${token}` }, body: { jsonrpc: "2.0", id: 1, method, params } });
+const result = (response: { body?: unknown }) => (response.body as any).result;
+
+test("MCP requires a valid bearer and points clients at the protected-resource metadata", async () => {
+  const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => { throw new Error("not called"); }, allowedOrigins: ["https://claude.ai"] });
+  for (const headers of [{}, { authorization: "Bearer bad" }]) {
+    const response = await adapter.handle({ method: "POST", url: ENDPOINT, headers, body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers["www-authenticate"], `Bearer resource_metadata="${ENDPOINT}/.well-known/oauth-protected-resource"`);
+  }
+  assert.equal((await adapter.handle({ method: "POST", url: ENDPOINT, headers: { origin: "https://evil.test", authorization: "Bearer good" }, body: { jsonrpc: "2.0", id: 1, method: "initialize" } })).status, 403);
+  assert.equal(result(await rpc(adapter, "initialize")).protocolVersion, "2025-06-18");
+  assert.equal((await adapter.handle({ method: "POST", url: ENDPOINT, headers: { authorization: "Bearer good" }, body: { jsonrpc: "2.0", method: "notifications/initialized" } })).status, 202);
+  assert.equal((await new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }), maxBodyBytes: 8 }).handle({ method: "POST", url: ENDPOINT, body: "123456789" })).status, 413);
 });
 
-test("MCP Streamable HTTP initialize/list/call and auth/origin mapping", async () => {
-  const oauth = new OAuthAuthorizationServer({ issuer: "https://relay.test" });
-  const verifier = "mcp-verifier";
-  const code = oauth.authorize({ response_type: "code", client_id: "mcp", redirect_uri: "https://client.test/cb", code_challenge: pkceChallenge(verifier) }).code;
-  const token = oauth.token({ grant_type: "authorization_code", code, client_id: "mcp", redirect_uri: "https://client.test/cb", code_verifier: verifier });
-  const adapter = new McpAdapter({ oauth, client: new AgentClient({ transport: new FixtureTransport("local") }), allowedOrigins: ["https://client.test"] });
-  const unauth = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { origin: "https://client.test" }, body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
-  assert.equal(unauth.status, 401);
-  const badOrigin = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { origin: "https://evil.test", authorization: `Bearer ${token.access_token}` }, body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
-  assert.equal(badOrigin.status, 403);
-  const initialize = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { origin: "https://client.test", authorization: `Bearer ${token.access_token}` }, body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
-  assert.equal((initialize.body as any).result.protocolVersion, "2025-06-18");
-  const listed = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: `Bearer ${token.access_token}` }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
-  assert.ok((listed.body as any).result.tools.some((tool: any) => tool.name === "shell.exec"));
-  const called = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: `Bearer ${token.access_token}` }, body: { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "system.info", arguments: {} } } });
-  assert.equal((called.body as any).result.structuredContent.vm_id, token.vm_id);
-  const get = await adapter.handle({ method: "GET", url: "https://relay.test/mcp", headers: { authorization: `Bearer ${token.access_token}` } });
-  assert.equal(get.status, 200);
+test("machine-bound tools gain a machine argument; account tools and the catalog do not", async () => {
+  const tools = mcpTools();
+  assert.equal(tools.length, catalogById.size);
+  for (const tool of tools) {
+    const accountTool = catalogById.get(tool.name as never)!.executor === "account";
+    assert.equal("machine" in (tool.inputSchema.properties ?? {}), !accountTool, tool.name);
+  }
+  assert.ok(!("machine" in (catalogById.get("shell.exec")!.input_schema.properties ?? {})), "the catalog itself is unchanged");
+  const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }) });
+  assert.deepEqual(result(await rpc(adapter, "tools/list")).tools, tools);
 });
 
-test("MCP accepts a durable access-token validator without owning OAuth state", async () => {
-  const adapter = new McpAdapter({
-    endpoint: "https://relay.test/mcp",
-    client: new AgentClient({ transport: new FixtureTransport("local") }),
-    accessTokenValidator: (token) => token === "durable" ? { vm_id: "vm_01" } : (() => { throw new Error("invalid token"); })(),
-  });
-  const response = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: "Bearer durable" }, body: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
-  assert.equal(response.status, 200);
-  const denied = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", headers: { authorization: "Bearer other" }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
-  assert.equal(denied.status, 401);
+test("tools/call runs the agent API in-process as the token's account, on the named machine", async () => {
+  const machineB = new FakeDispatcher(); const ran: RequestEnvelope[] = [];
+  const { deps } = memoryMailbox({ machines: [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic" }], connectors: { m_b: async (request) => { ran.push(request); return await machineB.dispatch(request); } } });
+  const seen: Principal[] = [];
+  const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: (principal, input) => { seen.push(principal); return handleOps(principal, input, deps); } });
+
+  const unnamed = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { path: "/" } }));
+  assert.equal(unnamed.isError, true); assert.match(unnamed.content[0].text, /machine\.list/);
+  assert.equal(seen.length, 0, "nothing runs without a machine");
+
+  const listed = result(await rpc(adapter, "tools/call", { name: "machine.list", arguments: {} }));
+  assert.deepEqual(JSON.parse(listed.content[0].text).map((row: any) => row.name), ["studio", "attic"]);
+
+  const called = result(await rpc(adapter, "tools/call", { name: "system.info", arguments: { machine: "attic" } }));
+  assert.equal(called.isError, undefined, JSON.stringify(called));
+  assert.equal(ran.length, 1); assert.equal(ran[0].operation, "system.info");
+  assert.equal(called.structuredContent.protocol_version, "v1");
+  assert.deepEqual(ran[0].input, {}, "the machine argument is stripped before the operation input is built");
+  assert.ok(seen.every((principal) => principal === agent));
+
+  const missing = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { machine: "nowhere", path: "/" } }));
+  assert.equal(missing.isError, true); assert.equal(missing.structuredContent.code, "machine_not_found");
+  assert.equal(((await rpc(adapter, "tools/call", { name: "nope", arguments: {} })).body as any).error.code, -32602);
 });
 
-test("MCP rejects malformed and oversized request bodies", async () => {
-  const adapter = new McpAdapter({ oauth: new OAuthAuthorizationServer(), maxBodyBytes: 8 });
-  const oversized = await adapter.handle({ method: "POST", url: "https://relay.test/mcp", body: "123456789" });
-  assert.equal(oversized.status, 413);
+test("tools/call resumes continuations and reports API failures as tool errors", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async (_principal, input) => {
+    calls.push(input);
+    if (calls.length === 1) return { status: 202, body: { status: "pending", request_id: "req_1", deadline_at: 123 } };
+    if (input.operation === "account.rename") throw new Error("label must be 3–40 lowercase letters");
+    return { status: 200, body: { response: success({ protocol_version: "v1", request_id: "req_1", operation: "fs.stat", vm_id: "vm_01", deadline_ms: 1, mutation_id: null, input: {} }, { size: 1 }) } };
+  } });
+  const done = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { machine: "attic", path: "/" } }));
+  assert.deepEqual(done.structuredContent, { size: 1 });
+  assert.deepEqual(calls[1], { continue: "req_1", deadline_at: 123 });
+  assert.equal(calls[0].mutation_id, null, "a read carries no mutation id");
+  await rpc(adapter, "tools/call", { name: "shell.exec", arguments: { machine: "attic", command: "true" } });
+  assert.match(String(calls[2].mutation_id), /^mcp_/, "each mutating call is its own mutation");
+  const failed = result(await rpc(adapter, "tools/call", { name: "account.rename", arguments: { name: "X" } }));
+  assert.equal(failed.isError, true); assert.match(failed.content[0].text, /label/);
 });

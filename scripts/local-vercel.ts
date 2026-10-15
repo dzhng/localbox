@@ -16,8 +16,6 @@ if (!process.env.CONVEX_URL) throw new Error("CONVEX_URL is required; start `npx
 process.env.VERCEL ??= "1";
 process.env.LOCALBOX_LOCAL_SERVICES ??= "1";
 process.env.LOCALBOX_API_ORIGIN ??= "http://127.0.0.1:3000";
-process.env.LOCALBOX_OWNER_SUBJECT ??= "local-owner";
-process.env.LOCALBOX_VM_ID ??= "vm_local";
 
 const relay = (await import("../apps/relay/api/[...path].js")).default as (request: Request) => Promise<Response>;
 const mcp = (await import("../apps/mcp/api/[...path].js")).default as (request: Request) => Promise<Response>;
@@ -29,6 +27,9 @@ const server = createServer(async (incoming, outgoing) => {
   try {
     const body = incoming.method === "GET" || incoming.method === "HEAD" ? undefined : await readBody(incoming);
     const original = new URL(incoming.url ?? "/", `http://127.0.0.1:${port}`);
+    // RFC 8414 / RFC 9728 discovery inserts the well-known segment before the issuer's path (as vercel.json rewrites).
+    const inserted = original.pathname.match(/^\/\.well-known\/(oauth-authorization-server|oauth-protected-resource)\/api\/mcp$/);
+    if (inserted) original.pathname = `/api/mcp/.well-known/${inserted[1]}`;
     const isRelay = original.pathname === "/api/relay" || original.pathname.startsWith("/api/relay/") || original.pathname === "/api/auth" || original.pathname.startsWith("/api/auth/") || original.pathname === "/api/v1" || original.pathname.startsWith("/api/v1/");
     const isMcp = original.pathname === "/api/mcp" || original.pathname.startsWith("/api/mcp/");
     if (!isRelay && !isMcp) { outgoing.statusCode = 404; outgoing.end(JSON.stringify({ error: "not_found" })); return; }

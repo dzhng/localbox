@@ -1,27 +1,80 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPkcePair } from "./pkce-helper.js";
-import { createLocalConvexHarness } from "../packages/state/src/index.js";
-import { RepositoryOAuthServer } from "../apps/relay/src/repository-oauth.js";
+import { redirectUriAllowed } from "../apps/relay/src/repository-oauth.js";
+import { form, oauthFixture, pkcePair, RESOURCE } from "./fixtures/oauth-server.js";
 
-test("repository OAuth authorization, refresh, validation, and revocation are durable", async () => {
-  let now = 1_700_000_000_000;
-  const harness = await createLocalConvexHarness({ now: () => now });
-  const repository = harness.client();
-  const owner = await repository.createOwner({ subject: "owner@example.test" });
-  await repository.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
-  const oauth = new RepositoryOAuthServer({ repository, issuer: "https://relay.test", resource: "https://relay.test/mcp", ownerSubject: "owner@example.test", now: () => now, accessTokenTtlSeconds: 30 });
-  const pair = createPkcePair();
-  const started = await oauth.authorize({ response_type: "code", client_id: "localbox-cli", redirect_uri: "http://127.0.0.1:1234/oauth/callback", code_challenge: pair.challenge, code_challenge_method: "S256", resource: "https://relay.test/mcp", state: "state" });
-  assert.equal(started.vm_id, "vm_01");
-  const tokens = await oauth.token({ grant_type: "authorization_code", code: started.code, client_id: "localbox-cli", redirect_uri: started.redirect_uri, code_verifier: pair.verifier, resource: "https://relay.test/mcp" });
-  assert.equal((await oauth.validateAccessToken(tokens.access_token)).vm_id, "vm_01");
-  now += 1_000;
-  const rotated = await oauth.token({ grant_type: "refresh_token", refresh_token: tokens.refresh_token, resource: "https://relay.test/mcp" });
-  assert.notEqual(rotated.refresh_token, tokens.refresh_token);
-  await oauth.revoke(rotated.access_token, "access_token");
-  await assert.rejects(() => oauth.validateAccessToken(rotated.access_token));
-  await assert.rejects(() => oauth.validateAccessToken(tokens.access_token));
-  await harness.restart();
+test("metadata advertises registration, S256 and the account scope", () => {
+  const { oauth } = oauthFixture();
+  const server = oauth.authorizationServerMetadata();
+  assert.equal(server.registration_endpoint, `${RESOURCE}/oauth/register`);
+  assert.deepEqual(server.code_challenge_methods_supported, ["S256"]);
+  assert.deepEqual(server.scopes_supported, ["account"]);
+  assert.deepEqual(oauth.protectedResourceMetadata(), { resource: RESOURCE, authorization_servers: [RESOURCE], bearer_methods_supported: ["header"], scopes_supported: ["account"] });
 });
 
+test("registration takes https or loopback http redirects only", async () => {
+  for (const uri of ["https://claude.ai/cb", "http://127.0.0.1:33418/callback", "http://localhost:8080/cb", "cursor://anysphere.cursor-retrieval/oauth/callback", "vscode://vscode.github-authentication/did-authenticate"]) assert.ok(redirectUriAllowed(uri), uri);
+  for (const uri of ["http://claude.ai/cb", "http://127.0.0.1.evil.test/cb", "javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "https://claude.ai/cb#frag", "https://user:pw@claude.ai/cb", "/relative"]) assert.ok(!redirectUriAllowed(uri), uri);
+  const { call } = oauthFixture();
+  const register = (body: unknown) => call("/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const refused = await register({ client_name: "x", redirect_uris: ["https://ok.test/cb", "http://evil.test/cb"] });
+  assert.equal(refused.status, 400); assert.equal((await refused.json() as any).error, "invalid_redirect_uri");
+  assert.equal((await register({ client_name: "x", redirect_uris: [] })).status, 400);
+  const created = await register({ client_name: "Claude\u0007", redirect_uris: ["https://claude.ai/cb"], token_endpoint_auth_method: "client_secret_post" });
+  assert.equal(created.status, 201);
+  const body = await created.json() as any;
+  assert.equal(body.client_name, "Claude"); assert.equal(body.token_endpoint_auth_method, "none"); assert.deepEqual(body.redirect_uris, ["https://claude.ai/cb"]);
+  for (let index = 1; index < 20; index++) await register({ redirect_uris: ["https://claude.ai/cb"] });
+  assert.equal((await register({ redirect_uris: ["https://claude.ai/cb"] })).status, 429, "registrations are limited per address");
+});
+
+test("codes and tokens are stored hashed in the account shape, and agent sign-in creates no machine", async () => {
+  const { t, signIn, sent } = oauthFixture();
+  const tokens = await signIn("shape@example.com");
+  const rows = await t.run(async (ctx) => ({ codes: await ctx.db.query("authCodes").collect(), tokens: await ctx.db.query("oauthTokens").collect(), machines: await ctx.db.query("machines").collect(), accounts: await ctx.db.query("accounts").collect() }));
+  const stored = JSON.stringify(rows);
+  for (const secret of [tokens.access_token, tokens.refresh_token, sent[0].code]) assert.ok(!stored.includes(secret), "no raw secret is stored");
+  assert.equal(rows.machines.length, 0); assert.equal(rows.accounts.length, 1);
+  const { _id, _creationTime, accessTokenHash, refreshTokenHash, accessExpiresAt, refreshExpiresAt, familyId, ...token } = rows.tokens[0];
+  assert.deepEqual(token, { accountId: rows.accounts[0].accountId, clientId: tokens.clientId, scopes: ["account"], constraints: null });
+  assert.ok(Math.abs(accessExpiresAt - Date.now() - 15 * 60_000) < 5_000); assert.ok(Math.abs(refreshExpiresAt - Date.now() - 30 * 86_400_000) < 5_000);
+});
+
+test("a code is single use and binds client, redirect, resource and the PKCE verifier", async () => {
+  const { t, call, register, authorizeParams, sent, oauth } = oauthFixture();
+  const redirectUri = "https://claude.ai/cb";
+  const client = await register(redirectUri); const other = await register(redirectUri);
+  const codeFor = async () => {
+    const pair = pkcePair(); const params = authorizeParams(client.client_id, redirectUri, pair.challenge);
+    await call("/oauth/authorize", form({ ...params, step: "email", email: "bind@example.com" }));
+    const response = await call("/oauth/authorize", form({ ...params, step: "code", email: "bind@example.com", code: sent.at(-1)!.code }));
+    return { code: new URL(response.headers.get("location")!).searchParams.get("code")!, verifier: pair.verifier };
+  };
+  const exchange = (code: string, fields: Record<string, string>) => call("/oauth/token", form({ grant_type: "authorization_code", code, client_id: client.client_id, redirect_uri: redirectUri, resource: RESOURCE, ...fields }));
+  const mismatches: Array<Record<string, string>> = [{ client_id: other.client_id }, { redirect_uri: "https://claude.ai/cb2" }, { code_verifier: pkcePair().verifier }];
+  for (const wrong of mismatches) {
+    const { code, verifier } = await codeFor();
+    const failed = await exchange(code, { code_verifier: verifier, ...wrong });
+    assert.equal(failed.status, 400); assert.equal((await failed.json() as any).error, "invalid_grant");
+    assert.equal((await exchange(code, { code_verifier: verifier })).status, 400, "a failed exchange burns the code");
+  }
+  const { code, verifier } = await codeFor();
+  assert.equal((await exchange(code, { code_verifier: verifier, resource: "https://other.test/mcp" })).status, 400);
+  await t.run(async (ctx) => { for (const row of await ctx.db.query("authCodes").collect()) await ctx.db.patch(row._id, { expiresAt: Date.now() - 1 }); });
+  assert.equal((await exchange(code, { code_verifier: verifier })).status, 400, "an expired code is refused");
+  await assert.rejects(() => oauth.validateAccessToken("not-a-token"));
+});
+
+test("refresh is bound to its client, and revoke ends the whole family", async () => {
+  const { call, signIn, register, oauth } = oauthFixture();
+  const tokens = await signIn("refresh@example.com"); const other = await register();
+  const refresh = (fields: Record<string, string>) => call("/oauth/token", form({ grant_type: "refresh_token", ...fields }));
+  assert.equal((await refresh({ refresh_token: tokens.refresh_token, client_id: other.client_id })).status, 400);
+  const rotated = await (await refresh({ refresh_token: tokens.refresh_token, client_id: tokens.clientId })).json() as any;
+  assert.equal(rotated.scope, "account");
+  assert.equal((await call("/oauth/revoke", form({ token: rotated.refresh_token, token_type_hint: "refresh_token" }))).status, 200);
+  await assert.rejects(() => oauth.validateAccessToken(rotated.access_token));
+  assert.equal((await refresh({ refresh_token: rotated.refresh_token })).status, 400);
+  assert.equal((await refresh({ refresh_token: "garbage" })).status, 400);
+  assert.equal((await call("/oauth/token", form({ grant_type: "password" }))).status, 400);
+});

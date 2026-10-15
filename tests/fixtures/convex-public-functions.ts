@@ -1,12 +1,9 @@
 // Every public Convex function, the identity kind it requires, and valid-shaped args.
 // tests/convex-auth.test.ts asserts this list matches the exported functions exactly.
-export type Kind = "service" | "machine";
+// "account" functions accept one of the account's machines or a signed-in agent.
+export type Kind = "service" | "machine" | "account";
 export type Call = { name: string; kind: Kind; args: Record<string, unknown>; mutation?: boolean };
 export const calls: Call[] = [
-  { name: "owners:create", kind: "service", mutation: true, args: { subject: "s" } },
-  { name: "owners:list", kind: "service", args: {} },
-  { name: "vms:create", kind: "service", mutation: true, args: { ownerId: "o" } },
-  { name: "vms:list", kind: "service", args: { ownerId: "o" } },
   { name: "relay:enqueue", kind: "service", mutation: true, args: { accountId: "a1", machineId: "m1", requestId: "r", operation: "x", payload: {} } },
   { name: "relay:abandonIfUnclaimed", kind: "service", mutation: true, args: { requestId: "r" } },
   { name: "relay:result", kind: "service", args: { requestId: "r" } },
@@ -14,24 +11,24 @@ export const calls: Call[] = [
   { name: "relay:claim", kind: "machine", mutation: true, args: { requestId: "r" } },
   { name: "relay:complete", kind: "machine", mutation: true, args: { requestId: "r", response: {} } },
   { name: "relay:reportCapacity", kind: "machine", mutation: true, args: { capacity: {} } },
-  { name: "authCodes:create", kind: "service", mutation: true, args: { ownerId: "o", clientId: "c", redirectUri: "u", resource: "r", vmId: "v", codeChallenge: "h" } },
-  { name: "authCodes:consume", kind: "service", mutation: true, args: { code: "c", verifier: "v" } },
-  { name: "oauth:issue", kind: "service", mutation: true, args: { ownerId: "o", vmId: "v", resource: "r", accessToken: "a", refreshToken: "f", accessExpiresAt: 1, refreshExpiresAt: 1 } },
-  { name: "oauth:rotateRefresh", kind: "service", mutation: true, args: { refreshToken: "f" } },
+  { name: "oauth:registerClient", kind: "service", mutation: true, args: { clientName: "c", redirectUris: ["https://c.test/cb"], ip: "127.0.0.1" } },
+  { name: "oauth:client", kind: "service", args: { clientId: "c" } },
+  { name: "oauth:createCode", kind: "service", mutation: true, args: { code: "c", accountId: "a1", clientId: "c", redirectUri: "u", resource: "r", codeChallenge: "h", expiresAt: 1 } },
+  { name: "oauth:exchangeCode", kind: "service", mutation: true, args: { code: "c", clientId: "c", redirectUri: "u", resource: "r", codeVerifier: "v", accessToken: "a", refreshToken: "f", accessExpiresAt: 1, refreshExpiresAt: 1 } },
+  { name: "oauth:rotateRefresh", kind: "service", mutation: true, args: { presentedRefreshToken: "f", accessToken: "a", refreshToken: "g", accessExpiresAt: 1, refreshExpiresAt: 1 } },
+  { name: "oauth:validateAccess", kind: "service", args: { accessToken: "a" } },
   { name: "oauth:revokeToken", kind: "service", mutation: true, args: { token: "f" } },
   { name: "oauth:revokeFamily", kind: "service", mutation: true, args: { familyId: "f" } },
-  { name: "oauth:validateAccess", kind: "service", args: { accessToken: "a", resource: "r" } },
-  { name: "audit:append", kind: "service", mutation: true, args: { operation: "x", outcome: "success" } },
-  { name: "quotas:consume", kind: "service", mutation: true, args: { ownerId: "o", bucket: "b", limit: 1 } },
   { name: "machines:self", kind: "machine", args: {} },
   { name: "signin:start", kind: "service", mutation: true, args: { email: "a@example.com", ip: "127.0.0.1" } },
   { name: "signin:verify", kind: "service", mutation: true, args: { email: "a@example.com", code: "000000", machineName: "machine", ip: "127.0.0.1" } },
+  { name: "signin:verifyForAgent", kind: "service", mutation: true, args: { email: "a@example.com", code: "000000", ip: "127.0.0.1" } },
   { name: "signin:authenticate", kind: "service", args: { secret: "secret" } },
-  { name: "accounts:status", kind: "machine", args: {} },
-  { name: "accounts:rename", kind: "machine", mutation: true, args: { name: "account-name" } },
-  { name: "machines:list", kind: "machine", args: {} },
-  { name: "machines:rename", kind: "machine", mutation: true, args: { machineId: "m1", name: "machine-two" } },
-  { name: "machines:remove", kind: "machine", mutation: true, args: { machineId: "m1" } },
+  { name: "accounts:status", kind: "account", args: {} },
+  { name: "accounts:rename", kind: "account", mutation: true, args: { name: "account-name" } },
+  { name: "machines:list", kind: "account", args: {} },
+  { name: "machines:rename", kind: "account", mutation: true, args: { machineId: "m1", name: "machine-two" } },
+  { name: "machines:remove", kind: "account", mutation: true, args: { machineId: "m1" } },
   { name: "machines:revokeSelf", kind: "machine", mutation: true, args: {} },
   { name: "machines:touch", kind: "service", mutation: true, args: { machineId: "m1" } },
 ];
