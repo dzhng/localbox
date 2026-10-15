@@ -15,7 +15,7 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01, 03–12 and 14 done; 13 done except the production cutover. The whole scenario passes on this Mac: two machines signed in to one account, local, `--machine` and `--placement auto` creates, cross-machine exec, an MCP call, `machine_offline` and recovery, idle sleep with `woke`, a removed machine's connector exiting 0, and on the real A a Node server keeping its PID across sleep (`npm run proof -- 13 --tier l,v`; [evidence](evidence/13-scenario.json)). User docs (README, site, positioning), [SECURITY.md](../../SECURITY.md), the DEVELOPMENT settings and the [two-Mac runbook](two-mac-runbook.md) describe what shipped; the installer refuses macOS below 14. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM and admission stop sandboxes and cold-boot them later, and idle sleep pauses VMs in memory (interim, choices slice 12). Next: the production cutover (orchestrator), then the user's two-Mac run.*
+*Status 2026-10-15: slices 00, 01 and 03–14 done, production cut over 2026-10-15 (Convex `fastidious-lark-430` emptied to the new schema, Vercel `localbox-api` env set; every route answers as designed, and email sign-in answers 503 until Resend is configured). The whole scenario passes on this Mac: two machines signed in to one account, local, `--machine` and `--placement auto` creates, cross-machine exec, an MCP call, `machine_offline` and recovery, idle sleep with `woke`, a removed machine's connector exiting 0, and on the real A a Node server keeping its PID across sleep (`npm run proof -- 13 --tier l,v`; [evidence](evidence/13-scenario.json)). User docs (README, site, positioning), [SECURITY.md](../../SECURITY.md), the DEVELOPMENT settings and the [two-Mac runbook](two-mac-runbook.md) describe what shipped; the installer refuses macOS below 14. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM and admission stop sandboxes and cold-boot them later, and idle sleep pauses VMs in memory (interim, choices slice 12). Next: the production cutover (orchestrator), then the user's two-Mac run.*
 
 **Open user decisions:** Q5b, the locked-Mac sleep fallback (pause in memory, keeping RAM, today); the slice 02 unlocked save/restore run (also 10's unlocked SIGTERM check and 12's hibernate branch, and step 7 of the runbook); the Resend account, API key and DNS for `mail.localbox.sh`.
 
@@ -55,8 +55,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [x] [11 placement and capacity](slices/11-placement-capacity.md)
 - [x] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)
 - [x] [14 agent setup: skill and CLI kept current](slices/14-agent-setup.md)
-- [x] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md), except:
-- [ ] production cutover (orchestrator)
+- [x] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md); production login round trip waits on Resend (blocked, exit 2)
 
 ## Slice graph
 
