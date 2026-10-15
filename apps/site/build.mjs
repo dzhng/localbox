@@ -102,13 +102,14 @@ ${indexed ? `<link rel="canonical" href="${siteUrl}${path}">` : ""}
 ${indexed ? `<script type="application/ld+json">${JSON.stringify(structuredData)}</script>` : ""}`;
 }
 
-const bar = () => `<header class="bar">
+/** The human/agent switch only appears where both views exist. */
+const bar = ({ modeSwitch = true } = {}) => `<header class="bar">
   <a class="brand" href="/" aria-label="Localbox home">${blob("brand-blob")}<span>Localbox</span></a>
   <nav class="nav" aria-label="Sections"><a href="/#how">How it works</a><a href="/#setup">Setup</a><a href="/#faq">FAQ</a></nav>
-  <div class="mode" role="group" aria-label="Who is reading?">
+  ${modeSwitch ? `<div class="mode" role="group" aria-label="Who is reading?">
     <button type="button" data-set-mode="human"><span class="long">I'm a </span>human</button>
     <button type="button" data-set-mode="agent"><span class="long">I'm an </span>agent</button>
-  </div>
+  </div>` : ""}
   <a class="gh" href="${content.links.repo}">GitHub</a>
 </header>`;
 
@@ -226,8 +227,8 @@ function renderNotFound(siteUrl) {
 <head>
 ${head(siteUrl, { title: "Not found — Localbox", description: content.meta.description, indexed: false })}
 </head>
-<body data-page="missing">
-${bar()}
+<body>
+${bar({ modeSwitch: false })}
 <main class="missing" id="main">
   ${blob("lost-blob")}
   <h1>Nothing here.</h1>

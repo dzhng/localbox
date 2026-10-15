@@ -4,11 +4,15 @@
   "installCommand": "",
   "buildCommand": "node build.mjs",
   "outputDirectory": "dist",
-  "trailingSlash": false,
   "redirects": [
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "www.localbox.sh" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.localbox.sh"
+        }
+      ],
       "destination": "https://localbox.sh/$1",
       "permanent": true
     }
@@ -17,23 +21,45 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-        { "key": "Strict-Transport-Security", "value": "max-age=31536000" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        }
       ]
     },
     {
       "source": "/llms.txt",
       "headers": [
-        { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        }
       ]
     },
     {
       "source": "/art/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
     }
   ]
 }

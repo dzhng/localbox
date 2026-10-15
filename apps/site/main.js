@@ -29,7 +29,7 @@ for (const button of document.querySelectorAll("[data-copy]")) {
 
 // The header gains a rule once the page scrolls under it.
 const bar = document.querySelector(".bar");
-const onScroll = () => bar?.classList.toggle("scrolled", scrollY > 8);
+const onScroll = () => bar.classList.toggle("scrolled", scrollY > 8);
 addEventListener("scroll", onScroll, { passive: true });
 onScroll();
 

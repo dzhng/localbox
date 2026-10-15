@@ -23,7 +23,7 @@ test("the page carries the README's install prompt and llms.txt is what it point
 });
 
 test("the build refuses a README whose install prompt drifted", () => {
-  assert.throws(() => site(readme.replace("https://localbox.sh/llms.txt", "https://wrong.example/install")), /agent install prompt|agentPrompt/);
+  assert.throws(() => site(readme.replace("https://localbox.sh/llms.txt", "https://wrong.example/install")), /agentPrompt/);
 });
 
 test("the product page is canonical, sitemapped and crawler-readable", () => {
@@ -59,8 +59,9 @@ test("the landing page offers agent actions instead of a browser download", () =
   assert.doesNotMatch(page, /Download for Mac|\.dmg/);
 });
 
-test("the not-found page is not indexed", () => {
+test("the not-found page is not indexed and has no view switch", () => {
   const missing = site().read("404.html");
   assert.match(missing, /<meta name="robots" content="noindex">/);
+  assert.doesNotMatch(missing, /data-set-mode/);
   assert.doesNotMatch(missing, /rel="canonical"/);
 });

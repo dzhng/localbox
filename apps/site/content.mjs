@@ -137,13 +137,7 @@ Requirements: ${requirements.replaceAll(" · ", ", ")}. Localbox is pre-release;
 
 ## Install
 
-When the user asks you to install Localbox, follow the [agent installation procedure](${links.installation}). In short: resolve one stable tag from GitHub Releases, download the release kit with \`release.json\` and \`SHA256SUMS\`, verify both against the pinned Ed25519 release key, and run the bundled installer. Do not build from source, and there is no browser download.
-
-The installer places the CLI at \`~/.local/bin/localbox\`, registers the host daemon and a six-hour updater with launchd, and installs the global Localbox skill. It carries its own Node runtime and never calls host \`npx\` or \`npm\`. Verify with:
-
-    ~/.local/bin/localbox status
-    ~/.local/bin/localbox skill status --json
-    ~/.local/bin/localbox help --json
+When the user asks you to install Localbox, follow the [agent installation procedure](${links.installation}): resolve one stable tag from GitHub Releases, verify the release kit against the pinned Ed25519 release key, and run the bundled installer. It holds the exact commands and the checks to run afterwards. Do not build from source, and there is no browser download.
 
 ## Use
 
