@@ -48,6 +48,26 @@ interpretation, and do not make any feature depend on MCP.
 - A missing native capability reports itself as unsupported rather than
   silently falling back to a fixture backend.
 
+## Reversible requests act, then report
+
+An explicit agent request chooses the policy. If the requested operation is
+reversible and admitted by its contract, perform it without asking for
+confirmation. Reversibility is the safety mechanism: the agent can inspect the
+result and undo or adjust it.
+
+Every result says exactly what Localbox did, so the agent never has to guess.
+When an operation fills in a default, clamps a value, falls back or makes room,
+the result names what was requested and what was produced. For example: the size
+and machine chosen for a new sandbox, the sandboxes slept so another could start,
+or the restart a resize required and the processes it ended. If an operation can
+produce its output, it does, and reports each problem on that output. Refusal is
+for malformed or ambiguous input, identity conflicts, missing prerequisites,
+destructive actions and execution that failed.
+
+Do not add cleverness the agent didn't ask for. Be direct when the agent
+specifies an operation; be clever only where it delegates the choice, such as
+automatic placement. Failures leave the prior state intact.
+
 ## Destructive actions are explicit
 
 Reset requires `discard_state` and a typed confirmation. Reprovision, update,
