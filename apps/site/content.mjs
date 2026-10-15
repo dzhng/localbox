@@ -1,6 +1,6 @@
 // One copy source for the human page, agent view and /llms.txt.
-export const repo = "https://github.com/dzhng/agent-computer";
-const raw = "https://raw.githubusercontent.com/dzhng/agent-computer/main";
+export const repo = "https://github.com/dzhng/localbox";
+const raw = "https://raw.githubusercontent.com/dzhng/localbox/main";
 
 export const agentPrompt =
   "Install Localbox for me by following https://localbox.sh/llms.txt";

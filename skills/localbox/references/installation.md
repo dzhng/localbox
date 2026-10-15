@@ -12,7 +12,7 @@ Ed25519 manifest before it writes anything. Keep the downloaded directory until
 set -eu
 download=$(mktemp -d)
 cd "$download"
-repo="${LOCALBOX_RELEASE_REPOSITORY:-dzhng/agent-computer}"
+repo="${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}"
 curl --fail --location "https://api.github.com/repos/$repo/releases/latest" -o latest.json
 tag=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"])' latest.json)
 release="https://github.com/$repo/releases/download/$tag"

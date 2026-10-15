@@ -30,7 +30,7 @@ test("the landing page offers agent actions instead of a browser download", () =
   const page = files()("index.html");
   assert.match(page, /claude-cli:\/\/open\?/);
   assert.match(page, /codex:\/\/new\?/);
-  assert.match(page, /href="https:\/\/github\.com\/dzhng\/agent-computer#agent-setup"/);
+  assert.match(page, /href="https:\/\/github\.com\/dzhng\/localbox#agent-setup"/);
   assert.doesNotMatch(page, /Download for Mac|api\.github\.com/);
 });
 

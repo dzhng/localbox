@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const INSTALLER = "skills@1.7.0";
 const KNOWN_PATHS = [".agents/skills/localbox", ".codex/skills/localbox", ".claude/skills/localbox"];
-const SOURCE_URL = "https://github.com/dzhng/agent-computer/tree/main/skills/localbox";
+const SOURCE_URL = "https://github.com/dzhng/localbox/tree/main/skills/localbox";
 
 function bundledSkillSource(): string {
   const here = new URL(".", import.meta.url);

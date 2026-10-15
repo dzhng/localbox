@@ -129,7 +129,7 @@ configured by the installer and refuses unsigned or mismatched artifacts. The
 manifest may carry public-key metadata for inspection, but it is never used as
 the trust root for its own signature. Set `LOCALBOX_RELEASE_REPOSITORY` during
 installation when the release repository is not the default
-`dzhng/agent-computer`. Automatic installs leave the running updater job loaded
+`dzhng/localbox`. Automatic installs leave the running updater job loaded
 while the new active release is switched, so the updater cannot terminate its
 own install process.
 

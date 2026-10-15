@@ -10,7 +10,7 @@ import { verifyManifestSignature, verifyRelease, type ReleaseManifest } from "..
 
 const execFileAsync = promisify(execFile);
 const INSTALL_ROOT = process.env.LOCALBOX_INSTALL_ROOT ?? join(homedir(), "Library/Application Support/Localbox");
-const DEFAULT_RELEASE_REPOSITORY = "dzhng/agent-computer";
+const DEFAULT_RELEASE_REPOSITORY = "dzhng/localbox";
 function releaseRepository(): string { return process.env.LOCALBOX_RELEASE_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? DEFAULT_RELEASE_REPOSITORY; }
 
 export interface UpdateCheck { repository: string; currentVersion?: string; latestVersion: string; tag: string; updateAvailable: boolean; releaseUrl?: string; }
