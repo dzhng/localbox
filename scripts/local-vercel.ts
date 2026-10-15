@@ -29,10 +29,10 @@ const server = createServer(async (incoming, outgoing) => {
   try {
     const body = incoming.method === "GET" || incoming.method === "HEAD" ? undefined : await readBody(incoming);
     const original = new URL(incoming.url ?? "/", `http://127.0.0.1:${port}`);
-    const isRelay = original.pathname === "/api/relay" || original.pathname.startsWith("/api/relay/");
+    const isRelay = original.pathname === "/api/relay" || original.pathname.startsWith("/api/relay/") || original.pathname === "/api/auth" || original.pathname.startsWith("/api/auth/") || original.pathname === "/api/v1" || original.pathname.startsWith("/api/v1/");
     const isMcp = original.pathname === "/api/mcp" || original.pathname.startsWith("/api/mcp/");
     if (!isRelay && !isMcp) { outgoing.statusCode = 404; outgoing.end(JSON.stringify({ error: "not_found" })); return; }
-    const prefix = isRelay ? "/api/relay" : "/api/mcp";
+    const prefix = isRelay ? (original.pathname.startsWith("/api/relay") ? "/api/relay" : "/api") : "/api/mcp";
     original.pathname = original.pathname.slice(prefix.length) || "/";
     const request = new Request(original, { method: incoming.method, headers: forwardedHeaders(incoming.headers, incoming.socket.remoteAddress ?? "127.0.0.1", process.env.LOCAL_VERCEL_TRUST_CLIENT_IP === "1"), body: body === undefined ? undefined : new Uint8Array(body) });
     const response = await (isRelay ? relay : mcp)(request);

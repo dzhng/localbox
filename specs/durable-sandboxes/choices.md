@@ -9,3 +9,8 @@
 - Slice 05: tokens carry `kid` = the RFC 7638 thumbprint of the signing key; `packages/tokens` owns both signing and the JWKS document (`publicJwks`, `scripts/jwks.ts`), so the two can't drift. Convex rejects tokens without a `kid`.
 - Slice 05: the proof stack generates a dev key under `.localbox/proof/keys`, starts Convex, sets `LOCALBOX_JWKS` and `LOCALBOX_API_ORIGIN` after the backend is up (the auth config can't push before they exist) and retries the start when the Convex CLI's version check fails.
 - Slice 05: the list of public Convex functions lives in `tests/fixtures/convex-public-functions.ts`; a test asserts it matches the exported functions exactly, and both the unit test and the proof probe use it.
+- Slice 06: the relay authenticates machine secrets through a service call, then mints a short-lived machine JWT for account catalog operations; secrets never leave Convex in stored form.
+- Slice 06: sign-in codes come from `crypto.getRandomValues` with rejection sampling (the first version used `Math.random`); machine credentials are looked up through a `by_credential_hash` index instead of a table scan.
+- Slice 06: the relay entry creates a Convex client per call. Function instances serve concurrent requests and auth is per client, so a shared client could run one machine's request with another's token.
+- Slice 06: a rate-limited verify answers 429. The account-executor operation table currently lives inline in `apps/relay/api/[...path].ts`; slice 07 moves the agent API (`/api/v1/ops`) into its own module when it adds machine-bound operations.
+- Slice 06: `stack up` wipes the local anonymous Convex once it's ready, because that backend keeps data (including per-IP limits) between runs.

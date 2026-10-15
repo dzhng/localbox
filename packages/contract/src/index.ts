@@ -3,6 +3,7 @@ export const PROTOCOL_VERSION = "v1" as const;
 export const RELEASE_ID = "agent-computer-contract-v1" as const;
 
 export const operationIds = [
+  "account.status", "account.rename", "machine.list", "machine.rename", "machine.remove",
   "system.info", "vm.list", "vm.status", "vm.start", "vm.stop", "vm.pause", "vm.reset", "vm.logs",
   "network.egress", "relay.status", "shell.exec", "job.status", "job.wait", "job.cancel", "job.output",
   "fs.list", "fs.stat", "fs.read", "fs.write", "fs.mkdir", "fs.remove",
@@ -47,6 +48,7 @@ export interface OperationCatalogEntry {
   mutation: boolean;
   idempotency: Idempotency;
   limits: OperationLimits;
+  executor: "account" | "host" | "guest";
 }
 
 const empty = (): JsonSchema => ({ type: "object", properties: {}, additionalProperties: false });
@@ -61,6 +63,11 @@ const arrayOfStrings = (): JsonSchema => ({ type: "array", items: string(), maxI
 const defaultLimits: OperationLimits = { deadline_ms: { min: 1, max: 120_000 }, max_input_bytes: 64 * 1024, max_output_bytes: 4 * 1024 * 1024 };
 
 const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Idempotency]> = {
+  "account.status": ["Show the signed-in account.", empty(), true, false, "none"],
+  "account.rename": ["Rename the signed-in account.", object({ name: string() }, ["name"]), false, true, "required"],
+  "machine.list": ["List machines in the account.", empty(), true, false, "none"],
+  "machine.rename": ["Rename an account machine.", object({ machine_id: string(), name: string() }, ["machine_id", "name"]), false, true, "required"],
+  "machine.remove": ["Remove an account machine.", object({ machine_id: string() }, ["machine_id"]), false, true, "required"],
   "system.info": ["Describe the contract and fake runtime.", empty(), false, false, "none"],
   "vm.list": ["List available virtual machines.", empty(), true, false, "none"],
   "vm.status": ["Read VM lifecycle status.", empty(), true, false, "none"],
@@ -102,7 +109,8 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
 
 export const operationCatalog: OperationCatalogEntry[] = operationIds.map((id) => {
   const [description, input_schema, retryable, mutation, idempotency] = definitions[id];
-  return { id, description, input_schema, retryable, mutation, idempotency, limits: defaultLimits };
+  const executor = id.startsWith("account.") || id.startsWith("machine.") ? "account" : (id.startsWith("vm.") || id === "system.info" || id === "network.egress" || id === "relay.status" ? "host" : "guest");
+  return { id, description, input_schema, retryable, mutation, idempotency, limits: defaultLimits, executor };
 });
 export const catalogById = new Map(operationCatalog.map((entry) => [entry.id, entry]));
 
@@ -201,7 +209,7 @@ export function failure(request: RequestEnvelope, error: ContractError | ErrorBo
   return { ...identityFromRequest(request), ok: false, error: body };
 }
 
-export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; }
+export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; executor: "account" | "host" | "guest"; }
 export function helpSnapshot(): HelpSnapshotEntry[] { return operationCatalog.map(({ limits: _limits, ...entry }) => entry); }
 export function cliHelpSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }
 export function mcpToolsSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }

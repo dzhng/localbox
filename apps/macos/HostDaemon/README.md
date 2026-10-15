@@ -5,7 +5,7 @@ disconnected, paused, and reset states. Lifecycle controls delegate to the
 catalog client and registry; this model carries status only and adds no policy.
 
 `HostDaemon` is the only VM lifecycle owner. `AuthenticatedLocalIPC` is the
-local CLI boundary: it checks the injected Keychain token and forwards the
+local CLI boundary: it checks the injected owner-only IPC token and forwards the
 envelope to `HostDaemon.request` without duplicating lifecycle state.
 
 `UnixDomainSocketServer` is the launchd-compatible local transport around that

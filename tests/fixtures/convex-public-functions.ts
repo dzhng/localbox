@@ -29,4 +29,13 @@ export const calls: Call[] = [
   { name: "quotas:consume", kind: "service", mutation: true, args: { ownerId: "o", bucket: "b", limit: 1 } },
   { name: "status:owner", kind: "service", args: { ownerId: "o" } },
   { name: "machines:self", kind: "machine", args: {} },
+  { name: "signin:start", kind: "service", mutation: true, args: { email: "a@example.com", ip: "127.0.0.1" } },
+  { name: "signin:verify", kind: "service", mutation: true, args: { email: "a@example.com", code: "000000", machineName: "machine", ip: "127.0.0.1" } },
+  { name: "signin:authenticate", kind: "service", args: { secret: "secret" } },
+  { name: "accounts:status", kind: "machine", args: {} },
+  { name: "accounts:rename", kind: "machine", mutation: true, args: { name: "account-name" } },
+  { name: "machines:list", kind: "machine", args: {} },
+  { name: "machines:rename", kind: "machine", mutation: true, args: { machineId: "m1", name: "machine-two" } },
+  { name: "machines:remove", kind: "machine", mutation: true, args: { machineId: "m1" } },
+  { name: "machines:revokeSelf", kind: "machine", mutation: true, args: {} },
 ];

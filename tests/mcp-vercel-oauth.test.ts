@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import handle from "../apps/mcp/api/[...path].js";
-import { createPkcePair } from "../packages/client/src/auth.js";
+import { createPkcePair } from "./pkce-helper.js";
 
 test("MCP Vercel handler exposes OAuth metadata, redirects authorization, and exchanges PKCE", async () => {
   const metadata = await handle(new Request("https://relay.test/.well-known/oauth-protected-resource"));

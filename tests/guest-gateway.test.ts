@@ -51,6 +51,7 @@ test("shell timeout terminates and reports bounded execution", async () => {
 
 test("guest gateway implements every catalog operation", async () => {
   for (const entry of operationCatalog) {
+    if (entry.executor !== "guest") continue;
     const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-catalog-"));
     await mkdir(join(root, "tmp", "fixture"), { recursive: true });
     await mkdir(join(root, "tmp", "remove"), { recursive: true });

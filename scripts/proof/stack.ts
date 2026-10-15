@@ -61,6 +61,8 @@ async function up(machines: string[]): Promise<void> {
     break;
   }
   if (!convexUrl) { killPid(convexPid); throw new Error(`local Convex did not start; ${readFileSafe(convexLog).trim() || "no diagnostic output"}`); }
+  // The anonymous local backend keeps data between runs; start every stack empty so limits and rows never leak across proofs.
+  execFileSync("npx", ["convex", "run", "admin:wipe"], { cwd: root, env: convexEnv, stdio: "ignore" });
   if (!alive(existingLocal) && !alive(pid(localPid))) { writeFileSync(localLog, ""); const child = spawnLogged("npm", ["run", "dev:local"], localLog, { ...process.env, CONVEX_URL: convexUrl, LOCALBOX_DEV_PRINT_CODES: "1", LOCALBOX_API_ORIGIN: "http://127.0.0.1:3000", LOCALBOX_JWT_PRIVATE_KEY: keys.privatePem }); writeFileSync(localPid, String(child.pid)); }
   for (let attempt = 0; attempt < 120 && !readFileSafe(localLog).includes("listening on"); attempt++) { if (!alive(pid(localPid))) throw new Error(`dev:local exited; ${readFileSafe(localLog).trim()}`); await sleep(250); }
   if (!readFileSafe(localLog).includes("listening on")) throw new Error("dev:local did not start listening within 30 s");

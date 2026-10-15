@@ -1,5 +1,99 @@
 [
   {
+    "id": "account.status",
+    "description": "Show the signed-in account.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "account"
+  },
+  {
+    "id": "account.rename",
+    "description": "Rename the signed-in account.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account"
+  },
+  {
+    "id": "machine.list",
+    "description": "List machines in the account.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "account"
+  },
+  {
+    "id": "machine.rename",
+    "description": "Rename an account machine.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "machine_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machine_id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account"
+  },
+  {
+    "id": "machine.remove",
+    "description": "Remove an account machine.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "machine_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machine_id"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account"
+  },
+  {
     "id": "system.info",
     "description": "Describe the contract and fake runtime.",
     "input_schema": {
@@ -9,7 +103,8 @@
     },
     "retryable": false,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "vm.list",
@@ -21,7 +116,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "vm.status",
@@ -33,7 +129,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "vm.start",
@@ -45,7 +142,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "host"
   },
   {
     "id": "vm.stop",
@@ -57,7 +155,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "host"
   },
   {
     "id": "vm.pause",
@@ -69,7 +168,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "host"
   },
   {
     "id": "vm.reset",
@@ -95,7 +195,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "host"
   },
   {
     "id": "vm.logs",
@@ -114,7 +215,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "network.egress",
@@ -126,7 +228,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "relay.status",
@@ -138,7 +241,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "host"
   },
   {
     "id": "shell.exec",
@@ -174,7 +278,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "job.status",
@@ -194,7 +299,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "job.wait",
@@ -219,7 +325,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "job.cancel",
@@ -239,7 +346,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "job.output",
@@ -259,7 +367,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "fs.list",
@@ -279,7 +388,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "fs.stat",
@@ -299,7 +409,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "fs.read",
@@ -319,7 +430,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "fs.write",
@@ -348,7 +460,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "fs.mkdir",
@@ -371,7 +484,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "fs.remove",
@@ -394,7 +508,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.list_tabs",
@@ -406,7 +521,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "browser.open",
@@ -426,7 +542,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.navigate",
@@ -451,7 +568,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.focus",
@@ -471,7 +589,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.close",
@@ -491,7 +610,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.screenshot",
@@ -511,7 +631,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "browser.click",
@@ -539,7 +660,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.type",
@@ -563,7 +685,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "browser.key",
@@ -588,7 +711,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "desktop.status",
@@ -600,7 +724,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "desktop.screenshot",
@@ -612,7 +737,8 @@
     },
     "retryable": true,
     "mutation": false,
-    "idempotency": "none"
+    "idempotency": "none",
+    "executor": "guest"
   },
   {
     "id": "desktop.click",
@@ -639,7 +765,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "desktop.move",
@@ -662,7 +789,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "desktop.scroll",
@@ -692,7 +820,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "desktop.key",
@@ -712,7 +841,8 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   },
   {
     "id": "desktop.type",
@@ -731,6 +861,7 @@
     },
     "retryable": false,
     "mutation": true,
-    "idempotency": "required"
+    "idempotency": "required",
+    "executor": "guest"
   }
 ]

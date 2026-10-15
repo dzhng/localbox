@@ -102,6 +102,9 @@ export class FakeDispatcher {
 }
 
 export function sampleInput(operation: OperationId): Json {
+  if (operation === "account.rename") return { name: "account-name" };
+  if (operation === "machine.rename") return { machine_id: "machine_fixture", name: "machine-name" };
+  if (operation === "machine.remove") return { machine_id: "machine_fixture" };
   if (operation === "vm.reset") return { discard_state: true, confirm: "RESET" };
   if (["shell.exec"].includes(operation)) return { command: "true" };
   if (["job.status", "job.wait", "job.cancel", "job.output"].includes(operation)) return { job_id: "job_fixture" };

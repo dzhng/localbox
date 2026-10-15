@@ -1,8 +1,5 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   catalogById, catalogSnapshot, cliHelpSnapshot, mcpToolsSnapshot,
   ContractError, failure, PROTOCOL_VERSION, RELEASE_ID, requestFromInvocation, validateRequest,
@@ -10,12 +7,14 @@ import {
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, type TransportKind } from "../../../packages/client/src/index.js";
-import { authorizationUrl, createPkcePair, exchangeAuthorizationCode, refreshAccessToken, type OAuthTokenResponse } from "../../../packages/client/src/auth.js";
 import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { SkillManager } from "./skill-manager.js";
 import { checkForUpdate, installLatest } from "./updater.js";
-import { machinePaths, PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
+import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
+import { readCredentials, writeCredentials, deleteCredentials, type Credentials } from "../../../packages/credentials/src/index.js";
+import { machineName } from "../../../packages/names/src/index.js";
+import { hostname } from "node:os";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const args = process.argv.slice(2);
@@ -48,8 +47,10 @@ function printUsage(): void {
     "  recovery probe [--json]         Emit injected recovery timeline",
     "  vm start|stop|pause [--json]    Change VM lifecycle",
     "  shell exec [--json] -- CMD ...  Execute a guest shell command",
-    "  auth login [TOKEN]               Authenticate remote transport",
-    "  login [TOKEN]                    Alias for auth login",
+    "  login --email EMAIL [--code CODE]  Sign in with an email code",
+    "  logout                            Revoke this machine",
+    "  machines list|rename|remove       Manage account machines",
+    "  account show|rename               Manage the account",
     "  mcp install [--json]             Print optional MCP installation config",
     "  update check|install [--json]    Check or install the latest GitHub release",
     "  skill status|install|update|uninstall  Manage the global Localbox skill",
@@ -68,68 +69,11 @@ async function writeSnapshots(): Promise<void> {
   process.stdout.write("Generated contract snapshots.\n");
 }
 
-function authPath(): string { return machinePaths().credentials; }
-interface SavedAuth { token: string; refresh_token?: string; expires_at?: number; saved_at: string }
-async function saveAuth(token: string, refreshToken?: string, expiresIn?: number): Promise<void> {
-  const serialized = JSON.stringify({ token, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(expiresIn ? { expires_at: Date.now() + expiresIn * 1000 } : {}), saved_at: new Date().toISOString() } satisfies SavedAuth);
-  const path = authPath(); await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${serialized}\n`, { mode: 0o600 });
-}
-
-async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: string }> {
-  const authorizeEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/authorize`;
-  const tokenEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/token`;
-  const resource = PUBLIC_MCP_RESOURCE;
-  const clientId = process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli";
-  const pair = createPkcePair(); const state = randomBytes(18).toString("base64url"); let redirectUri = "";
-  const callback = createServer();
-  const code = await new Promise<string>((resolveCode, reject) => {
-    callback.once("error", reject);
-    callback.on("request", (request, response) => {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      if (url.pathname !== "/oauth/callback") { response.writeHead(404); response.end(); return; }
-      if (url.searchParams.get("state") !== state) { response.writeHead(400); response.end("state mismatch"); reject(new Error("OAuth state mismatch")); return; }
-      const value = url.searchParams.get("code"); if (!value) { response.writeHead(400); response.end("missing code"); reject(new Error("OAuth callback did not contain a code")); return; }
-      response.writeHead(200, { "content-type": "text/plain" }); response.end("Localbox login complete. You can close this window."); resolveCode(value); callback.close();
-    });
-    callback.listen(0, "127.0.0.1", () => {
-      const address = callback.address(); if (!address || typeof address === "string") { reject(new Error("OAuth callback listener failed")); return; }
-      redirectUri = `http://127.0.0.1:${address.port}/oauth/callback`;
-      const url = authorizationUrl({ endpoint: authorizeEndpoint, clientId, redirectUri, resource, challenge: pair.challenge, state });
-      process.stdout.write(`Open this URL to sign in:\n${url}\n`);
-      try { if (process.platform === "darwin") execFileSync("open", [url], { stdio: "ignore" }); } catch { /* copy the URL into a browser */ }
-    });
-  });
-  if (!redirectUri) throw new Error("OAuth callback listener did not produce a redirect URI");
-  return exchangeAuthorizationCode({ endpoint: tokenEndpoint, code, clientId, redirectUri, verifier: pair.verifier, resource });
-}
-async function hasAuth(): Promise<boolean> {
-  if (process.env.LOCALBOX_TOKEN) return true;
-  try { const value = JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }; return typeof value.token === "string" && value.token.length > 0; }
-  catch { return false; }
-}
-
-async function readAuth(): Promise<SavedAuth | undefined> {
-  try { return JSON.parse(await readFile(authPath(), "utf8")) as SavedAuth; } catch { return undefined; }
-}
-
 async function makeClient(): Promise<AgentClient> {
   const kind: TransportKind = process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local";
   if (kind === "remote") {
-    const initial = await readAuth();
-    let credentials = initial;
-    const accessTokenProvider = async () => {
-      if (process.env.LOCALBOX_TOKEN) return process.env.LOCALBOX_TOKEN;
-      if (credentials?.refresh_token && credentials.expires_at && credentials.expires_at <= Date.now() + 30_000) {
-        const tokenEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/token`;
-        const resource = PUBLIC_MCP_RESOURCE;
-        const refreshed = await refreshAccessToken({ endpoint: tokenEndpoint, refreshToken: credentials.refresh_token, clientId: process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli", resource });
-        credentials = { token: refreshed.access_token, refresh_token: refreshed.refresh_token ?? credentials.refresh_token, expires_at: refreshed.expires_in ? Date.now() + refreshed.expires_in * 1000 : undefined, saved_at: new Date().toISOString() };
-        await saveAuth(credentials.token, credentials.refresh_token, refreshed.expires_in);
-      }
-      return credentials?.token;
-    };
-    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: PUBLIC_RELAY_URL, accessTokenProvider }) });
+    const credentials = await readCredentials(machinePaths().credentials);
+    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: PUBLIC_RELAY_URL, accessToken: credentials?.secret }) });
   }
   if (kind === "local" && process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") {
     return new AgentClient({ transport: new LocalIPCTransport() });
@@ -141,8 +85,18 @@ async function makeClient(): Promise<AgentClient> {
   return new AgentClient({ transport });
 }
 
-async function readSavedToken(): Promise<string | undefined> {
-  return (await readAuth())?.token;
+async function apiCall(path: string, method: string, body?: Record<string, unknown>): Promise<any> {
+  const credentials = await readCredentials(machinePaths().credentials);
+  const response = await fetch(`${PUBLIC_API_ORIGIN}${path}`, { method, headers: { "content-type": "application/json", ...(credentials ? { authorization: `Bearer ${credentials.secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error_description ?? result.error ?? `request failed (${response.status})`); return result;
+}
+function printCatalogResult(result: any): void {
+  if (json) { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); return; }
+  if (Array.isArray(result)) { for (const machine of result) process.stdout.write(`${machine.machineId ?? machine.machine_id}  ${machine.name ?? machine.machine_name}\n`); return; }
+  if (result?.name && result?.email) { process.stdout.write(`${result.name} (${result.email})\n`); return; }
+  if (result?.machine_id && result?.removed) { process.stdout.write(`Removed ${result.machine_id}.\n`); return; }
+  if (result?.machine_id && result?.machine_name) { process.stdout.write(`Renamed ${result.machine_id} to ${result.machine_name}.\n`); return; }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 async function vmProbe(): Promise<void> {
@@ -204,15 +158,31 @@ async function main(): Promise<void> {
   if (group === "contract" && subcommand === "generate-snapshots") { await writeSnapshots(); return; }
   if (group === "vm" && subcommand === "probe") { await vmProbe(); return; }
   if (group === "recovery" && subcommand === "probe") { process.stdout.write(`${JSON.stringify(recoveryProbe(), null, 2)}\n`); return; }
-  if ((group === "auth" && subcommand === "login") || group === "login") {
-    let token = (group === "login" ? subcommand : rest[0]) ?? process.env.LOCALBOX_TOKEN;
-    let refreshToken: string | undefined; let expiresIn: number | undefined;
-    if (!token) {
-      const credentials: OAuthTokenResponse = await loginWithPkce(); token = credentials.access_token; refreshToken = credentials.refresh_token; expiresIn = credentials.expires_in;
+  if (group === "login") {
+    const email = optionValue(positional.slice(1), "--email"); const code = optionValue(positional.slice(1), "--code");
+    if (!email) throw new Error("login requires --email");
+    if (!code) { await apiCall("/api/auth/email/start", "POST", { email }); process.stdout.write(`Code sent to ${email}. Ask the user for the 6-digit code, then run: localbox login --email ${email} --code NNNNNN\n`); return; }
+    const result = await apiCall("/api/auth/email/verify", "POST", { email, code, machine_name: machineName(hostname()) });
+    const current = await readCredentials(machinePaths().credentials); if (current && current.account_id !== result.account_id) throw new Error(`this Mac is already signed in to account ${current.account_name}`);
+    const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret };
+    await writeCredentials(machinePaths().credentials, credentials);
+    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
+    if (json) process.stdout.write(`${JSON.stringify(facts, null, 2)}\n`); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.\n`);
+    return;
+  }
+  if (group === "logout") { await apiCall("/api/auth/logout", "POST"); await deleteCredentials(machinePaths().credentials); process.stdout.write(json ? `${JSON.stringify({ revoked: true })}\n` : "Logged out.\n"); return; }
+  if (group === "machines" && subcommand) {
+    let machineId = rest[0] ?? optionValue(rest, "--machine-id");
+    if (subcommand !== "list" && machineId && !machineId.startsWith("machine_")) {
+      const machines = await apiCall("/api/v1/ops", "POST", { operation: "machine.list", input: {} }) as any[];
+      machineId = machines.find((machine) => machine.machineId === machineId || machine.name === machineId)?.machineId ?? machineId;
     }
-    if (!token) { process.stderr.write("login requires an OAuth access token or a successful browser login\n"); process.exitCode = 2; return; }
-    await saveAuth(token, refreshToken, expiresIn);
-    printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local" })); return;
+    const result = subcommand === "list" ? await apiCall("/api/v1/ops", "POST", { operation: "machine.list", input: {} }) : subcommand === "rename" ? await apiCall("/api/v1/ops", "POST", { operation: "machine.rename", input: { machine_id: machineId, name: optionValue(rest, "--name") ?? rest[1] } }) : await apiCall("/api/v1/ops", "POST", { operation: "machine.remove", input: { machine_id: machineId } });
+    printCatalogResult(result); return;
+  }
+  if (group === "account" && subcommand) {
+    const result = subcommand === "show" ? await apiCall("/api/v1/ops", "POST", { operation: "account.status", input: {} }) : await apiCall("/api/v1/ops", "POST", { operation: "account.rename", input: { name: optionValue(rest, "--name") ?? rest[0] } });
+    printCatalogResult(result); return;
   }
   if (group === "mcp" && subcommand === "install") {
     const endpoint = PUBLIC_MCP_RESOURCE;

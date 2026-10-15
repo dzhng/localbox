@@ -18,8 +18,9 @@ For the complete bootstrap, read [installation](references/installation.md).
 ## Everyday use
 
 Use `localbox vm start`, `localbox shell exec -- <command>`, and
-`localbox status`. The CLI works without MCP. Run `localbox auth login`
-before remote use; configure MCP OAuth only when a client needs tool discovery.
+`localbox status`. The CLI works without MCP. Run `localbox login --email
+<address>` before remote use, then repeat it with the six-digit code from the
+user; configure MCP OAuth only when a client needs tool discovery.
 Use `localbox update check` to inspect GitHub Releases and
 `localbox update install` to install a verified update. The installed launchd
 job performs the same check automatically every six hours. Use
@@ -36,7 +37,8 @@ For replacement, rollback, and unmanaged-skill rules, read
 After sleep or a network change, rerun `localbox status` and wait for the
 relay to reconnect. Reads may retry; never blindly repeat a mutation after an
 `operation_uncertain` result. Use the same mutation ID or query status first.
-Use `vm pause` for a temporary stop, `auth login` after revoke/expiry, and
+Use `vm pause` for a temporary stop, `localbox login` after a machine is
+revoked, and
 `vm reset --discard-state` only with explicit confirmation when all guest state
 should be removed.
 

@@ -14,7 +14,7 @@ test("catalog has unique operation IDs and matching CLI/MCP identity", () => {
   assert.equal(new Set(operationCatalog.map((x) => x.id)).size, operationCatalog.length);
   assert.deepEqual(cliHelpSnapshot().map((x) => x.id), mcpToolsSnapshot().map((x) => x.id));
   assert.deepEqual(cliHelpSnapshot(), mcpToolsSnapshot());
-  assert.equal(operationCatalog.length, 37);
+  assert.equal(operationCatalog.length, 42);
 });
 
 test("committed snapshots are generated from the same catalog", async () => {
@@ -100,10 +100,6 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   const confirmed = spawnSync(process.execPath, ["bin/localbox.js", "invoke", "vm.reset", "--input-json", '{"discard_state":true,"confirm":"RESET"}', "--mutation-id", "reset-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(confirmed.status, 0);
   assert.equal(JSON.parse(confirmed.stdout).ok, true);
-
-  const login = spawnSync(process.execPath, ["bin/localbox.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_MACHINE_ROOT: "/tmp/localbox-test-machine" } });
-  assert.equal(login.status, 0);
-  assert.equal(JSON.parse(login.stdout).result.authenticated, true);
 
   const mcp = spawnSync(process.execPath, ["bin/localbox.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_API_ORIGIN: "https://computer.example" } });
   assert.equal(mcp.status, 0);

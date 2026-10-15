@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPkcePair } from "../packages/client/src/auth.js";
+import { createPkcePair } from "./pkce-helper.js";
 import { createLocalConvexHarness } from "../packages/state/src/index.js";
 import { RepositoryOAuthServer } from "../apps/relay/src/repository-oauth.js";
 
