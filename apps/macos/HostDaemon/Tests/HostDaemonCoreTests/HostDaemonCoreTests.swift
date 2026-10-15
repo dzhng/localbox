@@ -154,18 +154,24 @@ final class HostDaemonCoreTests: XCTestCase {
         func frame(_ value: Data) -> Data { var size = UInt32(value.count).bigEndian; return Data(bytes: &size, count: 4) + value }
         try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"ready","channel_epoch":7}"#.utf8)))
         try await channel.waitUntilReady()
-        let guest = Task.detached { () throws -> [String: Any] in
-            let header = try toGuest.fileHandleForReading.read(upToCount: 4)!
-            let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-            let sent = try JSONSerialization.jsonObject(with: try toGuest.fileHandleForReading.read(upToCount: Int(length))!) as! [String: Any]
-            try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"response","channel_epoch":7,"response":{"ok":true}}"#.utf8)))
-            return sent
+        let guest = Task.detached { () throws -> (hello: [String: Any], sent: [String: Any]) in
+            func read() throws -> [String: Any] {
+                let header = try toGuest.fileHandleForReading.read(upToCount: 4)!
+                let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+                return try JSONSerialization.jsonObject(with: try toGuest.fileHandleForReading.read(upToCount: Int(length))!) as! [String: Any]
+            }
+            let hello = try read(); let sent = try read()
+            try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"response","channel_epoch":8,"response":{"ok":true}}"#.utf8)))
+            return (hello, sent)
         }
         let response = try await channel.send(Data(#"{"request_id":"r1"}"#.utf8))
         XCTAssertEqual(String(data: response, encoding: .utf8), #"{"ok":true}"#)
-        let sent = try await guest.value
+        let (hello, sent) = try await guest.value
+        XCTAssertEqual(hello["kind"] as? String, "hello")
+        XCTAssertEqual(hello["channel_epoch"] as? Int, 8, "hello moves the guest one epoch past the one it reported")
+        XCTAssertNotNil(hello["wall_clock_ms"] as? Int)
         XCTAssertEqual(sent["kind"] as? String, "request")
-        XCTAssertEqual(sent["channel_epoch"] as? Int, 7, "requests carry the epoch the guest announced")
+        XCTAssertEqual(sent["channel_epoch"] as? Int, 8, "requests carry the epoch the host moved to, one past the guest's")
         XCTAssertEqual((sent["request"] as? [String: Any])?["request_id"] as? String, "r1")
         await channel.close()
     }

@@ -67,3 +67,24 @@ vmlab internals and the counter-server script.
 If save/restore fails for every channel option, stop the build here and report.
 Falling back to stop-instead-of-hibernate is a product decision (Q5b), not the
 implementer's.
+
+## Findings so far (2026-10-15; the go/no-go is still open)
+
+- **Built:** NAT with a persisted MAC, a persisted machine identifier,
+  `validateSaveRestoreSupport()`, atomic `save(to:)` and `restore(from:)` on
+  `AppleVirtualizationBackend`, the in-band `hello` (the guest adopts newer epochs,
+  steps its clock and sets its hostname; a fixture guest never touches the host's
+  clock or hostname), and `localbox-vmlab hibernate` (save in one process, restore
+  and an identity sweep in another). Probe: `npm run proof -- 02 --tier u,v`.
+- **Channel:** vsock (slice 01). The backend re-dials it after restore and waits
+  for the guest's ready frame before sending.
+- **Locked screen:** `saveMachineStateTo` fails with "permission denied" while the
+  console session is locked. Apple's VM service creates the saved-state encryption
+  key with `SecKeyCreateRandomKey`, which returns `errSecInteractionNotAllowed`
+  then (`evidence/02-locked-save.log`). Signing identity is not the cause. So a
+  Mac whose screen is locked (most headless Macs) cannot hibernate sandboxes. This
+  feeds Q5b: on a locked Mac, sleep must fall back to keeping the sandbox running
+  or stopping it, which is the user's product decision.
+- **Pending (needs an unlocked screen):** the save/restore run (PID survives,
+  counter, NAT, clock within 2 s), save and restore times and file sizes, and the
+  restore-identity sweep. The probe's unlocked check reports `blocked:` until then.

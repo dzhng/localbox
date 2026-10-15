@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { artifactDigests, buildImageManifest, digestJson, type ImageBuildPins } from "../src/manifest.js";
 import { DUET_REQUIRED_TOOL_INVENTORY } from "../src/duet-inventory.js";
 
@@ -32,11 +32,17 @@ function run(command: string, args: string[], options: { stdout?: "pipe" | "inhe
   });
 }
 
+async function filesUnder(directory: string): Promise<string[]> {
+  const entries = await readdir(join(root, directory), { withFileTypes: true, recursive: true }).catch(() => []);
+  return entries.filter((entry) => entry.isFile()).map((entry) => relative(root, join(entry.parentPath, entry.name)));
+}
+
 async function inputDigest(): Promise<string> {
   const hash = createHash("sha256");
-  for (const path of ["packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile"]) {
-    hash.update(path); hash.update(await readFile(join(root, path)));
-  }
+  // Everything the Dockerfile COPYs is an input: a changed guest agent in dist/ must produce a new image.
+  const copied = ["packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
+    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/"))];
+  for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
   hash.update(baseImage);
   return `sha256:${hash.digest("hex")}`;

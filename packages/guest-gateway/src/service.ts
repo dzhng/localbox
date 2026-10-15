@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { hostname as systemHostname } from "node:os";
 import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
@@ -23,6 +24,10 @@ export interface GuestServiceOptions {
   output: Writable;
   gateway: GuestGateway;
   channelEpoch: number;
+  /** Called when a newer host hello supplies the guest wall clock. */
+  setClock?: (wallClockMs: number) => void;
+  /** Called when a newer host hello supplies the guest hostname. */
+  setHostname?: (hostname: string) => void;
   inventoryNames?: readonly string[];
   readinessMarker?: string;
   maxPending?: number;
@@ -45,7 +50,9 @@ export class GuestService {
   private readonly input: Readable;
   private readonly output: Writable;
   private readonly gateway: GuestGateway;
-  private readonly channelEpoch: number;
+  private channelEpoch: number;
+  private readonly setClock: (wallClockMs: number) => void;
+  private readonly setHostname: (hostname: string) => void;
   private readonly inventoryNames: readonly string[];
   private readonly readinessMarker: string;
   private readonly maxPending: number;
@@ -68,6 +75,8 @@ export class GuestService {
     this.output = options.output;
     this.gateway = options.gateway;
     this.channelEpoch = options.channelEpoch;
+    this.setClock = options.setClock ?? (() => undefined);
+    this.setHostname = options.setHostname ?? (() => undefined);
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
     this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
     this.maxPending = options.maxPending ?? 32;
@@ -136,6 +145,16 @@ export class GuestService {
   }
 
   private async handle(frame: GuestFrame): Promise<void> {
+    if (frame.kind === "hello") {
+      if (!Number.isInteger(frame.channel_epoch) || frame.channel_epoch < this.channelEpoch) return;
+      if (frame.channel_epoch > this.channelEpoch) {
+        this.channelEpoch = frame.channel_epoch;
+        this.setClock(frame.wall_clock_ms);
+        if (frame.hostname) this.setHostname(frame.hostname);
+        await fs.writeFile(this.readinessMarker, `${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
+      }
+      return;
+    }
     if (frame.kind === "cancel") {
       if (frame.channel_epoch !== this.channelEpoch) return;
       this.aborts.get(frame.request_id)?.abort();

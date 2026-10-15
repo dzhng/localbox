@@ -1,4 +1,5 @@
 import { stdin, stdout, stderr } from "node:process";
+import { spawnSync } from "node:child_process";
 import { GuestGateway, runGuestService } from "../../../packages/guest-gateway/src/index.js";
 import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
@@ -24,7 +25,13 @@ export async function main(): Promise<void> {
     ? productionDesktopHandlers({ cdpUrl: process.env.LOCALBOX_CDP_URL, env: { DISPLAY: process.env.DISPLAY ?? ":0" } })
     : undefined;
   const gateway = new GuestGateway({ root, extraHandlers });
-  await runGuestService({ input: stdin, output: stdout, gateway, channelEpoch, inventoryNames: inventory, readinessMarker, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  // In the VM the agent runs as root and owns the whole system, so the host's hello steps the clock after a
+  // restore and sets the hostname (the sandbox name). A fixture guest (slice 03) shares the host's clock and
+  // hostname, so it never touches them.
+  const ownsSystem = root === "/" && process.platform === "linux";
+  const setClock = ownsSystem ? (wallClockMs: number) => { spawnSync("date", ["-u", "-s", `@${(wallClockMs / 1000).toFixed(3)}`], { stdio: "ignore" }); } : undefined;
+  const setHostname = ownsSystem ? (name: string) => { spawnSync("hostname", [name], { stdio: "ignore" }); } : undefined;
+  await runGuestService({ input: stdin, output: stdout, gateway, channelEpoch, inventoryNames: inventory, readinessMarker, setClock, setHostname, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -14,8 +14,9 @@ public struct AppleVMConfiguration: Sendable {
     public let consoleLogURL: URL?
     /// Extra kernel arguments for lab diagnostics (vmlab `--kernel-args`).
     public let extraKernelArguments: String
-    public init(kernelURL: URL, initialRamdiskURL: URL, diskURL: URL, templateDiskURL: URL? = nil, cpuCount: Int = 4, memorySize: UInt64 = 4 * 1024 * 1024 * 1024, consoleLogURL: URL? = nil, extraKernelArguments: String = "") {
-        self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.diskURL = diskURL; self.templateDiskURL = templateDiskURL; self.cpuCount = cpuCount; self.memorySize = memorySize; self.consoleLogURL = consoleLogURL; self.extraKernelArguments = extraKernelArguments
+    public let identityDirectoryURL: URL?
+    public init(kernelURL: URL, initialRamdiskURL: URL, diskURL: URL, templateDiskURL: URL? = nil, cpuCount: Int = 4, memorySize: UInt64 = 4 * 1024 * 1024 * 1024, consoleLogURL: URL? = nil, extraKernelArguments: String = "", identityDirectoryURL: URL? = nil) {
+        self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.diskURL = diskURL; self.templateDiskURL = templateDiskURL; self.cpuCount = cpuCount; self.memorySize = memorySize; self.consoleLogURL = consoleLogURL; self.extraKernelArguments = extraKernelArguments; self.identityDirectoryURL = identityDirectoryURL
     }
 }
 
@@ -28,7 +29,7 @@ final class GuestStopObserver: NSObject, VZVirtualMachineDelegate, @unchecked Se
 }
 
 /// Native lifecycle owner. A named virtio-console port carries GuestService frames.
-public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
+public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider {
     private let image: AppleVMConfiguration
     private var machine: VZVirtualMachine?
     private var guestChannel: FramedFileHandleGuestChannel?
@@ -43,6 +44,17 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
     public init(image: AppleVMConfiguration) { self.image = image }
     public func start() async throws {
         guard FileManager.default.fileExists(atPath: image.kernelURL.path), FileManager.default.fileExists(atPath: image.initialRamdiskURL.path), FileManager.default.fileExists(atPath: image.diskURL.path) else { throw HostDaemonError.unsupported("pinned ARM64 kernel, initrd, and persistent disk are required") }
+        let configuration = try makeConfiguration()
+        try configuration.validate()
+        let vm = VZVirtualMachine(configuration: configuration, queue: queue)
+        nonisolated(unsafe) let unsafeVM = vm
+        queue.sync { unsafeVM.delegate = stopObserver }
+        try await startMachine(vm)
+        machine = vm
+        try await attachGuest(vm)
+    }
+
+    private func makeConfiguration() throws -> VZVirtualMachineConfiguration {
         let configuration = VZVirtualMachineConfiguration()
         let boot = VZLinuxBootLoader(kernelURL: image.kernelURL)
         boot.initialRamdiskURL = image.initialRamdiskURL
@@ -52,7 +64,10 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
         configuration.memorySize = image.memorySize
         let storage = try VZDiskImageStorageDeviceAttachment(url: image.diskURL, readOnly: false)
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: storage)]
-        configuration.networkDevices = [VZVirtioNetworkDeviceConfiguration()]
+        let network = VZVirtioNetworkDeviceConfiguration()
+        network.attachment = VZNATNetworkDeviceAttachment()
+        network.macAddress = try loadOrCreateMAC()
+        configuration.networkDevices = [network]
         configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         configuration.socketDevices = [VZVirtioSocketDeviceConfiguration()]
         if let log = image.consoleLogURL {
@@ -61,15 +76,19 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
             serial.attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: nil, fileHandleForWriting: try FileHandle(forWritingTo: log))
             configuration.serialPorts = [serial]
         }
-        try configuration.validate()
-        let vm = VZVirtualMachine(configuration: configuration, queue: queue)
-        nonisolated(unsafe) let unsafeVM = vm
-        queue.sync { unsafeVM.delegate = stopObserver }
-        try await startMachine(vm)
-        machine = vm
+        let platform = VZGenericPlatformConfiguration()
+        platform.machineIdentifier = try loadOrCreateMachineIdentifier()
+        configuration.platform = platform
+        return configuration
+    }
+
+    private func attachGuest(_ vm: VZVirtualMachine) async throws {
         let connection = try await connectGuest(vm)
         guestConnection = connection
-        guestChannel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true))
+        let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true))
+        // A channel is handed out only once the guest announced readiness and received its hello.
+        try await channel.waitUntilReady()
+        guestChannel = channel
     }
     public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
     public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); try await stopMachine(machine); guestConnection?.close(); self.guestConnection = nil; self.guestChannel = nil; self.machine = nil }
@@ -93,6 +112,38 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
         }
     }
 
+    public func validateSaveRestoreSupport() async throws {
+        let configuration = try makeConfiguration()
+        try configuration.validate()
+        try configuration.validateSaveRestoreSupport()
+    }
+
+    public func save(to url: URL) async throws {
+        guard let machine else { throw HostDaemonError.invalidState("VM is not running") }
+        try await pauseMachine(machine)
+        do {
+            let temporary = url.deletingLastPathComponent().appendingPathComponent(".save-\(UUID().uuidString).vzvmsave")
+            try await saveMachineState(machine, to: temporary)
+            try atomicReplace(temporary, at: url)
+            try await stopMachine(machine)
+            await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil; self.machine = nil
+        } catch {
+            try? await resumeMachine(machine)
+            throw error
+        }
+    }
+
+    public func restore(from url: URL) async throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { throw HostDaemonError.invalidState("saved machine state is missing") }
+        let configuration = try makeConfiguration(); try configuration.validate(); try configuration.validateSaveRestoreSupport()
+        let vm = VZVirtualMachine(configuration: configuration, queue: queue)
+        nonisolated(unsafe) let unsafeVM = vm; queue.sync { unsafeVM.delegate = stopObserver }
+        try await restoreMachineState(vm, from: url)
+        machine = vm
+        try await resumeMachine(vm)
+        try await attachGuest(vm)
+    }
+
     private func startMachine(_ machine: VZVirtualMachine) async throws {
         try await onQueue(machine) { vm, done in vm.start { done($0.map { () }) } }
     }
@@ -104,6 +155,34 @@ public actor AppleVirtualizationBackend: VMBackend, GuestChannelProvider {
     }
     private func resumeMachine(_ machine: VZVirtualMachine) async throws {
         try await onQueue(machine) { vm, done in vm.resume { done($0.map { () }) } }
+    }
+    private func saveMachineState(_ machine: VZVirtualMachine, to url: URL) async throws {
+        try await onQueue(machine) { vm, done in vm.saveMachineStateTo(url: url) { error in done(error.map { .failure($0) } ?? .success(())) } }
+    }
+    private func restoreMachineState(_ machine: VZVirtualMachine, from url: URL) async throws {
+        try await onQueue(machine) { vm, done in vm.restoreMachineStateFrom(url: url) { error in done(error.map { .failure($0) } ?? .success(())) } }
+    }
+
+    private func identityURL(_ name: String) -> URL {
+        (image.identityDirectoryURL ?? image.diskURL.deletingLastPathComponent()).appendingPathComponent(name)
+    }
+    private func loadOrCreateMAC() throws -> VZMACAddress {
+        let url = identityURL("mac-address")
+        if let value = try? String(contentsOf: url, encoding: .utf8), let mac = VZMACAddress(string: value.trimmingCharacters(in: .whitespacesAndNewlines)) { return mac }
+        let mac = VZMACAddress.randomLocallyAdministered(); try atomicWrite(Data(mac.string.utf8), to: url); return mac
+    }
+    private func loadOrCreateMachineIdentifier() throws -> VZGenericMachineIdentifier {
+        let url = identityURL("machine-identifier")
+        if let data = try? Data(contentsOf: url), let identifier = try? VZGenericMachineIdentifier(dataRepresentation: data) { return identifier }
+        let identifier = VZGenericMachineIdentifier(); try atomicWrite(identifier.dataRepresentation, to: url); return identifier
+    }
+    private func atomicWrite(_ data: Data, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temporary = url.appendingPathExtension("tmp-\(UUID().uuidString)")
+        try data.write(to: temporary, options: .atomic); try atomicReplace(temporary, at: url)
+    }
+    private func atomicReplace(_ temporary: URL, at url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary) } else { try FileManager.default.moveItem(at: temporary, to: url) }
     }
     /// The guest agent listens once userspace is up, so retry until it accepts or the VM stops.
     private func connectGuest(_ machine: VZVirtualMachine) async throws -> VZVirtioSocketConnection {
@@ -141,5 +220,8 @@ public actor AppleVirtualizationBackend: VMBackend {
     public func pause() async throws {}
     public func resume() async throws {}
     public func reset() async throws {}
+    public func validateSaveRestoreSupport() async throws { throw HostDaemonError.unsupported("Apple Virtualization is available only on macOS") }
+    public func save(to: URL) async throws { throw HostDaemonError.unsupported("Apple Virtualization is available only on macOS") }
+    public func restore(from: URL) async throws { throw HostDaemonError.unsupported("Apple Virtualization is available only on macOS") }
 }
 #endif

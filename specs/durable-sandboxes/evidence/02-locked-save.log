@@ -1,0 +1,6 @@
+# vmlab hibernate with the console screen locked (CGSSessionScreenIsLocked = true), 2026-10-15
+2026-10-15 03:35:38.315 E  kernel[0:a73a23] [com.apple.sandbox.reporting:violation] Sandbox: com.apple.Virtualization.Virtual(93052) deny(1) system-info vfs.disk-space
+2026-10-15 03:35:38.587 E  kernel[0:a7367f] [com.apple.sandbox.reporting:violation] 6 duplicate reports for Sandbox: com.apple.Virtualization.Virtual(93052) deny(1) system-info vfs.disk-space
+2026-10-15 03:35:40.740 A  com.apple.Virtualization.VirtualMachine[93052:a73a23] (Security) SecKeyCreateRandomKey
+2026-10-15 03:35:40.751 E  com.apple.Virtualization.VirtualMachine[93052:a73a23] [com.apple.security:seckey] SecKeyCreateRandomKey_ios failed: Error Domain=NSOSStatusErrorDomain Code=-25308 "Failed to generate keypair" (errKCInteractionNotAllowed / errSecInteractionNotAllowed: / Interaction is not allowed with the Security Server.) UserInfo={numberOfErrorsDeep=0, NSDescription=Failed to generate keypair, NSUnderlying
+2026-10-15 03:35:40.754 Db localbox-vmlab[93051:a73a1d] [com.apple.CFBundle:strings] Bundle: <private>, key: permission denied, value: (null), table: Localizable, localizationNames: (null), result: permission denied

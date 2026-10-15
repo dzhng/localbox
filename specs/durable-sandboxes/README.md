@@ -15,7 +15,7 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01 and 03–09 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); until slice 10 all sandboxes on a Mac share one runtime. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked; an unlocked run is pending. Next: 10 (needs 02's channel and save decisions), then 11.*
+*Status 2026-10-15: slices 00, 01 and 03–09 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); until slice 10 all sandboxes on a Mac share one runtime. In progress: 02 (hibernate go/no-go): its code is on main; save fails while the Mac's screen is locked (a keychain constraint, see the slice), and the unlocked save/restore run plus Q5b's locked-Mac fallback wait on the user. Next: 10 (needs 02's channel and save decisions), then 11.*
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).

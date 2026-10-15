@@ -43,6 +43,13 @@ public protocol VMBackend: Sendable {
     func reset() async throws
 }
 
+/// A backend that can persist and restore a running VM without reprovisioning it.
+public protocol HibernateBackend: VMBackend {
+    func validateSaveRestoreSupport() async throws
+    func save(to url: URL) async throws
+    func restore(from url: URL) async throws
+}
+
 /// Backends that expose the guest's ordered virtio-serial byte stream use this
 /// hook to attach it to the lifecycle owner after a successful VM start.
 public protocol GuestChannelProvider: Sendable {

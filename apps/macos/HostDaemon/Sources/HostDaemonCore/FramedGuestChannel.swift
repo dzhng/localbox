@@ -10,9 +10,12 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
     private var closed = false
     private var ready = false
     private var channelEpoch = 0
+    private let hostname: String
+    private let wallClock: () -> Int64
+    private var helloSent = false
 
-    public init(reader: FileHandle, writer: FileHandle, maxFrameBytes: UInt32 = 8 * 1024 * 1024) {
-        self.reader = reader; self.writer = writer; self.maxFrameBytes = maxFrameBytes
+    public init(reader: FileHandle, writer: FileHandle, maxFrameBytes: UInt32 = 8 * 1024 * 1024, hostname: String = Host.current().localizedName ?? "localbox", wallClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
+        self.reader = reader; self.writer = writer; self.maxFrameBytes = maxFrameBytes; self.hostname = hostname; self.wallClock = wallClock
     }
 
     public func send(_ envelope: Data) async throws -> Data {
@@ -26,7 +29,7 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
         while true {
             let object = try JSONSerialization.jsonObject(with: try readFrame()) as? [String: Any]
             switch object?["kind"] as? String {
-            case "ready": adopt(object); continue
+            case "ready": adopt(object); try sendHello(); continue
             case "response":
                 guard let response = object?["response"] else { throw HostDaemonError.unsupported("guest response frame has no response") }
                 return try JSONSerialization.data(withJSONObject: response)
@@ -41,10 +44,23 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
             let object = try JSONSerialization.jsonObject(with: try readFrame()) as? [String: Any]
             guard object?["kind"] as? String == "ready" else { throw HostDaemonError.unsupported("guest channel emitted a frame before readiness") }
             adopt(object)
+            try sendHello()
         }
     }
 
-    private func adopt(_ ready: [String: Any]?) { self.ready = true; channelEpoch = ready?["channel_epoch"] as? Int ?? channelEpoch }
+    /// The host owns the epoch: each (re)connection moves one past what the guest announced, and the hello
+    /// frame tells the guest to adopt it, so frames from an earlier connection are stale on both sides.
+    private func adopt(_ ready: [String: Any]?) { self.ready = true; channelEpoch = max(channelEpoch, (ready?["channel_epoch"] as? Int ?? 0) + 1); helloSent = false }
+
+    private func sendHello() throws {
+        guard !helloSent else { return }
+        let frame: [String: Any] = ["kind": "hello", "channel_epoch": channelEpoch, "wall_clock_ms": wallClock(), "hostname": hostname]
+        let encoded = try JSONSerialization.data(withJSONObject: frame)
+        guard encoded.count <= Int(maxFrameBytes) else { throw HostDaemonError.unsupported("guest hello exceeds the configured frame limit") }
+        var length = UInt32(encoded.count).bigEndian
+        try writer.write(contentsOf: Data(bytes: &length, count: 4)); try writer.write(contentsOf: encoded)
+        helloSent = true
+    }
 
     public func close() async {
         guard !closed else { return }; closed = true
