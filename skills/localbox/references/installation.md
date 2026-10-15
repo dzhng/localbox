@@ -37,15 +37,19 @@ RELEASE_PUBLIC_KEY="$HOME/.agents/skills/localbox/release-public.pem" \
 ```
 
 The installer creates the versioned active release, authenticated HostDaemon
-socket, CLI symlink, and launchd updater. The installed CLI carries its own
-ARM64 Node runtime and pinned `skills@1.7.0` implementation, so subsequent
+socket, CLI symlink, and launchd updater, then runs `localbox skill install`.
+That replaces any global copy of this skill with the release's bundled one and
+records ownership, so every later update refreshes it. The installed CLI
+carries its own ARM64 Node runtime and pinned `skills@1.7.0` implementation, so
 skill setup never invokes host `npx`, `npm`, or a network package install.
+The installer's last line reports the skill result; `needs_attention` means
+run `localbox skill status --json` and follow the skill lifecycle reference.
 
 Verify the agent-facing installation:
 
 ```sh
 localbox status
-localbox skill status --json
+localbox skill status --json   # state: installed, managed: true
 localbox help --json
 ```
 

@@ -65,3 +65,10 @@ test("the not-found page is not indexed and has no view switch", () => {
   assert.doesNotMatch(missing, /data-set-mode/);
   assert.doesNotMatch(missing, /rel="canonical"/);
 });
+
+test("llms.txt sells and installs; usage lives in the skill", () => {
+  const llms = site().read("llms.txt");
+  assert.match(llms, /installation procedure/);
+  assert.match(llms, /Localbox skill/);
+  assert.doesNotMatch(llms, /pre-release|operation_uncertain|mutation|localbox (vm|shell|auth|mcp) /);
+});

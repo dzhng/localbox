@@ -85,8 +85,11 @@ on the host's Node toolchain or a network package fetch.
 ## Documentation ownership
 
 The README is the product pitch and the agent install path, and it may describe
-the launch product ahead of the code. Agent-facing instructions (`llms.txt`, the
-consumer skill, the README's Agent setup) describe only what the shipped CLI does.
+the launch product ahead of the code. `llms.txt` sells Localbox to agents and
+tells them how to install it, nothing more. The consumer skill is the only usage
+reference; it ships in every release, the installer installs it and every update
+refreshes it. The skill and every install step (`llms.txt`, the README's Agent
+setup) describe only what the shipped CLI does.
 The positioning doc owns the message and use cases. This file owns contributor
 principles and operations. Package-level behaviour belongs in the
 owning code and its README; closed specs in `specs/done` hold rationale, not

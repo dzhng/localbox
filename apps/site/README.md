@@ -10,9 +10,10 @@ for humans, and the same instructions as plain text at `/llms.txt` for agents.
   be told different things.
 - **The README owns the install prompt.** The build fails if `agentPrompt`
   differs from the prompt quoted in the repository README. Change both together.
-- **Link, don't restate.** The install procedure belongs to the consumer skill's
-  references. `llms.txt` keeps only what changes an agent's first move and links
-  the rest.
+- **Sell and install, don't teach.** `llms.txt` pitches Localbox to agents and
+  points them at the install procedure in the consumer skill's references. How
+  to use Localbox lives in the skill, which the installer installs; `llms.txt`
+  never carries usage rules or commands.
 - **Artwork has one home.** Illustrations live in `.github/readme` and are copied
   to `/art` at build time; the build reads their PNG size so images reserve
   layout. `og.png` is the 1200×630 social card cut from the header art.

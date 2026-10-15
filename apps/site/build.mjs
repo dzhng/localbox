@@ -150,7 +150,7 @@ ${bar()}
         ${copyButton("Copy prompt", "agent-prompt")}
       </div>
       <p class="fine">The open buttons type the prompt into your agent without sending it.</p>
-      <p class="fine req">${requirements} · pre-release</p>
+      <p class="fine req">${requirements} · free</p>
     </div>
   </section>
 

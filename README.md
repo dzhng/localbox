@@ -136,8 +136,7 @@ make room, the output it trimmed. Your agent never has to guess.
 
 ## What works today
 
-Localbox is pre-release, and this README describes the product we're launching.
-Today one Mac runs one durable sandbox: lifecycle, shell, files, browser and
+This README describes the product we're launching. Today one Mac runs one durable sandbox: lifecycle, shell, files, browser and
 desktop operations, the CLI and optional MCP, the outbound relay, and signed
 releases with automatic updates. Creating and deleting sandboxes on demand, sleep
 and idle deletion, sizing and resize, multi-machine fleets and placement, email
@@ -180,9 +179,8 @@ where this README says sandbox.
    ~/.local/bin/localbox help --json
    ```
 
-3. **Use it.** `localbox vm start`, then `localbox shell exec -- <command>`.
-   Run `localbox auth login` before remote use. `localbox mcp install --json`
-   prints optional MCP configuration; nothing else depends on MCP.
+3. **Read the skill.** Start a fresh session so the Localbox skill is loaded.
+   It is the reference for using Localbox; this README is not.
 
 Updates arrive automatically and verify before replacing anything;
 `localbox update check` and `localbox update install` do the same on demand.

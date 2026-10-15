@@ -195,5 +195,7 @@ placeholder is [specs/sandbox-snapshots](specs/sandbox-snapshots/README.md).
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes give their
   memory back and resume exactly where they were.
 - Marketing may describe the launch product before it ships, and the README and
-  site do. Agent-facing instructions (`llms.txt`, the skill, Agent setup) must only
-  describe what the shipped CLI does; an agent that runs a planned command fails.
+  site do, and so does the pitch in `llms.txt`. Instructions an agent follows (the
+  install steps and the skill) must only describe what the shipped CLI does; an
+  agent that runs a planned command fails.
+- `llms.txt` sells and installs. How to use Localbox lives in the skill.

@@ -150,6 +150,16 @@ chmod 600 "$TOKEN_FILE"
 ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
 localbox_add_path
 
+# The release owns the global Localbox skill. Installing it here records the
+# ownership receipt the updater needs to refresh it after every update.
+SKILL_STATE="skipped"
+if [ "${LOCALBOX_SKIP_SKILL:-0}" != "1" ]; then
+  if "$BIN_DIR/localbox" skill install --json >/dev/null; then SKILL_STATE="installed"; else
+    SKILL_STATE="needs_attention (run: localbox skill status --json)"
+    echo "warning: the Localbox skill was not installed; run: localbox skill status --json" >&2
+  fi
+fi
+
 if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"
   launchctl bootout "$DOMAIN/com.localbox.hostd" >/dev/null 2>&1 || true
@@ -165,3 +175,4 @@ fi
 echo "installed Localbox $VERSION"
 echo "CLI: $BIN_DIR/localbox"
 echo "HostDaemon: $ACTIVE_APP/Contents/MacOS/localbox-hostd"
+echo "Skill: $SKILL_STATE"

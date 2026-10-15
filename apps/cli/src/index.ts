@@ -238,7 +238,9 @@ async function main(): Promise<void> {
   if (group === "skill" && ["status", "install", "update", "uninstall"].includes(subcommand ?? "")) {
     const manager = new SkillManager();
     const result = subcommand === "status" ? await manager.status() : subcommand === "install" ? await manager.install() : subcommand === "update" ? await manager.update() : await manager.uninstall();
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); return;
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (subcommand !== "status" && result.state === "needs_attention") process.exitCode = 1;
+    return;
   }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }
   const client = await makeClient();
