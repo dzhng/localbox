@@ -21,6 +21,35 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual((malformed["error"] as? [String: Any])?["code"] as? String, "invalid_input")
     }
 
+    /// Agent setup is the CLI's: the daemon runs `agents op` and answers with its result or error, never a sandbox's.
+    func testAgentSetupRunsTheInstalledCLI() async throws {
+        let directory = try scratch()
+        let cli = directory.appendingPathComponent("localbox")
+        try """
+        #!/bin/sh
+        printf '%s\n' "$*" > "\(directory.path)/args"
+        case "$3" in
+          skill.status) echo '{"ok":true,"result":{"state":"installed","source_revision":"0.2.0"}}' ;;
+          agents.setup.set) echo '{"ok":false,"error":{"code":"invalid_input","message":"input.enabled is required"}}'; exit 1 ;;
+          cli.status) sleep 5 ;;
+          *) echo 'not json' ;;
+        esac
+        """.write(to: cli, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), agentSetup: AgentSetupCLI(executable: cli, timeout: 1))
+        let status = try await call(host, envelope("skill.status", "{}", sandboxID: nil))
+        XCTAssertEqual((status["result"] as? [String: Any])?["source_revision"] as? String, "0.2.0")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("args"), encoding: .utf8), "agents op skill.status --input-json {} --json\n")
+        let refused = try await call(host, envelope("agents.setup.set", "{}", sandboxID: nil))
+        XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "invalid_input")
+        let slow = try await call(host, envelope("cli.status", "{}", sandboxID: nil))
+        XCTAssertEqual((slow["error"] as? [String: Any])?["code"] as? String, "operation_timeout")
+        let garbled = try await call(host, envelope("skill.uninstall", "{}", sandboxID: nil))
+        XCTAssertEqual((garbled["error"] as? [String: Any])?["code"] as? String, "internal")
+        let without = try await call(SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory()), envelope("skill.status", "{}", sandboxID: nil))
+        XCTAssertEqual((without["error"] as? [String: Any])?["code"] as? String, "unsupported")
+    }
+
     func testSandboxHostLifecycle() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 12, hostMemoryBytes: 24 * gib)

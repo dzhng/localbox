@@ -25,12 +25,13 @@ test("MCP requires a valid bearer and points clients at the protected-resource m
   assert.equal((await new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }), maxBodyBytes: 8 }).handle({ method: "POST", url: ENDPOINT, body: "123456789" })).status, 413);
 });
 
-test("tools on one sandbox gain a sandbox argument; machine stays only on sandbox.create; the catalog is unchanged", async () => {
+test("tools on one sandbox gain a sandbox argument, machine-level host tools a machine argument; the catalog is unchanged", async () => {
   const tools = mcpTools();
   assert.equal(tools.length, catalogById.size);
   for (const tool of tools) {
     assert.equal("sandbox" in (tool.inputSchema.properties ?? {}), catalogById.get(tool.name as never)!.sandbox_scoped, tool.name);
-    assert.equal("machine" in (tool.inputSchema.properties ?? {}), tool.name === "sandbox.create", tool.name);
+    const entry = catalogById.get(tool.name as never)!;
+    assert.equal("machine" in (tool.inputSchema.properties ?? {}), tool.name === "sandbox.create" || (entry.executor === "host" && !entry.sandbox_scoped), tool.name);
   }
   assert.ok(!("sandbox" in (catalogById.get("shell.exec")!.input_schema.properties ?? {})), "the catalog itself is unchanged");
   const adapter = new McpAdapter({ endpoint: ENDPOINT, authenticate, ops: async () => ({ status: 200, body: {} }) });
@@ -57,6 +58,13 @@ test("tools/call runs the agent API in-process as the token's account, on the na
   assert.equal(called.structuredContent.protocol_version, "v1");
   assert.deepEqual(ran[0].input, {}, "the sandbox argument is stripped before the operation input is built");
   assert.ok(seen.every((principal) => principal === agent));
+
+  const skill = result(await rpc(adapter, "tools/call", { name: "skill.status", arguments: { machine: "attic" } }));
+  assert.equal(skill.isError, undefined, JSON.stringify(skill));
+  assert.equal(ran.at(-1)!.operation, "skill.status"); assert.equal(ran.at(-1)!.sandbox_id, null, "a machine-level tool names no sandbox");
+  assert.deepEqual(ran.at(-1)!.input, {}, "the machine argument is stripped too");
+  const which = result(await rpc(adapter, "tools/call", { name: "skill.status", arguments: {} }));
+  assert.equal(which.isError, true); assert.match(which.content[0].text, /2 machines; name one with machine: studio, attic/);
 
   const missing = result(await rpc(adapter, "tools/call", { name: "fs.stat", arguments: { sandbox: "nowhere", path: "/" } }));
   assert.equal(missing.isError, true); assert.equal(missing.structuredContent.code, "sandbox_not_found");

@@ -15,4 +15,11 @@ public enum HostOperation: String, CaseIterable, Sendable {
     case sandboxLogs = "sandbox.logs"
     case networkEgress = "network.egress"
     case relayStatus = "relay.status"
+    case skillStatus = "skill.status"
+    case skillInstall = "skill.install"
+    case skillUpdate = "skill.update"
+    case skillUninstall = "skill.uninstall"
+    case cliStatus = "cli.status"
+    case agentsSetupStatus = "agents.setup.status"
+    case agentsSetupSet = "agents.setup.set"
 }

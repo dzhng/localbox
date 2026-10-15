@@ -3,6 +3,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { publicJwks } from "../../packages/tokens/src/index.js";
 import { machinePaths } from "../../packages/config/src/machine-paths.js";
+import { fixtureHome } from "./lib/login.js";
 import { join, resolve } from "node:path";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -90,9 +91,10 @@ async function startDaemons(machines: MachineSpec[]): Promise<void> {
     if (!readFileSafe(paths.ipcToken).trim()) { mkdirSync(paths.root, { recursive: true }); writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 }); }
     // `up` wipes local Convex, so a machine's old credential and sandboxes would belong to an account that no longer exists.
     rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true });
+    rmSync(fixtureHome(paths.root), { recursive: true, force: true }); rmSync(join(paths.root, "agent-setup.json"), { force: true }); mkdirSync(fixtureHome(paths.root));
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
-    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
+    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
     if (!existsSync(paths.socket)) throw new Error(`machine ${machine}'s HostDaemon did not open ${paths.socket}; ${readFileSafe(log).trim() || "no diagnostic output"}`);

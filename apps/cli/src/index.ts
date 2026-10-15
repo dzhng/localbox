@@ -3,13 +3,13 @@ import { resolve } from "node:path";
 import { hostname } from "node:os";
 import {
   catalogById, catalogSnapshot, cliHelpSnapshot, mcpToolsSnapshot, operationCatalog, swiftHostOperations,
-  ContractError, failure, PROTOCOL_VERSION, requestFromInvocation, validateRequest,
+  ContractError, failure, PROTOCOL_VERSION, requestFromInvocation, success, validateRequest,
   type Json, type JsonSchema, type OperationCatalogEntry, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, type ClientTransport } from "../../../packages/client/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
-import { SkillManager } from "./skill-manager.js";
+import { AgentSetup, isAgentSetupOperation, REASONS, type Reason } from "./agent-setup.js";
 import { checkForUpdate, installLatest } from "./updater.js";
 import { render } from "./render.js";
 import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
@@ -35,7 +35,8 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["help [OPERATION]", "Show this help, or one operation's schema"],
   ["mcp install", "Print the MCP server config"],
   ["update check|install", "Check for or install the latest release"],
-  ["skill status|install|update|uninstall", "Manage the global Localbox skill"],
+  ["agents reconcile [--reason install|daemon_start|explicit]", "Match the skill and the localbox link to this release (run by the installer and the daemon)"],
+  ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
   ["connector run", "Run the relay connector (launchd job)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
 ];
@@ -78,11 +79,38 @@ function usage(): string {
 }
 
 function commandLine(entry: OperationCatalogEntry): string {
-  const verb = entry.id.split(".")[1].replaceAll("_", "-");
+  const verb = entry.id.split(".").slice(1).join(" ").replaceAll("_", "-");
+  if (entry.id === "agents.setup.set") return "setup on|off";
   const properties = entry.input_schema.properties ?? {}; const required = entry.input_schema.required ?? [];
   const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "sleep_after_ms" ? "[--sleep-after 30m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
   if (entry.id === "shell.exec") return `${verb} [--background] -- COMMAND [ARGS...]`;
   return [verb, ...(entry.sandbox_scoped && entry.id.startsWith("sandbox.") ? ["[SANDBOX]"] : []), ...required.map((key) => key.toUpperCase()), ...Object.keys(properties).filter((key) => !required.includes(key)).map(flag)].join(" ");
+}
+
+/** The catalog operation `words` name (`sandbox create`, `agents setup status`, `agents setup on`), the words after it and any input the words imply. */
+function catalogEntry(words: string[]): { entry: OperationCatalogEntry; rest: string[]; input: Record<string, Json> } | undefined {
+  const [group, verb, third] = words;
+  if (!group || !verb || verb.startsWith("-")) return undefined;
+  const prefix = GROUPS[group] ?? group;
+  if (prefix === "agents" && verb === "setup" && (third === "on" || third === "off")) return { entry: catalogById.get("agents.setup.set")!, rest: words.slice(3), input: { enabled: third === "on" } };
+  const three = third && !third.startsWith("-") ? catalogById.get(`${prefix}.${verb}.${third}`.replaceAll("-", "_") as OperationId) : undefined;
+  if (three) return { entry: three, rest: words.slice(3), input: {} };
+  const entry = catalogById.get((VERBS[`${prefix}.${verb}`] ?? `${prefix}.${verb.replaceAll("-", "_")}`) as OperationId);
+  return entry ? { entry, rest: words.slice(2), input: {} } : undefined;
+}
+
+/** The non-catalog command `words` start with: every literal word of its LOCAL_COMMANDS row matches. */
+function localCommand(words: string[]): [string, string] | undefined {
+  return LOCAL_COMMANDS.find(([syntax]) => {
+    const literals: string[] = [];
+    for (const token of syntax.split(" ")) { if (!/^[a-z][a-z_|-]*$/.test(token)) break; literals.push(token); }
+    return literals.every((token, index) => token.split("|").includes(words[index]));
+  });
+}
+
+function operationHelp(entry: OperationCatalogEntry): Json {
+  const { limits: _limits, ...help } = entry;
+  return { usage: `localbox ${Object.entries(GROUPS).find(([, value]) => value === entry.id.split(".")[0])?.[0] ?? entry.id.split(".")[0]} ${commandLine(entry)}`, ...help } as unknown as Json;
 }
 
 async function writeSnapshots(): Promise<void> {
@@ -147,11 +175,13 @@ async function target(wanted: string | undefined): Promise<Target> {
 async function run(request: RequestEnvelope, wanted: string | undefined): Promise<ResponseEnvelope> {
   const entry = catalogById.get(request.operation as OperationId)!;
   try {
+    // Agent setup acts on this Mac's skill and link, so the CLI answers it itself (the daemon runs this CLI for remote callers).
+    if (isAgentSetupOperation(entry.id)) { validateRequest(request); return success(request, await new AgentSetup().handle(entry.id, request.input)); }
     const where = entry.sandbox_scoped ? await target(wanted) : undefined;
     if (where) request = { ...request, sandbox_id: where.sandboxId };
     validateRequest(request);
     // Without a sign-in there is no account catalog, only this Mac's daemon.
-    const local = entry.executor === "account" ? entry.id === "sandbox.list" && !(await readCredentials(machinePaths().credentials)) : where!.local;
+    const local = entry.executor === "account" ? entry.id === "sandbox.list" && !(await readCredentials(machinePaths().credentials)) : where?.local ?? true;
     return await (local ? await localTransport() : entry.id === "sandbox.create" ? await createTransport() : await accountTransport()).dispatch(request);
   } catch (error) {
     return failure(request, error instanceof ContractError ? error : new ContractError("internal", error instanceof Error ? error.message : String(error)));
@@ -178,10 +208,10 @@ function coerce(value: string | true, schema: JsonSchema | undefined, flag: stri
 }
 
 /** `localbox <group> <verb> [positional...] [--flag value...]` for any catalog operation. */
-async function catalogCommand(entry: OperationCatalogEntry, words: string[]): Promise<void> {
+async function catalogCommand(entry: OperationCatalogEntry, words: string[], implied: Record<string, Json> = {}): Promise<void> {
   const schema = entry.input_schema; const properties = schema.properties ?? {};
   const { flags, positional } = parse(words, schema);
-  const input: Record<string, Json> = typeof flags["input-json"] === "string" ? JSON.parse(flags["input-json"]) : {};
+  const input: Record<string, Json> = { ...(typeof flags["input-json"] === "string" ? JSON.parse(flags["input-json"]) : {}), ...implied };
   for (const [flag, value] of Object.entries(flags)) {
     if (CONTROL_FLAGS.has(flag) && !(flag === "machine" && entry.id === "sandbox.create")) continue;
     const key = flag.replaceAll("-", "_");
@@ -227,12 +257,20 @@ async function main(): Promise<void> {
   const [group, verb, ...rest] = head;
   const subcommand = verb?.startsWith("--") ? undefined : verb;
   if (!group || group === "--help" || group === "-h") { process.stdout.write(usage()); return; }
+  // `localbox <command> --help` describes that command without running it; an unknown command fails.
+  if (head.includes("--help") || head.includes("-h")) {
+    const words = head.filter((word) => word !== "--help" && word !== "-h");
+    const found = catalogEntry(words); const local = found ? undefined : localCommand(words);
+    if (found) print(operationHelp(found.entry));
+    else if (local) process.stdout.write(`localbox ${local[0]}\n  ${local[1]}\n`);
+    else { process.stderr.write(`unknown command: localbox ${words.join(" ")}\n${usage()}`); process.exitCode = 2; }
+    return;
+  }
   if (group === "help") {
     if (!subcommand) { if (json) process.stdout.write(`${JSON.stringify(cliHelpSnapshot(), null, 2)}\n`); else process.stdout.write(usage()); return; }
     const entry = catalogById.get(subcommand as OperationId);
     if (!entry) { print(failure(requestFromInvocation({ operation: subcommand, input: {} }), new ContractError("invalid_input", `unknown operation: ${subcommand}`))); return; }
-    const { limits: _limits, ...help } = entry;
-    print({ usage: `localbox ${Object.entries(GROUPS).find(([, value]) => value === entry.id.split(".")[0])?.[0] ?? entry.id.split(".")[0]} ${commandLine(entry)}`, ...help } as unknown as Json); return;
+    print(operationHelp(entry)); return;
   }
   if (group === "contract" && (!subcommand || subcommand === "probe")) {
     const dispatcher = new FakeDispatcher();
@@ -262,12 +300,23 @@ async function main(): Promise<void> {
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }
   if (group === "update" && (subcommand === "check" || subcommand === "install")) { print(await (subcommand === "check" ? checkForUpdate() : installLatest({ automatic: rest.includes("--auto") })) as unknown as Json); return; }
-  if (group === "skill" && ["status", "install", "update", "uninstall"].includes(subcommand ?? "")) {
-    const manager = new SkillManager();
-    const result = subcommand === "status" ? await manager.status() : subcommand === "install" ? await manager.install() : subcommand === "update" ? await manager.update() : await manager.uninstall();
-    print(result as unknown as Json);
-    if (subcommand !== "status" && result.state === "needs_attention") process.exitCode = 1;
+  if (group === "agents" && subcommand === "reconcile") {
+    const reason = parse(head.slice(2)).flags.reason ?? "explicit";
+    if (!REASONS.includes(reason as Reason)) throw new Error(`--reason takes ${REASONS.join(", ")}`);
+    const report = await new AgentSetup().reconcile(reason as Reason);
+    print(report as unknown as Json);
+    if (report.actions.some((action) => action.kind === "failed")) process.exitCode = 1;
     return;
+  }
+  if (group === "agents" && subcommand === "op") {
+    const { flags, positional } = parse(head.slice(2));
+    const operation = positional[0] ?? "";
+    const request = requestFromInvocation<Json>({ operation, input: {}, request_id: newId("agents"), mutation_id: catalogById.get(operation as OperationId)?.idempotency === "required" ? newId("agents") : null });
+    try {
+      if (!isAgentSetupOperation(operation)) throw new ContractError("invalid_input", `agents op runs an agent setup operation, not ${operation || "nothing"}`);
+      request.input = typeof flags["input-json"] === "string" ? JSON.parse(flags["input-json"]) as Json : {};
+    } catch (error) { print(failure(request, error instanceof ContractError ? error : new ContractError("invalid_input", "--input-json takes JSON"))); return; }
+    print(await run(request, undefined)); return;
   }
   if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector()); }
   if (group === "status") {
@@ -287,11 +336,10 @@ async function main(): Promise<void> {
     if (!entry) { print(failure(request, new ContractError("invalid_input", `unknown operation: ${subcommand}`))); return; }
     print(await run(request, typeof flags.sandbox === "string" ? flags.sandbox : undefined)); return;
   }
-  const operation = VERBS[`${GROUPS[group] ?? group}.${subcommand}`] ?? `${GROUPS[group] ?? group}.${(subcommand ?? "").replaceAll("-", "_")}`;
-  const entry = catalogById.get(operation as OperationId);
-  if (entry) {
-    try { await catalogCommand(entry, head.slice(2)); }
-    catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(requestFromInvocation({ operation, input: {} }), error)); }
+  const found = catalogEntry(head);
+  if (found) {
+    try { await catalogCommand(found.entry, found.rest, found.input); }
+    catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(requestFromInvocation({ operation: found.entry.id, input: {} }), error)); }
     return;
   }
   process.stderr.write(usage()); process.exitCode = 2;

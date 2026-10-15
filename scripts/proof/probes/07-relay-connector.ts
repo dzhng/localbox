@@ -67,7 +67,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       Object.assign(budget, { claim_latency_ms: claim, round_trip_ms: timings, convex_calls_per_request: relayed / 10, payload_bytes: ours.map((row) => JSON.stringify(row.payload).length) });
     }));
     checks.push(await ctx.check("over 60 s idle neither machine makes a Convex function call", async () => {
-      const idle = await countCalls(() => sleep(60_000)); budget.idle_calls_60s = idle;
+      const idle = await countCalls(async () => { await sleep(60_000); }); budget.idle_calls_60s = idle;
       assert.equal(idle, 0, `${idle} function calls while idle`);
     }));
     checks.push(await ctx.check("B's connector stopped: A gets machine_offline in under 5 s, the row is abandoned, and B never runs it", async () => {

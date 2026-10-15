@@ -182,17 +182,7 @@ if ! file "$NODE_BIN" | grep -Eq 'arm64|aarch64'; then
   exit 1
 fi
 cp "$NODE_BIN" "$CLI/node"
-cat > "$CLI/bin/localbox" <<'EOF'
-#!/bin/sh
-set -eu
-SELF=$0
-if [ -L "$SELF" ]; then SELF=$(readlink "$SELF"); fi
-ROOT=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
-export LOCALBOX_SKILL_SOURCE="${LOCALBOX_SKILL_SOURCE:-$ROOT/skill}"
-export LOCALBOX_NODE_PATH="${LOCALBOX_NODE_PATH:-$ROOT/node}"
-export LOCALBOX_SKILLS_INSTALLER="${LOCALBOX_SKILLS_INSTALLER:-$ROOT/skills-installer/bin/cli.mjs}"
-exec "$ROOT/node" "$ROOT/dist/apps/cli/src/index.js" "$@"
-EOF
+cp "$ROOT/scripts/cli-launcher.sh" "$CLI/bin/localbox"
 chmod 0755 "$CLI/bin/localbox"
 npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
 if [ ! -f "$CLI/node_modules/skills/bin/cli.mjs" ]; then

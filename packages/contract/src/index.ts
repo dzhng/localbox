@@ -10,7 +10,8 @@ export const operationIds = [
   "fs.list", "fs.stat", "fs.read", "fs.write", "fs.mkdir", "fs.remove",
   "browser.list_tabs", "browser.open", "browser.navigate", "browser.focus", "browser.close", "browser.screenshot",
   "browser.click", "browser.type", "browser.key", "desktop.status", "desktop.screenshot", "desktop.click",
-  "desktop.move", "desktop.scroll", "desktop.key", "desktop.type"
+  "desktop.move", "desktop.scroll", "desktop.key", "desktop.type",
+  "skill.status", "skill.install", "skill.update", "skill.uninstall", "cli.status", "agents.setup.status", "agents.setup.set"
 ] as const;
 export type OperationId = typeof operationIds[number];
 
@@ -113,18 +114,27 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "desktop.move": ["Move the desktop pointer.", object({ x: number(), y: number() }, ["x", "y"]), false, true, "required"],
   "desktop.scroll": ["Scroll the desktop.", object({ x: number(), y: number(), delta_y: number(), delta_x: number() }, ["x", "y", "delta_y"]), false, true, "required"],
   "desktop.key": ["Send a key to the desktop.", object({ key: string() }, ["key"]), false, true, "required"],
-  "desktop.type": ["Type into the desktop.", object({ text: { type: "string" } }, ["text"]), false, true, "required"]
+  "desktop.type": ["Type into the desktop.", object({ text: { type: "string" } }, ["text"]), false, true, "required"],
+  "skill.status": ["Read this Mac's global Localbox skill: its state, whether Localbox maintains it, the release that wrote it (`source_revision`), its ownership receipt and every agent harness path.", empty(), true, false, "none"],
+  "skill.install": ["Install this release's Localbox skill for every agent harness on this Mac, replacing any global copy; a copy Localbox did not write is backed up first and the result names the backup.", empty(), false, true, "required"],
+  "skill.update": ["Reinstall this release's Localbox skill for every agent harness on this Mac, exactly as skill.install does.", empty(), false, true, "required"],
+  "skill.uninstall": ["Remove the global Localbox skill Localbox installed on this Mac. While agent setup is on, the next reconcile (the daemon's next start) installs it again.", empty(), false, true, "required"],
+  "cli.status": ["Read this Mac's `localbox` command link (`~/.local/bin/localbox`) and the installed release it should point at.", empty(), true, false, "none"],
+  "agents.setup.status": ["Read the agent setup setting. While it is on (the default), Localbox keeps the global skill and the `localbox` link matched to the installed release, at install and at every daemon start.", empty(), true, false, "none"],
+  "agents.setup.set": ["Turn agent setup on or off. While it is off, Localbox leaves the global skill and the `localbox` link alone, so they can be customised.", object({ enabled: bool() }, ["enabled"]), false, true, "required"]
 };
 
 /** Catalog-level sandbox operations: they change the account catalog in Convex, then tell the machine. */
 const ACCOUNT_SANDBOX_OPERATIONS: readonly string[] = ["sandbox.create", "sandbox.list", "sandbox.rename", "sandbox.delete"];
-const HOST_OPERATIONS: readonly string[] = ["sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs", "system.info", "network.egress", "relay.status"];
+/** Agent setup (D16): the skill and the `localbox` link on one Mac. The CLI runs them; HostDaemon relays remote callers to it. */
+export const AGENT_SETUP_OPERATIONS: readonly OperationId[] = ["skill.status", "skill.install", "skill.update", "skill.uninstall", "cli.status", "agents.setup.status", "agents.setup.set"];
+const HOST_OPERATIONS: readonly string[] = ["sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs", "system.info", "network.egress", "relay.status", ...AGENT_SETUP_OPERATIONS];
 function executorOf(id: OperationId): OperationCatalogEntry["executor"] {
   if (id.startsWith("account.") || id.startsWith("machine.") || ACCOUNT_SANDBOX_OPERATIONS.includes(id)) return "account";
   return HOST_OPERATIONS.includes(id) ? "host" : "guest";
 }
-/** Account, machine, create and list name no sandbox; everything else acts on exactly one. */
-const sandboxScoped = (id: OperationId) => !id.startsWith("account.") && !id.startsWith("machine.") && id !== "sandbox.create" && id !== "sandbox.list" && id !== "relay.status";
+/** Account, machine, create, list, relay status and agent setup name no sandbox; everything else acts on exactly one. */
+const sandboxScoped = (id: OperationId) => !id.startsWith("account.") && !id.startsWith("machine.") && id !== "sandbox.create" && id !== "sandbox.list" && id !== "relay.status" && !AGENT_SETUP_OPERATIONS.includes(id);
 
 export const operationCatalog: OperationCatalogEntry[] = operationIds.map((id) => {
   const [description, input_schema, retryable, mutation, idempotency] = definitions[id];
@@ -277,7 +287,8 @@ export function mcpToolsSnapshot(): HelpSnapshotEntry[] { return helpSnapshot();
 export function catalogSnapshot(): OperationCatalogEntry[] { return JSON.parse(JSON.stringify(operationCatalog)) as OperationCatalogEntry[]; }
 
 /** What a reversible request did (P1): what was asked, what resulted, and every side effect taken on the way. */
-export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed";
+export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed"
+  | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "failed";
 export interface ActionReport { requested: Json; produced: Json; actions: Array<{ kind: ActionKind; detail?: string; [key: string]: Json | undefined }> }
 
 /**

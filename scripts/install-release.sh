@@ -124,6 +124,7 @@ NODE
 )
 
 ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
+ACTIVE_CLI="$RELEASE_ROOT/active/localbox-cli/bin/localbox"
 PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
 UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
 CONNECTOR_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.connector.plist"
@@ -137,6 +138,10 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOXES' -string "$SANDBOXES_DI
 plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
+# The daemon runs the active release's CLI for agent setup: once at every start, and for remote callers.
+plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$ACTIVE_CLI" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"
+if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$PLIST"; fi
 chmod 600 "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/localbox" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INSTALL_ROOT' -string "$INSTALL_ROOT" "$UPDATER_PLIST"
@@ -153,14 +158,15 @@ if [ ! -s "$TOKEN_FILE" ]; then
   "$VERIFY_NODE" -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' > "$TOKEN_FILE"
 fi
 chmod 600 "$TOKEN_FILE"
-ln -sfn "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$BIN_DIR/localbox"
 localbox_add_path
 
-# The release owns the global Localbox skill. Installing it here records the
-# ownership receipt the updater needs to refresh it after every update.
+# Agent setup (on by default) makes the global skill and the localbox link match
+# this release; the daemon repeats the same reconcile at every start.
 SKILL_STATE="skipped"
-if [ "${LOCALBOX_SKIP_SKILL:-0}" != "1" ]; then
-  if "$BIN_DIR/localbox" skill install --json >/dev/null; then SKILL_STATE="installed"; else
+if [ "${LOCALBOX_SKIP_AGENT_SETUP:-0}" != "1" ]; then
+  RECONCILED=$("$ACTIVE_CLI" agents reconcile --reason install --json || true)
+  SKILL_STATE=$(printf '%s' "$RECONCILED" | "$VERIFY_NODE" -e 'let s = ""; process.stdin.on("data", (d) => { s += d; }).on("end", () => { try { process.stdout.write(JSON.parse(s).produced.state); } catch { process.stdout.write("needs_attention"); } });')
+  if [ "$SKILL_STATE" = "needs_attention" ]; then
     SKILL_STATE="needs_attention (run: localbox skill status --json)"
     echo "warning: the Localbox skill was not installed; run: localbox skill status --json" >&2
   fi

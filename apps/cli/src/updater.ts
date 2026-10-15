@@ -14,7 +14,8 @@ const DEFAULT_RELEASE_REPOSITORY = "dzhng/localbox";
 function releaseRepository(): string { return process.env.LOCALBOX_RELEASE_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? DEFAULT_RELEASE_REPOSITORY; }
 
 export interface UpdateCheck { repository: string; currentVersion?: string; latestVersion: string; tag: string; updateAvailable: boolean; releaseUrl?: string; }
-export interface UpdateInstall extends UpdateCheck { installed: boolean; skill?: unknown; error?: string; }
+/** The installer reconciles the skill and the CLI link, and so does the daemon it restarts (agent setup, D16). */
+export interface UpdateInstall extends UpdateCheck { installed: boolean; error?: string; }
 
 function version(value: string): [number, number, number] {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(value);
@@ -60,7 +61,7 @@ function installerPath(): string {
 }
 export async function installLatest(options: { automatic?: boolean } = {}): Promise<UpdateInstall> {
   const checked = await checkForUpdate();
-  if (!checked.updateAvailable) return { ...checked, installed: false, skill: await refreshManagedSkill() };
+  if (!checked.updateAvailable) return { ...checked, installed: false };
   const release = await githubRelease();
   const manifestAsset = release.assets.find((asset) => asset.name === "release.json");
   if (!manifestAsset) throw new Error("GitHub release is missing release.json");
@@ -90,23 +91,11 @@ export async function installLatest(options: { automatic?: boolean } = {}): Prom
       },
       maxBuffer: 2 * 1024 * 1024,
     });
-    const skill = await refreshManagedSkill();
-    return { ...checked, installed: true, skill, ...(result.stderr ? { error: result.stderr.trim() } : {}) };
+    return { ...checked, installed: true, ...(result.stderr ? { error: result.stderr.trim() } : {}) };
   } finally {
     // The installer owns its extracted release tree; this directory only holds verified inputs.
     await import("node:fs/promises").then(({ rm }) => rm(stage, { recursive: true, force: true }));
   }
-}
-
-async function refreshManagedSkill(): Promise<unknown> {
-  const activeCli = join(INSTALL_ROOT, "releases/active/localbox-cli/bin/localbox");
-  if (!existsSync(activeCli)) return { state: "missing" };
-  try {
-    const status = await execFileAsync(activeCli, ["skill", "status", "--json"], { env: process.env, maxBuffer: 2 * 1024 * 1024 });
-    const parsed = JSON.parse(status.stdout) as { managed?: boolean };
-    if (!parsed.managed) return parsed;
-    return JSON.parse((await execFileAsync(activeCli, ["skill", "update", "--json"], { env: process.env, maxBuffer: 2 * 1024 * 1024 })).stdout);
-  } catch (error) { return { state: "needs_attention", error: error instanceof Error ? error.message : String(error) }; }
 }
 
 export function sha256(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }

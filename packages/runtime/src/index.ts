@@ -134,5 +134,6 @@ export function sampleInput(operation: OperationId): Json {
   if (operation === "desktop.scroll") return { x: 1, y: 1, delta_y: 1 };
   if (operation === "desktop.key") return { key: "ENTER" };
   if (operation === "desktop.type") return { text: "fixture" };
+  if (operation === "agents.setup.set") return { enabled: true };
   return {};
 }

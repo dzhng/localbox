@@ -22,7 +22,8 @@ function bundledSkillSource(): string {
 }
 
 type Entry = { name: string; path: string; scope?: string; agents?: string[]; source?: string; sourceUrl?: string; sourceType?: string };
-type Receipt = { managed: boolean; source: string; installer: string; paths: string[]; entries: Entry[]; operationId: string; installedAt: string };
+/** Ownership receipt: Localbox wrote the skill at `paths` from release `sourceRevision`. */
+type Receipt = { managed: boolean; source: string; sourceRevision: string | null; installer: string; paths: string[]; entries: Entry[]; operationId: string; installedAt: string };
 type State = { state: string; operationId?: string; error?: string; backupPath?: string };
 type Runner = (executable: string, args: string[], env: NodeJS.ProcessEnv) => Promise<{ code: number; output: string }>;
 
@@ -30,6 +31,8 @@ export interface SkillManagerOptions {
   home?: string;
   source?: string;
   sourceUrl?: string;
+  /** The release version that installs the skill, recorded in the receipt as its `sourceRevision`. */
+  revision?: string | null;
   nodePath?: string;
   installerPath?: string;
   run?: Runner;
@@ -41,11 +44,15 @@ export interface SkillStatus {
   paths: string[];
   destinations: { path: string; exists: boolean; symlink: boolean }[];
   source: string;
-  sourceRevision?: string | null;
+  sourceRevision: string | null;
+  /** The ownership receipt's path; it exists only while Localbox owns an installed skill. */
+  receipt: string;
   installer: string;
   operationId?: string;
   error?: string;
   backupPath?: string;
+  /** What an install replaced: the global paths it removed first. */
+  replaced?: string[];
   entries?: Entry[];
   discoveryError?: string;
 }
@@ -64,6 +71,7 @@ export class SkillManager {
   private readonly home: string;
   private readonly source: string;
   private readonly sourceUrl: string;
+  private readonly revision: string | null;
   private readonly nodePath?: string;
   private readonly installerPath?: string;
   private readonly run: Runner;
@@ -71,6 +79,7 @@ export class SkillManager {
     this.home = resolve(options.home ?? process.env.LOCALBOX_SKILL_HOME ?? homedir());
     this.source = resolve(options.source ?? process.env.LOCALBOX_SKILL_SOURCE ?? bundledSkillSource());
     this.sourceUrl = options.sourceUrl ?? SOURCE_URL;
+    this.revision = options.revision ?? null;
     this.nodePath = options.nodePath ?? process.env.LOCALBOX_NODE_PATH;
     this.installerPath = options.installerPath ?? process.env.LOCALBOX_SKILLS_INSTALLER;
     this.run = options.run ?? defaultRun;
@@ -84,30 +93,41 @@ export class SkillManager {
     const effective = explicit?.state ?? state?.state ?? (receipt?.managed ? (destinations.every((entry) => entry.exists) ? "installed" : "needs_attention") : discovered.entries.some((entry) => entry.name === "localbox") ? "unmanaged" : "missing");
     return {
       state: effective as SkillStatus["state"], managed: receipt?.managed === true, paths, destinations,
-      source: receipt?.source ?? this.sourceUrl, sourceRevision: receipt?.entries[0]?.source ?? null,
+      source: receipt?.source ?? this.sourceUrl, sourceRevision: receipt?.sourceRevision ?? null, receipt: this.receiptPath,
       installer: receipt?.installer ?? INSTALLER, ...(explicit?.operationId ?? state?.operationId ? { operationId: explicit?.operationId ?? state?.operationId } : {}),
-      ...(state?.error ? { error: state.error } : {}), ...(state?.backupPath ? { backupPath: state.backupPath } : {}),
+      ...(state?.error ? { error: state.error } : {}), ...(explicit?.backupPath ?? state?.backupPath ? { backupPath: explicit?.backupPath ?? state?.backupPath } : {}),
+      ...(explicit?.replaced ? { replaced: explicit.replaced } : {}),
       ...(receipt?.entries ? { entries: receipt.entries } : {}), ...(discovered.error ? { discoveryError: discovered.error } : {}),
     };
   }
-  async install(): Promise<SkillStatus> { return this.replace(); }
-  async update(): Promise<SkillStatus> { return this.replace(); }
+  /** `keepBackup`: keep the replaced copy even when Localbox wrote it (the user may have customised it meanwhile). */
+  async install(options: { keepBackup?: boolean } = {}): Promise<SkillStatus> { return this.replace(options.keepBackup ?? false); }
+  /** Removes the skill Localbox installed and leaves a `disabled` marker, so the next install knows it was removed on purpose. */
   async uninstall(): Promise<SkillStatus> {
     const operationId = randomUUID();
     const receipt = await this.readReceipt();
     if (!receipt?.managed) { await this.writeState({ state: "disabled", operationId }); return this.status({ state: "disabled", operationId }); }
     try {
       const paths = new Set([...receipt.paths, ...(await this.discover()).entries.filter((entry) => entry.name === "localbox" && entry.scope === "global").map((entry) => entry.path)]);
+      // The installer linked the skill into every harness it knows; its own remove takes all those links away.
+      const installer = await this.resolveInstaller();
+      const removed = await this.run(installer.node, [installer.script, "remove", "localbox", "--global", "--yes"], this.commandEnv(installer.node));
+      if (removed.code !== 0) throw new Error(removed.output.trim() || "bundled skills installer could not remove the skill");
       for (const path of paths) if (this.safePath(path)) await rm(path, { recursive: true, force: true });
       if ((await this.exists(this.receiptPath))) await rm(this.receiptPath, { force: true });
-      if ((await this.exists(this.statePath))) await rm(this.statePath, { force: true });
-      return this.status({ state: "disabled", operationId });
+      await this.writeState({ state: "disabled", operationId });
+      return this.status({ state: "disabled", operationId, replaced: [...paths].sort() });
     } catch (error) {
       await this.writeState({ state: "needs_attention", operationId, error: error instanceof Error ? error.message : String(error) });
       return this.status({ state: "needs_attention", operationId });
     }
   }
-  private async replace(): Promise<SkillStatus> {
+  /**
+   * Backs up every global copy, installs the bundled skill through the pinned installer and verifies every harness
+   * path. The backup is kept (and reported) when it holds a copy Localbox did not write, or when `keepBackup` asks;
+   * a failure restores it.
+   */
+  private async replace(keepBackup: boolean): Promise<SkillStatus> {
     const operationId = randomUUID();
     const stage = join(this.home, ".localbox", `skill-${operationId}`);
     const backup = join(stage, "backup");
@@ -139,10 +159,13 @@ export class SkillManager {
       const canonical = join(this.home, ".agents/skills/localbox");
       if (!(await this.exists(canonical)) || !(await this.exists(join(canonical, "SKILL.md"))) || !entries.every((entry) => this.safePath(entry.path))) throw new Error("installed skill verification failed");
       for (const entry of entries) if (!(await this.exists(join(entry.path, "SKILL.md")))) throw new Error("installed skill verification failed");
-      const receipt: Receipt = { managed: true, source: this.sourceUrl, installer: INSTALLER, paths: entries.map((entry) => entry.path).filter((path) => this.safePath(path)), entries, operationId, installedAt: new Date().toISOString() };
+      const receipt: Receipt = { managed: true, source: this.sourceUrl, sourceRevision: this.revision, installer: INSTALLER, paths: entries.map((entry) => entry.path).filter((path) => this.safePath(path)), entries, operationId, installedAt: new Date().toISOString() };
       await mkdir(dirname(this.receiptPath), { recursive: true }); await writeFile(this.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
-      await rm(this.statePath, { force: true }); await rm(stage, { recursive: true, force: true });
-      return this.status({ state: "installed", operationId });
+      await rm(this.statePath, { force: true });
+      const replaced = backedUp.filter((path) => path !== this.receiptPath).sort();
+      const keep = replaced.length > 0 && (keepBackup || !previousReceipt?.managed);
+      if (!keep) await rm(stage, { recursive: true, force: true });
+      return this.status({ state: "installed", operationId, replaced, ...(keep ? { backupPath: backup } : {}) });
     } catch (error) {
       await this.restore(backup, backedUp);
       await this.writeState({ state: "needs_attention", operationId, error: error instanceof Error ? error.message : String(error), backupPath: backup });

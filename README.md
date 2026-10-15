@@ -159,24 +159,25 @@ is published. The [agent setup](#agent-setup) below is what your agent follows.
 ## Agent setup
 
 These steps are written for the agent doing the install, so they are precise and
-describe only what the current release does. The CLI's commands still say `vm`
-where this README says sandbox.
+describe only what the current release does.
 
 1. **Install from a signed release.** Resolve one stable tag from
    [GitHub Releases](https://github.com/dzhng/localbox/releases/latest), download
    the release kit with its `release.json` and `SHA256SUMS`, verify them against
    the pinned [release public key](skills/localbox/release-public.pem), and run
    the bundled installer. The [installation procedure](skills/localbox/references/installation.md)
-   holds the exact commands. Do not build from source for a user install.
+   holds the exact commands. Do not build from source for a user install, and do
+   not install or copy the skill yourself.
 2. **Check the install.** The installer places the CLI at `~/.local/bin/localbox`,
-   registers the host daemon and a six-hour updater with launchd, and installs the
-   global [Localbox skill](skills/localbox/SKILL.md). It bundles its own Node
-   runtime, so it never calls the host's `npx` or `npm`. Then run:
+   registers the host daemon, the relay connector and the updater with launchd,
+   and installs the global [Localbox skill](skills/localbox/SKILL.md) for every
+   agent harness on the Mac. It bundles its own Node runtime, so it never calls
+   the host's `npx` or `npm`. Then run:
 
    ```sh
-   ~/.local/bin/localbox status
-   ~/.local/bin/localbox skill status --json
-   ~/.local/bin/localbox help --json
+   ~/.local/bin/localbox skill status
+   ~/.local/bin/localbox agents setup status
+   ~/.local/bin/localbox help
    ```
 
 3. **Read the skill.** Start a fresh session so the Localbox skill is loaded.
@@ -184,8 +185,10 @@ where this README says sandbox.
 
 Updates arrive automatically and verify before replacing anything;
 `localbox update check` and `localbox update install` do the same on demand.
+With agent setup on (the default), every install and every start of the host
+daemon makes the skill and the `localbox` command match the installed release.
 The [skill lifecycle](skills/localbox/references/skill-lifecycle.md) covers
-replacement, rollback and unmanaged skills.
+turning that off, backups and project installs.
 
 ## Contributing
 

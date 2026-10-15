@@ -6,6 +6,8 @@ import { waitForCode } from "./codes.js";
 
 export const API_ORIGIN = "http://127.0.0.1:3000";
 export const machineRoot = (root: string, machine: string) => join(root, ".localbox/proof/machines", machine);
+/** A fixture machine's own HOME, where its daemon's agent setup puts the skill and the localbox link (never the real HOME). */
+export const fixtureHome = (machineRootPath: string) => join(machineRootPath, "home");
 
 /** Signs a proof machine in with an email, reading the code from dev:local's log. */
 export async function login(root: string, machine: string, email: string, env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string }> {

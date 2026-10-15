@@ -70,3 +70,35 @@ test("skill manager keeps unmanaged skills intact when disabling maintenance", a
   assert.equal(result.state, "disabled");
   await lstat(join(home, ".agents/skills/localbox/SKILL.md")).catch((error) => assert.equal(error.code, "ENOENT"));
 });
+
+const installer = join(process.cwd(), "node_modules/skills/bin/cli.mjs");
+/** Every harness link the pinned installer made for the skill under `home`. */
+async function harnessLinks(home: string): Promise<string[]> {
+  const result = await execFileAsync("find", [home, "-maxdepth", "5", "-name", "localbox", "-path", "*skills/localbox"]);
+  return result.stdout.trim().split("\n").filter(Boolean);
+}
+
+test("an install records the release that wrote it and keeps a backup only of a copy Localbox did not write", async () => {
+  const home = await mkdtemp(join(tmpdir(), "localbox-skill-revision-"));
+  const handCopy = join(home, ".agents/skills/localbox");
+  await mkdir(handCopy, { recursive: true }); await writeFile(join(handCopy, "SKILL.md"), "hand copy\n");
+  const first = await new SkillManager({ home, revision: "0.1.0", nodePath: process.execPath, installerPath: installer }).install();
+  assert.equal(first.state, "installed"); assert.equal(first.sourceRevision, "0.1.0");
+  assert.equal(first.receipt, join(home, ".config/localbox/skill-install.json"));
+  assert.deepEqual(first.replaced, [handCopy]);
+  assert.equal(await readFile(join(first.backupPath!, ".agents/skills/localbox/SKILL.md"), "utf8"), "hand copy\n", "the hand copy is in the backup");
+  assert.equal(await readFile(join(handCopy, "SKILL.md"), "utf8"), await readFile(join(process.cwd(), "skills/localbox/SKILL.md"), "utf8"));
+  const second = await new SkillManager({ home, revision: "0.2.0", nodePath: process.execPath, installerPath: installer }).install();
+  assert.equal(second.sourceRevision, "0.2.0"); assert.equal(second.backupPath, undefined, "Localbox's own older copy is not kept");
+  for (const link of await harnessLinks(home)) assert.ok((await lstat(join(link, "SKILL.md"))).isFile(), link);
+});
+
+test("uninstall removes every harness link and leaves a disabled marker", async () => {
+  const home = await mkdtemp(join(tmpdir(), "localbox-skill-uninstall-"));
+  const manager = new SkillManager({ home, revision: "0.1.0", nodePath: process.execPath, installerPath: installer });
+  await manager.install();
+  assert.ok((await harnessLinks(home)).length > 2, "the installer links the skill into many harnesses");
+  const removed = await manager.uninstall();
+  assert.equal(removed.state, "disabled"); assert.deepEqual(await harnessLinks(home), []);
+  assert.equal((await manager.status()).state, "disabled", "a later status still says it was removed on purpose");
+});

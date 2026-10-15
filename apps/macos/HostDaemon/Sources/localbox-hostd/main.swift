@@ -17,13 +17,17 @@ struct HostDaemonMain {
             let token = try loadToken()
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
+            let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(),
                                    hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init),
-                                   admissionBytes: devAdmissionBytes(), allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1")
+                                   admissionBytes: devAdmissionBytes(), allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
             try await server.start()
+            // Every start (including the relaunch after an update) matches the skill and CLI link to the installed
+            // release (D16), in the background so it never holds up sandbox restore.
+            if let agentSetup { Task.detached { log("agent setup (daemon_start): \(await agentSetup.reconcile())") } } else { log("agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled") }
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
             // The Mac's sleep and power-off notices hibernate the sandboxes first (L6).

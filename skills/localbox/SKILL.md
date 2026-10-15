@@ -1,61 +1,99 @@
 ---
 name: localbox
-description: Install and operate Localbox through its CLI, with optional MCP.
+description: Give yourself durable Linux sandboxes on the user's own Macs through the localbox CLI — a shell, files, a browser and a desktop that stay exactly as you left them, sleep when idle and wake on use. Use when the user wants work done in a sandbox rather than on their machine (installs, test suites, untrusted code, permissions-off runs, long builds, a dev server kept running), wants a sandbox on another of their Macs, or asks to install, sign in, set up MCP, or check, update or remove the Localbox skill and CLI.
 ---
 
 # Localbox
 
-When `localbox` is missing, install the signed arm64 CLI release from the
-selected GitHub tag with the repository installer; the agent performs this
-bootstrap and verifies `release.json` and `SHA256SUMS`. Then run
-`localbox status`. The installer places the app at
-`~/Library/Application Support/Localbox/releases/active/Localbox.app` and the
-CLI at `~/.local/bin/localbox`.
-The installer adds `~/.local/bin` to the login shell profile only when it is not
-already covered, using a marked block that can be removed safely on uninstall.
-For the complete bootstrap, read [installation](references/installation.md).
+You drive Localbox through the `localbox` CLI. Every command acts, then reports
+exactly what it did. Read the report; never guess what happened.
 
-## Everyday use
+## First use
 
-Run `localbox login --email <address>`, then repeat it with the six-digit
-code from the user. Create a sandbox with `localbox sandbox create`: it lands
-on this Mac, on `--machine NAME`, or with `--placement auto` (the machine with
-the most room) or `--placement remote` (the same, never this Mac), and reports
-where and why, the generated name and the size it chose (`--name`, `--cpus`,
-`--memory 4G` override). A full Mac makes room by sleeping its least recently
-used sandboxes and reports each as `made_room`; one running a job is never
-slept. A sandbox idle for 30 minutes (no request and no running job) sleeps,
-and the next command on it wakes it first and reports `woke`, or `cold_booted`
-with the reason when its processes did not survive (`--sleep-after 10m` sets
-the idle time; `--delete-after 2h` deletes it after that long idle). Then use
-`localbox shell exec --sandbox NAME --
-<command>`, `localbox fs read --sandbox NAME PATH` and `localbox sandbox list`.
-`--sandbox` may be left out only when the account has exactly one sandbox; a
-sandbox on another Mac needs no `--machine`. Every command prints short text
-by default and the same facts as JSON with `--json`. The CLI works without MCP;
-configure MCP OAuth only when a client needs tool discovery.
-Use `localbox update check` to inspect GitHub Releases and
-`localbox update install` to install a verified update. The installed launchd
-job performs the same check automatically every six hours. Use
-`localbox skill status`, `localbox skill install`, and `localbox skill update`
-to manage the global Localbox skill for Codex and Claude; managed skills are
-refreshed after an app update. The release carries its own Node runtime and
-pinned `skills@1.7.0` installer, so these operations do not call host `npx` or
-download a skill package.
-For replacement, rollback, and unmanaged-skill rules, read
-[skill lifecycle](references/skill-lifecycle.md).
+Run `command -v localbox`, then try `~/.local/bin/localbox` (a harness launched
+from the Dock may not read the shell profile that puts it on PATH). If neither
+exists and the user asked for setup, follow [installation](references/installation.md).
+Never build from source, run `npx skills add`, or copy this skill yourself.
 
-## Recovery
+Creating sandboxes needs a signed-in Mac:
 
-After sleep or a network change, rerun `localbox status` and wait for the
-relay to reconnect. Reads may retry; never blindly repeat a mutation after an
-`operation_uncertain` result. Use the same mutation ID or query status first.
-Use `localbox sandbox sleep` for a temporary stop and `localbox login` after a
-machine is revoked. To start over, `localbox sandbox delete NAME --confirm NAME`
-and create a new one, only with explicit confirmation from the user.
+```sh
+localbox login --email you@example.com          # sends a 6-digit code
+localbox login --email you@example.com --code NNNNNN   # ask the user for the code
+```
 
-## Capability discovery
+## Sandboxes
 
-`localbox help` is generated from the shared operation catalog. MCP and CLI
-expose the same operations, schemas, sandbox selection, and errors;
-`localbox help OPERATION` shows one operation's schema.
+- `localbox sandbox create` makes one and reports its generated name (like
+  `quiet-otter`), machine, size and why. Override with `--name`, `--cpus`,
+  `--memory 4G`, `--sleep-after 10m` (default 30 min idle), `--delete-after 2h`
+  (only when it should be disposable).
+- Placement: by default it lands on this Mac. `--machine NAME` picks one of the
+  user's machines (`localbox machines list`); `--placement auto` takes the online
+  machine with the most room, `--placement remote` the same but never this Mac.
+- `localbox sandbox list`, `sandbox status`, `sandbox rename`, `sandbox resize`,
+  `sandbox sleep`, `sandbox start`, `sandbox stop`, `sandbox logs`.
+- `localbox sandbox delete NAME --confirm NAME` only with the user's explicit
+  go-ahead; it destroys the disk.
+
+Every per-sandbox command takes `--sandbox NAME` (or the name as its first word
+for `sandbox …` commands). Leave it out only when the account has exactly one
+sandbox. A sandbox on another Mac needs no `--machine`; the name is enough.
+
+## Running things
+
+```sh
+localbox shell exec --sandbox NAME -- npm test
+localbox shell exec --sandbox NAME --background -- npm run dev   # returns job_id
+localbox job wait JOB_ID --timeout-ms 120000 --sandbox NAME
+localbox job output JOB_ID --offset 0 --sandbox NAME
+localbox fs read /etc/os-release --sandbox NAME
+localbox fs write /work/notes.txt "hello" --sandbox NAME
+```
+
+Results are capped at 900 KiB. A trimmed result says so (`truncated` with
+`original_bytes` and `returned_bytes`); keep reading with `--offset` from
+`next_offset` until `eof` (`fs read`, `job output`). Use `--background` for
+anything that may run longer than two minutes, then `job status`, `job wait`,
+`job output` or `job cancel`. `browser …` and `desktop …` commands drive the
+sandbox's browser and its 1440×900 desktop.
+
+## Reading results
+
+- `--json` prints the envelope: `ok`, then `result` or `error` (`code`,
+  `message`, `retryable`, `details`). Text prints the same facts. Exit 0 is
+  success, 1 an error, 2 not signed in.
+- A change reports `requested`, `produced` and `actions`. Each action has a
+  `kind` and a `detail` saying why: `created`, `renamed`, `deleted`, `woke`,
+  `cold_booted` (its processes did not survive; the detail says why), `slept`,
+  `made_room` (a full Mac slept its least recently used idle sandbox for you),
+  `restarted`, `truncated`. Tell the user about anything that changed their world,
+  such as a restarted dev server.
+- A sandbox idle for its sleep time (no request, no running job) sleeps. The next
+  command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
+  job never sleeps to make room.
+- Errors name the way out: `sandbox_ambiguous` and `sandbox_not_found` list the
+  names, `machine_full` lists what holds the memory, `machine_offline` is
+  retryable. Never blindly repeat a mutation after `operation_uncertain`: read
+  status first, or repeat it with the same `--mutation-id`.
+
+## MCP
+
+The CLI needs no MCP. When a client wants tool discovery, `localbox mcp install`
+prints the server config; tools are the same operations with a `sandbox`
+argument (or `machine` for machine-level tools), and the client signs in with the
+user's email code.
+
+## Keeping Localbox current
+
+Releases update themselves. `localbox update check` and `localbox update install`
+do it on demand. With agent setup on (the default), every install and every
+daemon start makes this skill and the `localbox` link match the installed
+release. For `skill status`, maintenance on or off, and project-scope or
+comparison installs, read [skill lifecycle](references/skill-lifecycle.md). To
+find any operation or its schema, read [capabilities](references/capabilities.md).
+
+If the current project has its own copy of this skill (`.claude/skills/localbox`,
+`.agents/skills/localbox` or `.codex/skills/localbox` under the project root), it
+may be stale and shadow the maintained global one: tell the user and suggest
+deleting it. Never delete it yourself.

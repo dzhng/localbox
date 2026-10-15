@@ -1023,5 +1023,110 @@
     "idempotency": "required",
     "executor": "guest",
     "sandbox_scoped": true
+  },
+  {
+    "id": "skill.status",
+    "description": "Read this Mac's global Localbox skill: its state, whether Localbox maintains it, the release that wrote it (`source_revision`), its ownership receipt and every agent harness path.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "skill.install",
+    "description": "Install this release's Localbox skill for every agent harness on this Mac, replacing any global copy; a copy Localbox did not write is backed up first and the result names the backup.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "skill.update",
+    "description": "Reinstall this release's Localbox skill for every agent harness on this Mac, exactly as skill.install does.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "skill.uninstall",
+    "description": "Remove the global Localbox skill Localbox installed on this Mac. While agent setup is on, the next reconcile (the daemon's next start) installs it again.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "cli.status",
+    "description": "Read this Mac's `localbox` command link (`~/.local/bin/localbox`) and the installed release it should point at.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "agents.setup.status",
+    "description": "Read the agent setup setting. While it is on (the default), Localbox keeps the global skill and the `localbox` link matched to the installed release, at install and at every daemon start.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "host",
+    "sandbox_scoped": false
+  },
+  {
+    "id": "agents.setup.set",
+    "description": "Turn agent setup on or off. While it is off, Localbox leaves the global skill and the `localbox` link alone, so they can be customised.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "host",
+    "sandbox_scoped": false
   }
 ]

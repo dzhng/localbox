@@ -18,13 +18,20 @@ export interface McpAdapterOptions {
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
 const SANDBOX_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The sandbox to act on: a name or id from sandbox.list. May be left out when the account has exactly one sandbox." };
+const MACHINE_ARGUMENT: JsonSchema & { description: string } = { type: "string", minLength: 1, description: "The machine to act on: a name or id from machine.list. May be left out when the account has exactly one machine." };
+/** Machine-level host operations (relay status, agent setup) act on one machine rather than a sandbox. */
+const machineLevel = (entry: Pick<OperationCatalogEntry, "executor" | "sandbox_scoped">) => entry.executor === "host" && !entry.sandbox_scoped;
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
-/** The catalog as MCP tools. Tools that act on one sandbox gain a `sandbox` argument; it is the adapter's, not the catalog's. The agent API finds the sandbox's machine. */
+/**
+ * The catalog as MCP tools. Tools that act on one sandbox gain a `sandbox` argument, and machine-level host tools a
+ * `machine` argument; they are the adapter's, not the catalog's. The agent API finds the machine.
+ */
 export function mcpTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
   return mcpToolsSnapshot().map((tool) => ({
     name: tool.id, description: tool.description,
-    inputSchema: tool.sandbox_scoped ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, sandbox: SANDBOX_ARGUMENT } } : tool.input_schema,
+    inputSchema: tool.sandbox_scoped ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, sandbox: SANDBOX_ARGUMENT } }
+      : machineLevel(tool) ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, machine: MACHINE_ARGUMENT } } : tool.input_schema,
   }));
 }
 
@@ -70,17 +77,20 @@ export class McpAdapter {
     if (rpc.method === "tools/call") {
       const name = String(rpc.params?.name ?? ""); const entry = catalogById.get(name as never);
       if (!entry) return this.rpcResponse(id, undefined, { code: -32602, message: `Unknown tool: ${name}` });
-      const { sandbox, ...input } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
-      try { return this.rpcResponse(id, await this.call(principal, entry, entry.sandbox_scoped ? sandbox : undefined, input)); }
+      const { sandbox, machine, ...rest } = isObject(rpc.params?.arguments) ? rpc.params.arguments : {};
+      // `machine` is the adapter's only for machine-level tools; for sandbox.create it is the catalog's own input.
+      const input = machineLevel(entry) || machine === undefined ? rest : { ...rest, machine };
+      try { return this.rpcResponse(id, await this.call(principal, entry, { sandbox: entry.sandbox_scoped ? sandbox : undefined, machine: machineLevel(entry) ? machine : undefined }, input)); }
       catch (error) { return this.rpcResponse(id, this.toolError(error instanceof Error ? error.message : "the operation failed")); }
     }
     return this.rpcResponse(id, undefined, { code: -32601, message: `Method not found: ${rpc.method}` });
   }
-  private async call(principal: Principal, entry: OperationCatalogEntry, sandbox: unknown, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async call(principal: Principal, entry: OperationCatalogEntry, target: { sandbox: unknown; machine: unknown }, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     const operation = entry.id;
     // MCP has no idempotency key of its own: each tool call is one mutation.
     const mutationId = entry.idempotency === "required" ? `mcp_${crypto.randomUUID()}` : null;
-    let result = await this.ops(principal, { operation, input, ...(typeof sandbox === "string" && sandbox ? { sandbox } : {}), request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
+    const where = Object.fromEntries(Object.entries(target).filter(([, value]) => typeof value === "string" && value));
+    let result = await this.ops(principal, { operation, input, ...where, request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
     // A long request comes back as a continuation; resume it until the machine answers or its deadline passes.
     while (result.status === 202) { const pending = result.body as { request_id: string; deadline_at: number }; result = await this.ops(principal, { continue: pending.request_id, deadline_at: pending.deadline_at }); }
     if (result.status !== 200) return this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));

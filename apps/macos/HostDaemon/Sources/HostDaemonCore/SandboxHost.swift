@@ -153,13 +153,15 @@ public actor SandboxHost {
     private var poweredDown: Set<String> = []
     /// `host.simulate_power` is a dev tool (`LOCALBOX_DEV=1`).
     private let allowsSimulatedPower: Bool
+    /// The installed CLI, which answers agent setup for remote callers (`LOCALBOX_CLI`).
+    private let agentSetup: AgentSetupCLI?
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -327,6 +329,7 @@ public actor SandboxHost {
         let host = HostOperation(rawValue: operation)
         if host == .sandboxList { return hostSuccess(object, result: ["sandboxes": await snapshots().map(view)]) }
         if host == .relayStatus { return relayStatus(object) }
+        if let host, host.isAgentSetup { return await runAgentSetup(object, operation: operation, input: input) }
         guard let sandboxID = object["sandbox_id"] as? String, !sandboxID.isEmpty else { return hostFailure(object, code: "invalid_input", message: "\(operation) needs a sandbox_id") }
         if host == .sandboxCreate { return await create(object, sandboxID: sandboxID, input: input) }
         guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else { return hostFailure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
@@ -352,7 +355,8 @@ public actor SandboxHost {
         let sandbox = await runtime.snapshot()
         let name = sandbox.record.name, sandboxID = sandbox.record.sandboxID
         switch host {
-        case .sandboxCreate, .sandboxList, .relayStatus, .networkEgress: preconditionFailure("answered by request()")
+        case .sandboxCreate, .sandboxList, .relayStatus, .networkEgress, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet:
+            preconditionFailure("answered by request()")
         case .systemInfo:
             return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
         case .sandboxStatus:
@@ -598,6 +602,20 @@ public actor SandboxHost {
         for continuation in waiting.values { continuation.resume() }
     }
 
+    /// Agent setup belongs to the CLI (D16); the daemon runs it here and answers with its envelope's result or error.
+    private func runAgentSetup(_ object: [String: Any], operation: String, input: [String: Any]) async -> Data {
+        guard let agentSetup else { return hostFailure(object, code: "unsupported", message: "this daemon was started without LOCALBOX_CLI, so it cannot run \(operation)") }
+        let outcome = await agentSetup.operation(operation, input: input)
+        if outcome.timedOut { return hostFailure(object, code: "operation_timeout", message: "localbox agents op \(operation) did not finish within \(Int(agentSetup.timeout)) s") }
+        guard let envelope = try? JSONSerialization.jsonObject(with: outcome.stdout) as? [String: Any], let ok = envelope["ok"] as? Bool else {
+            let said = outcome.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return hostFailure(object, code: "internal", message: "localbox agents op \(operation) exited \(outcome.status) without a response\(said.isEmpty ? "" : ": \(said.suffix(500))")")
+        }
+        if ok { return hostSuccess(object, result: envelope["result"] ?? NSNull()) }
+        let error = envelope["error"] as? [String: Any] ?? [:]
+        return hostFailure(object, code: error["code"] as? String ?? "internal", message: error["message"] as? String ?? "\(operation) failed", details: error["details"] as? [String: Any])
+    }
+
     private static let connectorReportTTL: TimeInterval = 120
 
     private func hostSuccess(_ request: [String: Any], result: Any) -> Data {
@@ -620,6 +638,11 @@ public actor SandboxHost {
         ].merging(values) { _, latest in latest }
         return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data("{}".utf8)
     }
+}
+
+extension HostOperation {
+    /// The skill, the CLI link and the agent setup setting: machine-level, answered by the installed CLI.
+    var isAgentSetup: Bool { ["skill.", "cli.", "agents."].contains { rawValue.hasPrefix($0) } }
 }
 
 /// Lets runtimes tell the host their lifecycle changed, so `host.watch` answers.

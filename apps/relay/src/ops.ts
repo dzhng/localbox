@@ -60,8 +60,9 @@ const answer = (response: ResponseEnvelope): OpsResponse => ({ status: 200, body
 
 /**
  * `POST /api/v1/ops`. Account operations run against the catalog. `sandbox.create`, `.rename` and `.delete` change
- * the catalog and tell the sandbox's machine. Every other operation names a sandbox (`sandbox`: name or id; omitted
- * only when the account has exactly one) and is enqueued for the connector of the machine holding it; this call
+ * the catalog and tell the sandbox's machine. Machine-level host operations (relay status, agent setup) go to one
+ * machine (`resolveMachine`). Every other operation names a sandbox (`sandbox`: name or id; omitted only when the
+ * account has exactly one) and is enqueued for the connector of the machine holding it; this call
  * waits on a Convex subscription for up to min(deadline, 50 s). A request no connector claims within 3 s is
  * abandoned and reported `machine_offline`; one still running when the wait ends comes back as a continuation the
  * client resumes with `{continue: request_id}`.
@@ -82,6 +83,7 @@ export async function handleOps(principal: Principal, input: Record<string, unkn
   try {
     validateJson(payload, entry.input_schema);
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
+    if (entry.executor === "host" && !entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, input, deps), base, deps);
     const target = await resolveSandbox(principal, typeof input.sandbox === "string" ? input.sandbox : undefined, deps);
     const request = { ...base, sandbox_id: target.sandbox_id };
     if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
@@ -104,6 +106,25 @@ export async function resolveSandbox(principal: Principal, wanted: string | unde
   if (rows.length === 1) return rows[0];
   if (!rows.length) throw new ContractError("sandbox_not_found", "this account has no sandboxes; create one with sandbox create", { names });
   throw new ContractError("sandbox_ambiguous", `this account has ${rows.length} sandboxes; name one: ${names.join(", ")}`, { names });
+}
+
+/**
+ * The machine a machine-level operation runs on: `machine` (name or id), else the named `sandbox`'s machine, else the
+ * calling machine, else the account's only machine.
+ */
+export async function resolveMachine(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<string> {
+  if (typeof input.sandbox === "string" && typeof input.machine !== "string") return (await resolveSandbox(principal, input.sandbox, deps)).machine_id;
+  if (typeof input.machine !== "string" && principal.machineId) return principal.machineId;
+  const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
+  const names = rows.map((row) => row.name);
+  if (typeof input.machine === "string") {
+    const row = rows.find((candidate) => candidate.machineId === input.machine || candidate.name === input.machine);
+    if (!row) throw new ContractError("machine_not_found", `no machine ${input.machine} on this account; ${names.length ? `machines: ${names.join(", ")}` : "it has none"}`, { names });
+    return row.machineId;
+  }
+  if (rows.length === 1) return rows[0].machineId;
+  if (!rows.length) throw new ContractError("machine_not_found", "this account has no machines; sign a Mac in with localbox login", { names });
+  throw new ContractError("invalid_input", `this account has ${rows.length} machines; name one with machine: ${names.join(", ")}`, { names });
 }
 
 const gib = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
