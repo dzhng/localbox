@@ -114,7 +114,8 @@ Implementation note: Apple's built-in shared directories don't expose per-file
 events, so an audited share means Localbox serves the folder itself. That is a
 deliberate, reviewed host interface, as the security model requires.
 
-Today: **planned**. No host folders are shared.
+Today: **planned**. No host folders are shared. The placeholder is
+[specs/shared-folders](specs/shared-folders/README.md).
 
 ## 6. One sandbox per agent, many agents at once
 
