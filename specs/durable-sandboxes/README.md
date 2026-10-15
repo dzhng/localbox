@@ -172,6 +172,7 @@ editing it here and in its slice.
 | D12 | Screenshots are re-encoded or scaled to fit the cap, and the result says so. | Trimming a PNG corrupts it. |
 | D13 | Per-account daily relay limits are 500 requests and 25 MB of results (knobs). **Answered by the agent on the user's behalf**, replacing L7's 10,000 / 5 GB. | L7 let one account spend the whole deployment's free monthly budget in a day. |
 | D14 | A process-fixture backend (the guest agent as a child process, `SIGSTOP` for sleep) simulates the second machine; it is refused without an explicit dev opt-in and in signed releases. | Two real daemons on one Mac double-count RAM. |
+| D15 | The release (`full`) image uses exactly the package set of Duet's VMs (`~/dev/duet/packages/vm-image/Dockerfile` at `8f3cb100e`), ported to ARM64 with recorded substitutions (Chromium for Chrome, ARM64 builds of x86_64 downloads, Duet-only services removed), and a parity check guards drift. | User requirement: Localbox sandboxes carry the same toolchain as Duet VMs. |
 
 ## Sharp edges (no decision needed; know them)
 
