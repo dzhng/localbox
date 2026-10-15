@@ -87,6 +87,55 @@ final class HostDaemonCoreTests: XCTestCase {
     }
 }
 
+extension HostDaemonCoreTests {
+    private static let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
+
+    private func fixtureConfiguration(_ sandbox: URL) -> ProcessFixtureConfiguration {
+        ProcessFixtureConfiguration(sandboxDirectory: sandbox, guestCommand: ["/usr/bin/env", "node", "--import", "tsx", Self.repoRoot.appendingPathComponent("apps/guest-agent/src/index.ts").path], workingDirectory: Self.repoRoot)
+    }
+
+    private func envelope(_ operation: String, _ input: String, mutation: String? = nil) -> Data {
+        Data(#"{"protocol_version":"v1","request_id":"\#(operation)-1","operation":"\#(operation)","vm_id":"vm_01","deadline_ms":30000,"mutation_id":\#(mutation.map { "\"\($0)\"" } ?? "null"),"input":\#(input)}"#.utf8)
+    }
+
+    func testProcessFixtureBackendRoundTrip() async throws {
+        let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent("lb-fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let backend = try ProcessFixtureBackend(configuration: fixtureConfiguration(sandbox), environment: ["LOCALBOX_VM_BACKEND": "process-fixture"])
+        let daemon = HostDaemon(backend: backend)
+        try await daemon.start()
+        let ready = await daemon.status()
+        XCTAssertEqual(ready.lifecycle, .ready)
+
+        let wrote = try JSONSerialization.jsonObject(with: try await daemon.request(envelope("fs.write", #"{"path":"/hello.txt","content":"fixture"}"#, mutation: "w1"))) as! [String: Any]
+        XCTAssertEqual(wrote["ok"] as? Bool, true, "\(wrote)")
+        XCTAssertEqual(try String(contentsOf: sandbox.appendingPathComponent("root/hello.txt"), encoding: .utf8), "fixture", "the guest root is <sandbox>/root")
+
+        let echoed = try JSONSerialization.jsonObject(with: try await daemon.request(envelope("shell.exec", #"{"command":"echo","args":["round trip"],"cwd":"/","env":{}}"#, mutation: "e1"))) as! [String: Any]
+        XCTAssertEqual(echoed["ok"] as? Bool, true, "\(echoed)")
+        XCTAssertEqual(((echoed["result"] as? [String: Any])?["stdout"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), "round trip")
+
+        try await daemon.pause()
+        let paused = await daemon.status()
+        XCTAssertEqual(paused.lifecycle, .paused)
+        try await daemon.resume()
+        let resumed = try JSONSerialization.jsonObject(with: try await daemon.request(envelope("fs.read", #"{"path":"/hello.txt"}"#))) as! [String: Any]
+        XCTAssertEqual((resumed["result"] as? [String: Any])?["content"] as? String, "fixture", "SIGCONT resumes the same guest process")
+
+        let pid = await backend.pid
+        try await daemon.stop()
+        XCTAssertNotNil(pid)
+        if let pid { XCTAssertEqual(kill(pid, 0), -1, "stop ends the guest process") }
+    }
+
+    func testFixtureBackendRefusedWithoutOptIn() throws {
+        let configuration = fixtureConfiguration(FileManager.default.temporaryDirectory)
+        XCTAssertThrowsError(try ProcessFixtureBackend(configuration: configuration, environment: [:]))
+        XCTAssertThrowsError(try ProcessFixtureBackend(configuration: configuration, environment: ["LOCALBOX_VM_BACKEND": "apple"]))
+        XCTAssertNoThrow(try ProcessFixtureBackend(configuration: configuration, environment: ["LOCALBOX_VM_BACKEND": "process-fixture"]))
+    }
+}
+
 private func XCTAssertThrowsErrorAsync(_ expression: @autoclosure () async throws -> Void) async {
     do { try await expression(); XCTFail("expected error") } catch {}
 }
