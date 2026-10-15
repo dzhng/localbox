@@ -30,10 +30,7 @@ What remains, in order:
    `mail.localbox.sh`. Only real sign-in email waits on it.
 2. **The user's two-Mac run** with the [runbook](two-mac-runbook.md), once the
    first signed release is published and Resend works.
-3. **Post-restore network delay.** A restored guest's internet takes about 7 s
-   to answer again; renew the guest's network on the post-restore `hello`
-   ([slice 02](slices/02-hibernate-spike.md)).
-4. **Close the spec** with [close-spec](../../.agents/skills/close-spec/SKILL.md):
+3. **Close the spec** with [close-spec](../../.agents/skills/close-spec/SKILL.md):
    archive it to `specs/done/` as rationale.
 
 Keep `npm run proof -- --through 14 --tier u,l` green while working; tier `v`
@@ -58,7 +55,6 @@ needs a screen lock that asks for no password.
 - [x] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md); production login round trip waits on Resend (blocked, exit 2)
 - [ ] Resend account and DNS (user)
 - [ ] [two-Mac run](two-mac-runbook.md) (user)
-- [ ] post-restore network delay follow-up (slice 02)
 - [ ] close-spec
 
 ## Slice graph

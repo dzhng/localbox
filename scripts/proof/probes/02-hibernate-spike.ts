@@ -49,6 +49,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const before = Number(([] as unknown[]).concat(verdict.phase1.counter_before).at(-1));
       assert.ok(verdict.phase2.counter_after > before, `the counter keeps counting after restore (${before} -> ${verdict.phase2.counter_after})`);
       assert.equal(verdict.phase2.nat_http_code_after, "200");
+      assert.ok(verdict.phase2.nat_ready_ms < 2000, `the restored guest reached the internet by name after ${verdict.phase2.nat_ready_ms} ms`);
       assert.ok(Math.abs(verdict.phase2.clock_skew_ms) < 2000, `clock skew ${verdict.phase2.clock_skew_ms} ms`);
     }),
   ];

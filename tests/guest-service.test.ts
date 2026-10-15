@@ -107,3 +107,19 @@ test("guest service reports malformed or oversized streams without dispatching",
   assert.ok(errors.some((error) => error.message.includes("buffer")));
   service.stop();
 });
+
+test("after a new-epoch hello, requests wait for the guest to settle (a restored network)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-settle-"));
+  const input = new PassThrough(); const output = new PassThrough();
+  let release!: () => void; const settled = new Promise<void>((resolve) => { release = resolve; });
+  const service = new GuestService({ input, output, gateway: new GuestGateway({ root }), channelEpoch: 1, readinessMarker: join(root, "ready"), settle: () => settled });
+  await service.start(); await waitForFrame(output, "ready");
+  input.write(encodeGuestFrame({ kind: "hello", channel_epoch: 2, wall_clock_ms: 1, sandbox_id: "s", hostname: "h" }));
+  input.write(encodeGuestFrame({ kind: "request", channel_epoch: 2, request: { protocol_version: "v1", request_id: "r1", operation: "fs.stat", sandbox_id: "s", deadline_ms: 5_000, mutation_id: null, input: { path: "/" } } } as never));
+  let answered = false; void waitForFrame(output, "response").then(() => { answered = true; });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(answered, false, "the request waits while the guest settles");
+  release(); await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(answered, true);
+  service.stop();
+});

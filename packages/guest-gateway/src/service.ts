@@ -28,6 +28,8 @@ export interface GuestServiceOptions {
   setClock?: (wallClockMs: number) => void;
   /** Called when a newer host hello names the sandbox this guest is (its id, and its name as the hostname). */
   adoptIdentity?: (sandboxId: string, hostname: string) => void;
+  /** Runs after a new-epoch hello (a restore or a reconnect); requests wait for it. */
+  settle?: () => Promise<void>;
   inventoryNames?: readonly string[];
   readinessMarker?: string;
   maxPending?: number;
@@ -53,6 +55,8 @@ export class GuestService {
   private channelEpoch: number;
   private readonly setClock: (wallClockMs: number) => void;
   private readonly adoptIdentity: (sandboxId: string, hostname: string) => void;
+  private readonly settle: () => Promise<void>;
+  private settled: Promise<void> = Promise.resolve();
   private readonly inventoryNames: readonly string[];
   private readonly readinessMarker: string;
   private readonly maxPending: number;
@@ -77,6 +81,7 @@ export class GuestService {
     this.channelEpoch = options.channelEpoch;
     this.setClock = options.setClock ?? (() => undefined);
     this.adoptIdentity = options.adoptIdentity ?? (() => undefined);
+    this.settle = options.settle ?? (async () => undefined);
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
     this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
     this.maxPending = options.maxPending ?? 32;
@@ -154,6 +159,7 @@ export class GuestService {
         this.channelEpoch = frame.channel_epoch;
         this.setClock(frame.wall_clock_ms);
         if (frame.sandbox_id && frame.hostname) this.adoptIdentity(frame.sandbox_id, frame.hostname);
+        this.settled = this.settle().catch(() => undefined);
         await fs.writeFile(this.readinessMarker, `${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
       }
       return;
@@ -179,6 +185,7 @@ export class GuestService {
     const controller = new AbortController();
     this.aborts.set(request.request_id, controller);
     try {
+      await this.settled;
       const response = await this.gateway.dispatch(request as RequestEnvelope, { signal: controller.signal });
       await this.respond(request, response);
     } finally {

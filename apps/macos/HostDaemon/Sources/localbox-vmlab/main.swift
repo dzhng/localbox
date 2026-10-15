@@ -129,8 +129,8 @@ struct Lab {
         let pid = phase1["pid"] as? String ?? "0"
         let alive = try await shell(backend, "kill -0 \(pid) && echo alive || echo gone").stdout.contains("alive")
         let counter = Int(try await shell(backend, "curl -s --max-time 5 http://127.0.0.1:8080").stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
-        // The restored guest keeps its DHCP lease, but the new process's NAT can take a moment to pass traffic;
-        // retry for up to 10 s and record how long it took.
+        // How long until the restored guest reaches the internet by name; the guest agent holds requests until its
+        // DNS server answers, so this should be immediate.
         let natStarted = Date()
         let nat = try await shell(backend, "for i in 1 2 3 4 5 6 7 8 9 10; do c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://deb.debian.org/); [ \"$c\" = 200 ] && break; sleep 1; done; printf %s \"$c\"").stdout
         let natMs = Int(Date().timeIntervalSince(natStarted) * 1000)

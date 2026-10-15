@@ -112,6 +112,7 @@ implementer's.
   identifier makes restore fail ("invalid argument"); the kernel command line
   does not matter. Slice 10's resize discards the save file; MAC and machine
   identifier never change.
-- **Open:** the restored guest's internet took about 7 s to answer again
-  (`nat_ready_ms`); a follow-up should renew the guest's network on the
-  post-restore `hello`.
+- **Network after restore:** the guest reaches the internet by name within
+  ~50 ms (it was ~7 s). The NIC's brief carrier loss, networkd's slow carrier
+  report and the new NAT's first dropped packets are handled in the image and
+  the guest agent; `choices.md` has the measured chain. Probe 02 asserts under 2 s.

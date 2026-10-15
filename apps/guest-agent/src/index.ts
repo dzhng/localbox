@@ -1,8 +1,9 @@
 import { stdin, stdout, stderr } from "node:process";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { createServer } from "node:net";
+import { Resolver } from "node:dns/promises";
 import { GuestGateway, runGuestService } from "../../../packages/guest-gateway/src/index.js";
 import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
@@ -38,7 +39,10 @@ export async function main(): Promise<void> {
   const ownsSystem = root === "/" && process.platform === "linux";
   const setClock = ownsSystem ? (wallClockMs: number) => { spawnSync("date", ["-u", "-s", `@${(wallClockMs / 1000).toFixed(3)}`], { stdio: "ignore" }); } : undefined;
   const adoptIdentity = ownsSystem ? (sandboxId: string, hostname: string) => { adoptSandboxIdentity(sandboxId, hostname); } : undefined;
-  const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  // A restored VM gets a new NAT whose first packets are dropped for ~250 ms; a DNS query sent then costs glibc its
+  // 5 s timeout. So after a new-epoch hello, requests wait (at most 3 s) until the DHCP-provided DNS server answers.
+  const settle = ownsSystem ? () => dnsAnswers(3_000) : undefined;
+  const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, settle, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
   const socketPath = process.env.LOCALBOX_AGENT_SOCKET;
   if (!socketPath) { await serve(stdin, stdout, channelEpoch); return; }
   // One connection at a time carries the host's frames; each starts at the epoch the last one ended on.
@@ -52,4 +56,15 @@ export async function main(): Promise<void> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => { stderr.write(`[localbox-guest] ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`); process.exitCode = 1; });
+}
+
+/** Resolves once the nameserver in /etc/resolv.conf answers any query (an NXDOMAIN counts), or after `limitMs`. */
+async function dnsAnswers(limitMs: number): Promise<void> {
+  const server = readFileSync("/etc/resolv.conf", "utf8").match(/^nameserver\s+(\S+)/m)?.[1];
+  if (!server) return;
+  const resolver = new Resolver({ timeout: 150, tries: 1 }); resolver.setServers([server]);
+  for (const deadline = Date.now() + limitMs; Date.now() < deadline;) {
+    try { await resolver.resolve4("localbox-probe.invalid"); return; }
+    catch (error) { if (["ENOTFOUND", "ENODATA", "ESERVFAIL", "EREFUSED"].includes((error as NodeJS.ErrnoException).code ?? "")) return; }
+  }
 }

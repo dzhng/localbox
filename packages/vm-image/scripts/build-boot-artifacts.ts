@@ -39,8 +39,9 @@ async function filesUnder(directory: string): Promise<string[]> {
 
 async function inputDigest(): Promise<string> {
   const hash = createHash("sha256");
-  // Everything the Dockerfile COPYs is an input: a changed guest agent in dist/ must produce a new image.
-  const copied = ["packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
+  // Everything the Dockerfile COPYs is an input (a changed guest agent in dist/ must produce a new image), and so is
+  // this script, which edits the root filesystem after the build.
+  const copied = ["packages/vm-image/scripts/build-boot-artifacts.ts", "packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
     ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/"))];
   for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
@@ -100,9 +101,11 @@ try {
   }
   // Docker's marker makes systemd treat the VM as a container and skip hardware setup.
   await rm(join(rootfs, ".dockerenv"), { force: true });
-  // Docker owns /etc/resolv.conf during a build; in the VM, systemd-resolved serves the NAT's DHCP-provided DNS.
+  // Docker owns /etc/resolv.conf during a build. In the VM it lists the NAT's DHCP-provided DNS server directly
+  // (resolved's uplink file), not resolved's stub: after a restore networkd reports no carrier for ~5 s, and the
+  // stub refuses every lookup until it clears, although the network itself answers within ~250 ms.
   await rm(join(rootfs, "etc/resolv.conf"), { force: true });
-  await symlink("../run/systemd/resolve/stub-resolv.conf", join(rootfs, "etc/resolv.conf"));
+  await symlink("../run/systemd/resolve/resolv.conf", join(rootfs, "etc/resolv.conf"));
   await mkdir(join(staging, "boot"), { recursive: true });
   await run("docker", ["cp", `${container}:/boot/.`, join(staging, "boot")]);
   await extractKernel(container, staging, "vmlinuz");
