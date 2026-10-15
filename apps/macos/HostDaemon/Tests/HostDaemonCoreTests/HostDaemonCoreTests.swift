@@ -64,20 +64,25 @@ final class HostDaemonCoreTests: XCTestCase {
         do { _ = try await daemon.request(guestRequest); XCTFail("stopped VM should reject guest work") } catch { }
     }
 
-    func testFramedGuestChannelSkipsReadinessAndReturnsResponse() async throws {
+    func testFramedGuestChannelSpeaksTheGuestFrameProtocol() async throws {
         let toGuest = Pipe(); let fromGuest = Pipe()
         let channel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting)
-        let guest = Task.detached {
+        func frame(_ value: Data) -> Data { var size = UInt32(value.count).bigEndian; return Data(bytes: &size, count: 4) + value }
+        try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"ready","channel_epoch":7}"#.utf8)))
+        try await channel.waitUntilReady()
+        let guest = Task.detached { () throws -> [String: Any] in
             let header = try toGuest.fileHandleForReading.read(upToCount: 4)!
             let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-            _ = try toGuest.fileHandleForReading.read(upToCount: Int(length))
-            func frame(_ value: Data) -> Data { var size = UInt32(value.count).bigEndian; return Data(bytes: &size, count: 4) + value }
-            try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"ready"}"#.utf8)))
-            try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"ok":true}"#.utf8)))
+            let sent = try JSONSerialization.jsonObject(with: try toGuest.fileHandleForReading.read(upToCount: Int(length))!) as! [String: Any]
+            try fromGuest.fileHandleForWriting.write(contentsOf: frame(Data(#"{"kind":"response","channel_epoch":7,"response":{"ok":true}}"#.utf8)))
+            return sent
         }
         let response = try await channel.send(Data(#"{"request_id":"r1"}"#.utf8))
         XCTAssertEqual(String(data: response, encoding: .utf8), #"{"ok":true}"#)
-        _ = await guest.result
+        let sent = try await guest.value
+        XCTAssertEqual(sent["kind"] as? String, "request")
+        XCTAssertEqual(sent["channel_epoch"] as? Int, 7, "requests carry the epoch the guest announced")
+        XCTAssertEqual((sent["request"] as? [String: Any])?["request_id"] as? String, "r1")
         await channel.close()
     }
 }

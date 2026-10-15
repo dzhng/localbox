@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ImageManifest, ToolInventoryEntry } from "./index.js";
@@ -32,6 +33,8 @@ export interface BuildManifestOptions {
   probe?: ImageProbeReport;
   tools?: ToolInventoryEntry[];
   digest?: string;
+  profile?: "minimal" | "full";
+  substitutions?: Array<{ from: string; to: string; reason: string }>;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -92,12 +95,21 @@ export function buildImageManifest(options: BuildManifestOptions): ImageManifest
     loopbackBindings: options.probe?.loopbackBindings ?? options.pins.loopbackBindings,
     readinessMarker: options.pins.readinessMarker,
     artifactDigests: options.artifacts ?? {},
+    profile: options.profile,
+    substitutions: options.substitutions ?? [],
   } satisfies Omit<ImageManifest, "digest">;
   return { ...unsigned, digest: options.digest ?? digestJson(unsigned) };
 }
 
 export async function sha256File(path: string): Promise<string> {
-  return `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`;
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(path);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve());
+    stream.on("error", reject);
+  });
+  return `sha256:${hash.digest("hex")}`;
 }
 
 export async function artifactDigests(directory: string): Promise<Record<string, string>> {

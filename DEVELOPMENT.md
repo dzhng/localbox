@@ -159,10 +159,20 @@ function rejects callers without a valid token; operator functions such as
 
 ## VM image
 
-Build an image with `npm run image:build`, with `LOCALBOX_BASE_IMAGE` pinned to
-an ARM64 digest plus the checksum and version variables documented in
-`packages/vm-image/scripts/build-arm64-image.ts` (`NODE_*`, `BUN_*` and
-`STATIC_WEB_SERVER_*`). Verify it with `npm run image:verify`.
+`npm run image:boot -- --profile minimal|full` builds bootable artifacts
+(kernel, initrd, an ext4 `template.img` and a manifest with their digests) into
+`dist/vm-image/<profile>/`, using Docker on this Mac (start it with `colima start
+--arch aarch64`). `full` is the release image and carries exactly Duet's VM
+package set, ported to ARM64; `npm run image:parity` fails if it drifts from the
+vendored copy of Duet's Dockerfile in `packages/vm-image/duet-reference/`. The
+recorded substitutions live in the manifest. `minimal` is for fast proofs.
+
+The guest agent listens on vsock port 1024 (socat in the image's
+`localbox-guest` unit). Kernel and boot output go to a separate console, which
+`localbox-vmlab` keeps beside a scratch clone of the disk. To boot an image by
+hand: `swift build --package-path apps/macos/HostDaemon`, sign the binaries with
+the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
+`localbox-vmlab boot --artifacts dist/vm-image/minimal --json`.
 
 ## Releasing
 

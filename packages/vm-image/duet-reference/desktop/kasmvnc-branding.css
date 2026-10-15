@@ -1,0 +1,117 @@
+body {
+  background: #fff;
+}
+
+#noVNC_transition {
+  gap: 18px;
+  background: #fff;
+  color: #64748b;
+}
+
+#duet_desktop_brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #111827;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-size: 56px;
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+#duet_desktop_brand img {
+  width: 64px;
+  height: 64px;
+  border: 1px solid #dbeafe;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgb(37 99 235 / 14%);
+}
+
+#noVNC_transition_text {
+  margin-top: 0;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+#noVNC_transition_text:empty,
+.noVNC_logo,
+.noVNC_version_wrapper {
+  display: none;
+}
+
+.noVNC_spinner {
+  position: relative;
+  display: block;
+  width: 132px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe4f0;
+  box-shadow: none;
+  animation: none;
+}
+
+.noVNC_spinner::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 44%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
+  box-shadow: none;
+  animation: duet-desktop-loading 1.4s ease-in-out infinite;
+}
+
+.noVNC_spinner::after {
+  display: none;
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes duet-desktop-loading {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  50% {
+    transform: translateX(65%);
+  }
+
+  100% {
+    transform: translateX(235%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .noVNC_spinner::before {
+    transform: translateX(64%);
+    animation: none;
+  }
+}
+
+#noVNC_container {
+  background-image: none;
+}
+
+@media (max-width: 640px) {
+  #duet_desktop_brand {
+    gap: 12px;
+    font-size: 40px;
+  }
+
+  #duet_desktop_brand img {
+    width: 52px;
+    height: 52px;
+  }
+}

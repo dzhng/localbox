@@ -1,21 +1,22 @@
 {
-  "schemaVersion": "agent-computer-image-build.v1",
+  "schemaVersion": "localbox-vm-image.v2",
   "architecture": "arm64",
-  "baseImage": "registry.example/debian@sha256:<64-hex-digest>",
-  "baseSnapshot": "20250929T000000Z",
+  "baseImage": "ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55",
+  "duetCommit": "8f3cb100e016e2627618718675b2617d8b98f2aa",
   "packages": {
-    "python3": "3.11",
-    "nodejs": "20.19.5",
-    "bun": "<pinned-version>",
-    "staticWebServer": "<pinned-version>",
-    "chromium": "<pinned-arm64-version>",
-    "bunSha256": "sha256:<64-hex-digest>",
-    "nodeSha256": "sha256:<64-hex-digest>",
-    "staticWebServerSha256": "sha256:<64-hex-digest>"
+    "nodejs": "24.x",
+    "bun": "1.3.14",
+    "bunSha256": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b",
+    "staticWebServer": "2.43.0",
+    "staticWebServerSha256": "6aeca9e23580a187c043daef9c6bf8c12b80bb8d75ed84a23beead2cd193a20d",
+    "kasmvnc": "1.5.0",
+    "kasmvncSha256": "c9199cf4753208bfb69fd016a9780242bebfc43370cc38c97d61e90a3c783e04",
+    "chromium": "Ubuntu noble ARM64 package"
   },
-  "pythonRequirementsSha256": "sha256:<sha256-of-requirements-arm64.txt>",
-  "buildVersion": "0.1.0",
-  "display": { "width": 1440, "height": 900 },
-  "loopbackBindings": ["127.0.0.1:9222", "127.0.0.1:5900"],
-  "readinessMarker": "/run/localbox/ready"
+  "pythonRequirementsSha256": "sha256:0c0947d9cc158f58ac2900eebfd4173147fdd7cdf38db75ff8df065c987cc82a",
+  "buildVersion": "dev",
+  "templateSize": {
+    "minimal": "4G",
+    "full": "8G"
+  }
 }

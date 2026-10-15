@@ -1,0 +1,4 @@
+dist/vm-image
+apps/macos/**/.build
+node_modules
+.git

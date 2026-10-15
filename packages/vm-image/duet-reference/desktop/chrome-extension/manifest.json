@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Duet Browser Windows",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArHTIW89BF9mECkYssC0qI5QcmJbr1DattBWPONmT+l3dZoYWR4J+NENxcgtXTC1Eqx6I8aWAC0KwnoatFGNvjUJpqyqQagbGEMj+dR9YwUm1ZgkfI/Br8jYC4h6v6DEf5GMat9ML5jNKmf6asBijG6DP3IfMCAemfax7uK7Z3nm3npsmYUrtiX6QzGzkBoBCTPAXlFNAH1HR/iKXgWtROgYy/kemLyeI8ankyA6HIB5apVIqm/XOLjnbQXPS2ZsYQqz1V7PRKDrbUzXOQ/S/hZ9Y1gmId8BePFF1ivql5nrr39dxmr6aMToWmRumaGTpMM0JY7F6j862brwfzjcilQIDAQAB",
+  "permissions": ["tabs", "windows", "debugger"],
+  "background": { "service_worker": "background.js" }
+}

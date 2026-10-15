@@ -1,0 +1,30 @@
+desktop:
+  resolution:
+    width: 1440
+    height: 900
+  allow_resize: false
+
+network:
+  protocol: http
+  interface: 127.0.0.1
+  websocket_port: 6901
+  use_ipv6: false
+  ssl:
+    pem_certificate: /home/exedev/.vnc/pki/desktop.crt
+    pem_key: /home/exedev/.vnc/pki/desktop.key
+    require_ssl: false
+
+runtime_configuration:
+  allow_client_to_override_kasm_server_settings: false
+
+data_loss_prevention:
+  clipboard:
+    server_to_client:
+      enabled: true
+      size: 16777216
+    client_to_server:
+      enabled: true
+      size: 16777216
+
+command_line:
+  prompt: false

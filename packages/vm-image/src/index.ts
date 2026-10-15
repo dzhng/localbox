@@ -28,6 +28,8 @@ export interface ImageManifest {
   tools?: ToolInventoryEntry[];
   readinessMarker?: string;
   artifactDigests?: Record<string, string>;
+  profile?: "minimal" | "full";
+  substitutions?: Array<{ from: string; to: string; reason: string }>;
 }
 export interface ImageVerification { ok: boolean; checks: Record<string, { ok: boolean; detail: string }>; manifest: ImageManifest; }
 export interface ImageVerifierOptions {

@@ -14,3 +14,9 @@
 - Slice 06: the relay entry creates a Convex client per call. Function instances serve concurrent requests and auth is per client, so a shared client could run one machine's request with another's token.
 - Slice 06: a rate-limited verify answers 429. The account-executor operation table currently lives inline in `apps/relay/api/[...path].ts`; slice 07 moves the agent API (`/api/v1/ops`) into its own module when it adds machine-bound operations.
 - Slice 06: `stack up` wipes the local anonymous Convex once it's ready, because that backend keeps data (including per-IP limits) between runs.
+- Slice 01 uses Ubuntu 24.04 ARM64 pinned to digest because the Duet exeuntu image is private and no ARM64 variant was available.
+- Slice 01 uses an 8 GiB ext4 template for the full desktop image and a 4 GiB template for minimal so `mke2fs -d` has room for the package payload.
+- Slice 01 removes Docker pseudo-filesystems and dangling snap links before `mke2fs -d`; systemd recreates those runtime mounts at boot.
+- Slice 01: the guest channel is vsock port 1024 (socat EXEC of the agent, restarted by systemd per session), not the named virtio console port: a hand-written ready frame from the guest never reached the host on that port. Kernel output goes to its own console (hvc0) and `vmlab` keeps it next to a scratch APFS clone of the template.
+- Slice 01: three pre-existing host bugs blocked any real boot: VMs must be created and driven on one dispatch queue; the console pipe ends were swapped; and the host sent bare envelopes where the guest expects `{kind:"request", request, channel_epoch}` frames (and replies `{kind:"response", …}`). The host adopts the epoch from the guest's ready frame until slice 02's hello.
+- Slice 01: the boot rootfs drops Docker's `/.dockerenv` (systemd otherwise treats the VM as a container); one signing helper lives at `scripts/proof/lib/sign-dev.sh`.

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Duet desktop style
+Comment=Start the dock and window sizing rules
+Exec=/opt/duet/bin/start-desktop-style.sh
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
+Terminal=false

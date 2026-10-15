@@ -34,8 +34,9 @@ which gains:
 5. Restart the daemon process between save and restore (cross-process restore).
 6. Configuration-identity sweep: restore after changing the command line, CPU
    count, MAC and machine identifier, one at a time; record which break restore.
-7. Repeat 3–4 with the guest channel on the console port and on
-   `VZVirtioSocketDevice`.
+7. The guest channel is already the virtio socket (slice 01: guest-to-host
+   bytes never arrived on the named console port). Confirm the vsock connection
+   is re-established after restore; the console-port alternative is gone.
 8. Repeat once with the screen locked.
 
 ## Output
@@ -43,8 +44,8 @@ which gains:
 `specs/durable-sandboxes/evidence/02-hibernate.json` plus a decision note in
 this file:
 
-- **Channel:** the virtio socket if it restores (it also removes the one-request-
-  at-a-time limit of the console port), else the console port.
+- **Channel:** vsock is in use; record whether the connection survives restore or
+  must be re-dialled, and the cost of a re-dial.
 - **Restore identity:** which fields must never change while a save file exists.
   Slice 10 relies on this for "resize cold-restarts" and "rename never touches the
   kernel command line".

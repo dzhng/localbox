@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07162f"/>
+      <stop offset="0.5" stop-color="#0e2b63"/>
+      <stop offset="1" stop-color="#171432"/>
+    </linearGradient>
+    <radialGradient id="blue" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#5c8fff" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#3158d4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violet" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#9b65d8" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#673ca9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#32c8ff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#32c8ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1440" height="900" fill="url(#base)"/>
+  <ellipse cx="390" cy="180" rx="620" ry="510" fill="url(#blue)"/>
+  <ellipse cx="1110" cy="810" rx="620" ry="450" fill="url(#violet)"/>
+  <ellipse cx="900" cy="230" rx="480" ry="330" fill="url(#cyan)"/>
+</svg>

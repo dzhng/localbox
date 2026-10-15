@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Chrome
+Comment=Browse the web in the shared Duet desktop
+Exec=/opt/duet/bin/start-shared-chrome
+Icon=google-chrome
+Terminal=false
+Categories=Network;WebBrowser;
+StartupNotify=true
+StartupWMClass=duet-browser
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;

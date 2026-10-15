@@ -7,10 +7,12 @@ let package = Package(
     products: [
         .library(name: "HostDaemonCore", targets: ["HostDaemonCore"]),
         .executable(name: "localbox-hostd", targets: ["localbox-hostd"]),
+        .executable(name: "localbox-vmlab", targets: ["localbox-vmlab"]),
     ],
     targets: [
         .target(name: "HostDaemonCore"),
         .executableTarget(name: "localbox-hostd", dependencies: ["HostDaemonCore"]),
+        .executableTarget(name: "localbox-vmlab", dependencies: ["HostDaemonCore"]),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
     ]
 )

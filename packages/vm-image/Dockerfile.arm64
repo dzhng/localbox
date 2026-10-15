@@ -1,73 +1,101 @@
 # syntax=docker/dockerfile:1.7
-# The builder supplies BASE_IMAGE as an immutable digest. Keeping the ARG
-# mandatory prevents an accidental moving-tag release.
-ARG BASE_IMAGE
+# Localbox ARM64 boot image. The full profile mirrors Duet commit
+# 8f3cb100e016e2627618718675b2617d8b98f2aa; see duet-reference/Dockerfile.
+ARG BASE_IMAGE=ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 FROM ${BASE_IMAGE}
-ARG DEBIAN_SNAPSHOT=20250929T000000Z
+ARG PROFILE=full
+ARG BUN_VERSION=1.3.14
+ARG BUN_SHA256=a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b
+ARG STATIC_WEB_SERVER_VERSION=2.43.0
+ARG STATIC_WEB_SERVER_SHA256=6aeca9e23580a187c043daef9c6bf8c12b80bb8d75ed84a23beead2cd193a20d
+ARG KASMVNC_VERSION=1.5.0
+ARG KASMVNC_SHA256=c9199cf4753208bfb69fd016a9780242bebfc43370cc38c97d61e90a3c783e04
 ARG IMAGE_BUILD_VERSION=dev
-ARG NODE_VERSION
-ARG NODE_SHA256
-ARG BUN_VERSION
-ARG BUN_SHA256
-ARG STATIC_WEB_SERVER_VERSION
-ARG STATIC_WEB_SERVER_SHA256
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION} \
-    LOCALBOX_LOOPBACK_BINDINGS=127.0.0.1:9222,127.0.0.1:5900
+    LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION}
 
-RUN test "$(dpkg --print-architecture)" = arm64 \
-  && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" > /etc/apt/sources.list \
-  && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/%s bookworm-security main\n' "$DEBIAN_SNAPSHOT" >> /etc/apt/sources.list \
-  && apt-get -o Acquire::Check-Valid-Until=false update \
-  && apt-get install -y --no-install-recommends \
-    bash ca-certificates curl git gh imagemagick ffmpeg ghostscript jq \
-    libreoffice-core-nogui pandoc poppler-utils python3 python3-pip qpdf \
-    tesseract-ocr libvips-tools chromium python-is-python3 unzip xz-utils \
-    dbus-x11 x11-utils x11vnc xdotool xfce4 xfce4-terminal xvfb \
-  && rm -rf /var/lib/apt/lists/*
+RUN test "$PROFILE" = minimal || test "$PROFILE" = full
+# The package names in the full branch are the Duet apt inventory. The only
+# package substitution is Chromium for Google's x86_64-only Chrome.
+RUN apt-get update && \
+  if [ "$PROFILE" = full ]; then \
+    apt-get install -y --no-install-recommends \
+      build-essential ca-certificates catfish cmake curl devilspie2 ffmpeg \
+      fonts-inter fonts-noto-color-emoji fonts-noto-core gh ghostscript git \
+      imagemagick jq libcairo2 libcups2 libgl1 libreoffice-calc-nogui \
+      libreoffice-core-nogui libreoffice-draw-nogui libreoffice-impress-nogui \
+      libreoffice-writer-nogui libvips-tools libxinerama1 libxrandr2 libxrender1 \
+      ninja-build pandoc plank poppler-utils pulseaudio pulseaudio-utils \
+      python-is-python3 qpdf ripgrep tesseract-ocr thunar unzip vim wget \
+      x11-utils xclip xfce4-panel xfce4-session xfce4-settings xfce4-terminal \
+      xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip chromium \
+      systemd systemd-sysv linux-image-generic initramfs-tools socat; \
+  else \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl systemd systemd-sysv linux-image-generic initramfs-tools socat; \
+  fi && rm -rf /var/lib/apt/lists/*
 
-RUN test -n "$NODE_VERSION" -a -n "$NODE_SHA256" \
-  && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-arm64.tar.xz" \
-  && echo "$NODE_SHA256  /tmp/node.tar.xz" | sha256sum -c - \
-  && mkdir -p /opt/node \
-  && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /opt/node \
-  && ln -s /opt/node/bin/node /usr/local/bin/node \
-  && ln -s /opt/node/bin/npm /usr/local/bin/npm \
-  && ln -s /opt/node/bin/npx /usr/local/bin/npx \
-  && rm -f /tmp/node.tar.xz \
-  && node --version && npm --version
+# NodeSource is shared by both profiles; Ubuntu's Node 18 package is not the
+# contract. This is the Node 24 channel used by Duet.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/* \
+  && node --version | grep '^v24\.'
 
-RUN test -n "$BUN_VERSION" -a -n "$BUN_SHA256" -a -n "$STATIC_WEB_SERVER_VERSION" -a -n "$STATIC_WEB_SERVER_SHA256" \
-  && curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64.zip" \
-  && echo "$BUN_SHA256  /tmp/bun.zip" | sha256sum -c - \
-  && unzip -q /tmp/bun.zip -d /opt \
-  && install -m 0755 /opt/bun-linux-aarch64/bun /usr/local/bin/bun \
-  && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
-  && curl -fsSL -o /tmp/static-web-server.tar.gz "https://github.com/static-web-server/static-web-server/releases/download/v${STATIC_WEB_SERVER_VERSION}/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
-  && echo "$STATIC_WEB_SERVER_SHA256  /tmp/static-web-server.tar.gz" | sha256sum -c - \
-  && tar -xzf /tmp/static-web-server.tar.gz -C /tmp \
-  && install -m 0755 "/tmp/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu/static-web-server" /usr/local/bin/static-web-server \
-  && rm -rf /tmp/bun.zip /tmp/static-web-server.tar.gz /opt/bun-linux-aarch64 /tmp/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu \
-  && bun --version && static-web-server --version
+COPY packages/vm-image/requirements-arm64.txt /opt/localbox/requirements-arm64.txt
+RUN if [ "$PROFILE" = full ]; then \
+      apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
+      && python3 -m pip install --break-system-packages --no-cache-dir -r /opt/localbox/requirements-arm64.txt \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-COPY packages/vm-image/requirements-arm64.txt /opt/agent-computer/requirements-arm64.txt
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-      --requirement /opt/agent-computer/requirements-arm64.txt
+# Duet's global npm inventory, retained verbatim for full images.
+RUN if [ "$PROFILE" = full ]; then npm install -g eslint firecrawl-cli prettier skills typescript; fi
 
-# The guest service and readiness marker are installed into the immutable image
-# so the VM starts with the framed service on its virtio-serial stdin/stdout.
-COPY packages/vm-image/image-root/ /opt/agent-computer/image-root/
-COPY dist/ /opt/agent-computer/dist/
-COPY package.json /opt/agent-computer/package.json
-COPY package-lock.json /opt/agent-computer/package-lock.json
-RUN cd /opt/agent-computer && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-RUN install -d -m 0755 /run/agent-computer /var/lib/agent-computer \
-  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-image-probe /usr/local/bin/agent-computer-image-probe \
-  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/duet-browser /usr/local/bin/duet-browser \
-  && install -m 0755 /opt/agent-computer/image-root/usr/local/bin/agent-computer-entrypoint /usr/local/bin/agent-computer-entrypoint
+# ARM64 substitutions for Duet's x86_64 release downloads. KasmVNC ships a
+# native noble arm64 package at the same version.
+RUN if [ "$PROFILE" = full ]; then \
+      curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64.zip" \
+      && echo "$BUN_SHA256  /tmp/bun.zip" | sha256sum -c - \
+      && unzip -q /tmp/bun.zip -d /tmp \
+      && install -m 0755 /tmp/bun-linux-aarch64/bun /usr/local/bin/bun \
+      && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+      && curl -fsSL -o /tmp/static-web-server.tar.gz "https://github.com/static-web-server/static-web-server/releases/download/v${STATIC_WEB_SERVER_VERSION}/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
+      && echo "$STATIC_WEB_SERVER_SHA256  /tmp/static-web-server.tar.gz" | sha256sum -c - \
+      && tar -xzf /tmp/static-web-server.tar.gz -C /tmp \
+      && install -m 0755 "/tmp/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu/static-web-server" /usr/local/bin/static-web-server \
+      && curl -fsSL -o /tmp/kasmvncserver.deb "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_noble_${KASMVNC_VERSION}_arm64.deb" \
+      && echo "$KASMVNC_SHA256  /tmp/kasmvncserver.deb" | sha256sum -c - \
+      && apt-get update && apt-get install -y --no-install-recommends /tmp/kasmvncserver.deb \
+      && rm -rf /var/lib/apt/lists/* /tmp/bun.zip /tmp/bun-linux-aarch64 /tmp/static-web-server.tar.gz /tmp/static-web-server-v${STATIC_WEB_SERVER_VERSION}-aarch64-unknown-linux-gnu /tmp/kasmvncserver.deb; \
+    fi
 
-# The guest service owns stdin/stdout (virtio-serial in production). The image
-# probe remains available as a diagnostic command and as the verifier override.
-ENTRYPOINT ["/usr/local/bin/agent-computer-entrypoint"]
+# Duet's XFCE/KasmVNC configuration is copied for the full desktop. Branding,
+# gateway, Syncthing, and Duet runtime units are deliberately omitted.
+RUN if [ "$PROFILE" = full ]; then useradd --create-home --shell /bin/bash exedev; fi
+COPY packages/vm-image/duet-reference/desktop/ /opt/localbox/duet-desktop/
+RUN if [ "$PROFILE" = full ]; then \
+      install -d -m 0755 /home/exedev/.config/xfce4/xfconf/xfce-perchannel-xml /home/exedev/.config/autostart /home/exedev/.config/devilspie2 /home/exedev/.config/plank/dock1/launchers /home/exedev/.vnc/pki /usr/share/backgrounds; \
+      cp /opt/localbox/duet-desktop/xfce4/*.xml /home/exedev/.config/xfce4/xfconf/xfce-perchannel-xml/; \
+      cp /opt/localbox/duet-desktop/autostart/* /home/exedev/.config/autostart/; \
+      cp /opt/localbox/duet-desktop/devilspie2/* /home/exedev/.config/devilspie2/; \
+      cp /opt/localbox/duet-desktop/plank/* /home/exedev/.config/plank/dock1/launchers/; \
+      cp /opt/localbox/duet-desktop/kasmvnc.yaml /home/exedev/.vnc/kasmvnc.yaml; \
+      cp /opt/localbox/duet-desktop/duet-wallpaper.svg /usr/share/backgrounds/duet-wallpaper.svg; \
+      chown -R exedev:exedev /home/exedev; \
+    fi
+
+# Guest protocol boot layer. The service owns the named non-console virtio
+# port; machine-id is intentionally empty so the runtime can establish identity.
+COPY dist/ /opt/localbox/dist/
+RUN install -d -m 0755 /run/localbox /var/lib/localbox \
+  && install -d -m 0755 /etc/systemd/system \
+  && printf '[Unit]\nDescription=Localbox guest agent on vsock port 1024\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr EXEC:\042/usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\042\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
+  && systemctl enable localbox-guest.service \
+  && printf '%s' 'virtio_pci\nvirtio_blk\nvirtio_console\next4\n' > /etc/initramfs-tools/modules \
+  && update-initramfs -c -k all \
+  && : > /etc/machine-id
+
+CMD ["/sbin/init"]
