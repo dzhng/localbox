@@ -51,7 +51,8 @@ MCP OAuth audience and public resource URL, `LOCALBOX_OWNER_SUBJECT` selects
 the configured Localbox owner, and `BLOB_READ_WRITE_TOKEN` authorizes private
 Vercel Blob storage for oversized results. The MCP issuer and relay URL are
 derived from `LOCALBOX_RESOURCE`; the owner ID and VM ID come from Convex
-records, and the deployment label is only an internal repository identifier.
+records. There is no second deployment-name setting: the URL is the Convex
+deployment identity.
 Deployed functions fail closed when Convex, the resource, owner subject, or
 private Blob configuration is missing. `LOCALBOX_BLOB_THRESHOLD_BYTES`,
 `LOCALBOX_BLOB_TTL_MS`, and `LOCALBOX_BLOB_MAX_BYTES` are optional knobs for

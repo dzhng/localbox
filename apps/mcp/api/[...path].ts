@@ -6,14 +6,14 @@ import { oauthErrorResponse, oauthRedirect, RepositoryOAuthServer } from "../../
 import { McpAdapter } from "../src/index.js";
 
 const resource = process.env.LOCALBOX_RESOURCE ?? "https://relay.example.test/mcp";
-const issuer = (process.env.LOCALBOX_ISSUER ?? resource).replace(/\/$/, "");
-const relayUrl = process.env.LOCALBOX_RELAY_URL ?? defaultRelayUrl(resource);
+const issuer = resource.replace(/\/$/, "");
+const relayUrl = defaultRelayUrl(resource);
 if (process.env.VERCEL && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed MCP endpoint");
 if (process.env.VERCEL && !process.env.LOCALBOX_RESOURCE) throw new Error("LOCALBOX_RESOURCE is required for the deployed MCP endpoint");
 if (process.env.VERCEL && !process.env.LOCALBOX_OWNER_SUBJECT) throw new Error("LOCALBOX_OWNER_SUBJECT is required for the deployed MCP endpoint");
 const repository: RelayStateRepository = process.env.CONVEX_URL
-  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }), process.env.CONVEX_DEPLOYMENT ?? "convex")
-  : new InMemoryRelayStateRepository({ deploymentId: process.env.CONVEX_DEPLOYMENT ?? "mcp-local" });
+  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }))
+  : new InMemoryRelayStateRepository({ deploymentId: "mcp-local" });
 const durableOAuth = process.env.CONVEX_URL ? new RepositoryOAuthServer({ repository, issuer, resource, ownerSubject: process.env.LOCALBOX_OWNER_SUBJECT ?? "default-owner" }) : undefined;
 const fixtureOAuth = new OAuthAuthorizationServer({ issuer, resource });
 

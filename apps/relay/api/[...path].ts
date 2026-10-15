@@ -11,8 +11,8 @@ if (process.env.VERCEL && !localServices && !process.env.CONVEX_URL) throw new E
 if (process.env.VERCEL && !localServices && !process.env.BLOB_READ_WRITE_TOKEN) throw new Error("BLOB_READ_WRITE_TOKEN is required for the deployed relay");
 if (process.env.VERCEL && !process.env.LOCALBOX_RESOURCE) throw new Error("LOCALBOX_RESOURCE is required for the deployed relay");
 const repository = process.env.CONVEX_URL
-  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }), process.env.CONVEX_DEPLOYMENT ?? "convex")
-  : new InMemoryRelayStateRepository({ deploymentId: process.env.CONVEX_DEPLOYMENT ?? "vercel-local" });
+  ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }))
+  : new InMemoryRelayStateRepository({ deploymentId: "vercel-local" });
 const blobProvider = process.env.BLOB_READ_WRITE_TOKEN ? new VercelBlobProvider({
   token: process.env.BLOB_READ_WRITE_TOKEN,
   maxBytes: numberEnv("LOCALBOX_BLOB_MAX_BYTES", 64 * 1024 * 1024),
