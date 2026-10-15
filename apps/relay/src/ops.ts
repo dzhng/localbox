@@ -102,8 +102,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
       throw error;
     });
     if (!target) return answer(success(base, alreadyDeleted(payload, sandbox!) as unknown as Json));
-    // Both selectors given: they must agree, or the caller meant something we would silently not do.
-    if (machine && (await findMachine(principal, machine, deps)).machineId !== target.machine_id) throw new ContractError("invalid_input", `${target.name} is on ${target.machine_name ?? target.machine_id}, not ${machine}; leave out machine for a sandbox`);
+    await requireSameMachine(principal, target, machine, deps);
     const request = { ...base, sandbox_id: target.sandbox_id };
     if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
     if (entry.id === "sandbox.delete") return await deleteSandbox(principal, request, target, deps);
@@ -147,13 +146,14 @@ async function findMachine(principal: Principal, wanted: string, deps: OpsDeps):
   throw new ContractError("machine_not_found", `no machine ${wanted} on this account; ${names.length ? `machines: ${names.join(", ")}` : "it has none"}`, { names });
 }
 
+/** A request naming both a sandbox and a machine must mean the same machine; otherwise the caller meant something else. */
+async function requireSameMachine(principal: Principal, target: SandboxRow, machine: string | undefined, deps: OpsDeps): Promise<void> {
+  if (machine && (await findMachine(principal, machine, deps)).machineId !== target.machine_id) throw new ContractError("invalid_input", `${target.name} is on ${target.machine_name ?? target.machine_id}, not ${machine}; name one or the other`);
+}
+
 /** The machine a machine-level operation runs on: the named sandbox's, else the named machine, else the calling machine, else the account's only machine. */
 async function resolveMachine(principal: Principal, sandbox: string | undefined, machine: string | undefined, deps: OpsDeps): Promise<string> {
-  if (sandbox) {
-    const target = await resolveSandbox(principal, sandbox, deps);
-    if (machine && (await findMachine(principal, machine, deps)).machineId !== target.machine_id) throw new ContractError("invalid_input", `${target.name} is on ${target.machine_name ?? target.machine_id}, not ${machine}; name one or the other`);
-    return target.machine_id;
-  }
+  if (sandbox) { const target = await resolveSandbox(principal, sandbox, deps); await requireSameMachine(principal, target, machine, deps); return target.machine_id; }
   if (machine) return (await findMachine(principal, machine, deps)).machineId;
   if (principal.machineId) return principal.machineId;
   const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];

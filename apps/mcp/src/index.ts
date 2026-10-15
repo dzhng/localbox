@@ -19,7 +19,7 @@ interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: st
 /** The request's selectors: what it is for. Every tool takes both; they are the agent API's, not the operation's input. */
 const SELECTORS: Record<"sandbox" | "machine", JsonSchema & { description: string }> = {
   sandbox: { type: "string", minLength: 1, description: "The sandbox the request is for: a name or id from sandbox.list. May be left out when the account has exactly one sandbox." },
-  machine: { type: "string", minLength: 1, description: "The machine the request is for: a name or id from machine.list. sandbox.create puts the sandbox there; relay, skill and agent setup tools run there; a named sandbox's own machine wins. May be left out when the account has exactly one machine." },
+  machine: { type: "string", minLength: 1, description: "The machine the request is for: a name or id from machine.list. sandbox.create puts the sandbox there; relay, skill and agent setup tools run there; with a sandbox too, it must be that sandbox's machine. May be left out when the account has exactly one machine." },
 };
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 

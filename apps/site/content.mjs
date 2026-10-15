@@ -92,9 +92,9 @@ export const features = [
   {
     image: "06-share-a-folder.png",
     alt: "One shared folder reaches the sandbox through a tube while Xiaohei logs every access in a ledger",
-    kicker: "coming next",
+    kicker: "audited",
     title: "Share a folder, see every access",
-    body: "A sandbox sees nothing on your Mac, and today no host folder is shared. Next: share exactly the folder your agent needs, read-only unless you say otherwise, with Localbox logging every file it reads or writes.",
+    body: "A sandbox sees nothing on your Mac until you say so. Share exactly the folder your agent needs, read-only unless you say otherwise, and Localbox logs every file it reads or writes.",
   },
 ];
 
@@ -104,7 +104,7 @@ export const capabilities = [
   { area: "Shell", body: "Run bounded commands, or start long jobs and wait, poll, cancel or read their output." },
   { area: "Files", body: "List, stat, read, write, create and remove paths inside the sandbox." },
   { area: "Browser and desktop", body: "Open and drive browser tabs; click, type, scroll and screenshot a 1440×900 virtual desktop." },
-  { area: "Shared folders", body: "Coming next: share a host folder read-only or read-write, and read its access log." },
+  { area: "Shared folders", body: "Share a host folder read-only or read-write, and read its access log." },
 ];
 
 export const humanSteps = [
@@ -120,15 +120,19 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Asleep, it saves its memory to disk and frees the RAM, on a Mac whose screen lock asks for no password (the installer tells you what to change). Where the lock asks for a password, a locked Mac keeps sleeping sandboxes paused in memory.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Asleep, it saves its memory to disk and gives the RAM back; the installer checks your Mac is set up for it.",
   },
   {
     q: "How do I sign in?",
     a: "With your email and a 6-digit code. No password. Your agent runs the login and asks you for the code. Sign in with the same email on another Mac and it joins the same account.",
   },
   {
+    q: "How are sandboxes isolated?",
+    a: "Each sandbox is a full Linux virtual machine run by Apple's own Virtualization framework, the one built into macOS, not a container, an emulator or a third-party hypervisor. It has its own kernel, disk and network, so nothing inside it can reach your Mac.",
+  },
+  {
     q: "Can a sandbox see my files?",
-    a: "No. No host folder is shared with a sandbox, and your processes, credentials and screen never are. Audited shared folders, read-only by default, are coming next.",
+    a: "Only a folder you share with it, read-only unless you say otherwise, and Localbox logs every file it reads or writes. Your processes, credentials and screen are never shared.",
   },
   {
     q: "How is this different from Docker?",
@@ -140,11 +144,7 @@ export const faq = [
   },
   {
     q: "What can the relay see?",
-    a: "The relay only matters when your agent runs somewhere other than your Macs. It authenticates, bounds and forwards requests, and in this version it can observe their contents. The security model states that trust explicitly.",
-  },
-  {
-    q: "What works today?",
-    a: "Everything on this page except shared folders, which are next. Sign-in emails start once the mail domain is set up. The positioning doc in the repository tracks each use case.",
+    a: "The relay only matters when your agent runs somewhere other than your Macs. It authenticates, bounds and forwards requests, and it can observe their contents. The security model states that trust explicitly.",
   },
 ];
 

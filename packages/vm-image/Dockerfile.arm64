@@ -90,6 +90,8 @@ RUN if [ "$PROFILE" = full ]; then \
 # Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it, DHCP on the NAT interface
 # (systemd-networkd and -resolved); machine-id is intentionally empty so the
 # guest agent establishes each sandbox's identity from the host's hello.
+# IgnoreCarrierLoss: a restore drops the NIC's carrier for ~50 ms; without it
+# networkd discards the DHCP config (and the DNS server) until DHCP reruns.
 COPY dist/ /opt/localbox/dist/
 RUN install -d -m 0755 /run/localbox /var/lib/localbox \
   && install -d -m 0755 /etc/systemd/system \

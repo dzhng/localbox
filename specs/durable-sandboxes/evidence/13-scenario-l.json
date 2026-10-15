@@ -28,8 +28,8 @@
     }
   ],
   "create_local": {
-    "sandbox_id": "sandbox_2fef810e-04b9-47ab-94ac-09cf8fa3825c",
-    "name": "sunny-ibis",
+    "sandbox_id": "sandbox_954331dd-fc50-49c2-af0c-1a5e18fecc2a",
+    "name": "calm-lynx",
     "machine": "proof-a",
     "placement_reason": "on proof-a, this machine (6 GiB free)",
     "cpus": 1,
@@ -39,8 +39,8 @@
     "delete_after_ms": null
   },
   "create_on_b": {
-    "sandbox_id": "sandbox_ff161d7f-189c-4f48-8970-7c1617dd2575",
-    "name": "jolly-lemur",
+    "sandbox_id": "sandbox_9dc707cb-dba2-4ed7-8df6-04698a77e0e1",
+    "name": "quick-koala",
     "machine": "proof-b",
     "placement_reason": "on proof-b, as asked (12 GiB free)",
     "cpus": 1,
@@ -50,8 +50,8 @@
     "delete_after_ms": null
   },
   "create_auto": {
-    "sandbox_id": "sandbox_81aa2d6d-d5cd-4207-a201-6efc9115c841",
-    "name": "swift-badger",
+    "sandbox_id": "sandbox_2e51b947-e3a3-4282-919b-e42945e5ae0d",
+    "name": "steady-seal",
     "machine": "proof-b",
     "placement_reason": "on proof-b, the machine with the most room (10 GiB free)",
     "cpus": 1,
@@ -62,44 +62,44 @@
   },
   "convex_calls_per_relayed_request": 13,
   "relayed_round_trip_ms": [
-    158,
-    115,
-    112,
+    161,
     113,
-    112
+    116,
+    112,
+    115
   ],
   "mcp_shell_exec": {
-    "sandbox": "sunny-ibis",
+    "sandbox": "calm-lynx",
     "stdout": "arm64",
     "actions": [
       {
-        "detail": "woke sunny-ibis from sleep",
+        "detail": "woke calm-lynx from sleep",
         "kind": "woke"
       }
     ]
   },
   "machine_offline": {
-    "ms": 3175,
-    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T19:01:09.006Z"
+    "ms": 3176,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T19:44:13.227Z"
   },
   "asleep": {
-    "lifecycle": "paused",
-    "cpus": 1,
+    "name": "calm-lynx",
+    "state": "sleeping",
     "last_boot": {
       "kind": "cold_booted",
-      "detail": "cold-booted sunny-ibis"
+      "detail": "cold-booted calm-lynx"
     },
-    "sandbox_id": "sandbox_2fef810e-04b9-47ab-94ac-09cf8fa3825c",
-    "sleep_after_ms": 5000,
-    "channel_epoch": 2,
-    "state": "sleeping",
-    "name": "sunny-ibis",
+    "delete_after_ms": null,
+    "cpus": 1,
+    "lifecycle": "paused",
+    "sandbox_id": "sandbox_954331dd-fc50-49c2-af0c-1a5e18fecc2a",
     "memory_bytes": 2147483648,
-    "delete_after_ms": null
+    "channel_epoch": 2,
+    "sleep_after_ms": 5000
   },
   "woke": [
     {
-      "detail": "woke sunny-ibis from sleep",
+      "detail": "woke calm-lynx from sleep",
       "kind": "woke"
     }
   ],
@@ -109,9 +109,9 @@
     "log": [
       "Uncaught Error: Forbidden: machine revoked or unknown",
       "Uncaught Error: Forbidden: machine revoked or unknown",
-      "2026-10-15T19:01:21.523Z connector: machine credential revoked: machine token refused (401); stopping",
-      "2026-10-15T19:01:21.523Z connector: state revoked: machine token refused (401)",
-      "2026-10-15T19:01:21.523Z connector: ended: revoked"
+      "2026-10-15T19:44:25.753Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T19:44:25.753Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T19:44:25.754Z connector: ended: revoked"
     ]
   },
   "checks": [

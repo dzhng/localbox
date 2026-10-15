@@ -66,5 +66,6 @@ async function dnsAnswers(limitMs: number): Promise<void> {
   for (const deadline = Date.now() + limitMs; Date.now() < deadline;) {
     try { await resolver.resolve4("localbox-probe.invalid"); return; }
     catch (error) { if (["ENOTFOUND", "ENODATA", "ESERVFAIL", "EREFUSED"].includes((error as NodeJS.ErrnoException).code ?? "")) return; }
+    await new Promise((resolve) => setTimeout(resolve, 50)); // an unreachable network can fail instantly; don't spin
   }
 }

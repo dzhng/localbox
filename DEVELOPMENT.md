@@ -167,7 +167,7 @@ create` reserves a generated name there, then asks the machine that
 else `--placement auto|remote` by the room each machine last reported, else this
 one) to create it. `--machine` and `--sandbox` are request selectors, never
 operation input: on the wire they travel beside the operation as `machine` and
-`sandbox`, and a named sandbox's own machine wins.
+`sandbox`, and when both are given they must agree.
 The daemon admits each start against 75% of its RAM, sleeping its least recently
 used idle sandboxes to make room; it keeps each sandbox's identity, read-only, in
 its own directory next to its disk (the [host daemon](apps/macos/HostDaemon/README.md)
