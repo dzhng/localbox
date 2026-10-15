@@ -5,17 +5,14 @@ import Darwin
 import Glibc
 #endif
 
-/// Where a fixture sandbox lives and how to run its guest agent.
+/// How to run a fixture sandbox's guest agent.
 public struct ProcessFixtureConfiguration: Sendable {
-    /// `<sandbox dir>`; the guest's filesystem root is `<sandbox dir>/root`.
-    public let sandboxDirectory: URL
     /// argv for the guest agent; it must speak the guest frame protocol on stdin/stdout.
     public let guestCommand: [String]
     public let workingDirectory: URL?
-    public init(sandboxDirectory: URL, guestCommand: [String], workingDirectory: URL? = nil) {
-        self.sandboxDirectory = sandboxDirectory; self.guestCommand = guestCommand; self.workingDirectory = workingDirectory
+    public init(guestCommand: [String], workingDirectory: URL? = nil) {
+        self.guestCommand = guestCommand; self.workingDirectory = workingDirectory
     }
-    public var guestRoot: URL { sandboxDirectory.appendingPathComponent("root", isDirectory: true) }
 
     /// The fixture is never a silent fallback: it needs `LOCALBOX_VM_BACKEND=process-fixture`, and release builds refuse it.
     public static func requireOptIn(environment: [String: String]) throws {
@@ -28,16 +25,34 @@ public struct ProcessFixtureConfiguration: Sendable {
     }
 }
 
-/// A sandbox that is a local guest-agent process instead of a VM, so two machines fit on one Mac without
-/// booting VMs. stdin/stdout carry exactly the frames the virtio socket carries; sleep is SIGSTOP/SIGCONT.
-public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
+/// Fixture sandboxes: each gets its own guest process and filesystem root `<sandbox dir>/root`.
+public struct ProcessFixtureFactory: SandboxBackendFactory {
     public let configuration: ProcessFixtureConfiguration
-    private var process: Process?
-    private var channel: FramedFileHandleGuestChannel?
-
     public init(configuration: ProcessFixtureConfiguration, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
         try ProcessFixtureConfiguration.requireOptIn(environment: environment)
         self.configuration = configuration
+    }
+    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
+        try FileManager.default.createDirectory(at: directory.guestRoot, withIntermediateDirectories: true)
+        record.mac = randomLocalMAC()
+        return [:]
+    }
+    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any VMBackend {
+        ProcessFixtureBackend(configuration: configuration, record: record, directory: directory)
+    }
+}
+
+/// A sandbox that is a local guest-agent process instead of a VM, so many machines fit on one Mac without
+/// booting VMs. stdin/stdout carry exactly the frames the virtio socket carries; sleep is SIGSTOP/SIGCONT.
+public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
+    public let configuration: ProcessFixtureConfiguration
+    private let record: SandboxRecord
+    private let directory: SandboxDirectory
+    private var process: Process?
+    private var channel: FramedFileHandleGuestChannel?
+
+    init(configuration: ProcessFixtureConfiguration, record: SandboxRecord, directory: SandboxDirectory) {
+        self.configuration = configuration; self.record = record; self.directory = directory
     }
 
     public var pid: Int32? { process?.processIdentifier }
@@ -45,21 +60,21 @@ public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
     public func start() async throws {
         guard process == nil else { return }
         guard let executable = configuration.guestCommand.first else { throw HostDaemonError.invalidState("fixture guest command is empty") }
-        try FileManager.default.createDirectory(at: configuration.guestRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory.guestRoot, withIntermediateDirectories: true)
         let child = Process()
         child.executableURL = URL(fileURLWithPath: executable)
         child.arguments = Array(configuration.guestCommand.dropFirst())
-        if let directory = configuration.workingDirectory { child.currentDirectoryURL = directory }
+        if let working = configuration.workingDirectory { child.currentDirectoryURL = working }
         var environment = ProcessInfo.processInfo.environment
-        environment["LOCALBOX_ROOT"] = configuration.guestRoot.path
-        environment["LOCALBOX_READINESS_MARKER"] = configuration.sandboxDirectory.appendingPathComponent("ready").path
+        environment["LOCALBOX_ROOT"] = directory.guestRoot.path
+        environment["LOCALBOX_READINESS_MARKER"] = directory.url.appendingPathComponent("ready").path
         child.environment = environment
         let toGuest = Pipe(); let fromGuest = Pipe()
         child.standardInput = toGuest; child.standardOutput = fromGuest
         child.standardError = try logHandle()
         try child.run()
         process = child
-        channel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting)
+        channel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting, sandboxID: record.sandboxID, name: record.name)
     }
 
     public func makeGuestChannel() async throws -> any GuestChannel {
@@ -82,19 +97,13 @@ public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
     public func pause() async throws { try signal(SIGSTOP) }
     public func resume() async throws { try signal(SIGCONT) }
 
-    /// Discards the guest root; the next start begins from an empty sandbox.
-    public func reset() async throws {
-        try await stop()
-        try? FileManager.default.removeItem(at: configuration.guestRoot)
-    }
-
     private func signal(_ value: Int32) throws {
         guard let child = process, child.isRunning else { throw HostDaemonError.invalidState("fixture guest is not running") }
         guard kill(child.processIdentifier, value) == 0 else { throw HostDaemonError.invalidState("could not signal the fixture guest (errno \(errno))") }
     }
 
     private func logHandle() throws -> FileHandle {
-        let log = configuration.sandboxDirectory.appendingPathComponent("guest.log")
+        let log = directory.url.appendingPathComponent("guest.log")
         if !FileManager.default.fileExists(atPath: log.path) { FileManager.default.createFile(atPath: log.path, contents: nil) }
         let handle = try FileHandle(forWritingTo: log); handle.seekToEndOfFile(); return handle
     }

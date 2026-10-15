@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { waitForCode } from "../lib/codes.js";
 import { API_ORIGIN, machineRoot, stopConnector } from "../lib/login.js";
-import { guestRoot, signedInWithSandboxes } from "../lib/sandboxes.js";
+import { guestRoot, inAnyGuestRoot, sandboxRecords, signedInWithSandboxes } from "../lib/sandboxes.js";
 import { shootSignInPages } from "../lib/shoot.js";
 
 export const id = "08";
@@ -64,7 +64,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const setup = await signedInWithSandboxes(ctx.root, ["b"], email);
       connector = setup.connectors.b; sandboxB = setup.sandboxes.b;
       machineB = JSON.parse(readFileSync(join(machineRoot(ctx.root, "b"), "credentials.json"), "utf8")).machine_id;
-      sandboxIdB = JSON.parse(readFileSync(join(machineRoot(ctx.root, "b"), "sandboxes.json"), "utf8"))[0].sandbox_id;
+      sandboxIdB = sandboxRecords(ctx.root, "b")[0].sandbox_id;
     }));
     checks.push(await ctx.check("a client discovers metadata from the 401 and registers", async () => {
       const unauthenticated = await fetch(MCP, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }) });
@@ -90,7 +90,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const marker = `mcp-${run}`;
       const called = await mcp(tokens.access_token, "tools/call", { name: "shell.exec", arguments: { sandbox: sandboxB, command: "touch", args: [marker], cwd: "/" } });
       assert.equal(called.status, 200); assert.notEqual(called.body.result.isError, true, JSON.stringify(called.body));
-      assert.ok(existsSync(join(guestRoot(ctx.root, "b"), marker)), "the command ran in B's guest"); assert.ok(!existsSync(join(guestRoot(ctx.root, "a"), marker)), "and not in A's");
+      assert.ok(existsSync(join(guestRoot(ctx.root, "b", sandboxB), marker)), "the command ran in B's guest"); assert.ok(!inAnyGuestRoot(ctx.root, "a", marker), "and not in A's");
       const unnamed = await mcp(tokens.access_token, "tools/call", { name: "fs.stat", arguments: { path: `/${marker}` } });
       assert.notEqual(unnamed.body.result.isError, true, JSON.stringify(unnamed.body)); assert.equal(unnamed.body.result.structuredContent.exists, true);
     }));

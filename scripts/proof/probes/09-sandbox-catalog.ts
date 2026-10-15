@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { machineRoot, stopConnector } from "../lib/login.js";
-import { cli, createSandbox, guestRoot, signedInWithSandboxes } from "../lib/sandboxes.js";
+import { cli, createSandbox, guestRoot, sandboxRecords, signedInWithSandboxes } from "../lib/sandboxes.js";
 
 export const id = "09";
 export const tiers = ["u", "l"];
@@ -63,7 +63,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       setup = await signedInWithSandboxes(ctx.root, ["a", "b"], `proof-09-${run}@example.com`, { create: false });
       machineA = JSON.parse(readFileSync(join(machineRoot(ctx.root, "a"), "credentials.json"), "utf8")).machine_name;
     }));
-    checks.push(await ctx.check("two sandbox creates on A get distinct adjective-animal names; the first cold-boots and both explain their size", async () => {
+    checks.push(await ctx.check("two sandbox creates on A get distinct adjective-animal names; each cold-boots its own runtime and explains its size", async () => {
       const first = await createSandbox(ctx.root, "a");
       transcript.push(`$ [a] localbox sandbox create --json\n${first.stdout}`);
       const second = await as("a", ["sandbox", "create"]);
@@ -74,7 +74,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
       assert.match(report.produced.size_reason, /^default for .+: half its \d+ CPUs and a quarter of its/);
       assert.equal(report.produced.machine, machineA);
-      assert.match(second.stdout, /^- created: /m); assert.doesNotMatch(second.stdout, /cold_booted/, "the runtime is already up");
+      assert.match(second.stdout, /^- created: /m); assert.match(second.stdout, /^- cold_booted: /m, "each sandbox boots its own runtime");
       sameFacts("sandbox create", first.envelope, second.stdout, ["sandbox_id", "name", "kind", "detail"]);
     }));
     checks.push(await ctx.check("sandbox create --name <taken> fails name_conflict listing the names", async () => {
@@ -90,7 +90,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const marker = `from-b-${run}`;
       const envelope = await both("shell exec (remote)", "b", ["shell", "exec", "--sandbox", names[0], "--", "sh", "-c", `touch ${marker}; echo ran-${run}`], ["duration_ms"]);
       assert.equal(envelope.ok, true, JSON.stringify(envelope)); assert.equal(envelope.result.stdout.trim(), `ran-${run}`);
-      assert.ok(existsSync(join(guestRoot(ctx.root, "a"), marker))); assert.ok(!existsSync(join(guestRoot(ctx.root, "b"), marker)));
+      assert.ok(existsSync(join(guestRoot(ctx.root, "a", names[0]), marker)), "it ran in that sandbox's own root");
+      assert.ok(!existsSync(join(guestRoot(ctx.root, "a", names[1]), marker)), "and not in A's other sandbox");
     }));
     checks.push(await ctx.check("rename on A shows in sandbox list on B, with A's reported state", async () => {
       const renamed = `renamed-${run % 100000}`;
@@ -105,20 +106,19 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       for (let attempt = 0; attempt < 40; attempt++) { listed = await both("sandbox list", "b", ["sandbox", "list"], ["reported_at"]); if (listed.result.sandboxes.every((row: any) => row.state === "running")) break; await sleep(250); }
       assert.deepEqual(listed.result.sandboxes.map((row: any) => row.name).sort(), [...names].sort());
       assert.ok(listed.result.sandboxes.every((row: any) => row.machine_name === machineA && row.state === "running"), JSON.stringify(listed.result));
-      const mirror = JSON.parse(readFileSync(join(machineRoot(ctx.root, "a"), "sandboxes.json"), "utf8"));
-      assert.deepEqual(mirror.map((row: any) => row.name).sort(), [...names].sort(), "A's daemon mirror follows the catalog");
+      assert.deepEqual(sandboxRecords(ctx.root, "a").map((row) => row.name).sort(), [...names].sort(), "A's sandbox records follow the catalog");
     }));
     checks.push(await ctx.check("delete reports exactly what was removed, from the account and from A", async () => {
       const deleted = await as("a", ["sandbox", "delete", names[0], "--json"]);
       assert.equal(deleted.envelope.ok, true, deleted.stdout + deleted.stderr);
-      assert.deepEqual(deleted.envelope.result.produced.removed, ["account catalog entry", `sandbox identity on ${machineA}`]);
+      assert.deepEqual(deleted.envelope.result.produced.removed, ["account catalog entry", `sandbox identity on ${machineA}`, `guest root on ${machineA}`]);
       assert.deepEqual(deleted.envelope.result.actions.map((action: any) => action.kind), ["deleted"]);
       const text = await as("a", ["sandbox", "delete", names[1], "--confirm", names[1]]);
       assert.equal(text.code, 0, text.stderr); assert.match(text.stdout, /^- deleted: /m);
       sameFacts("sandbox delete", deleted.envelope, text.stdout, ["sandbox_id", "name", "detail", "confirm"]);
       const listed = await both("sandbox list (empty)", "b", ["sandbox", "list"]);
       assert.deepEqual(listed.result.sandboxes, []);
-      assert.deepEqual(JSON.parse(readFileSync(join(machineRoot(ctx.root, "a"), "sandboxes.json"), "utf8")), [], "A's mirror is empty");
+      assert.deepEqual(sandboxRecords(ctx.root, "a"), [], "delete removed A's sandbox directories");
       const none = await both("shell exec (no sandboxes)", "a", ["shell", "exec", "--", "true"]);
       assert.equal(none.error.code, "sandbox_not_found");
     }));

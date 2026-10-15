@@ -26,8 +26,8 @@ export interface GuestServiceOptions {
   channelEpoch: number;
   /** Called when a newer host hello supplies the guest wall clock. */
   setClock?: (wallClockMs: number) => void;
-  /** Called when a newer host hello supplies the guest hostname. */
-  setHostname?: (hostname: string) => void;
+  /** Called when a newer host hello names the sandbox this guest is (its id, and its name as the hostname). */
+  adoptIdentity?: (sandboxId: string, hostname: string) => void;
   inventoryNames?: readonly string[];
   readinessMarker?: string;
   maxPending?: number;
@@ -52,7 +52,7 @@ export class GuestService {
   private readonly gateway: GuestGateway;
   private channelEpoch: number;
   private readonly setClock: (wallClockMs: number) => void;
-  private readonly setHostname: (hostname: string) => void;
+  private readonly adoptIdentity: (sandboxId: string, hostname: string) => void;
   private readonly inventoryNames: readonly string[];
   private readonly readinessMarker: string;
   private readonly maxPending: number;
@@ -76,7 +76,7 @@ export class GuestService {
     this.gateway = options.gateway;
     this.channelEpoch = options.channelEpoch;
     this.setClock = options.setClock ?? (() => undefined);
-    this.setHostname = options.setHostname ?? (() => undefined);
+    this.adoptIdentity = options.adoptIdentity ?? (() => undefined);
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
     this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
     this.maxPending = options.maxPending ?? 32;
@@ -150,7 +150,7 @@ export class GuestService {
       if (frame.channel_epoch > this.channelEpoch) {
         this.channelEpoch = frame.channel_epoch;
         this.setClock(frame.wall_clock_ms);
-        if (frame.hostname) this.setHostname(frame.hostname);
+        if (frame.sandbox_id && frame.hostname) this.adoptIdentity(frame.sandbox_id, frame.hostname);
         await fs.writeFile(this.readinessMarker, `${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
       }
       return;

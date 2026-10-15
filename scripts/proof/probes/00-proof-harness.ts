@@ -17,7 +17,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("machine paths relocation", () => {
       const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: "/tmp/proof-machine" });
-      assert.deepEqual(paths, { root: "/tmp/proof-machine", credentials: "/tmp/proof-machine/credentials.json", ipcToken: "/tmp/proof-machine/ipc-token", socket: "/tmp/proof-machine/agent.sock", sandboxes: "/tmp/proof-machine/sandboxes", sandboxMirror: "/tmp/proof-machine/sandboxes.json", logs: "/tmp/proof-machine/logs" });
+      assert.deepEqual(paths, { root: "/tmp/proof-machine", credentials: "/tmp/proof-machine/credentials.json", ipcToken: "/tmp/proof-machine/ipc-token", socket: "/tmp/proof-machine/agent.sock", sandboxes: "/tmp/proof-machine/sandboxes", logs: "/tmp/proof-machine/logs" });
     }));
     checks.push(await ctx.check("verdict evidence directory", () => assert.equal(existsSync(ctx.evidence), true)));
   } else if (ctx.tier === "l") {

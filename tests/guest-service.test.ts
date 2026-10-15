@@ -82,14 +82,14 @@ test("adopts newer epoch from hello, rejects older", async () => {
   const output = new PassThrough();
   let clock = 0;
   let host = "";
-  const service = new GuestService({ input, output, gateway: new GuestGateway({ root }), channelEpoch: 2, readinessMarker: join(root, "ready"), setClock: (value) => { clock = value; }, setHostname: (value) => { host = value; } });
+  const service = new GuestService({ input, output, gateway: new GuestGateway({ root }), channelEpoch: 2, readinessMarker: join(root, "ready"), setClock: (value) => { clock = value; }, adoptIdentity: (sandboxId, hostname) => { host = `${sandboxId}/${hostname}`; } });
   await service.start();
   await waitForFrame(output, "ready");
-  input.write(encodeGuestFrame({ kind: "hello", channel_epoch: 1, wall_clock_ms: 10, hostname: "old" }));
-  input.write(encodeGuestFrame({ kind: "hello", channel_epoch: 3, wall_clock_ms: 20, hostname: "new" }));
+  input.write(encodeGuestFrame({ kind: "hello", channel_epoch: 1, wall_clock_ms: 10, sandbox_id: "sandbox_1", hostname: "old" }));
+  input.write(encodeGuestFrame({ kind: "hello", channel_epoch: 3, wall_clock_ms: 20, sandbox_id: "sandbox_1", hostname: "new" }));
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(clock, 20);
-  assert.equal(host, "new");
+  assert.equal(host, "sandbox_1/new");
   assert.equal((await readFile(join(root, "ready"), "utf8")).split("\n")[0], "3");
   service.stop();
 });

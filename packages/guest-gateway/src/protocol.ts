@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Json, RequestEnvelope, ResponseEnvelope } from "../../contract/src/index.js";
 
 export type GuestFrame =
-  | { kind: "hello"; channel_epoch: number; wall_clock_ms: number; hostname: string }
+  | { kind: "hello"; channel_epoch: number; wall_clock_ms: number; sandbox_id: string; hostname: string }
   | { kind: "request"; request: RequestEnvelope; channel_epoch: number }
   | { kind: "response"; response: ResponseEnvelope; channel_epoch: number }
   | { kind: "ready"; channel_epoch: number; inventory_digest: string; readiness_marker: string }

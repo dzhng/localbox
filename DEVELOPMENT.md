@@ -136,8 +136,8 @@ plus one fixture HostDaemon per simulated machine
 
 Sandboxes are an account catalog in Convex (`sandboxes`): `localbox sandbox
 create` reserves a generated name there, then asks the chosen machine (this one
-by default, `--machine NAME` otherwise) to create it; the daemon keeps a
-read-only mirror. `--sandbox NAME` is looked up on this Mac's daemon first, then
+by default, `--machine NAME` otherwise) to create it; the daemon keeps each
+sandbox's identity, read-only, in its own directory next to its disk. `--sandbox NAME` is looked up on this Mac's daemon first, then
 in the account; it may be left out when the account has exactly one sandbox.
 A sandbox on this Mac is reached through the daemon socket. A sandbox on another
 machine is reached through the agent API, which finds its machine: the CLI posts to the agent API

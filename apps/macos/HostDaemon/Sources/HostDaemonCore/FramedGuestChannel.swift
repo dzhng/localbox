@@ -10,12 +10,14 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
     private var closed = false
     private var ready = false
     private var channelEpoch = 0
-    private let hostname: String
+    /// Who the guest is (L4): it keys its machine-id and SSH host keys on the id and takes the name as its hostname.
+    private let sandboxID: String
+    private var name: String
     private let wallClock: () -> Int64
     private var helloSent = false
 
-    public init(reader: FileHandle, writer: FileHandle, maxFrameBytes: UInt32 = 8 * 1024 * 1024, hostname: String = Host.current().localizedName ?? "localbox", wallClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
-        self.reader = reader; self.writer = writer; self.maxFrameBytes = maxFrameBytes; self.hostname = hostname; self.wallClock = wallClock
+    public init(reader: FileHandle, writer: FileHandle, sandboxID: String, name: String, maxFrameBytes: UInt32 = 8 * 1024 * 1024, wallClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
+        self.reader = reader; self.writer = writer; self.sandboxID = sandboxID; self.name = name; self.maxFrameBytes = maxFrameBytes; self.wallClock = wallClock
     }
 
     public func send(_ envelope: Data) async throws -> Data {
@@ -48,13 +50,21 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
         }
     }
 
+    /// A hello under the next epoch carries the new name; the guest applies a hello only when its epoch is newer.
+    public func rename(to name: String) throws {
+        self.name = name
+        guard ready, !closed else { return }
+        channelEpoch += 1; helloSent = false
+        try sendHello()
+    }
+
     /// The host owns the epoch: each (re)connection moves one past what the guest announced, and the hello
     /// frame tells the guest to adopt it, so frames from an earlier connection are stale on both sides.
     private func adopt(_ ready: [String: Any]?) { self.ready = true; channelEpoch = max(channelEpoch, (ready?["channel_epoch"] as? Int ?? 0) + 1); helloSent = false }
 
     private func sendHello() throws {
         guard !helloSent else { return }
-        let frame: [String: Any] = ["kind": "hello", "channel_epoch": channelEpoch, "wall_clock_ms": wallClock(), "hostname": hostname]
+        let frame: [String: Any] = ["kind": "hello", "channel_epoch": channelEpoch, "wall_clock_ms": wallClock(), "sandbox_id": sandboxID, "hostname": name]
         let encoded = try JSONSerialization.data(withJSONObject: frame)
         guard encoded.count <= Int(maxFrameBytes) else { throw HostDaemonError.unsupported("guest hello exceeds the configured frame limit") }
         var length = UInt32(encoded.count).bigEndian

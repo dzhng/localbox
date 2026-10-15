@@ -48,22 +48,22 @@ public struct LocalIPCEndpoint: Sendable, Equatable {
     public init(socketPath: String = "~/Library/Application Support/Localbox/agent.sock") { self.socketPath = socketPath }
 }
 
-/// Authenticates before forwarding to the single HostDaemon lifecycle owner.
+/// Authenticates before forwarding to `SandboxHost`, the single owner of this Mac's sandboxes.
 public actor AuthenticatedLocalIPC {
-    private let daemon: HostDaemon
+    private let host: SandboxHost
     private let token: String
     public let endpoint: LocalIPCEndpoint
-    public init(daemon: HostDaemon, token: String, endpoint: LocalIPCEndpoint = LocalIPCEndpoint()) { self.daemon = daemon; self.token = token; self.endpoint = endpoint }
+    public init(host: SandboxHost, token: String, endpoint: LocalIPCEndpoint = LocalIPCEndpoint()) { self.host = host; self.token = token; self.endpoint = endpoint }
     public func handle(_ request: LocalIPCRequest) async throws -> Data {
         guard !request.token.isEmpty, constantTimeEqual(request.token, token) else { throw LocalIPCError.unauthorized }
         guard !request.envelope.isEmpty else { throw LocalIPCError.malformed }
-        return try await daemon.request(request.envelope)
+        return try await host.request(request.envelope)
     }
 }
 
 /// A launchd-compatible Unix-domain socket adapter for `AuthenticatedLocalIPC`.
 ///
-/// The adapter owns only the listener and connection tasks. `HostDaemon` remains
+/// The adapter owns only the listener and connection tasks. `SandboxHost` remains
 /// the sole owner of VM lifecycle, and all request authentication/forwarding
 /// goes through `AuthenticatedLocalIPC`. launchd may provide the listener fd in
 /// a future product wrapper; this standalone listener is useful for development

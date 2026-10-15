@@ -30,7 +30,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     assert.equal(envelope.ok, true, `${operation}: ${result.stdout.slice(0, 1500)}${result.stderr}`);
     return envelope.result;
   };
-  const guestRoot = guestRootOf(ctx.root, "a");
+  const guestRoot = () => guestRootOf(ctx.root, "a", setup!.sandboxes.a);
   let setup: Awaited<ReturnType<typeof signedInWithSandboxes>> | undefined;
   try {
     const checks: Check[] = [];
@@ -42,7 +42,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.ok(first.truncated.returned_bytes <= CAP_BYTES, `returned ${first.truncated.returned_bytes} bytes`);
       let text = first.content as string; let page = first;
       while (!page.eof) { page = await invoke("fs.read", { path: "/big.txt", offset: page.next_offset }); text += page.content; }
-      assert.equal(sha256(text), sha256(readFileSync(join(guestRoot, "big.txt"))));
+      assert.equal(sha256(text), sha256(readFileSync(join(guestRoot(), "big.txt"))));
     }));
     checks.push(await ctx.check("a background job writing 3 MiB pages back fully", async () => {
       const started = await invoke("shell.exec", { command: "head -c 3145728 /dev/zero | tr '\\0' y", background: true }, true);

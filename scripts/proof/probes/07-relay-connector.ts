@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
 import { API_ORIGIN, startConnector, stopConnector } from "../lib/login.js";
-import { guestRoot as guestRootOf, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
+import { guestRoot as guestRootOf, inAnyGuestRoot, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
 
 export const id = "07";
 export const tiers = ["u", "l"];
@@ -25,7 +25,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
   const run = Date.now(); let calls = 0; let sandboxB = "";
   const env = { LOCALBOX_API_ORIGIN: API_ORIGIN };
-  const guestRoot = (machine: string) => guestRootOf(ctx.root, machine);
+  const guestRootB = () => guestRootOf(ctx.root, "b", sandboxB);
   /** `invoke --sandbox <B's sandbox>` from machine A; returns the parsed envelope. */
   const onB = async (operation: string, input: unknown, options: { mutation?: string; deadlineMs?: number } = {}) => {
     const args = ["invoke", "--json", operation, "--sandbox", sandboxB, "--input-json", JSON.stringify(input), "--request-id", `p07-${run}-${calls++}`, ...(options.mutation ? ["--mutation-id", options.mutation] : []), ...(options.deadlineMs ? ["--deadline-ms", String(options.deadlineMs)] : [])];
@@ -58,7 +58,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const marker = `from-a-${run}`;
       const exec = await asMachine("a", ["shell", "exec", "--sandbox", sandboxB, "--json", "--", "touch", marker], { cwd: ctx.root, env });
       assert.equal(JSON.parse(exec.stdout).ok, true, exec.stdout + exec.stderr);
-      assert.ok(existsSync(join(guestRoot("b"), marker)), "the command ran in B's guest"); assert.ok(!existsSync(join(guestRoot("a"), marker)), "and not in A's");
+      assert.ok(existsSync(join(guestRootB(), marker)), "the command ran in B's guest"); assert.ok(!inAnyGuestRoot(ctx.root, "a", marker), "and not in A's");
       const timings: number[] = [];
       const relayed = await countCalls(async () => { for (let index = 0; index < 10; index++) { const result = await onB("fs.stat", { path: "/" }); assert.equal(result.envelope.ok, true, JSON.stringify(result.envelope)); timings.push(result.ms); } });
       const ours = (await rows()).filter((row) => row.operation === "fs.stat" && row.claimedAt);
@@ -78,7 +78,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.match(result.envelope.error.message, /last seen/);
       assert.equal((await rows()).find((row) => row.mutationId === `offline-${run}`)?.status, "abandoned");
       connectors.b = startConnector(ctx.root, "b"); await waitConnected(ctx.root, "b"); await sleep(2000);
-      assert.ok(!existsSync(join(guestRoot("b"), marker)), "an abandoned request must never run later");
+      assert.ok(!existsSync(join(guestRootB(), marker)), "an abandoned request must never run later");
     }));
     checks.push(await ctx.check("connector killed after claim: operation_uncertain, then replaying the mutation id returns the original result", async () => {
       const marker = `uncertain-${run}`; const mutation = `uncertain-${run}`;
@@ -90,10 +90,10 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       connectors.b = startConnector(ctx.root, "b"); await waitConnected(ctx.root, "b");
       const replay = await onB("shell.exec", input, { mutation, deadlineMs: 30_000 });
       assert.equal(replay.envelope.ok, true, JSON.stringify(replay.envelope));
-      assert.equal(replay.envelope.result.stdout.trim(), readFileSync(join(guestRoot("b"), marker), "utf8").trim(), "the replay returns the one run's output");
+      assert.equal(replay.envelope.result.stdout.trim(), readFileSync(join(guestRootB(), marker), "utf8").trim(), "the replay returns the one run's output");
     }));
     checks.push(await ctx.check("a 2 MiB fs.read on B returns 900 KiB with truncated", async () => {
-      writeFileSync(join(guestRoot("b"), `big-${run}.txt`), "z".repeat(2 * 1024 * 1024));
+      writeFileSync(join(guestRootB(), `big-${run}.txt`), "z".repeat(2 * 1024 * 1024));
       const result = await onB("fs.read", { path: `/big-${run}.txt` });
       assert.equal(result.envelope.ok, true, JSON.stringify(result.envelope).slice(0, 500));
       assert.equal(result.envelope.result.truncated.original_bytes, 2_097_152); assert.ok(result.envelope.result.truncated.returned_bytes <= 900 * 1024);

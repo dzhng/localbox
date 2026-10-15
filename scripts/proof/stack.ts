@@ -70,7 +70,7 @@ async function up(machines: string[]): Promise<void> {
   await startDaemons(machines);
 }
 const hostdPid = (machine: string) => join(pidDir, `hostd-${machine}.pid`);
-/** One fixture HostDaemon per machine root (slice 03): its own socket, IPC token and guest root. */
+/** One fixture host daemon per machine root (slice 03): its own socket, IPC token and sandboxes, each with its own guest. */
 async function startDaemons(machines: string[]): Promise<void> {
   if (!machines.length) return;
   execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--product", "localbox-hostd"], { cwd: root, stdio: "ignore" });
@@ -78,12 +78,12 @@ async function startDaemons(machines: string[]): Promise<void> {
   for (const machine of machines) {
     if (alive(pid(hostdPid(machine)))) continue;
     const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: join(state, "machines", machine) });
+    if (!readFileSafe(paths.ipcToken).trim()) { mkdirSync(paths.root, { recursive: true }); writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 }); }
+    // `up` wipes local Convex, so a machine's old credential and sandboxes would belong to an account that no longer exists.
+    rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true });
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
-    if (!readFileSafe(paths.ipcToken).trim()) writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 });
-    // `up` wipes local Convex, so a machine's old credential and sandbox mirror would point at an account that no longer exists.
-    rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxMirror, { force: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
-    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: root, LOCALBOX_SANDBOX_DIR: join(paths.sandboxes, "shared"), LOCALBOX_SANDBOX_MIRROR: paths.sandboxMirror, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken });
+    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: root, LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
     if (!existsSync(paths.socket)) throw new Error(`machine ${machine}'s HostDaemon did not open ${paths.socket}; ${readFileSafe(log).trim() || "no diagnostic output"}`);
@@ -91,7 +91,17 @@ async function startDaemons(machines: string[]): Promise<void> {
 }
 function daemonPidFiles(): string[] { try { return readdirSync(pidDir).filter((name) => name.startsWith("hostd-")).map((name) => join(pidDir, name)); } catch { return []; } }
 function killPid(path: string): void { const value = pid(path); if (alive(value)) { try { process.kill(-value!, "SIGTERM"); } catch { try { process.kill(value!, "SIGTERM"); } catch {} } } rmSync(path, { force: true }); }
-async function down(): Promise<void> { const daemons = daemonPidFiles(); for (const path of [localPid, convexPid, ...daemons]) killPid(path); await sleep(250); for (const path of [localPid, convexPid, ...daemons]) killPid(path); }
+/**
+ * SIGTERM every stack process group, give daemons up to 10 s to save or stop their sandboxes, then SIGKILL what is
+ * left, including guest processes (they run in their own process groups under each daemon).
+ */
+async function down(): Promise<void> {
+  const files = [localPid, convexPid, ...daemonPidFiles()]; const pids = files.map(pid).filter((value): value is number => alive(value));
+  const children = pids.flatMap((value) => { try { return execFileSync("pgrep", ["-P", String(value)], { encoding: "utf8" }).trim().split(/\s+/).map(Number).filter(Boolean); } catch { return []; } });
+  for (const path of files) killPid(path);
+  for (let waited = 0; waited < 10_000 && pids.some(alive); waited += 250) await sleep(250);
+  for (const value of [...pids, ...children]) { if (alive(value)) { try { process.kill(-value, "SIGKILL"); } catch { try { process.kill(value, "SIGKILL"); } catch { /* gone */ } } } }
+}
 function status(): void { mkdirSync(pidDir, { recursive: true }); process.stdout.write(`${JSON.stringify({ convex: alive(pid(convexPid)), devLocal: alive(pid(localPid)), daemons: Object.fromEntries(daemonPidFiles().map((path) => [path.slice(path.lastIndexOf("hostd-") + 6, -4), alive(pid(path))])) })}\n`); }
 function logs(): void { process.stdout.write(`== convex ==\n${readFileSafe(convexLog)}== dev-local ==\n${readFileSafe(localLog)}`); }
 const [command, ...args] = process.argv.slice(2); const machinesIndex = args.indexOf("--machines"); const machines = machinesIndex >= 0 ? (args[machinesIndex + 1] ?? "").split(",").filter(Boolean) : [];

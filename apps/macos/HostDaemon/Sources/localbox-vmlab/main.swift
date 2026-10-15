@@ -1,5 +1,8 @@
 import Foundation
 import HostDaemonCore
+#if os(macOS)
+import Virtualization
+#endif
 
 /// Real-VM lab for the proof harness:
 ///   vmlab boot --artifacts <dir> --json        boot a scratch clone and run `uname -m` in the guest
@@ -12,7 +15,7 @@ struct VMLabMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         do {
             guard let artifacts = option("--artifacts", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore --artifacts <dir> [--scratch <dir>] --json") }
-            let lab = Lab(artifacts: URL(fileURLWithPath: expanded(artifacts), isDirectory: true), kernelArguments: option("--kernel-args", in: arguments) ?? "")
+            let lab = Lab(artifacts: SandboxArtifacts(directory: URL(fileURLWithPath: expanded(artifacts), isDirectory: true), extraKernelArguments: option("--kernel-args", in: arguments) ?? ""))
             let output: [String: Any]
             switch arguments.first {
             case "boot": output = try await lab.boot()
@@ -38,27 +41,31 @@ struct VMLabMain {
 #if os(macOS)
 struct LabError: Error, CustomStringConvertible { let description: String; init(_ text: String) { description = text } }
 
-/// One scratch VM: an APFS clone of the template plus its persisted identity (MAC, machine identifier).
+/// One scratch sandbox made the way `SandboxHost` makes one: an APFS clone of the template plus a record holding its
+/// MAC and machine identifier, booted through `SandboxConfigurationBuilder`.
 struct Lab {
-    let artifacts: URL
-    let kernelArguments: String
+    let artifacts: SandboxArtifacts
 
-    func configuration(scratch: URL, cpuCount: Int = 2, memory: UInt64 = 2 * 1024 * 1024 * 1024) -> AppleVMConfiguration {
-        AppleVMConfiguration(kernelURL: artifacts.appendingPathComponent("kernel"), initialRamdiskURL: artifacts.appendingPathComponent("initrd"), diskURL: scratch.appendingPathComponent("disk.img"), templateDiskURL: artifacts.appendingPathComponent("template.img"), cpuCount: cpuCount, memorySize: memory, consoleLogURL: scratch.appendingPathComponent("console.log"), extraKernelArguments: kernelArguments, identityDirectoryURL: scratch)
+    func backend(_ scratch: URL, record: SandboxRecord? = nil, artifacts: SandboxArtifacts? = nil) throws -> AppleVirtualizationBackend {
+        let directory = SandboxDirectory(scratch)
+        return AppleVirtualizationBackend(record: try record ?? directory.load(), directory: directory, artifacts: artifacts ?? self.artifacts)
     }
 
     func newScratch() throws -> URL {
         let base = ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
         let scratch = base.appendingPathComponent("localbox-vmlab-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: artifacts.appendingPathComponent("template.img"), to: scratch.appendingPathComponent("disk.img"))
+        let directory = SandboxDirectory(scratch)
+        var record = SandboxRecord(sandboxID: "sandbox_vmlab", name: "vmlab", cpus: 2, memoryBytes: 2 * 1024 * 1024 * 1024)
+        _ = try AppleSandboxFactory(artifacts: artifacts).provision(&record, in: directory)
+        try directory.save(record)
         return scratch
     }
 
     func boot() async throws -> [String: Any] {
         let scratch = try newScratch()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
-        let backend = AppleVirtualizationBackend(image: configuration(scratch: scratch))
+        let backend = try backend(scratch)
         do {
             try await backend.start()
             let uname = try await shell(backend, "uname -m").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,18 +81,17 @@ struct Lab {
     /// Phase 1: boot, start a long-lived server, measure, save. Phase 2 runs in a new vmlab process.
     func hibernate() async throws -> [String: Any] {
         let scratch = try newScratch()
-        let backend = AppleVirtualizationBackend(image: configuration(scratch: scratch))
+        let backend = try backend(scratch)
         try await backend.start()
-        try await backend.validateSaveRestoreSupport()
         let started = try await shell(backend, "nohup node -e \"let n=0; require('http').createServer((q,r)=>r.end(String(n++))).listen(8080)\" >/dev/null 2>&1 & echo $!")
         let pid = started.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         let before = try await shell(backend, "curl -s http://127.0.0.1:8080; echo; curl -s http://127.0.0.1:8080").stdout.split(separator: "\n").map(String.init)
         let nat = try await shell(backend, "curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://deb.debian.org/").stdout
         let guestMAC = try await shell(backend, "cat /sys/class/net/e*/address 2>/dev/null | head -1").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let persistedMAC = (try? String(contentsOf: scratch.appendingPathComponent("mac-address"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let persistedMAC = try SandboxDirectory(scratch).load().mac ?? ""
         let memoryRunning = virtualizationMemoryKB()
-        let state = scratch.appendingPathComponent("state.vzvmsave")
+        let state = SandboxDirectory(scratch).savedState
         let saveStarted = Date()
         try await backend.save(to: state)
         let saveMs = Int(Date().timeIntervalSince(saveStarted) * 1000)
@@ -95,23 +101,28 @@ struct Lab {
         let phase1: [String: Any] = ["pid": pid, "counter_before": before, "nat_http_code": nat, "guest_mac": guestMAC, "persisted_mac": persistedMAC, "vm_memory_kb_running": memoryRunning, "vm_memory_kb_after_save": memorySaved, "save_ms": saveMs, "state_file_bytes": stateBytes]
         try JSONSerialization.data(withJSONObject: phase1).write(to: scratch.appendingPathComponent("phase1.json"))
         // A separate process restores, so the save file must not depend on anything held by this one.
-        let phase2 = try runSelf(["restore", "--artifacts", artifacts.path, "--scratch", scratch.path, "--json"] + (kernelArguments.isEmpty ? [] : ["--kernel-args", kernelArguments]))
+        let phase2 = try runSelf(["restore", "--artifacts", artifacts.kernelURL.deletingLastPathComponent().path, "--scratch", scratch.path, "--json"] + (artifacts.extraKernelArguments.isEmpty ? [] : ["--kernel-args", artifacts.extraKernelArguments]))
         let survived = (phase2["pid_alive"] as? Bool ?? false) && (phase2["counter_after"] as? Int).map { $0 > (Int(before.last ?? "-1") ?? -1) } == true
         if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) }
         return ["ok": survived, "phase1": phase1, "phase2": phase2, "process_survived": survived, "mac_matches": !guestMAC.isEmpty && guestMAC == persistedMAC, "nat_ok": nat == "200"]
     }
 
     func restorePhase(scratch: URL) async throws -> [String: Any] {
-        let state = scratch.appendingPathComponent("state.vzvmsave")
+        let state = SandboxDirectory(scratch).savedState
         let phase1 = try JSONSerialization.jsonObject(with: Data(contentsOf: scratch.appendingPathComponent("phase1.json"))) as? [String: Any] ?? [:]
         // Configuration-identity sweep: which changes make restore refuse the saved state.
+        let record = try SandboxDirectory(scratch).load()
         var sweep: [String: String] = [:]
-        sweep["cpu_count"] = await attemptRestore(configuration(scratch: scratch, cpuCount: 3), state: state)
-        sweep["mac_address"] = await withSwappedIdentity(scratch, file: "mac-address", replacement: Data("02:00:00:00:00:01".utf8)) { await attemptRestore(configuration(scratch: scratch), state: state) }
-        sweep["machine_identifier"] = await withSwappedIdentity(scratch, file: "machine-identifier", replacement: nil) { await attemptRestore(configuration(scratch: scratch), state: state) }
-        sweep["kernel_command_line"] = await attemptRestore(Lab(artifacts: artifacts, kernelArguments: kernelArguments + " localbox.sweep=1").configuration(scratch: scratch), state: state)
+        var changed = record; changed.cpus = 3
+        sweep["cpu_count"] = await attemptRestore(try backend(scratch, record: changed), state: state)
+        changed = record; changed.mac = "02:00:00:00:00:01"
+        sweep["mac_address"] = await attemptRestore(try backend(scratch, record: changed), state: state)
+        changed = record; changed.machineIdentifier = VZGenericMachineIdentifier().dataRepresentation.base64EncodedString()
+        sweep["machine_identifier"] = await attemptRestore(try backend(scratch, record: changed), state: state)
+        let swept = SandboxArtifacts(kernelURL: artifacts.kernelURL, initialRamdiskURL: artifacts.initialRamdiskURL, templateDiskURL: artifacts.templateDiskURL, extraKernelArguments: artifacts.extraKernelArguments + " localbox.sweep=1")
+        sweep["kernel_command_line"] = await attemptRestore(try backend(scratch, artifacts: swept), state: state)
         // The real restore, with the configuration it was saved under.
-        let backend = AppleVirtualizationBackend(image: configuration(scratch: scratch))
+        let backend = try backend(scratch)
         let restoreStarted = Date()
         try await backend.restore(from: state)
         let restoreMs = Int(Date().timeIntervalSince(restoreStarted) * 1000)
@@ -125,19 +136,10 @@ struct Lab {
         return ["restore_ms": restoreMs, "pid_alive": alive, "counter_after": counter, "nat_http_code_after": nat, "clock_skew_ms": skew, "identity_sweep": sweep]
     }
 
-    /// nil means restore succeeded with that change (and the VM is stopped again); otherwise the refusal.
-    func attemptRestore(_ configuration: AppleVMConfiguration, state: URL) async -> String {
-        let backend = AppleVirtualizationBackend(image: configuration)
+    /// "restored" when restore accepted that change (and the VM is stopped again); otherwise the refusal.
+    func attemptRestore(_ backend: AppleVirtualizationBackend, state: URL) async -> String {
         do { try await backend.restore(from: state); try? await backend.stop(); return "restored" }
         catch { return "refused: \(error.localizedDescription)" }
-    }
-
-    func withSwappedIdentity(_ scratch: URL, file: String, replacement: Data?, _ body: () async -> String) async -> String {
-        let url = scratch.appendingPathComponent(file); let original = try? Data(contentsOf: url)
-        if let replacement { try? replacement.write(to: url) } else { try? FileManager.default.removeItem(at: url) }
-        let result = await body()
-        if let original { try? original.write(to: url) }
-        return result
     }
 
     func runSelf(_ arguments: [String]) throws -> [String: Any] {

@@ -12,14 +12,15 @@
   <dict>
     <key>LOCALBOX_IPC_TOKEN_PATH</key><string>~/Library/Application Support/Localbox/ipc-token</string>
     <key>LOCALBOX_SOCKET</key><string>~/Library/Application Support/Localbox/agent.sock</string>
-    <key>LOCALBOX_SANDBOX_MIRROR</key><string>~/Library/Application Support/Localbox/sandboxes.json</string>
+    <key>LOCALBOX_SANDBOXES</key><string>~/Library/Application Support/Localbox/sandboxes</string>
     <key>LOCALBOX_KERNEL</key><string>/Applications/Localbox.app/Contents/Resources/vm/vmlinuz</string>
     <key>LOCALBOX_INITRD</key><string>/Applications/Localbox.app/Contents/Resources/vm/initrd</string>
-    <key>LOCALBOX_DISK</key><string>~/Library/Application Support/Localbox/vm/disk.img</string>
     <key>LOCALBOX_TEMPLATE_DISK</key><string>/Applications/Localbox.app/Contents/Resources/vm/template.img</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <!-- SIGTERM hibernates every running sandbox before exit; launchd SIGKILLs after this many seconds. -->
+  <key>ExitTimeOut</key><integer>60</integer>
   <key>ProcessType</key><string>Interactive</string>
   <key>LimitLoadToSessionType</key><array><string>Aqua</string></array>
   <key>StandardOutPath</key><string>~/Library/Logs/Localbox/hostd.log</string>

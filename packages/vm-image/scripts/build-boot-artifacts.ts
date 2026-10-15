@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { artifactDigests, buildImageManifest, digestJson, type ImageBuildPins } from "../src/manifest.js";
@@ -100,6 +100,9 @@ try {
   }
   // Docker's marker makes systemd treat the VM as a container and skip hardware setup.
   await rm(join(rootfs, ".dockerenv"), { force: true });
+  // Docker owns /etc/resolv.conf during a build; in the VM, systemd-resolved serves the NAT's DHCP-provided DNS.
+  await rm(join(rootfs, "etc/resolv.conf"), { force: true });
+  await symlink("../run/systemd/resolve/stub-resolv.conf", join(rootfs, "etc/resolv.conf"));
   await mkdir(join(staging, "boot"), { recursive: true });
   await run("docker", ["cp", `${container}:/boot/.`, join(staging, "boot")]);
   await extractKernel(container, staging, "vmlinuz");

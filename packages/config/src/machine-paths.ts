@@ -6,9 +6,8 @@ export interface MachinePaths {
   credentials: string;
   ipcToken: string;
   socket: string;
+  /** One directory per sandbox (`<id>/sandbox.json`, `disk.img`, `state.vzsave`), owned by the host daemon. */
   sandboxes: string;
-  /** HostDaemon's read-only copy of the account catalog's sandboxes on this machine. */
-  sandboxMirror: string;
   logs: string;
 }
 
@@ -22,7 +21,6 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env): MachinePaths
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
     sandboxes: join(root, "sandboxes"),
-    sandboxMirror: join(root, "sandboxes.json"),
     logs: join(root, "logs"),
   };
 }

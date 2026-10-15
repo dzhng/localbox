@@ -31,10 +31,10 @@ RUN apt-get update && \
       python-is-python3 qpdf ripgrep tesseract-ocr thunar unzip vim wget \
       x11-utils xclip xfce4-panel xfce4-session xfce4-settings xfce4-terminal \
       xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip chromium \
-      systemd systemd-sysv linux-image-generic initramfs-tools socat; \
+      systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
   else \
     apt-get install -y --no-install-recommends \
-      ca-certificates curl systemd systemd-sysv linux-image-generic initramfs-tools socat; \
+      ca-certificates curl systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
   fi && rm -rf /var/lib/apt/lists/*
 
 # NodeSource is shared by both profiles; Ubuntu's Node 18 package is not the
@@ -87,15 +87,18 @@ RUN if [ "$PROFILE" = full ]; then \
       chown -R exedev:exedev /home/exedev; \
     fi
 
-# Guest protocol boot layer. The service owns the named non-console virtio
-# port; machine-id is intentionally empty so the runtime can establish identity.
+# Boot layer: the guest agent on vsock port 1024, DHCP on the NAT interface
+# (systemd-networkd and -resolved); machine-id is intentionally empty so the
+# guest agent establishes each sandbox's identity from the host's hello.
 COPY dist/ /opt/localbox/dist/
 RUN install -d -m 0755 /run/localbox /var/lib/localbox \
   && install -d -m 0755 /etc/systemd/system \
   && printf '[Unit]\nDescription=Localbox guest agent on vsock port 1024\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr EXEC:\042/usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\042\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
   && systemctl enable localbox-guest.service \
+  && printf '[Match]\nName=en*\n\n[Network]\nDHCP=yes\n' > /etc/systemd/network/20-nat.network \
+  && systemctl enable systemd-networkd.service systemd-resolved.service \
   && printf '%s' 'virtio_pci\nvirtio_blk\nvirtio_console\next4\n' > /etc/initramfs-tools/modules \
   && update-initramfs -c -k all \
-  && : > /etc/machine-id
+  && : > /etc/machine-id && rm -f /var/lib/dbus/machine-id
 
 CMD ["/sbin/init"]

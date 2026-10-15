@@ -1,13 +1,29 @@
 import type { ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { asMachine } from "./as-machine.js";
 import { API_ORIGIN, login, machineRoot, startConnector } from "./login.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Until each sandbox has its own runtime, every sandbox on a proof machine shares this guest root. */
-export const guestRoot = (root: string, machine: string) => join(machineRoot(root, machine), "sandboxes/shared/root");
+/** The daemon's records on a proof machine (`sandboxes/<id>/sandbox.json`). */
+export function sandboxRecords(root: string, machine: string): Array<{ sandbox_id: string; name: string; in_catalog: boolean; [key: string]: unknown }> {
+  const sandboxes = join(machineRoot(root, machine), "sandboxes");
+  if (!existsSync(sandboxes)) return [];
+  return readdirSync(sandboxes).flatMap((id) => { try { return [JSON.parse(readFileSync(join(sandboxes, id, "sandbox.json"), "utf8"))]; } catch { return []; } });
+}
+
+/** A fixture sandbox's own guest root, found by its name. */
+export function guestRoot(root: string, machine: string, name: string): string {
+  const record = sandboxRecords(root, machine).find((row) => row.name === name);
+  if (!record) throw new Error(`machine ${machine} has no sandbox named ${name}`);
+  return join(machineRoot(root, machine), "sandboxes", record.sandbox_id, "root");
+}
+
+/** Whether any fixture sandbox on `machine` has `file` in its guest root. */
+export function inAnyGuestRoot(root: string, machine: string, file: string): boolean {
+  return sandboxRecords(root, machine).some((record) => existsSync(join(machineRoot(root, machine), "sandboxes", record.sandbox_id, "root", file)));
+}
 
 /** Runs the CLI as a proof machine against the local stack; `--json` output is parsed into `envelope`. */
 export async function cli(root: string, machine: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string; envelope: any }> {

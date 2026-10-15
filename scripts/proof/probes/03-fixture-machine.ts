@@ -13,7 +13,7 @@ export const tiers = ["u", "l"];
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "u") {
     return [await ctx.check("fixture backend round trip and opt-in refusal (Swift)", async () => {
-      const result = await ctx.exec("swift", ["test", "--package-path", "apps/macos/HostDaemon", "--filter", "testProcessFixtureBackendRoundTrip|testFixtureBackendRefusedWithoutOptIn"]);
+      const result = await ctx.exec("swift", ["test", "--package-path", "apps/macos/HostDaemon", "--filter", "testProcessFixtureSandboxesEachRunTheirOwnGuest|testFixtureBackendRefusedWithoutOptIn"]);
       assert.equal(result.code, 0, (result.stdout + result.stderr).slice(-2000));
       assert.match(result.stdout + result.stderr, /Executed 2 tests, with 0 failures/);
     })];
@@ -41,8 +41,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check("each machine has its own guest root", async () => {
       const marker = `only-a-${Date.now()}`;
       const result = await exec("a", ["touch", marker]); assert.equal(result.envelope.ok, true, result.stdout + result.stderr);
-      assert.ok(existsSync(join(guestRoot(ctx.root, "a"), marker)), "A's file is in A's guest root");
-      assert.ok(!existsSync(join(guestRoot(ctx.root, "b"), marker)), "A's file must not appear in B's guest root");
+      assert.ok(existsSync(join(guestRoot(ctx.root, "a", setup!.sandboxes.a), marker)), "A's file is in A's guest root");
+      assert.ok(!existsSync(join(guestRoot(ctx.root, "b", setup!.sandboxes.b), marker)), "A's file must not appear in B's guest root");
     }));
     checks.push(await ctx.check("A's IPC token is refused on B's socket", async () => {
       const tokenA = readFileSync(paths("a").ipcToken, "utf8").trim();

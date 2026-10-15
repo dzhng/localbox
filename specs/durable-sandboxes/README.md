@@ -15,7 +15,7 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01 and 03–09 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); until slice 10 all sandboxes on a Mac share one runtime. In progress: 02 (hibernate go/no-go): its code is on main; save fails while the Mac's screen is locked (a keychain constraint, see the slice), and the unlocked save/restore run plus Q5b's locked-Mac fallback wait on the user. Next: 10 (needs 02's channel and save decisions), then 11.*
+*Status 2026-10-15: slices 00, 01 and 03–10 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); each sandbox has its own runtime, cloned disk and identity under `SandboxHost` (`npm run proof -- 10 --tier s,v`). In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM stops sandboxes and cold-boots them on restart there; the unlocked save/restore run (02, and 10's unlocked SIGTERM check) plus Q5b's locked-Mac fallback wait on the user. Next: 11.*
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).
@@ -49,7 +49,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [x] [07 relay mailbox and connector](slices/07-relay-connector.md)
 - [x] [08 MCP sign-in](slices/08-mcp-signin.md)
 - [x] [09 sandbox catalog and CLI](slices/09-sandbox-catalog.md)
-- [ ] [10 multi-sandbox daemon](slices/10-multi-sandbox-daemon.md)
+- [x] [10 multi-sandbox daemon](slices/10-multi-sandbox-daemon.md)
 - [ ] [11 placement and capacity](slices/11-placement-capacity.md)
 - [ ] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)
 - [ ] [14 agent setup: skill and CLI kept current](slices/14-agent-setup.md)
