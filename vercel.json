@@ -40,8 +40,8 @@
       "destination": "/api/mcp?__path=metadata&metadata=oauth-authorization-server"
     },
     {
-      "source": "/api/mcp/:path+",
-      "destination": "/api/mcp?__path=:path+"
+      "source": "/api/mcp/:path*",
+      "destination": "/api/mcp?__path=:path*"
     }
   ]
 }
