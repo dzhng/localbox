@@ -37,4 +37,5 @@ export const calls: Call[] = [
   { name: "sandboxes:remove", kind: "account", mutation: true, args: { sandboxId: "s1" } },
   { name: "sandboxes:forMachine", kind: "machine", args: {} },
   { name: "sandboxes:reportState", kind: "machine", mutation: true, args: { states: [{ sandboxId: "s1", state: "running" }] } },
+  { name: "sandboxes:removeIdle", kind: "machine", mutation: true, args: { sandboxId: "s1", reason: "idle for 10 s, past its delete-after of 10 s" } },
 ];

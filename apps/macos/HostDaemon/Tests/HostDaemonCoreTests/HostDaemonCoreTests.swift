@@ -115,7 +115,7 @@ final class HostDaemonCoreTests: XCTestCase {
 
     func testSigtermColdBootsWhenSaveFails() async throws {
         let root = try scratch()
-        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(saveError: "permission denied"), hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(saveError: .unsupported("permission denied")), hostCPUs: 4, hostMemoryBytes: 8 * gib)
         _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
         await host.shutdown()
         let record = try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load()
@@ -144,7 +144,7 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual(kinds(fourth), ["created", "made_room", "cold_booted"])
         XCTAssertEqual((fourth["actions"] as? [[String: Any]])?[1]["detail"] as? String, "slept b (2 GiB) to make room", "b is the least recently used")
         let states = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
-        XCTAssertEqual(states?.map { "\($0["name"]!)=\($0["state"]!)" }, ["a=running", "b=stopped", "c=running", "d=running"])
+        XCTAssertEqual(states?.map { "\($0["name"]!)=\($0["state"]!)" }, ["a=running", "b=sleeping", "c=running", "d=running"])
         let after = try await capacity(host)
         XCTAssertEqual(after["reserved_bytes"] as? Int, 6 * 1024 * 1024 * 1024); XCTAssertEqual(after["revision"] as? Int, full["revision"] as? Int, "the same reservation keeps its revision")
 
@@ -182,7 +182,127 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual(held?.map { $0["name"] as? String }, ["a", "c", "d"]); XCTAssertEqual(held?.map { $0["running_jobs"] as? Int }, [1, 1, 1])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_e").path), "a refused create leaves nothing behind")
         let states = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
-        XCTAssertEqual(states?.map { $0["state"] as? String }, ["running", "stopped", "running", "running"], "nothing sleeps when the start cannot fit")
+        XCTAssertEqual(states?.map { $0["state"] as? String }, ["running", "sleeping", "running", "running"], "nothing sleeps when the start cannot fit")
+    }
+
+    func testIdleSleepsAfterTimeout() async throws {
+        let clock = TestClock(); let root = try scratch()
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
+        clock.now += 4
+        let early = await host.idleTick()
+        XCTAssertTrue(early.isEmpty, "4 s idle is under its 5 s")
+        clock.now += 2
+        let slept = await host.idleTick()
+        XCTAssertEqual(slept["sandbox_1"], ["kind": "slept", "detail": "hibernated one: saved its state and released its 2 GiB"])
+        let status = try await hostCall(host, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(status["state"] as? String, "sleeping", "status reads a sleeping sandbox without waking it"); XCTAssertEqual(status["sleep_after_ms"] as? Int, 5000)
+        XCTAssertEqual(try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load().lifecycle, .asleep)
+        let released = try await capacity(host)
+        XCTAssertEqual(released["reserved_bytes"] as? Int, 0, "hibernate releases the memory")
+
+        let woke = try await call(host, envelope("shell.exec", #"{"command":"true"}"#, mutation: "w1"))
+        XCTAssertEqual(kinds(woke["result"] as? [String: Any] ?? [:]), ["woke"], "\(woke)")
+        XCTAssertEqual(((woke["result"] as? [String: Any])?["actions"] as? [[String: Any]])?.first?["detail"] as? String, "restored one from its saved state")
+        let again = try await call(host, envelope("shell.exec", #"{"command":"true"}"#, mutation: "w2"))
+        XCTAssertNil((again["result"] as? [String: Any])?["actions"], "an awake sandbox reports nothing")
+
+        // Locked screen (Q5b interim): the VM pauses in memory, which keeps its RAM.
+        let locked = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(saveError: .screenLocked, guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
+        _ = try await hostCall(locked, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
+        clock.now += 6
+        let paused = await locked.idleTick()
+        XCTAssertEqual(paused["sandbox_1"], ["kind": "slept", "detail": "paused two in memory: hibernate needs an unlocked screen"])
+        let pausedStatus = try await hostCall(locked, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(pausedStatus["state"] as? String, "sleeping"); XCTAssertEqual(pausedStatus["detail"] as? String, "paused in memory: hibernate needs an unlocked screen")
+        let held = try await capacity(locked)
+        XCTAssertEqual(held["reserved_bytes"] as? Int, 2 * 1024 * 1024 * 1024, "a VM paused in memory still holds its RAM")
+        let resumed = try await call(locked, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertEqual(((resumed["result"] as? [String: Any])?["actions"] as? [[String: Any]])?.first?["detail"] as? String, "woke two from sleep")
+    }
+
+    func testRunningJobKeepsAwake() async throws {
+        let clock = TestClock(); let guest = JobsGuest()
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(guest: guest.answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
+        guest.set("sandbox_1", jobs: 1)
+        for _ in 0..<12 { clock.now += 1; let ticked = await host.idleTick(); XCTAssertTrue(ticked.isEmpty, "a running job keeps it awake") }
+        guest.set("sandbox_1", jobs: 0)
+        for _ in 0..<4 { clock.now += 1; let ticked = await host.idleTick(); XCTAssertTrue(ticked.isEmpty, "idle time starts when the job ended") }
+        clock.now += 1
+        let slept = await host.idleTick()
+        XCTAssertEqual(slept["sandbox_1"]?["kind"], "slept")
+    }
+
+    func testDeleteAfter() async throws {
+        let clock = TestClock(); let root = try scratch()
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000,"delete_after_ms":10000}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_2")
+        clock.now += 6
+        let slept = await host.idleTick()
+        XCTAssertEqual(slept.keys.sorted(), ["sandbox_1"], "two keeps the 30 min default")
+        clock.now += 5
+        let deleted = await host.idleTick()
+        XCTAssertEqual(deleted["sandbox_1"], ["kind": "deleted", "detail": "deleted one: idle for 11 s, past its delete-after of 10 s"], "time asleep counts")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_1").path))
+        let gone = try await call(host, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertEqual((gone["error"] as? [String: Any])?["code"] as? String, "sandbox_not_found")
+        let watched = try await hostCall(host, "host.watch", #"{"since":0}"#)
+        XCTAssertEqual(watched["deleted"] as? [[String: String]], [["sandbox_id": "sandbox_1", "name": "one", "reason": "idle for 11 s, past its delete-after of 10 s"]], "the connector removes it from the catalog")
+        XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.compactMap { $0["sandbox_id"] as? String }, ["sandbox_2"])
+        _ = try await hostCall(host, "sandbox.mirror", #"{"sandboxes":[{"sandbox_id":"sandbox_2","name":"two","sleep_after_ms":1800000,"delete_after_ms":null}]}"#)
+        let after = try await hostCall(host, "host.watch", #"{"since":0}"#)
+        XCTAssertEqual((after["deleted"] as? [Any])?.count, 0, "once the catalog drops it, it is no longer reported")
+    }
+
+    func testPowerNoticeHibernatesAll() async throws {
+        let root = try scratch()
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 12, hostMemoryBytes: 24 * gib, allowsSimulatedPower: true)
+        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two"), ("sandbox_3", "three")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: id) }
+        _ = try await hostCall(host, "sandbox.stop", "{}", sandboxID: "sandbox_3")
+        let slept = try await hostCall(host, "host.simulate_power", #"{"event":"will_sleep"}"#)
+        XCTAssertEqual((slept["sandboxes"] as? [[String: Any]])?.map { "\($0["sandbox_id"]!) \($0["kind"]!)" }, ["sandbox_1 slept", "sandbox_2 slept"], "every running sandbox sleeps; a stopped one is left alone")
+        for id in ["sandbox_1", "sandbox_2"] { XCTAssertEqual(try SandboxDirectory(root.appendingPathComponent(id)).load().lifecycle, .hibernated, "comes back at the next start too") }
+        let listed = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
+        XCTAssertEqual(listed?.map { $0["state"] as? String }, ["sleeping", "sleeping", "stopped"])
+
+        _ = try await hostCall(host, "host.simulate_power", #"{"event":"did_wake"}"#)
+        let awake = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
+        XCTAssertEqual(awake?.map { $0["state"] as? String }, ["running", "running", "stopped"], "the wake brings back what the sleep took down")
+        let first = try await call(host, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertEqual(kinds(first["result"] as? [String: Any] ?? [:]), ["woke"], "the next result reports the wake")
+        let second = try await call(host, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertNil((second["result"] as? [String: Any])?["actions"], "once")
+
+        let off = try await hostCall(host, "host.simulate_power", #"{"event":"will_power_off"}"#)
+        XCTAssertEqual((off["sandboxes"] as? [[String: Any]])?.count, 2)
+        let actions = await SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory()).recover()
+        XCTAssertEqual(actions.mapValues { $0["kind"] }, ["sandbox_1": "woke", "sandbox_2": "woke"], "the next daemon start restores them")
+
+        let release = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory())
+        let refused = try await call(release, envelope("host.simulate_power", #"{"event":"will_sleep"}"#, sandboxID: nil))
+        XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "unsupported", "only a LOCALBOX_DEV=1 daemon simulates power")
+    }
+
+    func testColdBootReportedOnce() async throws {
+        let root = try scratch()
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
+        // The daemon is killed (kill -9, power loss): nothing was saved. The next one cold-boots it at start.
+        let restarted = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        let recovered = await restarted.recover()
+        XCTAssertEqual(recovered["sandbox_1"], ["kind": "cold_booted", "detail": "cold-booted one: the daemon exited without saving it"])
+        let first = try await call(restarted, envelope("shell.exec", #"{"command":"true"}"#, mutation: "c1"))
+        XCTAssertEqual((first["result"] as? [String: Any])?["actions"] as? [[String: String]], [["kind": "cold_booted", "detail": "cold-booted one: the daemon exited without saving it"]])
+        let second = try await call(restarted, envelope("shell.exec", #"{"command":"true"}"#, mutation: "c2"))
+        XCTAssertNil((second["result"] as? [String: Any])?["actions"], "reported exactly once")
+
+        // A result that is not an object carries it as host_actions.
+        let failing = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory { _ in Data(#"{"ok":false,"error":{"code":"internal","message":"boom","retryable":false}}"#.utf8) })
+        _ = await failing.recover()
+        let failed = try await call(failing, envelope("fs.stat", #"{"path":"/"}"#))
+        XCTAssertEqual((failed["host_actions"] as? [[String: String]])?.first?["kind"], "cold_booted")
     }
 
     func testSleepAndStartReportWhatTheyDid() async throws {
@@ -223,7 +343,9 @@ final class HostDaemonCoreTests: XCTestCase {
         _ = try await hostCall(host, "sandbox.sleep", "{}", sandboxID: "sandbox_1")
         let changed = try await waiter.value
         XCTAssertGreaterThan(changed["version"] as? Int ?? 0, version)
-        XCTAssertEqual((changed["sandboxes"] as? [[String: Any]])?.first?["state"] as? String, "sleeping")
+        // The watch may answer on the way down (stopping, while the state is saved); it settles asleep.
+        let settled = try await hostCall(host, "host.watch", #"{"since":0}"#)
+        XCTAssertEqual((settled["sandboxes"] as? [[String: Any]])?.first?["state"] as? String, "sleeping")
     }
 
     func testRelayStatusAnswersFromTheConnectorReport() async throws {
@@ -329,7 +451,7 @@ private final class TestClock: @unchecked Sendable {
     var now = Date(timeIntervalSince1970: 1_800_000_000)
 }
 
-/// A guest that answers `guest.activity` with a running-job count per sandbox and echoes everything else.
+/// A guest that answers `guest.activity` with a running-job count per sandbox, and everything else with its operation.
 private final class JobsGuest: @unchecked Sendable {
     private let lock = NSLock()
     private var jobs: [String: Int] = [:]
@@ -338,7 +460,7 @@ private final class JobsGuest: @unchecked Sendable {
     var answer: @Sendable (Data) async throws -> Data {
         { [self] request in
             let object = try JSONSerialization.jsonObject(with: request) as? [String: Any]
-            guard object?["operation"] as? String == "guest.activity", let id = object?["sandbox_id"] as? String else { return request }
+            guard object?["operation"] as? String == "guest.activity", let id = object?["sandbox_id"] as? String else { return try JSONSerialization.data(withJSONObject: ["ok": true, "result": ["operation": object?["operation"] ?? ""]]) }
             let count = count(id)
             return try JSONSerialization.data(withJSONObject: ["ok": true, "result": ["running_jobs": count]])
         }

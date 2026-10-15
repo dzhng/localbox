@@ -29,7 +29,7 @@ export interface OpsResponse { status: number; body: unknown }
 interface MachineRow { machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport; capacityAt?: number }
 
 /** A row of `sandboxes:list`. */
-export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; state: string }
+export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string }
 
 /** Operations that only read or change the account catalog; they are never relayed to a machine. */
 export const ACCOUNT_OPERATIONS: Record<string, ["mutation" | "query", string]> = {
@@ -114,7 +114,8 @@ const gib = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
  * machine can only name itself, and agents have no machine.
  */
 async function createSandbox(principal: Principal, base: RequestEnvelope, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
-  const asked = base.input as { name?: string; machine?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number };
+  const asked = base.input as { name?: string; machine?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
+  const policy = { ...(asked.sleep_after_ms ? { sleep_after_ms: asked.sleep_after_ms } : {}), ...(asked.delete_after_ms ? { delete_after_ms: asked.delete_after_ms } : {}) };
   if (callerMachineId !== undefined && callerMachineId !== principal.machineId) throw new ContractError("invalid_input", "caller_machine_id must be the calling machine's own id");
   const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
   // An idle connected Mac makes no Convex calls, so report age says nothing about presence. A machine counts as
@@ -135,9 +136,9 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, caller
     const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
     const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
       : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: half its ${hostCpus} CPUs and a quarter of its ${gib(hostMemory!)}, at least 2 CPUs and 2 GiB`;
-    const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes }) as SandboxRow;
+    const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes, ...(policy.sleep_after_ms ? { sleepAfterMs: policy.sleep_after_ms } : {}), ...(policy.delete_after_ms ? { deleteAfterMs: policy.delete_after_ms } : {}) }) as SandboxRow;
     // Each placement attempt is a new relay row (request ids are scoped to one machine).
-    const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes } };
+    const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}) } };
     const relayed = await relay(principal, machine.machineId, request, deps);
     const response = (relayed.body as { response?: ResponseEnvelope }).response;
     // A pending create keeps its reservation: the machine took the request and its answer arrives by continuation.
@@ -150,7 +151,7 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, caller
     const machineReport = response.result as unknown as ActionReport;
     const report: ActionReport = {
       requested: asked as Json,
-      produced: { sandbox_id: row.sandbox_id, name: row.name, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason },
+      produced: { sandbox_id: row.sandbox_id, name: row.name, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
       actions: machineReport.actions ?? [],
     };
     return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));

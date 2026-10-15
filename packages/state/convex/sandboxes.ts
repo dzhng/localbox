@@ -4,7 +4,7 @@ import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, fail, id } from "./lib/relay.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 
-/** Idle time before a sandbox sleeps (slice 12 applies it). */
+/** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it (Q5). */
 const DEFAULT_SLEEP_AFTER_MS = 30 * 60_000;
 const NAME_ATTEMPTS = 20;
 
@@ -22,11 +22,12 @@ async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
 }
 const view = (row: any, machineName?: string) => ({
   sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null,
-  cpus: row.cpus, memory_bytes: row.memoryBytes, state: row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null,
+  cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
+  state: row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null,
 });
 
 /** Reserves a sandbox's identity on one of the caller's machines; the agent API then asks that machine to create it. */
-export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number() }, handler: async (ctx, args) => {
+export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) fail(`machine_not_found: no machine ${args.machineId} on this account`);
@@ -36,7 +37,7 @@ export const create = mutationGeneric({ args: { machineId: v.string(), name: v.o
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) fail(`name_conflict: no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: DEFAULT_SLEEP_AFTER_MS, createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
 } });
@@ -67,7 +68,21 @@ export const remove = mutationGeneric({ args: { sandboxId: v.string() }, handler
 export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
   const { machineId } = await requireIdentity(ctx, "machine");
   const rows = await boundedRows(ctx.db.query("sandboxes").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)), "machine sandboxes");
-  return rows.map((row: any) => ({ sandbox_id: row.sandboxId, name: row.name, cpus: row.cpus, memory_bytes: row.memoryBytes }));
+  return rows.map((row: any) => ({ sandbox_id: row.sandboxId, name: row.name, cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null }));
+} });
+
+/**
+ * The idle policy deleted a sandbox on the calling machine (its `deleteAfter` passed): the row goes. Only the
+ * machine holding the sandbox may remove it this way; the reason is logged with the deletion.
+ */
+export const removeIdle = mutationGeneric({ args: { sandboxId: v.string(), reason: v.string() }, handler: async (ctx, args) => {
+  const { machineId } = await requireIdentity(ctx, "machine");
+  const row = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId);
+  if (!row || row.machineId !== machineId) fail(`sandbox_not_found: no sandbox ${args.sandboxId} on this machine`);
+  await ctx.db.delete(row._id);
+  const reason = args.reason.slice(0, 500);
+  console.log(`sandbox ${row.name} (${row.sandboxId}) deleted by its machine ${machineId}: ${reason}`);
+  return { sandbox_id: row.sandboxId, name: row.name, removed: true, reason };
 } });
 
 /** Runtime state (and the size the daemon runs it at) reported by the machine holding each sandbox; other machines' sandboxes are ignored and unchanged values are not written. */

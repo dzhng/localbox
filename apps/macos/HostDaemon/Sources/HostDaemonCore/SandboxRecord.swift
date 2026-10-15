@@ -14,9 +14,19 @@ public func defaultSize(hostCPUs: Int, hostMemoryBytes: UInt64) -> (cpus: Int, m
 /// A size for a report, e.g. "2 GiB" or "1.5 GiB".
 func gibibytes(_ bytes: UInt64) -> String { "\(String(format: "%g", (Double(bytes) / Double(gib) * 10).rounded() / 10)) GiB" }
 
-/// What a sandbox was doing when its record was last written, so the next daemon start knows what to bring back.
+/// A duration for a report, in the largest whole unit: "5 s", "10 min", "2 h".
+func spoken(_ seconds: TimeInterval) -> String {
+    let whole = Int(seconds.rounded())
+    if whole >= 3_600, whole % 3_600 == 0 { return "\(whole / 3_600) h" }
+    if whole >= 60, whole % 60 == 0 { return "\(whole / 60) min" }
+    return "\(whole) s"
+}
+
+/// What a sandbox was doing when its record was last written, so the next daemon start knows what to bring back:
+/// `running` and `hibernated` (taken down by SIGTERM or the host's power) come back at start; `sleeping` (asleep in
+/// memory, lost with the daemon) and `asleep` (down until used: a saved state, or a cold boot owed) wait for a request.
 public enum SavedLifecycle: String, Codable, Sendable {
-    case running, sleeping, stopped, hibernated
+    case running, sleeping, asleep, stopped, hibernated
 }
 
 /// One sandbox on this Mac, as `<sandboxes>/<id>/sandbox.json`: the catalog identity Convex owns (id, name) mirrored
@@ -36,12 +46,17 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     /// False once the account catalog stops listing it (deleted while this Mac was offline, or signed out): the disk
     /// stays, but no request reaches it until a catalog lists it again.
     public var inCatalog: Bool
+    /// The idle policy (Q5), mirrored from the account catalog: sleep after this much idle time (nil: the 30 min
+    /// default), and delete after this much (nil: never).
+    public var sleepAfterMs: Int?
+    public var deleteAfterMs: Int?
     public init(sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
         self.sandboxID = sandboxID; self.name = name; self.cpus = cpus; self.memoryBytes = memoryBytes; self.lifecycle = lifecycle; self.inCatalog = inCatalog
     }
     enum CodingKeys: String, CodingKey {
         case sandboxID = "sandbox_id", name, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", lifecycle
         case lastActivityAt = "last_activity_at", coldBootPending = "cold_boot_pending", inCatalog = "in_catalog"
+        case sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms"
     }
 }
 

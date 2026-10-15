@@ -236,3 +236,15 @@ test("sandbox states are reported to Convex only when one changes", async () => 
   ]);
   await connector.stop();
 });
+
+test("sandboxes the daemon deleted for idleness are removed from the catalog once, with the reason", async () => {
+  const { convex, watch, logs, connector } = harness();
+  const gone = { sandbox_id: "sandbox_1", name: "quiet-otter", reason: "idle for 11 s, past its delete-after of 10 s" };
+  watch.emit({ version: 1, sandboxes: [], deleted: [gone] });
+  await settle();
+  watch.emit({ version: 2, sandboxes: [], deleted: [gone] });
+  await settle();
+  assert.deepEqual(convex.named("sandboxes:removeIdle").map((call) => call.args), [{ sandboxId: "sandbox_1", reason: gone.reason }]);
+  assert.ok(logs.includes(`removed quiet-otter (sandbox_1) from the catalog: ${gone.reason}`));
+  await connector.stop();
+});

@@ -24,7 +24,11 @@ the most room) or `--placement remote` (the same, never this Mac), and reports
 where and why, the generated name and the size it chose (`--name`, `--cpus`,
 `--memory 4G` override). A full Mac makes room by sleeping its least recently
 used sandboxes and reports each as `made_room`; one running a job is never
-slept. Then use `localbox shell exec --sandbox NAME --
+slept. A sandbox idle for 30 minutes (no request and no running job) sleeps,
+and the next command on it wakes it first and reports `woke`, or `cold_booted`
+with the reason when its processes did not survive (`--sleep-after 10m` sets
+the idle time; `--delete-after 2h` deletes it after that long idle). Then use
+`localbox shell exec --sandbox NAME --
 <command>`, `localbox fs read --sandbox NAME PATH` and `localbox sandbox list`.
 `--sandbox` may be left out only when the account has exactly one sandbox; a
 sandbox on another Mac needs no `--machine`. Every command prints short text

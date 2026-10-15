@@ -67,6 +67,17 @@ test("a machine mirrors and reports only its own sandboxes, and unchanged report
   assert.equal((await rows(t)).find((row: any) => row.name === "two").reportedAt, before, "the row is not rewritten");
 });
 
+test("the idle policy is the catalog's: mirrored to the machine, and only that machine removes an idle-deleted sandbox", async () => {
+  const { t, m1, m2 } = await setup();
+  const kept = await create(m1, { machineId: "m1", name: "kept" });
+  const idle = await create(m1, { machineId: "m1", name: "idle", sleepAfterMs: 5_000, deleteAfterMs: 10_000 });
+  assert.deepEqual([kept.sleep_after_ms, kept.delete_after_ms, idle.sleep_after_ms, idle.delete_after_ms], [1_800_000, null, 5_000, 10_000]);
+  assert.deepEqual((await m1.query(ref("sandboxes:forMachine"), {})).map((row: any) => [row.name, row.sleep_after_ms, row.delete_after_ms]), [["kept", 1_800_000, null], ["idle", 5_000, 10_000]]);
+  await assert.rejects(() => m2.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle" }), /sandbox_not_found/, "another machine of the account cannot");
+  assert.deepEqual(await m1.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle for 11 s, past its delete-after of 10 s" }), { sandbox_id: idle.sandbox_id, name: "idle", removed: true, reason: "idle for 11 s, past its delete-after of 10 s" });
+  assert.deepEqual((await rows(t)).map((row: any) => row.name), ["kept"]);
+});
+
 /** Machine m_b answers host sandbox operations like HostDaemon; `refuse` makes it fail the create. */
 function machine(refuse = false) {
   const seen: RequestEnvelope[] = [];
@@ -87,14 +98,17 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const created = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
-  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB" });
+  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: 1_800_000, delete_after_ms: null });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
-  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", cpus: 6, memory_bytes: 6 * GIB }]);
+  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 1_800_000 }]);
   assert.equal(sandboxes.length, 1);
   const taken = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", name: "build-box" } });
   assert.equal(!taken.ok && taken.error.code, "name_conflict"); assert.match(!taken.ok ? taken.error.message : "", /sandboxes: build-box/);
   const agent = await ops(deps, { operation: "sandbox.create", input: {} }, { accountId: "acct", familyId: "f" });
   assert.equal(!agent.ok && agent.error.code, "invalid_input"); assert.match(!agent.ok ? agent.error.message : "", /name a machine/);
+  const idle = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", sleep_after_ms: 5_000, delete_after_ms: 10_000 } });
+  assert.deepEqual([(idle as any).result.produced.sleep_after_ms, (idle as any).result.produced.delete_after_ms], [5_000, 10_000]);
+  assert.deepEqual(b.seen.at(-1)!.input, { name: "generated-2", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 5_000, delete_after_ms: 10_000 }, "the machine applies the idle policy");
 });
 
 test("sandbox.create places by the caller's machine, --machine or --placement, and says why", async () => {
@@ -133,7 +147,7 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
   assert.equal((await ops(deps, { operation: "sandbox.status", input: {} })).ok, true, "the only sandbox is used");
   assert.equal(b.seen.at(-1)!.sandbox_id, "sandbox_1");
-  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", cpus: 2, memory_bytes: 2 * GIB, state: "running" });
+  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
   const ambiguous = await ops(deps, { operation: "sandbox.status", input: {} });
   assert.equal(!ambiguous.ok && ambiguous.error.code, "sandbox_ambiguous"); assert.deepEqual(!ambiguous.ok && ambiguous.error.details, { names: ["quiet-otter", "brave-fox"] });
   const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "brave-fox", input: { name: "calm-heron" } });

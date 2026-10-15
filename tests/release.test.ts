@@ -3,16 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RecoverySupervisor } from "../packages/recovery/src/index.js";
 import { generateKeyPairSync } from "node:crypto";
 import { activateRelease, activeRelease, makeManifest, rollbackRelease, signManifest, verifyManifestSignature, writeRelease, verifyRelease } from "../scripts/release.js";
-
-test("recovery timeline reconnects and reaps desktop after demand grace", () => {
-  let now = 1_000; const s = new RecoverySupervisor({ now: () => now, graceMs: 10 });
-  s.transition("starting"); s.transition("running"); s.updateDemand(0, 1); s.onNetworkChanged(); s.channelRestored();
-  s.updateDemand(0, 0); now += 11; s.tick();
-  assert.equal(s.state, "running"); assert.equal(s.demand.desktop, "stopped"); assert.ok(s.timeline.some((e) => e.kind === "channel_lost"));
-});
 
 test("release manifest and checksums verify artifacts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-")); await writeFile(join(dir, "agent-computer-arm64"), "fixture");

@@ -29,8 +29,9 @@ export interface ConnectorDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** One `host.watch` answer: the daemon's state version, host capacity and each sandbox's runtime state. */
-export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[] }
+/** One `host.watch` answer: the daemon's state version, host capacity, each sandbox's runtime state, and the sandboxes its idle policy deleted. */
+export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[]; deleted?: IdleDeletion[] }
+export interface IdleDeletion { sandbox_id: string; name: string; reason: string }
 export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
 
 export const relay = {
@@ -40,6 +41,7 @@ export const relay = {
   reportCapacity: makeFunctionReference<"mutation">("relay:reportCapacity"),
   forMachine: makeFunctionReference<"query">("sandboxes:forMachine"),
   reportState: makeFunctionReference<"mutation">("sandboxes:reportState"),
+  removeIdle: makeFunctionReference<"mutation">("sandboxes:removeIdle"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
@@ -154,7 +156,7 @@ export class Connector {
 
   private async watch(): Promise<void> {
     let since = 0; let capacity: CapacityReport | undefined; let backoff = 1_000;
-    const states = new Map<string, SandboxState>();
+    const states = new Map<string, SandboxState>(); const removed = new Set<string>();
     while (!this.ended) {
       try {
         const change = await this.deps.hostWatch(since);
@@ -170,6 +172,13 @@ export class Connector {
         if (changed.length) {
           await this.deps.convex.mutation(relay.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}) })) });
           for (const sandbox of changed) states.set(sandbox.sandbox_id, sandbox);
+        }
+        // The daemon deleted these after their delete-after idle time; their catalog rows go too.
+        for (const gone of (change.deleted ?? []).filter((item) => !removed.has(item.sandbox_id))) {
+          try { await this.deps.convex.mutation(relay.removeIdle, { sandboxId: gone.sandbox_id, reason: gone.reason }); }
+          catch (error) { if (!message(error).includes("sandbox_not_found")) throw error; }
+          removed.add(gone.sandbox_id); states.delete(gone.sandbox_id);
+          this.deps.log(`removed ${gone.name} (${gone.sandbox_id}) from the catalog: ${gone.reason}`);
         }
         since = change.version; backoff = 1_000;
         if (Date.now() - this.lastReportAt >= REPORT_HEARTBEAT_MS) void this.report();

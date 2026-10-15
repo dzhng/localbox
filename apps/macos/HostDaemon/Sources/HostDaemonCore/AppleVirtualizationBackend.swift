@@ -149,8 +149,7 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider 
             await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil; self.machine = nil
         } catch {
             try? await resumeMachine(machine)
-            // The VM service keeps the saved-state key in the keychain, which refuses while the console is locked (slice 02).
-            throw consoleScreenIsLocked() ? HostDaemonError.unsupported("hibernate unavailable while the screen is locked") : error
+            throw consoleScreenIsLocked() ? HostDaemonError.screenLocked : error
         }
     }
 

@@ -45,3 +45,18 @@ Power-notification plumbing; restore order on start.
 ## Feedback that would change it
 
 Defaults and flag names.
+
+## Built (2026-10-15)
+
+- `IdlePolicy` and `SandboxHost.idleTick()` (run every second by `localbox-hostd`), the
+  `asleep` lifecycle, wake-on-use for guest operations, `SystemPowerMonitor`
+  (`IORegisterForSystemPower`), `host.simulate_power`, and `sandboxes:removeIdle`
+  for idle deletion. `packages/recovery` and `recovery probe` are gone (T7).
+- **Interim, awaiting the user (Q5b):** this Mac's screen is locked, so saves fail.
+  Sleep then pauses the VM in memory (RAM kept, reported "paused in memory:
+  hibernate needs an unlocked screen"); admission may stop a paused VM for room.
+- Results carry host actions in `result.actions` (object results) or a top-level
+  `host_actions`. The rest of the decisions are in [choices](../choices.md).
+- Proof: `npm run proof -- 12 --tier s,l,v`. Tier v proved the locked fallback
+  (PID survives the pause; `kill -9` + relaunch reports `cold_booted` once); its
+  hibernate branch and `--real-sleep` have not run on this Mac.

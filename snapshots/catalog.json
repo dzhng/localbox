@@ -140,7 +140,7 @@
   },
   {
     "id": "sandbox.create",
-    "description": "Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size.",
+    "description": "Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -167,6 +167,14 @@
         "memory_bytes": {
           "type": "integer",
           "minimum": 1073741824
+        },
+        "sleep_after_ms": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "delete_after_ms": {
+          "type": "integer",
+          "minimum": 1000
         }
       },
       "required": [],

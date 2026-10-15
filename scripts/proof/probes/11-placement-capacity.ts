@@ -167,8 +167,9 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       const made = created.actions.filter((action: any) => action.kind === "made_room").map((action: any) => action.detail);
       assert.deepEqual(made, [locked ? `stopped ${names[0]} (2 GiB) to make room: hibernate unavailable while the screen is locked` : `slept ${names[0]} (2 GiB) to make room`]);
       const slept = record(ids[0]); evidence.alpha_record = slept;
-      if (locked) { assert.equal(slept.lifecycle, "stopped"); assert.equal(slept.cold_boot_pending, "could not save its state: hibernate unavailable while the screen is locked"); }
-      else assert.equal(slept.lifecycle, "hibernated");
+      // Asleep either way: it waits for its next use, which restores it or (locked) cold-boots it and says why.
+      assert.equal(slept.lifecycle, "asleep");
+      if (locked) assert.equal(slept.cold_boot_pending, "could not save its state: hibernate unavailable while the screen is locked");
       assert.equal((await ok("sandbox.status", ids[3])).state, "running");
       const capacity = (await ok("host.watch", null, { since: 0 })).capacity;
       evidence.capacity_after = capacity;

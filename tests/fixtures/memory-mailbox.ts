@@ -9,7 +9,7 @@ type Row = RelayResult & { requestId: string; accountId: string; machineId: stri
  * a machine with no connector never claims, so its requests go offline.
  */
 export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
-  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, state: "running", ...row })) as SandboxRow[];
+  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
   const rows = new Map<string, Row>(); const watchers = new Map<string, Set<(result: RelayResult | null) => void>>();
   const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, response: row.response }); };
   const deps: OpsDeps = {
@@ -19,7 +19,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "sandboxes:list") return sandboxes;
       if (name === "sandboxes:create") {
         if (sandboxes.some((row) => row.name === args.name)) throw new Error(`Uncaught Error: name_conflict: ${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}`);
-        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, state: "unknown" };
+        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
         sandboxes.push(row); return row;
       }
       if (name === "sandboxes:rename") { const row = sandboxes.find((candidate) => candidate.sandbox_id === args.sandboxId)!; const previous = row.name; row.name = args.name; return { sandbox_id: row.sandbox_id, name: row.name, previous_name: previous, machine_id: row.machine_id }; }

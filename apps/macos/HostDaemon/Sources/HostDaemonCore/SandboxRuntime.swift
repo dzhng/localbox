@@ -23,17 +23,28 @@ public actor SandboxRuntime {
     private var statusValue = RuntimeStatus(lifecycle: .stopped)
     /// What the last bring-up did (woke or cold_booted, and why), for status and logs.
     private var lastBoot: SandboxAction?
-    /// Agent requests the guest is serving now; a sandbox in the middle of one is never slept to make room.
+    /// Agent requests the guest is serving now; a sandbox in the middle of one is never slept.
     private var inFlight = 0
+    /// When `guest.activity` last showed a running job; idle time (Q5) runs from this or the last request, if later.
+    private var busyAt: Date?
+    /// The last `guest.activity` showed a running job, so the idle policy asks again every second.
+    private(set) var watchingJobs = false
+    /// Boots and wakes no request asked for (at daemon start, when the Mac wakes), reported with the next result.
+    private var unreported: [SandboxAction] = []
     private let onChange: @Sendable () -> Void
     private let now: @Sendable () -> Date
 
     init(record: SandboxRecord, directory: SandboxDirectory, factory: any SandboxBackendFactory, now: @escaping @Sendable () -> Date, onChange: @escaping @Sendable () -> Void) {
         self.record = record; self.directory = directory; self.factory = factory; self.now = now; self.onChange = onChange
+        // Asleep in memory when the daemon ended: the processes are gone, so the next use cold-boots it.
+        if record.lifecycle == .sleeping { self.record.lifecycle = .asleep; self.record.coldBootPending = "the daemon exited while it slept in memory" }
+        if self.record.lifecycle == .asleep { statusValue = RuntimeStatus(lifecycle: .asleep) }
     }
 
     public func status() -> RuntimeStatus { statusValue }
-    func snapshot() -> RuntimeSnapshot { RuntimeSnapshot(record: record, status: statusValue, lastBoot: lastBoot) }
+    func snapshot() -> RuntimeSnapshot {
+        RuntimeSnapshot(record: record, status: statusValue, lastBoot: lastBoot, pauseKeepsMemory: backend is any HibernateBackend)
+    }
 
     /// Runs the sandbox and says what that took: nothing, a wake, a restore from saved state, or a cold boot.
     public func bringUp() async throws -> SandboxAction? {
@@ -42,7 +53,7 @@ public actor SandboxRuntime {
         case .paused: try await resume(); return ["kind": "woke", "detail": "woke \(record.name) from sleep"]
         default: break
         }
-        if record.lifecycle == .hibernated, FileManager.default.fileExists(atPath: directory.savedState.path) {
+        if [.hibernated, .asleep].contains(record.lifecycle), FileManager.default.fileExists(atPath: directory.savedState.path) {
             do { try await restore(); return remember(["kind": "woke", "detail": "restored \(record.name) from its saved state"]) }
             catch { record.coldBootPending = "could not restore its saved state: \(explain(error))" }
         }
@@ -51,20 +62,29 @@ public actor SandboxRuntime {
         return remember(["kind": "cold_booted", "detail": reason.map { "cold-booted \(record.name): \($0)" } ?? "cold-booted \(record.name)"])
     }
 
-    /// Whether the daemon's start brings this sandbox back: it was running, hibernated or is owed a cold boot.
-    var owesRecovery: Bool { record.lifecycle != .stopped || record.coldBootPending != nil }
+    /// Whether the daemon's start brings this sandbox back: it was running, hibernated or is owed a cold boot. An
+    /// asleep sandbox waits for a request, and one stopped on purpose stays down.
+    var owesRecovery: Bool { [.running, .hibernated].contains(record.lifecycle) || (record.lifecycle == .stopped && record.coldBootPending != nil) }
 
-    /// At daemon start: bring back what was running, hibernated or owed a cold boot; a sandbox stopped on purpose stays down.
+    /// At daemon start: bring back what owes recovery. No request asked for it, so the next result reports it.
     func recover() async throws -> SandboxAction? {
-        if (record.lifecycle == .running || record.lifecycle == .sleeping) && record.coldBootPending == nil { record.coldBootPending = "the daemon exited without saving it" }
+        if record.lifecycle == .running && record.coldBootPending == nil { record.coldBootPending = "the daemon exited without saving it" }
         guard owesRecovery else { return nil }
-        return try await bringUp()
+        let action = try await bringUp()
+        if let action { unreported.append(action) }
+        return action
     }
+
+    /// A boot or wake no request asked for, reported with the sandbox's next result.
+    func report(_ action: SandboxAction) { unreported.append(action) }
+
+    /// Hands over (once) what happened without a request since the last result.
+    func takeUnreported() -> [SandboxAction] { defer { unreported = [] }; return unreported }
 
     private func remember(_ action: SandboxAction) -> SandboxAction { lastBoot = action; return action }
 
     private func coldBoot() async throws {
-        guard [.stopped, .error].contains(statusValue.lifecycle) else { throw HostDaemonError.invalidState("\(record.name) cannot start from \(statusValue.lifecycle.rawValue)") }
+        guard [.stopped, .error, .asleep].contains(statusValue.lifecycle) else { throw HostDaemonError.invalidState("\(record.name) cannot start from \(statusValue.lifecycle.rawValue)") }
         // A cold boot changes the disk under any saved state, so that state could never be restored safely again.
         try? FileManager.default.removeItem(at: directory.savedState)
         try await boot { try await $0.start() }
@@ -115,10 +135,20 @@ public actor SandboxRuntime {
         await channel?.close(); channel = nil
         try await backend?.stop(); backend = nil
         try? FileManager.default.removeItem(at: directory.savedState)
+        // Stopped on purpose: nothing is owed at the next start.
+        record.coldBootPending = nil
         setStatus(.stopped, epoch: statusValue.channelEpoch + 1)
+        persist()
     }
 
-    /// SIGTERM (D11) and admission: save a running or sleeping sandbox so the next start restores it; where saving
+    /// Saves the VM and lets it go. On failure the VM keeps running (the backend resumes it).
+    private func save(_ saver: any HibernateBackend) async throws {
+        if statusValue.lifecycle == .paused { try await saver.resume() }
+        try await saver.save(to: directory.savedState)
+        await channel?.close(); channel = nil; backend = nil
+    }
+
+    /// SIGTERM (D11) and power-off: save a running or sleeping sandbox so the next start restores it; where saving
     /// fails or the backend cannot save, stop it and owe it a cold boot that reports why. Returns why it was not
     /// saved, or nil when it was.
     @discardableResult func hibernate() async -> String? {
@@ -126,10 +156,8 @@ public actor SandboxRuntime {
         let failure: String, reason: String
         if let saver = backend as? any HibernateBackend {
             do {
-                if statusValue.lifecycle == .paused { try await resume() }
-                try await saver.save(to: directory.savedState)
-                await channel?.close(); channel = nil; self.backend = nil
-                setStatus(.stopped)
+                try await save(saver)
+                setStatus(.asleep, epoch: statusValue.channelEpoch + 1)
                 record.lifecycle = .hibernated; persist()
                 return nil
             } catch { failure = explain(error); reason = "could not save its state: \(failure)" }
@@ -141,15 +169,78 @@ public actor SandboxRuntime {
         return failure
     }
 
-    /// Frees this sandbox's memory for another start (admission, L9) and says how. A VM sleeps by hibernating, the
-    /// same path as SIGTERM, so a failed save (a locked screen) stops it and owes it a cold boot. The process
+    /// Sleep (Q5b): hibernate, saving the VM's state and releasing its memory, so the next use restores every process.
+    /// The process fixture cannot save and pauses with SIGSTOP, which admission counts as freed. Where saving fails
+    /// (a locked screen), the VM pauses in memory and keeps its RAM: the interim fallback awaiting the user (Q5b).
+    /// `power`: the Mac is going to sleep, so a sandbox serving a request sleeps too, and a saved one comes back
+    /// when the Mac wakes or the daemon starts.
+    func sleep(power: Bool = false) async throws -> SandboxAction {
+        guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
+        guard power || inFlight == 0 else { throw HostDaemonError.invalidState("\(record.name) is serving a request") }
+        let name = record.name
+        guard let saver = backend as? any HibernateBackend else {
+            try await pause()
+            return ["kind": "slept", "detail": "paused \(name) (the process fixture sleeps with SIGSTOP)"]
+        }
+        // Requests that arrive meanwhile wait for the sleep to settle, then wake the sandbox.
+        setStatus(.stopping)
+        do {
+            try await save(saver)
+            setStatus(.asleep, epoch: statusValue.channelEpoch + 1, detail: "hibernated: state saved, memory released")
+            record.lifecycle = power ? .hibernated : .asleep; persist()
+            return ["kind": "slept", "detail": "hibernated \(name): saved its state and released its \(gibibytes(record.memoryBytes))"]
+        } catch {
+            let why: String
+            if case HostDaemonError.screenLocked? = error as? HostDaemonError { why = "hibernate needs an unlocked screen" } else { why = "could not save its state: \(explain(error))" }
+            do { try await backend.pause() } catch { setStatus(.ready, detail: "could not sleep: \(why)"); throw error }
+            setStatus(.paused, detail: "paused in memory: \(why)")
+            return ["kind": "slept", "detail": "paused \(name) in memory: \(why)"]
+        }
+    }
+
+    /// Frees this sandbox's memory for another start (admission, L9) and says how. A VM hibernates; where saving fails
+    /// (a locked screen) it stops and owes a cold boot at its next use, since pausing would keep its memory. The process
     /// fixture cannot save, so it sleeps with SIGSTOP, which admission counts as freed.
     func sleepForRoom() async throws -> String {
-        guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
+        guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
         let size = "\(record.name) (\(gibibytes(record.memoryBytes)))"
-        guard backend is any HibernateBackend else { try await pause(); return "slept \(size) to make room" }
-        if let failure = await hibernate() { return "stopped \(size) to make room: \(failure)" }
-        return "slept \(size) to make room"
+        guard let saver = backend as? any HibernateBackend else { try await pause(); return "slept \(size) to make room" }
+        setStatus(.stopping)
+        do {
+            try await save(saver)
+            setStatus(.asleep, epoch: statusValue.channelEpoch + 1)
+            record.lifecycle = .asleep; persist()
+            return "slept \(size) to make room"
+        } catch {
+            let failure = explain(error)
+            try? await stop()
+            record.lifecycle = .asleep; record.coldBootPending = "could not save its state: \(failure)"
+            setStatus(.asleep); persist()
+            return "stopped \(size) to make room: \(failure)"
+        }
+    }
+
+    /// When idle time (Q5) started: the last request, boot, wake or running job; nil while a request is in flight or
+    /// before the first boot.
+    func idleSince() -> Date? {
+        guard inFlight == 0, let last = record.lastActivityAt else { return nil }
+        return max(last, busyAt ?? last)
+    }
+
+    /// What `guest.activity` said: a running job means the sandbox is not idle, and the idle policy keeps asking every
+    /// second until the jobs end, so idle time starts when they did.
+    func looked(runningJobs jobs: Int) { if jobs > 0 { busyAt = now() }; watchingJobs = jobs > 0 }
+
+    /// Waits out a start or stop in progress (a wake, a sleep), so a request sees where the sandbox settled.
+    func settled() async -> RuntimeLifecycle {
+        for _ in 0..<2_400 where [.starting, .stopping].contains(statusValue.lifecycle) { try? await Task.sleep(nanoseconds: 50_000_000) }
+        return statusValue.lifecycle
+    }
+
+    /// The idle policy the account catalog holds for this sandbox.
+    func setPolicy(sleepAfterMs: Int?, deleteAfterMs: Int?) {
+        guard sleepAfterMs != record.sleepAfterMs || deleteAfterMs != record.deleteAfterMs else { return }
+        record.sleepAfterMs = sleepAfterMs; record.deleteAfterMs = deleteAfterMs; persist()
     }
 
     /// The guest's running Localbox jobs (`guest.activity`), or nil when it is serving a request or does not say.
@@ -188,7 +279,15 @@ public actor SandboxRuntime {
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes
         guard cpus != record.cpus || memory != record.memoryBytes else { return nil }
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused else {
-            record.cpus = cpus; record.memoryBytes = memory; persist(); onChange(); return nil
+            record.cpus = cpus; record.memoryBytes = memory
+            // A saved state only restores at the size it was saved with, so an asleep sandbox wakes with a cold boot.
+            if statusValue.lifecycle == .asleep, FileManager.default.fileExists(atPath: directory.savedState.path) {
+                try? FileManager.default.removeItem(at: directory.savedState)
+                record.coldBootPending = "resized while asleep, so its saved state could not be restored"
+                persist(); onChange()
+                return ["kind": "restarted", "detail": "resized \(record.name) to \(cpus) CPUs and \(gibibytes(memory)) while asleep; its processes ended, and it cold-boots at its next use"]
+            }
+            persist(); onChange(); return nil
         }
         if statusValue.lifecycle == .paused { try await resume() }
         let ended = (try? await guestProcesses()) ?? []
@@ -237,6 +336,8 @@ struct RuntimeSnapshot: Sendable {
     let record: SandboxRecord
     let status: RuntimeStatus
     let lastBoot: SandboxAction?
-    /// Admission counts a sandbox's memory while it starts or runs; a sleeping one has given it back (L9).
-    var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) }
+    /// A paused VM keeps its RAM; a paused process fixture (SIGSTOP) counts as freed.
+    let pauseKeepsMemory: Bool
+    /// Admission counts a sandbox's memory while it starts or runs, and while a VM sleeps paused in memory (L9).
+    var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
 }

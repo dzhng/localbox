@@ -109,8 +109,8 @@ npm run build:workspaces && npm run test:workspaces   # Turbo per-workspace task
 swift test --package-path apps/macos/HostDaemon       # host daemon package
 ```
 
-`node bin/localbox.js contract probe`, `status --json`, `shell exec -- …` and
-`recovery probe --json` are smoke entry points; set
+`node bin/localbox.js contract probe`, `status --json` and `shell exec -- …`
+are smoke entry points; set
 `LOCALBOX_LOCAL_TRANSPORT=fixture` to run them against the in-process fixture
 sandbox instead of a daemon. The [website](apps/site/README.md) has its own build and checks.
 

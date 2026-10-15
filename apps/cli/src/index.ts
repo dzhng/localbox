@@ -8,7 +8,6 @@ import {
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, type ClientTransport } from "../../../packages/client/src/index.js";
-import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { SkillManager } from "./skill-manager.js";
 import { checkForUpdate, installLatest } from "./updater.js";
@@ -26,7 +25,7 @@ const json = (argv.indexOf("--") < 0 ? argv : argv.slice(0, argv.indexOf("--")))
 /** CLI group names that differ from the catalog prefix. */
 const GROUPS: Record<string, string> = { machines: "machine" };
 const VERBS: Record<string, string> = { "account.show": "account.status" };
-const CONTROL_FLAGS = new Set(["sandbox", "machine", "input-json", "request-id", "mutation-id", "deadline-ms", "memory"]);
+const CONTROL_FLAGS = new Set(["sandbox", "machine", "input-json", "request-id", "mutation-id", "deadline-ms", "memory", "sleep-after", "delete-after"]);
 /** Commands that are not catalog operations. */
 const LOCAL_COMMANDS: Array<[string, string]> = [
   ["login --email EMAIL [--code CODE]", "Sign this Mac in with an email code"],
@@ -81,7 +80,7 @@ function usage(): string {
 function commandLine(entry: OperationCatalogEntry): string {
   const verb = entry.id.split(".")[1].replaceAll("_", "-");
   const properties = entry.input_schema.properties ?? {}; const required = entry.input_schema.required ?? [];
-  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
+  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "sleep_after_ms" ? "[--sleep-after 30m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
   if (entry.id === "shell.exec") return `${verb} [--background] -- COMMAND [ARGS...]`;
   return [verb, ...(entry.sandbox_scoped && entry.id.startsWith("sandbox.") ? ["[SANDBOX]"] : []), ...required.map((key) => key.toUpperCase()), ...Object.keys(properties).filter((key) => !required.includes(key)).map(flag)].join(" ");
 }
@@ -165,6 +164,12 @@ function bytes(value: string): number {
   const unit = (match[2] ?? "B")[0].toUpperCase();
   return Math.round(Number(match[1]) * 1024 ** ("BKMGT".indexOf(unit)));
 }
+const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/i;
+/** `5s`, `10m`, `2h`, `1d` in milliseconds. */
+function milliseconds(value: string, flag: string): number {
+  const match = value.match(DURATION); if (!match) throw new ContractError("invalid_input", `--${flag} takes a duration like 5s, 10m or 2h, not ${value}`);
+  return Math.round(Number(match[1]) * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2].toLowerCase() as "ms"]);
+}
 function coerce(value: string | true, schema: JsonSchema | undefined, flag: string): Json {
   if (value === true) return true;
   if (schema?.type === "integer" || schema?.type === "number") { const number = Number(value); if (!Number.isFinite(number)) throw new ContractError("invalid_input", `--${flag} must be a number`); return number; }
@@ -184,6 +189,12 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[]): Pr
     input[key] = coerce(value, properties[key], flag);
   }
   if (typeof flags.memory === "string") input.memory_bytes = bytes(flags.memory);
+  for (const flag of ["sleep-after", "delete-after"]) {
+    const value = flags[flag]; if (typeof value !== "string") continue;
+    const key = `${flag.replace("-", "_")}_ms`;
+    if (!properties[key]) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
+    input[key] = milliseconds(value, flag);
+  }
   if (typeof flags.machine === "string" && entry.id !== "sandbox.create") throw new ContractError("invalid_input", "--machine only applies to sandbox create; name an existing sandbox with --sandbox");
   let sandbox = typeof flags.sandbox === "string" ? flags.sandbox : undefined;
   const required = (schema.required ?? []).filter((key) => !(key in input));
@@ -230,7 +241,6 @@ async function main(): Promise<void> {
     return;
   }
   if (group === "contract" && subcommand === "generate-snapshots") { await writeSnapshots(); return; }
-  if (group === "recovery" && subcommand === "probe") { print(recoveryProbe() as unknown as Json); return; }
   if (group === "login") {
     const { flags } = parse(head.slice(1));
     const email = typeof flags.email === "string" ? flags.email : undefined; const code = typeof flags.code === "string" ? flags.code : undefined;

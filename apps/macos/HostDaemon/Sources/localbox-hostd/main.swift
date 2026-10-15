@@ -19,15 +19,21 @@ struct HostDaemonMain {
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(),
                                    hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init),
-                                   admissionBytes: devAdmissionBytes())
+                                   admissionBytes: devAdmissionBytes(), allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1")
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
             try await server.start()
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
-            // An async main already services the main queue; dispatchMain() here traps. Park the main task instead.
-            while true { try? await Task.sleep(nanoseconds: 3_600 * 1_000_000_000) }
+            // The Mac's sleep and power-off notices hibernate the sandboxes first (L6).
+            do { try power(host).start() } catch { log("no power notices: \(error)") }
+            // An async main already services the main queue; dispatchMain() here traps. The main task runs the idle
+            // policy (Q5) every second instead.
+            while true {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                for (id, action) in await host.idleTick().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
+            }
         } catch {
             FileHandle.standardError.write(Data("localbox-hostd: \(error)\n".utf8))
             exit(1)
@@ -73,6 +79,12 @@ struct HostDaemonMain {
         }
     }
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+
+    /// Kept for the daemon's life: IOKit calls back into it.
+    nonisolated(unsafe) private static var powerMonitor: SystemPowerMonitor?
+    private static func power(_ host: SandboxHost) -> SystemPowerMonitor {
+        let monitor = SystemPowerMonitor(host: host, log: { log($0) }); powerMonitor = monitor; return monitor
+    }
 
     private static func log(_ line: String) { FileHandle.standardError.write(Data("localbox-hostd: \(line)\n".utf8)) }
 

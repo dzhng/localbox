@@ -73,7 +73,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "machine.list": ["List machines in the account.", empty(), true, false, "none"],
   "machine.rename": ["Rename an account machine.", object({ machine_id: string(), name: string() }, ["machine_id", "name"]), false, true, "required"],
   "machine.remove": ["Remove an account machine.", object({ machine_id: string() }, ["machine_id"]), false, true, "required"],
-  "sandbox.create": ["Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size.", object({ name: string(), machine: string(), placement: { type: "string", enum: ["auto", "remote"] }, cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required"],
+  "sandbox.create": ["Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.", object({ name: string(), machine: string(), placement: { type: "string", enum: ["auto", "remote"] }, cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 }, sleep_after_ms: { type: "integer", minimum: 1000 }, delete_after_ms: { type: "integer", minimum: 1000 } }), false, true, "required"],
   "sandbox.list": ["List the account's sandboxes with their machine and last reported state.", empty(), true, false, "none"],
   "sandbox.rename": ["Rename a sandbox.", object({ name: string() }, ["name"]), false, true, "required"],
   "sandbox.delete": ["Delete a sandbox; `confirm`, when given, must be its name.", object({ confirm: string() }), false, true, "required"],
@@ -168,12 +168,17 @@ export interface EnvelopeIdentity {
   sandbox_id: string | null;
   release_id: typeof RELEASE_ID;
 }
+/**
+ * What HostDaemon did for a request on the way (a wake, a boot no request asked for) is prepended to `result.actions`
+ * when the result is an object; otherwise (an error, a non-object result) it travels as `host_actions`.
+ */
 export interface SuccessEnvelope<T extends Json = Json> extends EnvelopeIdentity {
   ok: true;
   result: T;
+  host_actions?: ActionReport["actions"];
 }
 export interface ErrorBody { code: ErrorCode; message: string; retryable: boolean; details?: Json }
-export interface ErrorEnvelope extends EnvelopeIdentity { ok: false; error: ErrorBody }
+export interface ErrorEnvelope extends EnvelopeIdentity { ok: false; error: ErrorBody; host_actions?: ActionReport["actions"] }
 export type ResponseEnvelope<T extends Json = Json> = SuccessEnvelope<T> | ErrorEnvelope;
 
 export class ContractError extends Error {
