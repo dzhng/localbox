@@ -10,14 +10,18 @@ import { bearer, clientIp, json } from "../src/http.js";
 const localServices = process.env.LOCALBOX_LOCAL_SERVICES === "1";
 if (process.env.VERCEL && !localServices && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed relay");
 if (process.env.VERCEL && process.env.CONVEX_URL && !process.env.LOCALBOX_JWT_PRIVATE_KEY) throw new Error("LOCALBOX_JWT_PRIVATE_KEY is required for the deployed relay");
-const configuredMailer = process.env.VERCEL ? selectMailer() : undefined;
 const bodyOf = async (request: Request) => await request.json() as Record<string, unknown>;
 async function handleIdentity(request: Request): Promise<Response | undefined> {
   const path = new URL(request.url).pathname.replace(/\/$/, "");
   if (request.method === "POST" && path === "/auth/email/start") {
     const input = await bodyOf(request); const email = String(input.email ?? "");
     const result = await serviceCall("mutation", "signin:start", { email, ip: clientIp(request) });
-    if (result.issued) await (configuredMailer ?? selectMailer()).sendCode({ to: email.trim().toLowerCase(), code: result.code, idempotencyKey: `${email}:${result.code}` });
+    // The mailer is chosen per send, so a deployment without email still serves everything else.
+    if (result.issued) {
+      let mailer: ReturnType<typeof selectMailer>;
+      try { mailer = selectMailer(); } catch { return json({ error: "email sign-in is not available yet: this deployment has no email delivery configured" }, 503); }
+      await mailer.sendCode({ to: email.trim().toLowerCase(), code: result.code, idempotencyKey: `${email}:${result.code}` });
+    }
     return json({ message: "code sent" });
   }
   if (request.method === "POST" && path === "/auth/email/verify") {
