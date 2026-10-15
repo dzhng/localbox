@@ -3,37 +3,45 @@
   "buildCommand": "echo no-build",
   "outputDirectory": ".",
   "functions": {
-    "api/relay/[...path].ts": {
+    "api/relay.ts": {
       "maxDuration": 60
     },
-    "api/mcp/[...path].ts": {
+    "api/mcp.ts": {
       "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/api/auth/:path*",
-      "destination": "/api/relay/auth/:path*"
+      "destination": "/api/relay?__path=auth/:path*"
     },
     {
       "source": "/api/v1/:path*",
-      "destination": "/api/relay/v1/:path*"
+      "destination": "/api/relay?__path=v1/:path*"
+    },
+    {
+      "source": "/api/relay/:path*",
+      "destination": "/api/relay?__path=:path*"
     },
     {
       "source": "/.well-known/oauth-protected-resource/api/mcp",
-      "destination": "/api/mcp/metadata?metadata=oauth-protected-resource"
+      "destination": "/api/mcp?__path=metadata&metadata=oauth-protected-resource"
     },
     {
       "source": "/.well-known/oauth-authorization-server/api/mcp",
-      "destination": "/api/mcp/metadata?metadata=oauth-authorization-server"
+      "destination": "/api/mcp?__path=metadata&metadata=oauth-authorization-server"
     },
     {
       "source": "/api/mcp/.well-known/oauth-protected-resource",
-      "destination": "/api/mcp/metadata?metadata=oauth-protected-resource"
+      "destination": "/api/mcp?__path=metadata&metadata=oauth-protected-resource"
     },
     {
       "source": "/api/mcp/.well-known/oauth-authorization-server",
-      "destination": "/api/mcp/metadata?metadata=oauth-authorization-server"
+      "destination": "/api/mcp?__path=metadata&metadata=oauth-authorization-server"
+    },
+    {
+      "source": "/api/mcp/:path+",
+      "destination": "/api/mcp?__path=:path+"
     }
   ]
 }
