@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createMcpHandler } from "../apps/mcp/api/[...path].js";
 import type { Principal } from "../apps/relay/src/ops.js";
+import { success } from "../packages/contract/src/index.js";
 import { oauthFixture, RESOURCE } from "./fixtures/oauth-server.js";
 
 function handler() {
   const fixture = oauthFixture(); const calls: Array<{ principal: Principal; input: Record<string, unknown> }> = [];
-  const handle = createMcpHandler({ oauth: fixture.oauth, ops: async (principal, input) => { calls.push({ principal, input }); return { status: 200, body: [{ machineId: "m_b", name: "attic" }] }; } });
+  const handle = createMcpHandler({ oauth: fixture.oauth, ops: async (principal, input) => { calls.push({ principal, input }); return { status: 200, body: { response: success({ protocol_version: "v1", request_id: "r", operation: "machine.list", sandbox_id: null, deadline_ms: 1, mutation_id: null, input: {} }, [{ machineId: "m_b", name: "attic" }]) } }; } });
   return { ...fixture, handle, calls };
 }
 const mcp = (token: string, body: unknown) => new Request(RESOURCE, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -35,8 +36,9 @@ test("an MCP call with a signed-in token reaches the agent API as that account, 
   assert.equal((await handle(mcp(tokens.access_token, { jsonrpc: "2.0", id: 3, method: "tools/list" }))).status, 401);
 });
 
-test("the MCP entry rejects malformed JSON before dispatch and malformed OAuth bodies as client errors", async () => {
+test("the MCP entry rejects oversized and malformed JSON before dispatch and malformed OAuth bodies as client errors", async () => {
   const { handle } = handler();
+  assert.equal((await handle(new Request(RESOURCE, { method: "POST", body: "x".repeat(1024 * 1024 + 1) }))).status, 413);
   const response = await handle(new Request(RESOURCE, { method: "POST", body: "{" }));
   assert.equal(response.status, 400); assert.equal((await response.json() as any).error, "invalid_json");
   const token = await handle(new Request(`${RESOURCE}/oauth/token`, { method: "POST", headers: { "content-type": "application/json" }, body: "{" }));

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { place, type PlacementInput, type PlacementMachine } from "../packages/placement/src/index.js";
 
 const GIB = 1024 ** 3;
-const machine = (id: string, name: string, room: number, total: number, online = true): PlacementMachine => ({ id, name, online, roomBytes: room * GIB, totalBytes: total * GIB, lastReportAt: Date.UTC(2026, 9, 15) });
+const machine = (id: string, name: string, room: number, total: number, reported = true): PlacementMachine => ({ id, name, reported, roomBytes: room * GIB, totalBytes: total * GIB, lastReportAt: Date.UTC(2026, 9, 15) });
 const studio = machine("m_studio", "Studio", 4, 8); const attic = machine("m_attic", "attic", 10, 16); const garage = machine("m_garage", "garage", 20, 32, false);
 const fleet = [studio, attic, garage];
 const where = (input: Partial<PlacementInput>) => place({ flags: {}, machines: fleet, neededBytes: 2 * GIB, ...input });
@@ -58,15 +58,15 @@ test("refusals name the code and list every machine with its room", () => {
     assert.equal(result.error, code, label); assert.match(result.message, message, label);
   }
   const listed = refused({}).machines;
-  assert.deepEqual(listed.map((row) => [row.name, row.online, row.room_bytes / GIB, row.total_bytes / GIB]), [["attic", true, 10, 16], ["garage", false, 20, 32], ["Studio", true, 4, 8]]);
+  assert.deepEqual(listed.map((row) => [row.name, row.reported, row.room_bytes / GIB, row.total_bytes / GIB]), [["attic", true, 10, 16], ["garage", false, 20, 32], ["Studio", true, 4, 8]]);
 });
 
 test("auto placement moves on when the roomiest machine does not answer, and says so", async () => {
-  const { handleOps } = await import("../apps/relay/src/ops.js");
+  const { runOps } = await import("../apps/relay/src/ops.js");
   const { memoryMailbox } = await import("./fixtures/memory-mailbox.js");
   const capacity = (gib: number) => ({ total_bytes: gib * 2 ** 30, reserved_bytes: 0, room_bytes: gib * 0.75 * 2 ** 30, running: 0, revision: 1, cpus: 8 });
   const machines = [{ machineId: "m_a", name: "studio", capacity: capacity(8) }, { machineId: "m_b", name: "attic", capacity: capacity(16) }];
-  const { deps } = memoryMailbox({ machines, connectors: { m_a: async (request) => ({ protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "agent-computer-contract-v1", ok: true, result: { requested: {}, produced: {}, actions: [] } }) } });
+  const { deps } = memoryMailbox({ machines, connectors: { m_a: async (request) => ({ protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "localbox-contract-v1", ok: true, result: { requested: {}, produced: {}, actions: [] } }) } });
   const removed: string[] = [];
   const accountCall = deps.accountCall;
   deps.accountCall = async (principal, kind, name, args) => {
@@ -74,7 +74,7 @@ test("auto placement moves on when the roomiest machine does not answer, and say
     if (name === "sandboxes:remove") { removed.push(String(args.sandboxId)); return null; }
     return accountCall(principal, kind, name, args);
   };
-  const result = await handleOps({ accountId: "acct", machineId: "m_a" }, { operation: "sandbox.create", input: { placement: "auto", cpus: 1, memory_bytes: 2 ** 31 } }, deps);
+  const result = await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "sandbox.create", input: { placement: "auto", cpus: 1, memory_bytes: 2 ** 31 } }, deps);
   const response = (result.body as any).response;
   assert.equal(response.ok, true, JSON.stringify(response));
   assert.equal(response.result.produced.machine, "studio");

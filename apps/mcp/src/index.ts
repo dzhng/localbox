@@ -1,4 +1,4 @@
-import { catalogById, mcpToolsSnapshot, PROTOCOL_VERSION, type JsonSchema, type OperationCatalogEntry, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { catalogById, helpSnapshot, PROTOCOL_VERSION, type JsonSchema, type OperationCatalogEntry, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 import type { OpsResponse, Principal } from "../../relay/src/ops.js";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -9,11 +9,10 @@ export interface McpAdapterOptions {
   endpoint: string;
   /** Resolves an OAuth access token to its account; throws when the token is invalid, expired or revoked. */
   authenticate(token: string): Promise<Principal>;
-  /** The agent API (`handleOps`), called in-process as the token's account. */
+  /** The agent API (`runOps`), called in-process as the token's account. */
   ops(principal: Principal, input: Record<string, unknown>): Promise<OpsResponse>;
   allowedOrigins?: string[];
   protocolVersion?: string;
-  maxBodyBytes?: number;
 }
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method: string; params?: any }
 
@@ -28,7 +27,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => !!value &
  * `machine` argument; they are the adapter's, not the catalog's. The agent API finds the machine.
  */
 export function mcpTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
-  return mcpToolsSnapshot().map((tool) => ({
+  return helpSnapshot().map((tool) => ({
     name: tool.id, description: tool.description,
     inputSchema: tool.sandbox_scoped ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, sandbox: SANDBOX_ARGUMENT } }
       : machineLevel(tool) ? { ...tool.input_schema, properties: { ...tool.input_schema.properties, machine: MACHINE_ARGUMENT } } : tool.input_schema,
@@ -39,7 +38,6 @@ export function mcpTools(): Array<{ name: string; description: string; inputSche
 export class McpAdapter {
   readonly endpoint: string;
   readonly protocolVersion: string;
-  readonly maxBodyBytes: number;
   private readonly allowedOrigins: Set<string>;
   private readonly authenticate: McpAdapterOptions["authenticate"];
   private readonly ops: McpAdapterOptions["ops"];
@@ -49,11 +47,9 @@ export class McpAdapter {
     this.ops = options.ops;
     this.allowedOrigins = new Set(options.allowedOrigins ?? []);
     this.protocolVersion = options.protocolVersion ?? MCP_PROTOCOL_VERSION;
-    this.maxBodyBytes = options.maxBodyBytes ?? 1024 * 1024;
   }
   async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
     const headers = request.headers ?? {};
-    if (request.body !== undefined && Buffer.byteLength(typeof request.body === "string" ? request.body : JSON.stringify(request.body)) > this.maxBodyBytes) return this.httpError(413, "payload_too_large", "MCP request exceeds the configured size limit");
     const origin = headers.origin ?? headers.Origin;
     if (origin && this.allowedOrigins.size > 0 && !this.allowedOrigins.has(origin)) return this.httpError(403, "forbidden", "origin is not allowed");
     if (request.method !== "POST" && request.method !== "GET") return { status: 405, headers: { allow: "POST, GET", "content-type": "application/json" }, body: { error: "method_not_allowed" } };
@@ -90,13 +86,10 @@ export class McpAdapter {
     // MCP has no idempotency key of its own: each tool call is one mutation.
     const mutationId = entry.idempotency === "required" ? `mcp_${crypto.randomUUID()}` : null;
     const where = Object.fromEntries(Object.entries(target).filter(([, value]) => typeof value === "string" && value));
-    let result = await this.ops(principal, { operation, input, ...where, request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
-    // A long request comes back as a continuation; resume it until the machine answers or its deadline passes.
-    while (result.status === 202) { const pending = result.body as { request_id: string; deadline_at: number }; result = await this.ops(principal, { continue: pending.request_id, deadline_at: pending.deadline_at }); }
-    if (result.status !== 200) return this.toolError(String((result.body as any)?.error ?? `the operation failed (${result.status})`));
-    // Account operations answer with the catalog's value; everything else with a response envelope.
-    const envelope = (result.body as { response?: ResponseEnvelope } | undefined)?.response;
-    if (!envelope) return this.toolResult(result.body);
+    // A 30 s deadline ends inside one agent API wait (50 s), so the answer is final, never a continuation.
+    const result = await this.ops(principal, { operation, input, ...where, request_id: `mcp_${crypto.randomUUID()}`, mutation_id: mutationId, deadline_ms: 30_000 });
+    if (result.status !== 200) return this.toolError(String((result.body as { error?: string }).error ?? `the operation failed (${result.status})`));
+    const envelope = (result.body as { response: ResponseEnvelope }).response;
     return envelope.ok ? this.toolResult(envelope.result) : { ...this.toolError(envelope.error.message), structuredContent: envelope.error };
   }
   private toolResult(value: unknown): Record<string, unknown> { return { content: [{ type: "text", text: JSON.stringify(value) }], ...(isObject(value) ? { structuredContent: value } : {}) }; }

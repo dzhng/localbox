@@ -6,8 +6,7 @@ import Darwin
 import Glibc
 #endif
 
-/// Local CLI/daemon IPC request. A launchd Unix socket or an in-process test
-/// transport can carry this same shape without owning lifecycle state.
+/// Local CLI/daemon IPC request: the IPC token and one request envelope.
 public struct LocalIPCRequest: Codable, Sendable {
     public let token: String
     public let envelope: Data
@@ -61,13 +60,11 @@ public actor AuthenticatedLocalIPC {
     }
 }
 
-/// A launchd-compatible Unix-domain socket adapter for `AuthenticatedLocalIPC`.
+/// The Unix-domain socket listener for `AuthenticatedLocalIPC`, one request per connection.
 ///
 /// The adapter owns only the listener and connection tasks. `SandboxHost` remains
-/// the sole owner of VM lifecycle, and all request authentication/forwarding
-/// goes through `AuthenticatedLocalIPC`. launchd may provide the listener fd in
-/// a future product wrapper; this standalone listener is useful for development
-/// and tests and has the same one-request-per-connection wire contract.
+/// the sole owner of sandbox lifecycle, and all request authentication/forwarding
+/// goes through `AuthenticatedLocalIPC`.
 public actor UnixDomainSocketServer {
     public let endpoint: LocalIPCEndpoint
     private let ipc: AuthenticatedLocalIPC

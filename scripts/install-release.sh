@@ -18,11 +18,10 @@ RELEASE_REPOSITORY=${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}
 
 if [ -z "${RELEASE_PUBLIC_KEY:-}" ]; then
   for candidate in \
-    "${LOCALBOX_SKILL_SOURCE:-}/release-public.pem" \
     "$HOME/.agents/skills/localbox/release-public.pem" \
     "$HOME/.codex/skills/localbox/release-public.pem" \
     "$HOME/.claude/skills/localbox/release-public.pem"; do
-    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+    if [ -f "$candidate" ]; then
       RELEASE_PUBLIC_KEY="$candidate"
       break
     fi

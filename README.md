@@ -134,36 +134,14 @@ make room, the output it trimmed. Your agent never has to guess.
 
 ## What works today
 
-Built, and proven end to end on one Mac with real VMs and a simulated second Mac:
-
-- Sign in with your email and a 6-digit code; every Mac you sign in joins one account.
-- Sandboxes with generated, renameable names, many per Mac, each its own Linux VM.
-- Create on this Mac, on a named Mac, or wherever has the most room; from any
-  Mac in the account, use a sandbox on another one.
-- Shell, files, browser and desktop operations, from the CLI or MCP.
-- Idle sandboxes sleep and wake on the next request with their processes intact;
-  a sandbox can delete itself after an idle timeout; a full Mac makes room from
-  its least recently used idle sandboxes and says which.
-- Cloud agents sign in over MCP and reach your sandboxes through the outbound relay.
-- Signed releases that keep the CLI and the Localbox skill current.
-
-Not yet:
-
-- The hosted service at `api.localbox.sh` moves to this version with the first
-  release, and sign-in emails start once the mail domain is set up.
-- Hibernation (a sleeping sandbox's memory saved to disk, its RAM freed, its
-  processes resumed on the next request) needs a logged-in session whose screen
-  lock asks for no password: Apple encrypts the saved memory with a key from that
-  session. On a headless Mac, turn on automatic login and set the lock screen's
-  password requirement to Never (the display can still sleep); `localbox host
-  check` tells you what to change. Where the lock needs a password, a locked Mac
-  pauses sleeping sandboxes in memory (they keep their RAM), and a sandbox put
-  away to make room boots fresh at its next use.
-- An update restarts the Localbox service. Running sandboxes keep their disks;
-  keeping their processes across it waits on the same save-to-disk step.
-- Shared folders.
-
-The [positioning](positioning.md) doc tracks each use case.
+Everything above except shared folders is built, and proven end to end on one
+Mac with real VMs and a simulated second Mac: email sign-in, many sandboxes per
+Mac, placement across your machines, shell, files, browser and desktop from the
+CLI or MCP, idle sleep and wake, and signed releases that keep themselves
+current. Idle sandboxes free their RAM on a Mac whose screen lock asks for no
+password ([why](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
+Sign-in emails start once the mail domain is set up. The
+[positioning](positioning.md) doc tracks each use case.
 
 ## Get started
 
@@ -180,37 +158,11 @@ is published. The [agent setup](#agent-setup) below is what your agent follows.
 
 ## Agent setup
 
-These steps are written for the agent doing the install, so they are precise and
-describe only what the current release does.
-
-1. **Install from a signed release.** Resolve one stable tag from
-   [GitHub Releases](https://github.com/dzhng/localbox/releases/latest), download
-   the release kit with its `release.json` and `SHA256SUMS`, verify them against
-   the pinned [release public key](skills/localbox/release-public.pem), and run
-   the bundled installer. The [installation procedure](skills/localbox/references/installation.md)
-   holds the exact commands. Do not build from source for a user install, and do
-   not install or copy the skill yourself.
-2. **Check the install.** The installer places the CLI at `~/.local/bin/localbox`,
-   registers the host daemon, the relay connector and the updater with launchd,
-   and installs the global [Localbox skill](skills/localbox/SKILL.md) for every
-   agent harness on the Mac. It bundles its own Node runtime, so it never calls
-   the host's `npx` or `npm`. Then run:
-
-   ```sh
-   ~/.local/bin/localbox skill status
-   ~/.local/bin/localbox agents setup status
-   ~/.local/bin/localbox help
-   ```
-
-3. **Read the skill.** Start a fresh session so the Localbox skill is loaded.
-   It is the reference for using Localbox; this README is not.
-
-Updates arrive automatically and verify before replacing anything;
-`localbox update check` and `localbox update install` do the same on demand.
-With agent setup on (the default), every install and every start of the host
-daemon makes the skill and the `localbox` command match the installed release.
-The [skill lifecycle](skills/localbox/references/skill-lifecycle.md) covers
-turning that off, backups and project installs.
+Your agent follows the [installation procedure](skills/localbox/references/installation.md):
+one signed release, verified, then its own installer, which sets up the CLI, the
+background services and the [Localbox skill](skills/localbox/SKILL.md). Updates
+and keeping the skill current are covered in the
+[skill lifecycle](skills/localbox/references/skill-lifecycle.md).
 
 ## Contributing
 

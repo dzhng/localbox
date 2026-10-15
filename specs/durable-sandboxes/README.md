@@ -15,35 +15,35 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01 and 03–14 done, production cut over 2026-10-15 (Convex `fastidious-lark-430` emptied to the new schema, Vercel `localbox-api` env set; every route answers as designed, and email sign-in answers 503 until Resend is configured). The whole scenario passes on this Mac: two machines signed in to one account, local, `--machine` and `--placement auto` creates, cross-machine exec, an MCP call, `machine_offline` and recovery, idle sleep with `woke`, a removed machine's connector exiting 0, and on the real A a Node server keeping its PID across sleep (`npm run proof -- 13 --tier l,v`; [evidence](evidence/13-scenario.json)). User docs (README, site, positioning), [SECURITY.md](../../SECURITY.md), the DEVELOPMENT settings and the [two-Mac runbook](two-mac-runbook.md) describe what shipped; the installer refuses macOS below 14. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM and admission stop sandboxes and cold-boot them later, and idle sleep pauses VMs in memory (interim, choices slice 12). Next: the production cutover (orchestrator), then the user's two-Mac run.*
+*Status 2026-10-15: every slice, 00 to 14, is done, and production is cut over
+(Convex `fastidious-lark-430` on the new schema, Vercel `localbox-api` env set;
+every route answers as designed, and email sign-in answers 503 until Resend is
+configured). The whole scenario passes on this Mac with a simulated second
+machine (`npm run proof -- 13 --tier l,v`; [evidence](evidence/13-scenario.json)),
+and hibernation is proven on a real VM where the screen lock asks for no
+password (slice 02). User docs, [SECURITY.md](../../SECURITY.md) and the
+[two-Mac runbook](two-mac-runbook.md) describe what shipped.*
 
-**Open user decisions:** Q5b, the locked-Mac sleep fallback (pause in memory, keeping RAM, today); the slice 02 unlocked save/restore run (also 10's unlocked SIGTERM check and 12's hibernate branch, and step 7 of the runbook); the Resend account, API key and DNS for `mail.localbox.sh`.
+What remains, in order:
 
-You are building durable sandboxes. Read this README, then the slice you are
-picking up. Work on this Mac mini; the second machine is simulated (slice 03).
+1. **Resend (user).** The Resend account, API key and DNS for
+   `mail.localbox.sh`. Only real sign-in email waits on it.
+2. **The user's two-Mac run** with the [runbook](two-mac-runbook.md), once the
+   first signed release is published and Resend works.
+3. **Post-restore network delay.** A restored guest's internet takes about 7 s
+   to answer again; renew the guest's network on the post-restore `hello`
+   ([slice 02](slices/02-hibernate-spike.md)).
+4. **Close the spec** with [close-spec](../../.agents/skills/close-spec/SKILL.md):
+   archive it to `specs/done/` as rationale.
 
-1. Run `npm ci`. Slice 00 is done; `npm run proof -- 00 --tier u,l` must stay green.
-2. Then run the two lanes, in either order or interleaved:
-   - **Lane V (real VMs):** 01 → 02. Slice 02 is the go/no-go for hibernate: if
-     save/restore fails for every channel option, stop and report; Q5b goes
-     back to the user.
-   - **Lane L (local stack):** 03, 04, 05 → 06 → 07 → 08, 09.
-   Then 10 → 11 → 12 → 14 → 13.
-3. After each slice run `npm run proof -- --through <NN> --tier u,l` and keep
-   the evidence path in your report. Commit each slice separately.
-4. Before ending your pass, update this section: status, next slice, blockers,
-   and any plan decision you overturned (record it in the slice file and in
-   [Plan decisions](#plan-decisions)).
-
-**Blockers to watch:** the Resend account, API key and DNS for
-`mail.localbox.sh` (user-owned; only real email delivery waits on it). Debian
-kernel and image pins for slice 01 (use the dev pins file).
+Keep `npm run proof -- --through 14 --tier u,l` green while working; tier `v`
+needs a screen lock that asks for no password.
 
 **TODO**
 
 - [x] [00 proof harness](slices/00-proof-harness.md)
 - [x] [01 boot artifacts](slices/01-boot-artifacts.md)
-- [x] [02 hibernate spike](slices/02-hibernate-spike.md) — go (needs an unlocked session)
+- [x] [02 hibernate spike](slices/02-hibernate-spike.md) — go (needs a screen lock that asks for no password)
 - [x] [03 fixture machine](slices/03-fixture-machine.md)
 - [x] [04 output cap and jobs](slices/04-output-cap-and-jobs.md)
 - [x] [05 Convex auth boundary](slices/05-convex-auth-boundary.md)
@@ -56,6 +56,10 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [x] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)
 - [x] [14 agent setup: skill and CLI kept current](slices/14-agent-setup.md)
 - [x] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md); production login round trip waits on Resend (blocked, exit 2)
+- [ ] Resend account and DNS (user)
+- [ ] [two-Mac run](two-mac-runbook.md) (user)
+- [ ] post-restore network delay follow-up (slice 02)
+- [ ] close-spec
 
 ## Slice graph
 
@@ -191,10 +195,9 @@ editing it here and in its slice.
 - **Vercel Hobby is for non-commercial use.** A free service is arguably fine; a
   grey area the user owns, like moving Convex to Starter when usage nears the cap
   (map Q15b; no alerting is built).
-- **One request at a time per guest channel** on the console port; a long command
-  blocks cancel. Prefer the virtio socket if slice 02 shows it restores.
-- **Restore may require an unlocked Mac** for saved-state decryption; slice 02
-  records the behaviour.
+- **Hibernation needs a screen lock that asks for no password**; where the lock
+  asks for one, a locked Mac pauses sleeping sandboxes in memory (slice 02,
+  [installation](../../skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
 
 ## Research sources
 

@@ -465,7 +465,7 @@
       "max_input_bytes": 65536,
       "max_output_bytes": 921600
     },
-    "executor": "host",
+    "executor": "guest",
     "sandbox_scoped": true
   },
   {

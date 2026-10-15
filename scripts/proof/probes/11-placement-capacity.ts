@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gibibytes } from "../../../packages/contract/src/index.js";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
 import { API_ORIGIN, machineRoot, stopConnector } from "../lib/login.js";
@@ -46,6 +47,8 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
   const machineId = (machine: string) => JSON.parse(readFileSync(join(machineRoot(ctx.root, machine), "credentials.json"), "utf8")).machine_id as string;
   let setup: Awaited<ReturnType<typeof signedInWithSandboxes>> | undefined;
   const names = { a: "", b: "" }; const onA: string[] = [];
+  // What each machine reported it can take with nothing running: its daemon's admission budget.
+  const budget = { a: 0, b: 0 };
   try {
     const checks: Check[] = [];
     checks.push(await ctx.check("A (8 GiB) and B (16 GiB) sign in with one email, connect, and report their capacity", async () => {
@@ -59,21 +62,22 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
       let machines: any[] = [];
       for (let attempt = 0; attempt < 40 && machines.filter((row) => row.capacity).length < 2; attempt++) { machines = (await as("a", ["machine", "list", "--json"])).envelope.result ?? []; await sleep(250); }
       const capacity = Object.fromEntries(machines.map((row) => [row.name, row.capacity]));
-      assert.equal(capacity[names.a]?.total_bytes, 8 * GIB); assert.equal(capacity[names.a]?.room_bytes, 6 * GIB, "75% of 8 GiB");
-      assert.equal(capacity[names.b]?.total_bytes, 16 * GIB); assert.equal(capacity[names.b]?.room_bytes, 12 * GIB);
+      assert.equal(capacity[names.a]?.total_bytes, 8 * GIB); assert.equal(capacity[names.b]?.total_bytes, 16 * GIB);
+      budget.a = capacity[names.a].room_bytes; budget.b = capacity[names.b].room_bytes;
+      assert.ok(budget.a >= 4 * GIB && budget.b > budget.a, `A takes at least two 2 GiB sandboxes and B more: ${JSON.stringify(budget)}`);
     }));
     checks.push(await ctx.check("a create from A with no option lands on A and says why", async () => {
       const created = await createSandbox(ctx.root, "a", ["--cpus", "1", "--memory", "2G"]);
       transcript.push(`$ [a] localbox sandbox create --cpus 1 --memory 2G --json\n${created.stdout}`);
       assert.equal(created.envelope.result.produced.machine, names.a);
-      assert.equal(created.envelope.result.produced.placement_reason, `on ${names.a}, this machine (6 GiB free)`);
+      assert.equal(created.envelope.result.produced.placement_reason, `on ${names.a}, this machine (${gibibytes(budget.a)} free)`);
       onA.push(created.envelope.result.produced.name);
     }));
     checks.push(await ctx.check("--placement auto from A lands on B, the machine with the most room", async () => {
       const created = await as("a", ["sandbox", "create", "--placement", "auto", "--cpus", "1", "--memory", "2G", "--json"]);
       assert.equal(created.envelope.ok, true, created.stdout + created.stderr);
       assert.equal(created.envelope.result.produced.machine, names.b);
-      assert.match(created.envelope.result.produced.placement_reason, new RegExp(`^on ${names.b}, the machine with the most room \\(12 GiB free\\)`));
+      assert.match(created.envelope.result.produced.placement_reason, new RegExp(`^on ${names.b}, the machine with the most room \\(${gibibytes(budget.b)} free\\)`));
       const text = await as("a", ["sandbox", "create", "--placement", "remote", "--cpus", "1", "--memory", "2G"]);
       assert.equal(text.code, 0, text.stderr); assert.match(text.stdout, new RegExp(`placement_reason: on ${names.b}, the remote machine with the most room`));
     }));
@@ -91,27 +95,28 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
         assert.notEqual(text.code, 0); assert.match(text.stdout + text.stderr, /name a machine or use --placement auto/);
       } finally { rmSync(bare, { recursive: true, force: true }); }
     }));
-    checks.push(await ctx.check("A filled to 75% (three 2 GiB sandboxes): one more start sleeps the least recently used and says so", async () => {
-      for (let index = 0; index < 2; index++) {
+    checks.push(await ctx.check("A filled to its admission budget with 2 GiB sandboxes: one more start sleeps the least recently used and says so", async () => {
+      const fits = Math.floor(budget.a / (2 * GIB));
+      for (let index = 1; index < fits; index++) {
         const created = await as("a", ["sandbox", "create", "--cpus", "1", "--memory", "2G", "--json"]);
         assert.equal(created.envelope.ok, true, created.stdout + created.stderr); assert.deepEqual(madeRoom(created.envelope), [], "it still fits");
         onA.push(created.envelope.result.produced.name);
       }
-      const fourth = await as("a", ["sandbox", "create", "--cpus", "1", "--memory", "2G", "--json"]);
-      assert.equal(fourth.envelope.ok, true, fourth.stdout + fourth.stderr);
-      assert.equal(fourth.envelope.result.produced.machine, names.a, "a full default machine is still chosen: it makes room");
-      assert.deepEqual(madeRoom(fourth.envelope), [`slept ${onA[0]} (2 GiB) to make room`]);
-      assert.deepEqual(fourth.envelope.result.actions.map((action: any) => action.kind), ["created", "made_room", "cold_booted"]);
-      onA.push(fourth.envelope.result.produced.name);
+      const overflow = await as("a", ["sandbox", "create", "--cpus", "1", "--memory", "2G", "--json"]);
+      assert.equal(overflow.envelope.ok, true, overflow.stdout + overflow.stderr);
+      assert.equal(overflow.envelope.result.produced.machine, names.a, "a full default machine is still chosen: it makes room");
+      assert.deepEqual(madeRoom(overflow.envelope), [`slept ${onA[0]} (2 GiB) to make room`]);
+      assert.deepEqual(overflow.envelope.result.actions.map((action: any) => action.kind), ["created", "made_room", "cold_booted"]);
+      onA.push(overflow.envelope.result.produced.name);
       // Waking the slept one makes room again, from the next least recently used.
       const woke = await as("a", ["sandbox", "start", onA[0]]);
       assert.equal(woke.code, 0, woke.stdout + woke.stderr);
       assert.match(woke.stdout, new RegExp(`^- made_room: slept ${onA[1]} \\(2 GiB\\) to make room$`, "m")); assert.match(woke.stdout, /^- woke: /m);
       let listed: any[] = [];
       for (let attempt = 0; attempt < 40; attempt++) { listed = (await as("b", ["sandbox", "list", "--json"])).envelope.result.sandboxes; if (listed.find((row) => row.name === onA[1])?.state === "sleeping") break; await sleep(250); }
-      assert.deepEqual(Object.fromEntries(listed.filter((row) => row.machine_name === names.a).map((row) => [row.name, row.state])), { [onA[0]]: "running", [onA[1]]: "sleeping", [onA[2]]: "running", [onA[3]]: "running" });
+      assert.deepEqual(Object.fromEntries(listed.filter((row) => row.machine_name === names.a).map((row) => [row.name, row.state])), Object.fromEntries(onA.map((name) => [name, name === onA[1] ? "sleeping" : "running"])));
       const capacity = (await as("b", ["machine", "list", "--json"])).envelope.result.find((row: any) => row.name === names.a).capacity;
-      assert.equal(capacity.room_bytes, 0); assert.equal(capacity.reserved_bytes, 6 * GIB); assert.equal(capacity.running, 3);
+      assert.deepEqual([capacity.reserved_bytes, capacity.room_bytes, capacity.running], [fits * 2 * GIB, budget.a - fits * 2 * GIB, fits]);
     }));
     return checks;
   } finally {
@@ -126,9 +131,10 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
  * fill it, a fourth start sleeps the least recently used one, and the VM service memory it held is measured.
  */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {
-  const { machine, start, ok, sh, record, vmRSS, cleanup } = realDaemon(ctx, { probe: "11", env: { LOCALBOX_DEV_ADMISSION_BYTES: String(6 * GIB) } });
+  const admission = 6 * GIB;
+  const { machine, start, ok, sh, record, vmRSS, cleanup } = realDaemon(ctx, { probe: "11", env: { LOCALBOX_DEV_ADMISSION_BYTES: String(admission) } });
   const locked = screenLocked();
-  const evidence: Record<string, unknown> = { machine_root: machine, screen_locked: locked, admission_bytes: 6 * GIB };
+  const evidence: Record<string, unknown> = { machine_root: machine, screen_locked: locked, admission_bytes: admission };
   const ids = ["sandbox_p11_alpha", "sandbox_p11_beta", "sandbox_p11_gamma", "sandbox_p11_delta"];
   const names = ["alpha-otter", "beta-heron", "gamma-lynx", "delta-wren"];
   const checks: Check[] = [];
@@ -137,11 +143,11 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       await start(await buildRealVMs(ctx));
       const capacity = (await ok("host.watch", null, { since: 0 })).capacity;
       evidence.capacity_empty = capacity;
-      assert.equal(capacity.room_bytes, 6 * GIB);
+      assert.equal(capacity.room_bytes, admission);
     }));
     checks.push(await ctx.check("three 2 GiB sandboxes boot; the first, least recently used, holds 1000 MiB of written memory", async () => {
       for (const [index, sandboxId] of ids.slice(0, 3).entries()) {
-        const created = await ok("sandbox.create", sandboxId, { name: names[index], cpus: 2, memory_bytes: 2 * GIB });
+        const created = await ok("sandbox.create", sandboxId, { name: names[index], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
         assert.deepEqual(created.actions.map((action: any) => action.kind), ["created", "cold_booted"], JSON.stringify(created));
         // Fill alpha's memory before the others boot, so it is the least recently used and its VM holds real RAM.
         // Random bytes, because macOS compresses a VM's zero pages out of its resident size.
@@ -154,7 +160,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check(locked ? "a fourth start stops the least recently used (hibernate unavailable while the screen is locked) and its VM's RAM is released" : "a fourth start hibernates the least recently used and its VM's RAM is released", async () => {
       const before = vmRSS();
       assert.equal(before.size, 3, `one VM service per running sandbox: ${JSON.stringify([...before])}`);
-      const created = await ok("sandbox.create", ids[3], { name: names[3], cpus: 2, memory_bytes: 2 * GIB });
+      const created = await ok("sandbox.create", ids[3], { name: names[3], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
       evidence.fourth_create = created;
       await sleep(2_000);
       const after = vmRSS();
@@ -173,7 +179,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       assert.equal((await ok("sandbox.status", ids[3])).state, "running");
       const capacity = (await ok("host.watch", null, { since: 0 })).capacity;
       evidence.capacity_after = capacity;
-      assert.equal(capacity.reserved_bytes, 6 * GIB); assert.equal(capacity.running, 3);
+      assert.equal(capacity.reserved_bytes, admission); assert.equal(capacity.running, 3);
     }));
   } finally {
     await cleanup();

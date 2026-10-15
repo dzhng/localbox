@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { promisify } from "node:util";
+import { layout } from "./layout.js";
 import { verifyManifestSignature, verifyRelease, type ReleaseManifest } from "../../../scripts/release.js";
 
 const execFileAsync = promisify(execFile);
@@ -14,7 +13,6 @@ const DEFAULT_RELEASE_REPOSITORY = "dzhng/localbox";
 function releaseRepository(): string { return process.env.LOCALBOX_RELEASE_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? DEFAULT_RELEASE_REPOSITORY; }
 
 export interface UpdateCheck { repository: string; currentVersion?: string; latestVersion: string; tag: string; updateAvailable: boolean; releaseUrl?: string; }
-/** The installer reconciles the skill and the CLI link, and so does the daemon it restarts (agent setup, D16). */
 export interface UpdateInstall extends UpdateCheck { installed: boolean; error?: string; }
 
 function version(value: string): [number, number, number] {
@@ -53,12 +51,6 @@ async function download(url: string, path: string): Promise<void> {
   const bytes = Buffer.from(await response.arrayBuffer());
   await writeFile(path, bytes, { flag: "wx" });
 }
-function installerPath(): string {
-  if (process.env.LOCALBOX_INSTALLER) return process.env.LOCALBOX_INSTALLER;
-  const here = dirname(fileURLToPath(import.meta.url));
-  for (const candidate of [resolve(here, "../../../scripts/install-release.sh"), resolve(here, "../../../../scripts/install-release.sh")]) if (existsSync(candidate)) return candidate;
-  throw new Error("Localbox installer is not present in this release");
-}
 export async function installLatest(options: { automatic?: boolean } = {}): Promise<UpdateInstall> {
   const checked = await checkForUpdate();
   if (!checked.updateAvailable) return { ...checked, installed: false };
@@ -83,7 +75,7 @@ export async function installLatest(options: { automatic?: boolean } = {}): Prom
     }
     await verifyRelease(stage, manifest, "arm64");
     const keyPath = join(stage, "release-public.pem"); await writeFile(keyPath, key, { mode: 0o600 });
-    const result = await execFileAsync("sh", [installerPath(), stage], {
+    const result = await execFileAsync("sh", [layout().installer, stage], {
       env: {
         ...process.env,
         RELEASE_PUBLIC_KEY: keyPath,

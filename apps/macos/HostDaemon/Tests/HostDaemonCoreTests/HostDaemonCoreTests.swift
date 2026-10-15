@@ -4,13 +4,6 @@ import XCTest
 final class HostDaemonCoreTests: XCTestCase {
     private let gib: UInt64 = 1024 * 1024 * 1024
 
-    func testDefaultSizeIsHalfTheCoresAndAQuarterOfMemory() {
-        for (cpus, memory, expected) in [(12, 24 * gib, (6, 6 * gib)), (4, 8 * gib, (2, 2 * gib)), (2, 4 * gib, (2, 2 * gib)), (10, 64 * gib, (5, 16 * gib))] {
-            let size = defaultSize(hostCPUs: cpus, hostMemoryBytes: memory)
-            XCTAssertEqual(size.cpus, expected.0, "\(cpus) cores"); XCTAssertEqual(size.memoryBytes, expected.1, "\(memory) bytes")
-        }
-    }
-
     func testEveryRequestNamesASandboxOnThisMac() async throws {
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), hostCPUs: 12, hostMemoryBytes: 24 * gib)
         let unknown = try await call(host, envelope("fs.stat", #"{"path":"/"}"#))
@@ -53,11 +46,13 @@ final class HostDaemonCoreTests: XCTestCase {
     func testSandboxHostLifecycle() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 12, hostMemoryBytes: 24 * gib)
-        let first = try await hostCall(host, "sandbox.create", #"{"name":"quiet-otter"}"#, sandboxID: "sandbox_1")
+        let unsized = try await call(host, envelope("sandbox.create", #"{"name":"quiet-otter"}"#, sandboxID: "sandbox_1"))
+        XCTAssertEqual((unsized["error"] as? [String: Any])?["code"] as? String, "invalid_input", "the agent API sizes every sandbox it relays")
+        let first = try await hostCall(host, "sandbox.create", #"{"name":"quiet-otter","cpus":6,"memory_bytes":6442450944,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         XCTAssertEqual((first["produced"] as? [String: Any])?["cpus"] as? Int, 6)
         XCTAssertEqual((first["produced"] as? [String: Any])?["memory_bytes"] as? Int, 6 * 1024 * 1024 * 1024)
         XCTAssertEqual(kinds(first), ["created", "cold_booted"])
-        let second = try await hostCall(host, "sandbox.create", #"{"name":"brave-fox","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_2")
+        let second = try await hostCall(host, "sandbox.create", #"{"name":"brave-fox","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_2")
         XCTAssertEqual(kinds(second), ["created", "cold_booted"], "each sandbox has its own runtime")
         let record = try SandboxDirectory(root.appendingPathComponent("sandbox_2")).load()
         XCTAssertEqual(record.cpus, 2); XCTAssertEqual(record.lifecycle, .running); XCTAssertNotNil(record.mac)
@@ -87,10 +82,10 @@ final class HostDaemonCoreTests: XCTestCase {
     func testTheMirrorFollowsNamesAndHidesASandboxItNeverListed() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":3,"memory_bytes":3221225472}"#, sandboxID: "sandbox_1")
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"two"}"#, sandboxID: "sandbox_2")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":3,"memory_bytes":3221225472,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_2")
         let version = try await hostCall(host, "host.watch", #"{"since":0}"#)["version"] as! Int
-        let pushed = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"renamed","cpus":2,"memory_bytes":2147483648},{"sandbox_id":"sandbox_9","name":"elsewhere"}]}"#)
+        let pushed = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"renamed","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000},{"sandbox_id":"sandbox_9","name":"elsewhere","sleep_after_ms":1800000}]}"#)
         XCTAssertEqual(pushed["unknown"] as? [String], ["sandbox_2"]); XCTAssertEqual(pushed["missing"] as? [String], ["sandbox_9"])
         let records = await host.sandboxes()
         XCTAssertEqual(records.map(\.name), ["renamed"]); XCTAssertEqual(records.first?.cpus, 3, "the daemon keeps the size it runs a sandbox at")
@@ -108,9 +103,9 @@ final class HostDaemonCoreTests: XCTestCase {
     func testACatalogPushDeletesWhatTheCatalogDroppedButASignOutKeepsDisks() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 12, hostMemoryBytes: 24 * gib)
-        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: id) }
-        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"},{"sandbox_id":"sandbox_2","name":"two"}]}"#)
-        let dropped = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"}]}"#)
+        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: id) }
+        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one","sleep_after_ms":1800000},{"sandbox_id":"sandbox_2","name":"two","sleep_after_ms":1800000}]}"#)
+        let dropped = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one","sleep_after_ms":1800000}]}"#)
         XCTAssertEqual(dropped["deleted"] as? [[String: String]], [["sandbox_id": "sandbox_2", "name": "two", "detail": "deleted two: the account catalog no longer lists it"]])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_2").path), "its directory and disk are gone")
         let watched = try await hostCall(host, "host.watch", #"{"since":0}"#)
@@ -118,7 +113,7 @@ final class HostDaemonCoreTests: XCTestCase {
 
         let otherMachine = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_9","sandboxes":[]}"#)
         XCTAssertEqual((otherMachine["deleted"] as? [Any])?.count, 0, "only the machine whose catalog listed a sandbox deletes it by leaving it out")
-        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"}]}"#)
+        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one","sleep_after_ms":1800000}]}"#)
         let signedOut = try await hostCall(host, "sandbox.mirror", #"{"source":"signed_out","sandboxes":[]}"#)
         XCTAssertEqual((signedOut["deleted"] as? [Any])?.count, 0); XCTAssertEqual(signedOut["unknown"] as? [String], ["sandbox_1"])
         let afterSignIn = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_2","sandboxes":[]}"#)
@@ -129,17 +124,19 @@ final class HostDaemonCoreTests: XCTestCase {
             let unnamed = try await call(host, envelope("sandbox.mirror", input, sandboxID: nil))
             XCTAssertEqual((unnamed["error"] as? [String: Any])?["code"] as? String, "invalid_input", "a push says whether it is a sign-out or which machine's catalog it is")
         }
+        let partial = try await call(host, envelope("sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"}]}"#, sandboxID: nil))
+        XCTAssertEqual((partial["error"] as? [String: Any])?["code"] as? String, "invalid_input", "a row without its idle policy refuses the whole push, so it never reads as unlisted")
     }
 
     func testResizeReportsRestart() async throws {
-        let ps = #"{"ok":true,"result":{"stdout":"40\n1 0 /sbin/init\n2 0 [kthreadd]\n90 1 /usr/bin/socat VSOCK-LISTEN:1024 EXEC:node guest-agent\n120 1 node server.js\n121 120 /usr/bin/python3 -m http.server\n41 40 ps -eo pid=,ppid=,args=\n"}}"#
+        let ps = #"{"ok":true,"result":{"stdout":"40\n1 0 /sbin/init\n2 0 [kthreadd]\n80 1 /usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\n90 1 /usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock\n120 1 node server.js\n121 120 /usr/bin/python3 -m http.server\n41 40 ps -eo pid=,ppid=,args=\n"}}"#
         let factory = FakeBackendFactory { request in
             let operation = (try JSONSerialization.jsonObject(with: request) as? [String: Any])?["operation"] as? String
             return operation == "shell.exec" ? Data(ps.utf8) : request
         }
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: factory, hostCPUs: 12, hostMemoryBytes: 24 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         let resized = try await hostCall(host, "sandbox.resize", #"{"cpus":3}"#, sandboxID: "sandbox_1")
         let action = (resized["actions"] as? [[String: Any]])?.first
         XCTAssertEqual(action?["kind"] as? String, "restarted")
@@ -155,8 +152,8 @@ final class HostDaemonCoreTests: XCTestCase {
     func testSigtermHibernates() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"two"}"#, sandboxID: "sandbox_2")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_2")
         _ = try await hostCall(host, "sandbox.stop", "{}", sandboxID: "sandbox_2")
         await host.shutdown()
         let saved = try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load()
@@ -174,7 +171,7 @@ final class HostDaemonCoreTests: XCTestCase {
     func testSigtermColdBootsWhenSaveFails() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(saveError: .unsupported("permission denied")), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         await host.shutdown()
         let record = try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load()
         XCTAssertEqual(record.lifecycle, .stopped)
@@ -190,7 +187,7 @@ final class HostDaemonCoreTests: XCTestCase {
         // 75% of 8 GiB is 6 GiB: three 2 GiB sandboxes fill it. Each boot counts as activity; then a is used.
         for name in ["a", "b", "c"] {
             clock.now += 60
-            _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_\(name)")
+            _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_\(name)")
         }
         clock.now += 60
         _ = try await call(host, envelope("fs.stat", #"{"path":"/"}"#, sandboxID: "sandbox_a"))
@@ -198,7 +195,7 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual(full["room_bytes"] as? Int, 0); XCTAssertEqual(full["running"] as? Int, 3)
 
         clock.now += 60
-        let fourth = try await hostCall(host, "sandbox.create", #"{"name":"d","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_d")
+        let fourth = try await hostCall(host, "sandbox.create", #"{"name":"d","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_d")
         XCTAssertEqual(kinds(fourth), ["created", "made_room", "cold_booted"])
         XCTAssertEqual((fourth["actions"] as? [[String: Any]])?[1]["detail"] as? String, "slept b (2 GiB) to make room", "b is the least recently used")
         let states = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
@@ -225,14 +222,14 @@ final class HostDaemonCoreTests: XCTestCase {
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: guest.answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
         for name in ["a", "b", "c"] {
             clock.now += 60
-            _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_\(name)")
+            _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_\(name)")
         }
         guest.set("sandbox_a", jobs: 1)
-        let fourth = try await hostCall(host, "sandbox.create", #"{"name":"d","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_d")
+        let fourth = try await hostCall(host, "sandbox.create", #"{"name":"d","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_d")
         XCTAssertEqual((fourth["actions"] as? [[String: Any]])?.filter { $0["kind"] as? String == "made_room" }.map { $0["detail"] as? String }, ["slept b (2 GiB) to make room"], "a is older but runs a job")
 
         for id in ["sandbox_a", "sandbox_c", "sandbox_d"] { guest.set(id, jobs: 1) }
-        let refused = try await call(host, envelope("sandbox.create", #"{"name":"e","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_e"))
+        let refused = try await call(host, envelope("sandbox.create", #"{"name":"e","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_e"))
         let error = refused["error"] as? [String: Any]
         XCTAssertEqual(error?["code"] as? String, "machine_full")
         XCTAssertEqual(error?["message"] as? String, "e needs 2 GiB, but sandboxes reserve 6 GiB of this machine's 6 GiB and not enough of them can sleep: a (2 GiB, 1 running job), c (2 GiB, 1 running job), d (2 GiB, 1 running job)")
@@ -265,7 +262,7 @@ final class HostDaemonCoreTests: XCTestCase {
         let again = try await call(host, envelope("shell.exec", #"{"command":"true"}"#, mutation: "w2"))
         XCTAssertNil((again["result"] as? [String: Any])?["actions"], "an awake sandbox reports nothing")
 
-        // Locked screen (Q5b interim): the VM pauses in memory, which keeps its RAM.
+        // Locked screen (a Mac whose lock asks for a password): the VM pauses in memory, which keeps its RAM.
         let locked = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(saveError: .screenLocked, guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
         _ = try await hostCall(locked, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
         clock.now += 6
@@ -296,7 +293,7 @@ final class HostDaemonCoreTests: XCTestCase {
         let clock = TestClock(); let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
         _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":5000,"delete_after_ms":10000}"#, sandboxID: "sandbox_1")
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648}"#, sandboxID: "sandbox_2")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_2")
         clock.now += 6
         let slept = await host.idleTick()
         XCTAssertEqual(slept.keys.sorted(), ["sandbox_1"], "two keeps the 30 min default")
@@ -317,7 +314,7 @@ final class HostDaemonCoreTests: XCTestCase {
     func testPowerNoticeHibernatesAll() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 12, hostMemoryBytes: 24 * gib, allowsSimulatedPower: true)
-        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two"), ("sandbox_3", "three")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: id) }
+        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two"), ("sandbox_3", "three")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: id) }
         _ = try await hostCall(host, "sandbox.stop", "{}", sandboxID: "sandbox_3")
         let slept = try await hostCall(host, "host.simulate_power", #"{"event":"will_sleep"}"#)
         XCTAssertEqual((slept["sandboxes"] as? [[String: Any]])?.map { "\($0["sandbox_id"]!) \($0["kind"]!)" }, ["sandbox_1 slept", "sandbox_2 slept"], "every running sandbox sleeps; a stopped one is left alone")
@@ -346,7 +343,7 @@ final class HostDaemonCoreTests: XCTestCase {
     func testColdBootReportedOnce() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         // The daemon is killed (kill -9, power loss): nothing was saved. The next one cold-boots it at start.
         let restarted = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib)
         let recovered = await restarted.recover()
@@ -460,10 +457,10 @@ extension HostDaemonCoreTests {
 
     func testProcessFixtureSandboxesEachRunTheirOwnGuest() async throws {
         let root = try scratch()
-        let factory = try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_VM_BACKEND": "process-fixture"])
+        let factory = try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_SANDBOX_BACKEND": "process-fixture"])
         let host = SandboxHost(sandboxesDirectory: root, factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib)
         for id in ["sandbox_1", "sandbox_2"] {
-            let created = try await hostCall(host, "sandbox.create", #"{"name":"\#(id)"}"#, sandboxID: id)
+            let created = try await hostCall(host, "sandbox.create", #"{"name":"\#(id)","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: id)
             XCTAssertEqual(kinds(created), ["created", "cold_booted"])
         }
         let wrote = try await call(host, envelope("fs.write", #"{"path":"/hello.txt","content":"fixture"}"#, mutation: "w1"))
@@ -485,8 +482,8 @@ extension HostDaemonCoreTests {
 
     func testFixtureBackendRefusedWithoutOptIn() throws {
         XCTAssertThrowsError(try ProcessFixtureFactory(configuration: Self.fixture, environment: [:]))
-        XCTAssertThrowsError(try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_VM_BACKEND": "apple"]))
-        XCTAssertNoThrow(try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_VM_BACKEND": "process-fixture"]))
+        XCTAssertThrowsError(try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_SANDBOX_BACKEND": "apple"]))
+        XCTAssertNoThrow(try ProcessFixtureFactory(configuration: Self.fixture, environment: ["LOCALBOX_SANDBOX_BACKEND": "process-fixture"]))
     }
 
     /// A fresh sandboxes directory, removed after the test.
@@ -500,7 +497,7 @@ extension HostDaemonCoreTests {
     /// A host holding a running `sandbox_1` whose guest answers each envelope with itself.
     func hostWithSandbox() async throws -> SandboxHost {
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await hostCall(host, "sandbox.create", #"{"name":"one"}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         return host
     }
 }

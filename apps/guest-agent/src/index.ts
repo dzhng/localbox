@@ -33,7 +33,7 @@ export async function main(): Promise<void> {
     : undefined;
   const gateway = new GuestGateway({ root, extraHandlers });
   // In the VM the agent runs as root and owns the whole system, so the host's hello steps the clock after a
-  // restore and gives the system the sandbox's identity and name. A fixture guest (slice 03) shares the host's
+  // restore and gives the system the sandbox's identity and name. A fixture guest (a local process) shares the host's
   // clock, machine-id and hostname, so it never touches them.
   const ownsSystem = root === "/" && process.platform === "linux";
   const setClock = ownsSystem ? (wallClockMs: number) => { spawnSync("date", ["-u", "-s", `@${(wallClockMs / 1000).toFixed(3)}`], { stdio: "ignore" }); } : undefined;

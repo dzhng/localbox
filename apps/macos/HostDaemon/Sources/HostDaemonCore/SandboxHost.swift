@@ -48,7 +48,7 @@ public protocol GuestChannel: Sendable {
     func close() async
 }
 
-public protocol VMBackend: Sendable {
+public protocol SandboxBackend: Sendable {
     func start() async throws
     func stop() async throws
     func pause() async throws
@@ -56,7 +56,7 @@ public protocol VMBackend: Sendable {
 }
 
 /// A backend that can persist and restore a running VM without reprovisioning it.
-public protocol HibernateBackend: VMBackend {
+public protocol HibernateBackend: SandboxBackend {
     func save(to url: URL) async throws
     func restore(from url: URL) async throws
 }
@@ -77,7 +77,7 @@ public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
     case invalidState(String)
     case unsupported(String)
     case guestUnavailable
-    /// The VM service keeps the saved-state key in the keychain, which refuses while the console is locked (slice 02).
+    /// The VM service keeps the saved-state key in the keychain, which refuses while the console is locked.
     case screenLocked
     public var description: String {
         switch self {
@@ -88,18 +88,17 @@ public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
     }
 }
 
-/// The admission knob (L9): running sandboxes may reserve this share of the host's RAM; the rest is the host's.
+/// The admission knob: running sandboxes may reserve this share of the host's RAM; the rest is the host's.
 public let admissionFraction = 0.75
 
-/// When an idle sandbox sleeps or is deleted (Q5). A running sandbox idle for `sleepAfter` (30 min unless its record
-/// says otherwise) sleeps; one idle for `deleteAfter` (opt-in) is deleted, counting time asleep too.
+/// When an idle sandbox sleeps or is deleted, from its record: a running sandbox idle for `sleepAfter` sleeps; one idle
+/// for `deleteAfter` (opt-in) is deleted, counting time asleep too.
 struct IdlePolicy {
-    static let defaultSleepAfter: TimeInterval = 30 * 60
     enum Step { case none, sleep, delete }
     let sleepAfter: TimeInterval
     let deleteAfter: TimeInterval?
     init(_ record: SandboxRecord) {
-        sleepAfter = record.sleepAfterMs.map { TimeInterval($0) / 1000 } ?? Self.defaultSleepAfter
+        sleepAfter = TimeInterval(record.sleepAfterMs) / 1000
         deleteAfter = record.deleteAfterMs.map { TimeInterval($0) / 1000 }
     }
     func step(idleFor idle: TimeInterval, running: Bool) -> Step {
@@ -108,7 +107,7 @@ struct IdlePolicy {
     }
 }
 
-/// The Mac's power notices (L6), from IOKit or, in dev runs, `host.simulate_power`.
+/// The Mac's power notices, from IOKit or, in dev runs, `host.simulate_power`.
 public enum PowerEvent: String, Sendable {
     case willSleep = "will_sleep", willPowerOff = "will_power_off", didWake = "did_wake"
 }
@@ -203,7 +202,7 @@ public actor SandboxHost {
         }
     }
 
-    /// SIGTERM (D11) and power-off: hibernate every running sandbox, all at once; one that cannot be saved stops and
+    /// SIGTERM and power-off: hibernate every running sandbox, all at once; one that cannot be saved stops and
     /// owes a cold boot. Returns what each did.
     @discardableResult public func shutdown() async -> [String: SandboxAction] {
         await concurrently(await runtimes(in: [.ready, .paused])) { runtime in
@@ -213,7 +212,7 @@ public actor SandboxHost {
         }
     }
 
-    /// The Mac's power (L6). Before it sleeps, every running sandbox sleeps (hibernates, or pauses in memory where
+    /// The Mac's power. Before it sleeps, every running sandbox sleeps (hibernates, or pauses in memory where
     /// saving fails) and comes back when it wakes, reported with its next result; before it powers off, every sandbox
     /// is saved or stopped as on SIGTERM. Returns what each sandbox did.
     @discardableResult public func power(_ event: PowerEvent) async -> [String: SandboxAction] {
@@ -237,7 +236,7 @@ public actor SandboxHost {
         }
     }
 
-    /// The idle policy (Q5), run every second by the daemon: a running sandbox idle for its `sleepAfter` sleeps, and
+    /// The idle policy, run every second by the daemon: a running sandbox idle for its `sleepAfter` sleeps, and
     /// one idle for its `deleteAfter` is deleted here and handed to the connector (`host.watch` `deleted`) to remove
     /// from the catalog. Idle means no request in flight and no running Localbox job; the guest is asked about jobs
     /// once the time is up, then every second while one runs. Returns what it did.
@@ -347,10 +346,10 @@ public actor SandboxHost {
         guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else { return hostFailure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
         let response: Data
         var woke: [SandboxAction] = []
-        if let host, host != .networkEgress {
+        if let host {
             response = await hostOperation(host, object, input, runtime: runtime)
         } else {
-            // Any guest operation on a sleeping sandbox wakes it first (S2), through admission like a start. Reading or
+            // Any guest operation on a sleeping sandbox wakes it first, through admission like a start. Reading or
             // changing the sandbox from outside (status, logs, rename, resize, stop, sleep, delete) leaves it asleep.
             if [.paused, .asleep].contains(await runtime.settled()) {
                 do { woke = try await start(runtime) { try await $0.bringUp() } }
@@ -367,14 +366,13 @@ public actor SandboxHost {
         let sandbox = await runtime.snapshot()
         let name = sandbox.record.name, sandboxID = sandbox.record.sandboxID
         switch host {
-        case .sandboxCreate, .sandboxList, .relayStatus, .networkEgress, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet:
+        case .sandboxCreate, .sandboxList, .relayStatus, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet:
             preconditionFailure("answered by request()")
         case .systemInfo:
             return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
         case .sandboxStatus:
             var result = view(sandbox); result["lifecycle"] = sandbox.status.lifecycle.rawValue; result["channel_epoch"] = sandbox.status.channelEpoch
-            let policy = IdlePolicy(sandbox.record)
-            result["sleep_after_ms"] = Int(policy.sleepAfter * 1000); result["delete_after_ms"] = policy.deleteAfter.map { Int($0 * 1000) as Any } ?? NSNull()
+            result["sleep_after_ms"] = sandbox.record.sleepAfterMs; result["delete_after_ms"] = sandbox.record.deleteAfterMs as Any? ?? NSNull()
             if let detail = sandbox.status.detail { result["detail"] = detail }
             if let boot = sandbox.lastBoot { result["last_boot"] = boot }
             return hostSuccess(object, result: result)
@@ -432,17 +430,19 @@ public actor SandboxHost {
     /// sandboxes of machine `machineID`; `signedOut` is `localbox logout`, which hides every sandbox and deletes nothing.
     enum MirrorSource { case catalog(machineID: String), signedOut }
 
-    /// Follows the account catalog: names and idle policies change. A `catalog` push deletes a sandbox it no longer
+    /// Follows the account catalog: names and idle policies change; every row carries `sandbox_id`, `name` and
+    /// `sleep_after_ms`, or the push is refused whole. A `catalog` push deletes a sandbox it no longer
     /// lists that this machine's catalog listed before (deleted while this Mac was offline): stopped, its directory and
     /// disk removed, reported in `deleted`. A sandbox this machine's catalog never listed (created and not yet listed,
     /// or hidden by a sign-out and so listed by an earlier sign-in) only stops answering and is reported in `unknown`,
     /// as are directories without a record. A push never creates a directory.
     private func mirror(_ object: [String: Any], rows: [[String: Any]], source: MirrorSource) async -> Data {
-        var names: [String: String] = [:], policies: [String: (sleep: Int?, delete: Int?)] = [:]
+        var names: [String: String] = [:], policies: [String: (sleep: Int, delete: Int?)] = [:]
         for row in rows {
-            guard let id = row["sandbox_id"] as? String, let name = row["name"] as? String else { continue }
-            names[id] = name
-            if row["sleep_after_ms"] != nil { policies[id] = ((row["sleep_after_ms"] as? NSNumber)?.intValue, (row["delete_after_ms"] as? NSNumber)?.intValue) }
+            guard let id = row["sandbox_id"] as? String, let name = row["name"] as? String, let sleep = (row["sleep_after_ms"] as? NSNumber)?.intValue else {
+                return hostFailure(object, code: "invalid_input", message: "sandbox.mirror rows need sandbox_id, name and sleep_after_ms")
+            }
+            names[id] = name; policies[id] = (sleep, (row["delete_after_ms"] as? NSNumber)?.intValue)
         }
         var catalogMachine: String?
         if case .catalog(let machineID) = source { catalogMachine = machineID }
@@ -451,7 +451,7 @@ public actor SandboxHost {
             if let name = names[id] {
                 if let catalogMachine { await runtime.setListedBy(catalogMachine) }
                 await runtime.setInCatalog(true); try? await runtime.rename(name)
-                if let policy = policies[id] { await runtime.setPolicy(sleepAfterMs: policy.sleep, deleteAfterMs: policy.delete) }
+                await runtime.setPolicy(sleepAfterMs: policies[id]!.sleep, deleteAfterMs: policies[id]!.delete)
             } else if let catalogMachine, await runtime.record.inCatalog, await runtime.record.listedBy == catalogMachine {
                 let name = await runtime.record.name
                 var detail = "deleted \(name): the account catalog no longer lists it"
@@ -477,9 +477,10 @@ public actor SandboxHost {
         return hostSuccess(object, result: result)
     }
 
-    /// Lays down the sandbox the agent API reserved (at the asked size or this Mac's default) and boots it.
+    /// Lays down the sandbox the agent API reserved, at the size and idle policy it chose, and boots it.
     private func create(_ object: [String: Any], sandboxID: String, input: [String: Any]) async -> Data {
-        guard let name = input["name"] as? String, !name.isEmpty else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name") }
+        guard let name = input["name"] as? String, !name.isEmpty, let cpus = (input["cpus"] as? NSNumber)?.intValue, let memoryBytes = (input["memory_bytes"] as? NSNumber)?.uint64Value,
+              let sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name, cpus, memory_bytes and sleep_after_ms") }
         guard !sandboxID.contains("/"), !sandboxID.hasPrefix(".") else { return hostFailure(object, code: "invalid_input", message: "sandbox id \(sandboxID) is not a directory name") }
         var actions: [[String: Any]] = []
         var facts: [String: String] = [:]
@@ -489,9 +490,8 @@ public actor SandboxHost {
             // A relayed create re-run after a connector restart: the sandbox is already here.
             runtime = existing; await existing.setInCatalog(true); try? await existing.rename(name)
         } else {
-            let fallback = defaultSize(hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes)
-            var record = SandboxRecord(sandboxID: sandboxID, name: name, cpus: (input["cpus"] as? NSNumber)?.intValue ?? fallback.cpus, memoryBytes: (input["memory_bytes"] as? NSNumber)?.uint64Value ?? fallback.memoryBytes)
-            record.sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue; record.deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
+            var record = SandboxRecord(sandboxID: sandboxID, name: name, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
+            record.deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
             let directory = SandboxDirectory(root.appendingPathComponent(sandboxID, isDirectory: true))
             do {
                 try FileManager.default.createDirectory(at: directory.url, withIntermediateDirectories: true)
@@ -517,7 +517,7 @@ public actor SandboxHost {
         return hostSuccess(object, result: report(input, produced: produced, actions: actions))
     }
 
-    /// What this Mac can still take (L9): reservation-based, not live free memory. Unlisted sandboxes still hold
+    /// What this Mac can still take: reservation-based, not live free memory. Unlisted sandboxes still hold
     /// what they run with.
     private func capacity() async -> [String: Any] {
         let holding = await snapshots(includingUnlisted: true).filter(\.reservesMemory)
@@ -538,7 +538,7 @@ public actor SandboxHost {
         return made + ((try await body(runtime)).map { [$0] } ?? [])
     }
 
-    /// Admission (L9): a start or wake of `sandboxID` (at `memoryBytes`, else its own size) must fit in the budget.
+    /// Admission: a start or wake of `sandboxID` (at `memoryBytes`, else its own size) must fit in the budget.
     /// If it does not, least-recently-used running sandboxes (and VMs asleep in memory, which keep their RAM) sleep
     /// until it does, never one running a job or serving a request; each is reported as `made_room`. Nothing sleeps
     /// unless the start then fits; otherwise this throws `AdmissionRefused` naming every sandbox that holds memory.
@@ -625,7 +625,7 @@ public actor SandboxHost {
         for continuation in waiting.values { continuation.resume() }
     }
 
-    /// Agent setup belongs to the CLI (D16); the daemon runs it here and answers with its envelope's result or error.
+    /// Agent setup belongs to the CLI; the daemon runs it here and answers with its envelope's result or error.
     private func runAgentSetup(_ object: [String: Any], operation: String, input: [String: Any]) async -> Data {
         guard let agentSetup else { return hostFailure(object, code: "unsupported", message: "this daemon was started without LOCALBOX_CLI, so it cannot run \(operation)") }
         let outcome = await agentSetup.operation(operation, input: input)
@@ -653,11 +653,11 @@ public actor SandboxHost {
 
     private func hostEnvelope(_ request: [String: Any], values: [String: Any]) -> Data {
         let envelope: [String: Any] = [
-            "protocol_version": request["protocol_version"] as? String ?? "v1",
+            "protocol_version": request["protocol_version"] as? String ?? protocolVersion,
             "request_id": request["request_id"] as? String ?? "unknown",
             "operation": request["operation"] as? String ?? "unknown",
             "sandbox_id": request["sandbox_id"] as? String as Any? ?? NSNull(),
-            "release_id": "agent-computer-contract-v1",
+            "release_id": releaseID,
         ].merging(values) { _, latest in latest }
         return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data("{}".utf8)
     }
@@ -678,51 +678,4 @@ struct ConnectorReport: Sendable {
     let state: String
     let detail: String?
     let reportedAt: Date
-}
-
-public actor FakeGuestChannel: GuestChannel {
-    private let handler: @Sendable (Data) async throws -> Data
-    private(set) public var closed = false
-    public private(set) var names: [String] = []
-    public init(handler: @escaping @Sendable (Data) async throws -> Data) { self.handler = handler }
-    public func send(_ envelope: Data) async throws -> Data { guard !closed else { throw HostDaemonError.guestUnavailable }; return try await handler(envelope) }
-    public func rename(to name: String) { names.append(name) }
-    public func close() { closed = true }
-}
-
-/// A VM that only records its lifecycle; its guest answers with `guest`, and `save` fails with `saveError` when set.
-public actor FakeVMBackend: HibernateBackend, GuestChannelProvider {
-    public private(set) var running = false
-    private let guest: @Sendable (Data) async throws -> Data
-    private let saveError: HostDaemonError?
-    public init(saveError: HostDaemonError? = nil, guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) { self.saveError = saveError; self.guest = guest }
-    public func start() { running = true }
-    public func stop() { running = false }
-    public func pause() { running = false }
-    public func resume() { running = true }
-    public func save(to url: URL) throws {
-        if let saveError { throw saveError }
-        try Data("saved".utf8).write(to: url); running = false
-    }
-    public func restore(from url: URL) throws {
-        guard FileManager.default.fileExists(atPath: url.path) else { throw HostDaemonError.invalidState("saved machine state is missing") }
-        running = true
-    }
-    public func makeGuestChannel() -> any GuestChannel { FakeGuestChannel(handler: guest) }
-}
-
-/// Makes `FakeVMBackend`s; `boots` counts the backends made, one per boot or restore.
-public final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
-    private let lock = NSLock()
-    private var made = 0
-    private let saveError: HostDaemonError?
-    private let guest: @Sendable (Data) async throws -> Data
-    /// `saveError`: every save fails with it, e.g. `.screenLocked` or `.unsupported("permission denied")`.
-    public init(saveError: HostDaemonError? = nil, guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) { self.saveError = saveError; self.guest = guest }
-    public var boots: Int { lock.lock(); defer { lock.unlock() }; return made }
-    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] { record.mac = randomLocalMAC(); return [:] }
-    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any VMBackend {
-        lock.lock(); made += 1; lock.unlock()
-        return FakeVMBackend(saveError: saveError, guest: guest)
-    }
 }

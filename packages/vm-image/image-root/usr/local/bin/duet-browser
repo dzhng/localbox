@@ -1,7 +1,0 @@
-#!/bin/sh
-set -eu
-if [ "${1:-}" = "--version" ]; then
-  chromium --version 2>/dev/null || chromium-browser --version 2>/dev/null || echo "duet-browser arm64"
-  exit 0
-fi
-exec chromium --class=duet-browser "$@"

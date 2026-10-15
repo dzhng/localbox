@@ -14,10 +14,10 @@ public struct ProcessFixtureConfiguration: Sendable {
         self.guestCommand = guestCommand; self.workingDirectory = workingDirectory
     }
 
-    /// The fixture is never a silent fallback: it needs `LOCALBOX_VM_BACKEND=process-fixture`, and release builds refuse it.
+    /// The fixture is never a silent fallback: it needs `LOCALBOX_SANDBOX_BACKEND=process-fixture`, and release builds refuse it.
     public static func requireOptIn(environment: [String: String]) throws {
-        guard environment["LOCALBOX_VM_BACKEND"] == "process-fixture" else {
-            throw HostDaemonError.unsupported("the process fixture backend needs LOCALBOX_VM_BACKEND=process-fixture")
+        guard environment["LOCALBOX_SANDBOX_BACKEND"] == "process-fixture" else {
+            throw HostDaemonError.unsupported("the process fixture backend needs LOCALBOX_SANDBOX_BACKEND=process-fixture")
         }
         #if !DEBUG
         throw HostDaemonError.unsupported("release builds refuse the process fixture backend")
@@ -37,14 +37,14 @@ public struct ProcessFixtureFactory: SandboxBackendFactory {
         record.mac = randomLocalMAC()
         return [:]
     }
-    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any VMBackend {
+    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         ProcessFixtureBackend(configuration: configuration, record: record, directory: directory)
     }
 }
 
 /// A sandbox that is a local guest-agent process instead of a VM, so many machines fit on one Mac without
 /// booting VMs. stdin/stdout carry exactly the frames the virtio socket carries; sleep is SIGSTOP/SIGCONT.
-public actor ProcessFixtureBackend: VMBackend, GuestChannelProvider {
+public actor ProcessFixtureBackend: SandboxBackend, GuestChannelProvider {
     public let configuration: ProcessFixtureConfiguration
     private let record: SandboxRecord
     private let directory: SandboxDirectory

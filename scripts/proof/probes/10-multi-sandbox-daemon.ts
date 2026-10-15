@@ -19,8 +19,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     })];
   }
   if (ctx.tier === "s") {
-    return [await ctx.check("defaultSize table and the SandboxHost state machine on a fake backend (Swift)", async () => {
-      const result = await ctx.exec("swift", ["test", "--package-path", "apps/macos/HostDaemon", "--filter", "testDefaultSize|testSandboxHostLifecycle|testResizeReportsRestart|testSigterm|testTheMirrorFollowsNamesAndNeverDeletesADisk"]);
+    return [await ctx.check("the SandboxHost state machine on a fake backend (Swift)", async () => {
+      const result = await ctx.exec("swift", ["test", "--package-path", "apps/macos/HostDaemon", "--filter", "testSandboxHostLifecycle|testResizeReportsRestart|testSigterm|testTheMirrorFollowsNamesAndNeverDeletesADisk"]);
       assert.equal(result.code, 0, (result.stdout + result.stderr).slice(-2000));
       assert.match(result.stdout + result.stderr, /Executed \d+ tests, with 0 failures/);
     })];
@@ -49,7 +49,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check("two sandboxes boot from APFS clones that allocate under 50 MB at creation", async () => {
       for (const sandboxId of [ids.alpha, ids.beta]) {
         const started = Date.now();
-        const created = await ok("sandbox.create", sandboxId, { name: names[sandboxId], cpus: 2, memory_bytes: 2 * GIB });
+        const created = await ok("sandbox.create", sandboxId, { name: names[sandboxId], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
         evidence[`${sandboxId}_create_ms`] = Date.now() - started; evidence[`${sandboxId}_create`] = created;
         assert.equal(created.produced.disk, "cloned");
         assert.ok(created.produced.disk_allocated_bytes >= 0 && created.produced.disk_allocated_bytes < 50 * 1024 * 1024, `clone allocated ${created.produced.disk_allocated_bytes} bytes`);

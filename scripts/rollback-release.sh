@@ -70,7 +70,7 @@ if [ -f "$PUBLIC_KEY_FILE" ]; then plutil -replace 'EnvironmentVariables.LOCALBO
 chmod 600 "$UPDATER_PLIST"
 localbox_add_path
 # Agent setup matches the skill and the localbox link to the release rolled back to.
-"$RELEASE_ROOT/active/localbox-cli/bin/localbox" agents reconcile --reason install >/dev/null || echo "warning: agent setup did not reconcile; run: localbox skill status --json" >&2
+"$RELEASE_ROOT/active/localbox-cli/bin/localbox" agents reconcile --reason rollback >/dev/null || echo "warning: agent setup did not reconcile; run: localbox skill status --json" >&2
 
 if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"
@@ -80,6 +80,8 @@ if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   launchctl kickstart -k "$DOMAIN/com.localbox.hostd"
   launchctl bootstrap "$DOMAIN" "$UPDATER_PLIST"
   launchctl kickstart -k "$DOMAIN/com.localbox.updater"
+  # The connector runs `localbox` through the link, which now reaches the release rolled back to.
+  launchctl kickstart -k "$DOMAIN/com.localbox.connector" >/dev/null 2>&1 || true
 fi
 
 echo "rolled back Localbox to $VERSION"

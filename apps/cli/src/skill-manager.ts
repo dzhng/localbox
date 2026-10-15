@@ -2,24 +2,15 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, cp, lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import { layout } from "./layout.js";
 
 const execFileAsync = promisify(execFile);
 const INSTALLER = "skills@1.7.0";
 const KNOWN_PATHS = [".agents/skills/localbox", ".codex/skills/localbox", ".claude/skills/localbox"];
 const SOURCE_URL = "https://github.com/dzhng/localbox/tree/main/skills/localbox";
-
-function bundledSkillSource(): string {
-  const here = new URL(".", import.meta.url);
-  const candidates = [
-    new URL("../../../skills/localbox", here),
-    new URL("../../../../skills/localbox", here),
-  ];
-  return candidates.map((candidate) => resolve(candidate.pathname)).find((candidate) => existsSync(join(candidate, "SKILL.md"))) ?? resolve(candidates[0].pathname);
-}
 
 type Entry = { name: string; path: string; scope?: string; agents?: string[]; source?: string; sourceUrl?: string; sourceType?: string };
 /** Ownership receipt: Localbox wrote the skill at `paths` from release `sourceRevision`. */
@@ -33,7 +24,7 @@ export interface SkillManagerOptions {
   sourceUrl?: string;
   /** The release version that installs the skill, recorded in the receipt as its `sourceRevision`. */
   revision?: string | null;
-  nodePath?: string;
+  /** The pinned skills installer's `cli.mjs`, run with this CLI's Node. */
   installerPath?: string;
   run?: Runner;
 }
@@ -72,16 +63,14 @@ export class SkillManager {
   private readonly source: string;
   private readonly sourceUrl: string;
   private readonly revision: string | null;
-  private readonly nodePath?: string;
-  private readonly installerPath?: string;
+  private readonly installerPath: string;
   private readonly run: Runner;
   constructor(options: SkillManagerOptions = {}) {
     this.home = resolve(options.home ?? process.env.LOCALBOX_SKILL_HOME ?? homedir());
-    this.source = resolve(options.source ?? process.env.LOCALBOX_SKILL_SOURCE ?? bundledSkillSource());
+    this.source = resolve(options.source ?? layout().skill);
     this.sourceUrl = options.sourceUrl ?? SOURCE_URL;
     this.revision = options.revision ?? null;
-    this.nodePath = options.nodePath ?? process.env.LOCALBOX_NODE_PATH;
-    this.installerPath = options.installerPath ?? process.env.LOCALBOX_SKILLS_INSTALLER;
+    this.installerPath = options.installerPath ?? layout().skillsInstaller;
     this.run = options.run ?? defaultRun;
   }
   async status(explicit?: Partial<SkillStatus>): Promise<SkillStatus> {
@@ -181,17 +170,8 @@ export class SkillManager {
   }
   private async fallbackEntries(): Promise<Entry[]> { return (await Promise.all(KNOWN_PATHS.map(async (path): Promise<Entry | undefined> => { const full = join(this.home, path); return (await this.exists(full)) ? { name: "localbox", path: full, scope: "global" } : undefined; }))).filter((entry): entry is Entry => Boolean(entry)); }
   private async resolveInstaller(): Promise<{ node: string; script: string }> {
-    const node = this.nodePath ?? process.execPath;
-    if (!(await this.isExecutable(node))) throw new Error("Localbox's bundled Node runtime is unavailable");
-    const scripts = [
-      this.installerPath,
-      join(this.home, ".localbox/skills-installer/cli.mjs"),
-      resolve(new URL("../../../node_modules/skills/bin/cli.mjs", import.meta.url).pathname),
-      resolve(new URL("../../../../node_modules/skills/bin/cli.mjs", import.meta.url).pathname),
-    ].filter((candidate): candidate is string => Boolean(candidate));
-    const script = scripts.find((candidate) => existsSync(candidate));
-    if (!script) throw new Error(`${INSTALLER} is not bundled in this release`);
-    return { node, script };
+    if (!(await this.exists(this.installerPath))) throw new Error(`${INSTALLER} is not bundled in this release`);
+    return { node: process.execPath, script: this.installerPath };
   }
   private commandEnv(node: string): NodeJS.ProcessEnv { return { ...process.env, HOME: this.home, USERPROFILE: this.home, DISABLE_TELEMETRY: "1", PATH: `${dirname(node)}:${process.env.PATH ?? "/usr/bin:/bin"}` }; }
   private get receiptPath(): string { return join(this.home, ".config/localbox/skill-install.json"); }
@@ -202,7 +182,6 @@ export class SkillManager {
   private async restore(backup: string, paths: string[]): Promise<void> { for (const path of paths.sort((a, b) => a.length - b.length)) { const source = join(backup, relative(this.home, path)); if (!(await this.exists(source))) continue; await rm(path, { recursive: true, force: true }); await mkdir(dirname(path), { recursive: true }); await copyPreservingSymlink(source, path); } }
   private safePath(path: string): boolean { const root = this.home.endsWith("/") ? this.home : `${this.home}/`; return resolve(path).startsWith(root); }
   private async exists(path: string): Promise<boolean> { try { await lstat(path); return true; } catch { return false; } }
-  private async isExecutable(path: string): Promise<boolean> { try { await access(path, constants.X_OK); return true; } catch { return false; } }
   private async isSymlink(path: string): Promise<boolean> { try { return (await lstat(path)).isSymbolicLink(); } catch { return false; } }
 }
 

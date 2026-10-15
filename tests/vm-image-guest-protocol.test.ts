@@ -71,8 +71,7 @@ test("ARM64 image manifest binds pinned inputs and full Duet inventory", async (
 });
 
 test("Duet probes distinguish executable tools from Python imports", () => {
-  // This is the same machine-readable distinction used by the in-image probe;
-  // a name-only manifest cannot accidentally satisfy a Python import check.
+  // A name-only manifest cannot accidentally satisfy a Python import check.
   assert.equal(DUET_REQUIRED_TOOL_INVENTORY.find((tool) => tool.name === "python3")?.kind, "binary");
   assert.equal(DUET_REQUIRED_TOOL_INVENTORY.find((tool) => tool.name === "pandas")?.kind, "python");
 });

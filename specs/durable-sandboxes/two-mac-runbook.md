@@ -21,8 +21,8 @@ in Terminal on the Mac named in each step. Where a command prints a generated
 name (`quiet-otter`), use the name you got in later steps.
 
 Write down for each Mac, before you start: its macOS version
-(`sw_vers -productVersion`), and whether its screen will be locked during the
-test.
+(`sw_vers -productVersion`), and whether its screen lock asks for a password
+(System Settings > Lock Screen).
 
 ## 1. Install on both Macs
 
@@ -36,9 +36,12 @@ reports a checklist. Then check in Terminal:
 ```sh
 ~/.local/bin/localbox skill status     # state: installed, managed: true
 ~/.local/bin/localbox cli status       # state: linked
+~/.local/bin/localbox host check       # hibernate: available, or the fixes
 ```
 
-The connector is installed but idle until the Mac signs in.
+The installer printed a `Sleep:` line if `host check` is anything but
+`available`. Leave the settings as they are for now; step 7 compares both. The
+connector is installed but idle until the Mac signs in.
 
 ## 2. Sign in both Macs with one email
 
@@ -171,11 +174,17 @@ localbox shell exec --sandbox <A's sandbox> -- \
 Expected: the second command reports `woke` and prints the same PID: the server
 survived the sleep.
 
-Run this step twice on A: once with the screen **locked** during the 3 minutes,
-once **unlocked** (stay logged in, screen on or asleep but not locked). Locked,
-the status detail should read "paused in memory: hibernate needs an unlocked
-screen". Unlocked is the case not yet proven anywhere: the sandbox should be
-saved to disk and its memory released.
+Run this step twice on A, both times putting the display to sleep right after
+starting the server (`pmset displaysleepnow`) and leaving it asleep for the
+3 minutes:
+
+- **Lock asks for a password** (`host check` says `only_while_unlocked`): the
+  status detail reads "paused in memory: hibernate needs an unlocked screen";
+  the sandbox kept its RAM.
+- **Lock asks for no password** (set "Require password after screen saver
+  begins or display is turned off" to Never; `host check` says `available`):
+  the status detail reads "hibernated: state saved, memory released". This is
+  proven on one Mac; this run checks it on yours.
 
 ## 8. Remove a machine
 
@@ -208,8 +217,8 @@ localbox sandbox delete <name> --confirm <name>
 
 ## What to send back
 
-1. Both Macs' macOS versions and, for step 7, which run was locked and which
-   unlocked.
+1. Both Macs' macOS versions, the `host check` output from step 1, and for
+   step 7 which run had the password lock.
 2. The full text output of steps 2, 3 and 4 (with the `time` line), 6 and 8.
 3. A screenshot of the MCP sign-in page and the cloud agent's tool result (step 5).
 4. For both runs of step 7: the `sandbox status --json` output while asleep, and

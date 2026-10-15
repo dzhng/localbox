@@ -17,7 +17,7 @@ async function mac(): Promise<{ home: string; root: string; at(revision: string)
   await mkdir(join(base, "releases/active/localbox-cli/bin"), { recursive: true }); await writeFile(cli, "#!/bin/sh\n");
   const at = (revision: string) => {
     const release: Release = { revision, cli };
-    return new AgentSetup({ env: { HOME: home, LOCALBOX_MACHINE_ROOT: root }, release, skills: new SkillManager({ home, revision, nodePath: process.execPath, installerPath: installer }) });
+    return new AgentSetup({ env: { HOME: home, LOCALBOX_MACHINE_ROOT: root }, release, skills: new SkillManager({ home, revision, installerPath: installer }) });
   };
   return { home, root, at };
 }
@@ -95,7 +95,7 @@ test("the catalog operations read the same state, and a checkout has no link to 
   assert.deepEqual({ enabled: setup.enabled, skill: setup.skill, source_revision: setup.source_revision, cli_link: setup.cli_link }, { enabled: true, skill: "installed", source_revision: "0.1.0", cli_link: "linked" });
   const cli = await at("0.1.0").handle("cli.status", {}) as Record<string, unknown>;
   assert.equal(cli.path, join(home, ".local/bin/localbox")); assert.equal(cli.managed, true);
-  const checkout = new AgentSetup({ env: { HOME: home, LOCALBOX_MACHINE_ROOT: join(home, "m") }, release: { revision: "0.1.0", cli: null }, skills: new SkillManager({ home, revision: "0.1.0", nodePath: process.execPath, installerPath: installer }) });
+  const checkout = new AgentSetup({ env: { HOME: home, LOCALBOX_MACHINE_ROOT: join(home, "m") }, release: { revision: "0.1.0", cli: null }, skills: new SkillManager({ home, revision: "0.1.0", installerPath: installer }) });
   assert.equal((await checkout.handle("cli.status", {}) as Record<string, unknown>).state, "not_a_release");
   await assert.rejects(() => checkout.handle("sandbox.list", {}), (error) => error instanceof ContractError && error.code === "invalid_input");
 });

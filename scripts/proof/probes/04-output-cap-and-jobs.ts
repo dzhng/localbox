@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { OUTPUT_CAP_BYTES } from "../../../packages/contract/src/index.js";
 import type { Check, ProofContext } from "../run.js";
 import { stopConnector } from "../lib/login.js";
 import { cli, guestRoot as guestRootOf, signedInWithSandboxes } from "../lib/sandboxes.js";
@@ -9,12 +10,12 @@ import { cli, guestRoot as guestRootOf, signedInWithSandboxes } from "../lib/san
 export const id = "04";
 export const tiers = ["u", "l"];
 
-const CAP_BYTES = 900 * 1024;
+const CAP = `${OUTPUT_CAP_BYTES / 1024} KiB`;
 const sha256 = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "u") {
-    return [await ctx.check("900 KiB cap, fs.read and job.output paging, real background jobs", async () => {
+    return [await ctx.check(`${CAP} cap, fs.read and job.output paging, real background jobs`, async () => {
       const result = await ctx.exec("npx", ["tsx", "--test", "tests/output-cap.test.ts", "tests/guest-jobs.test.ts", "tests/guest-gateway.test.ts"]);
       assert.equal(result.code, 0, result.stdout.slice(-2000));
     })];
@@ -35,11 +36,11 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   try {
     const checks: Check[] = [];
     checks.push(await ctx.check("A signs in and gets one sandbox", async () => { setup = await signedInWithSandboxes(ctx.root, ["a"], `proof-04-${run}@example.com`); }));
-    checks.push(await ctx.check("a 2 MiB fs.read is capped at 900 KiB and pages back to the exact sha256", async () => {
+    checks.push(await ctx.check(`a 2 MiB fs.read is capped at ${CAP} and pages back to the exact sha256`, async () => {
       await invoke("shell.exec", { command: "head -c 1572864 /dev/urandom | base64 | tr -d '\\n' | head -c 2097152 > big.txt", cwd: "/" }, true);
       const first = await invoke("fs.read", { path: "/big.txt" });
       assert.equal(first.truncated?.original_bytes, 2_097_152);
-      assert.ok(first.truncated.returned_bytes <= CAP_BYTES, `returned ${first.truncated.returned_bytes} bytes`);
+      assert.ok(first.truncated.returned_bytes <= OUTPUT_CAP_BYTES, `returned ${first.truncated.returned_bytes} bytes`);
       let text = first.content as string; let page = first;
       while (!page.eof) { page = await invoke("fs.read", { path: "/big.txt", offset: page.next_offset }); text += page.content; }
       assert.equal(sha256(text), sha256(readFileSync(join(guestRoot(), "big.txt"))));

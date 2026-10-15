@@ -5,6 +5,13 @@ Prefer the operations below over editing skill folders by hand. Use the manual
 steps only for a project-scope install, a comparison, or when an operation
 reports a problem.
 
+## Updates
+
+Releases update themselves: a background updater installs each new signed
+release after verifying it, and nothing is replaced if verification fails.
+`localbox update check` and `localbox update install` do the same on demand.
+Sandbox disks survive every update.
+
 ## Agent setup
 
 One setting, **agent setup**, is on by default. While it is on, Localbox owns

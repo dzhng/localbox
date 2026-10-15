@@ -1,10 +1,15 @@
+import { ConvexError } from "convex/values";
+import type { ErrorBody } from "../../../contract/src/index.js";
 import { relayStateSchema, type RelayStateTable } from "../schema.js";
 
 export type DbContext = { db: any };
 export const MAX_QUERY_ROWS = 1_000;
 export const id = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 export const clean = <T extends Record<string, any>>(row: T): Omit<T, "_id" | "_creationTime"> => { const { _id: _a, _creationTime: _b, ...rest } = row; return rest; };
+/** An error that is not the caller's to see. */
 export const fail = (message: string): never => { throw new Error(message); };
+/** Refuses the call with a contract error the caller sees; the agent API and the connector decode it (`contractError`). */
+export const refuse = (code: ErrorBody["code"], message: string, details?: ErrorBody["details"]): never => { throw new ConvexError({ code, message, ...(details === undefined ? {} : { details }) }); };
 export async function boundedRows(query: any, label: string): Promise<any[]> { const rows = await query.take(MAX_QUERY_ROWS + 1); if (rows.length > MAX_QUERY_ROWS) fail(`${label} exceeds the bounded read limit`); return rows; }
 export async function byField(ctx: DbContext, table: string, index: string, field: string, value: any): Promise<any> { return await ctx.db.query(table).withIndex(index, (q: any) => q.eq(field, value)).first(); }
 export async function jsonHash(value: unknown): Promise<string> { const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value)); const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes); return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""); }

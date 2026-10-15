@@ -2,7 +2,7 @@
   "tier": "v",
   "machine_a": "real (Apple Virtualization, minimal image)",
   "machine_b": "fixture",
-  "screen_locked": true,
+  "screen_locked": false,
   "machines": [
     {
       "name": "proof-a",
@@ -28,8 +28,8 @@
     }
   ],
   "create_local": {
-    "sandbox_id": "sandbox_de1f6866-5300-4a46-98ec-7c9985c3338d",
-    "name": "quick-robin",
+    "sandbox_id": "sandbox_4692bc5c-889a-457d-b1d9-76b371bec73c",
+    "name": "kind-newt",
     "machine": "proof-a",
     "placement_reason": "on proof-a, this machine (18 GiB free)",
     "cpus": 1,
@@ -38,10 +38,10 @@
     "sleep_after_ms": 5000,
     "delete_after_ms": null
   },
-  "node_server_pid": "299",
+  "node_server_pid": "300",
   "create_on_b": {
-    "sandbox_id": "sandbox_31077e9a-37a4-49bf-8b8f-6f8abe80c264",
-    "name": "bright-newt",
+    "sandbox_id": "sandbox_34f10974-dd37-4d7f-9907-72726b790a2d",
+    "name": "amber-badger",
     "machine": "proof-b",
     "placement_reason": "on proof-b, as asked (384 GiB free)",
     "cpus": 1,
@@ -51,8 +51,8 @@
     "delete_after_ms": null
   },
   "create_auto": {
-    "sandbox_id": "sandbox_f6dae8a8-b6cb-4891-b88e-21c87f37a158",
-    "name": "eager-beaver",
+    "sandbox_id": "sandbox_e133db1d-43ef-4355-af33-f79fb202829f",
+    "name": "zesty-moose",
     "machine": "proof-b",
     "placement_reason": "on proof-b, the machine with the most room (382 GiB free)",
     "cpus": 1,
@@ -61,63 +61,63 @@
     "sleep_after_ms": 1800000,
     "delete_after_ms": null
   },
-  "convex_calls_per_relayed_request": 16,
+  "convex_calls_per_relayed_request": 13,
   "relayed_round_trip_ms": [
-    177,
-    136,
-    126,
-    128,
-    129
+    166,
+    116,
+    115,
+    114,
+    115
   ],
   "mcp_shell_exec": {
-    "sandbox": "quick-robin",
+    "sandbox": "kind-newt",
     "stdout": "aarch64",
     "actions": [
       {
-        "detail": "woke quick-robin from sleep",
+        "detail": "restored kind-newt from its saved state",
         "kind": "woke"
       }
     ]
   },
   "machine_offline": {
-    "ms": 3208,
-    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T15:48:29.011Z"
+    "ms": 3181,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T18:29:39.489Z"
   },
   "asleep": {
-    "lifecycle": "paused",
+    "name": "kind-newt",
     "memory_bytes": 2147483648,
-    "name": "quick-robin",
-    "cpus": 1,
-    "channel_epoch": 2,
-    "sandbox_id": "sandbox_de1f6866-5300-4a46-98ec-7c9985c3338d",
-    "delete_after_ms": null,
-    "detail": "paused in memory: hibernate needs an unlocked screen",
-    "state": "sleeping",
+    "sleep_after_ms": 5000,
+    "lifecycle": "asleep",
+    "detail": "hibernated: state saved, memory released",
+    "sandbox_id": "sandbox_4692bc5c-889a-457d-b1d9-76b371bec73c",
     "last_boot": {
-      "kind": "cold_booted",
-      "detail": "cold-booted quick-robin"
+      "kind": "woke",
+      "detail": "restored kind-newt from its saved state"
     },
-    "sleep_after_ms": 5000
+    "state": "sleeping",
+    "channel_epoch": 4,
+    "cpus": 1,
+    "delete_after_ms": null
   },
   "asleep_on_daemon": {
-    "lifecycle": "paused",
-    "detail": "paused in memory: hibernate needs an unlocked screen"
+    "lifecycle": "asleep",
+    "detail": "hibernated: state saved, memory released"
   },
   "woke": [
     {
       "kind": "woke",
-      "detail": "woke quick-robin from sleep"
+      "detail": "restored kind-newt from its saved state"
     }
   ],
   "connector_exit": {
     "code": 0,
-    "ms": 104,
+    "ms": 112,
     "log": [
       "Uncaught Error: Forbidden: machine revoked or unknown",
       "Uncaught Error: Forbidden: machine revoked or unknown",
-      "2026-10-15T15:48:44.904Z connector: machine credential revoked: machine token refused (401); stopping",
-      "2026-10-15T15:48:44.904Z connector: state revoked: machine token refused (401)",
-      "2026-10-15T15:48:44.905Z connector: ended: revoked"
+      "2026-10-15T18:29:55.584Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T18:29:55.584Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T18:29:55.585Z connector: ended: revoked"
     ]
   },
   "checks": [
@@ -158,11 +158,11 @@
       "ok": true
     },
     {
-      "name": "A's sandbox sleeps when idle (paused in memory: the screen is locked) and the next exec reports woke; the Node server kept its PID",
+      "name": "A's sandbox hibernates when idle and the next exec reports woke; the Node server kept its PID",
       "ok": true
     },
     {
-      "name": "machines remove <B> from A: B's connector exits with code 0 and A's account shows 1 machine",
+      "name": "machine remove <B> from A: B's connector exits with code 0, A's account shows 1 machine and none of B's sandboxes",
       "ok": true
     }
   ]

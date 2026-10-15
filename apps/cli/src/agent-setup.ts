@@ -1,21 +1,20 @@
-import { existsSync, readFileSync } from "node:fs";
 import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { AGENT_SETUP_OPERATIONS, ContractError, type ActionReport, type Json, type OperationId } from "../../../packages/contract/src/index.js";
 import { machinePaths } from "../../../packages/config/src/index.js";
+import { layout, type Layout } from "./layout.js";
 import { SkillManager, type SkillStatus } from "./skill-manager.js";
 
-/** What started a reconcile: the installer, a daemon start (every launch, including after an update), or a request. */
-export type Reason = "install" | "daemon_start" | "explicit";
-export const REASONS: readonly Reason[] = ["install", "daemon_start", "explicit"];
+/** What started a reconcile: the installer, a rollback, a daemon start (every launch, including after an update), or a request. */
+export type Reason = "install" | "rollback" | "daemon_start" | "explicit";
+export const REASONS: readonly Reason[] = ["install", "rollback", "daemon_start", "explicit"];
 
 /** The agent setup setting, `<machine root>/agent-setup.json`. Without the file it is on. */
 export interface Setting { enabled: boolean; changed_at: string | null }
 
 /** The release this CLI belongs to: its version, and the `localbox` link target when it is an installed release. */
-export interface Release { revision: string | null; cli: string | null }
+export type Release = Pick<Layout, "revision" | "cli">;
 
 export interface AgentSetupOptions {
   env?: NodeJS.ProcessEnv;
@@ -28,26 +27,10 @@ type LinkState = "linked" | "missing" | "elsewhere" | "not_a_link" | "not_a_rele
 interface LinkView { path: string; state: LinkState; target: string | null; expected: string | null }
 
 /**
- * The installed release's own location. A release CLI runs from `<releases>/<version>/localbox-cli/dist/apps/cli/src`
- * next to that version's `release.json`, and the link points through `<releases>/active`. A checkout has neither, so its
- * revision is its package.json version and it has nothing to link.
- */
-export function thisRelease(): Release {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const releaseCli = resolve(here, "../../../.."), manifest = join(dirname(releaseCli), "release.json");
-  if (existsSync(manifest)) {
-    const releases = dirname(dirname(releaseCli));
-    return { revision: (JSON.parse(readFileSync(manifest, "utf8")) as { version?: string }).version ?? null, cli: existsSync(join(releases, "active")) ? join(releases, "active/localbox-cli/bin/localbox") : null };
-  }
-  const packageJson = [resolve(here, "../../../package.json"), join(releaseCli, "package.json")].find((path) => existsSync(path));
-  return { revision: packageJson ? (JSON.parse(readFileSync(packageJson, "utf8")) as { version?: string }).version ?? null : null, cli: null };
-}
-
-/**
- * The one owner of "the skill and the `localbox` link match this release" (D16). `reconcile` runs at the end of
- * install-release.sh, at every daemon start and on an explicit skill.install/update; the catalog's agent setup
- * operations read and change the same state. Results follow P1: what was installed, replaced (and where the backup
- * is), or left alone, and why.
+ * The one owner of "the skill and the `localbox` link match this release". `reconcile` runs at the end of
+ * install-release.sh and rollback-release.sh, at every daemon start and on an explicit skill.install/update; the
+ * catalog's agent setup operations read and change the same state. Every result is an action report: what was
+ * installed, replaced (and where the backup is), or left alone, and why.
  */
 export class AgentSetup {
   private readonly env: NodeJS.ProcessEnv;
@@ -55,7 +38,7 @@ export class AgentSetup {
   private readonly skills: SkillManager;
   constructor(options: AgentSetupOptions = {}) {
     this.env = options.env ?? process.env;
-    this.release = options.release ?? thisRelease();
+    this.release = options.release ?? layout();
     this.skills = options.skills ?? new SkillManager({ revision: this.release.revision });
   }
 

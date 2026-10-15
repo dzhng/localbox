@@ -21,7 +21,7 @@ function portOwner(port: number): string | undefined { try { return execFileSync
 function spawnLogged(command: string, args: string[], log: string, env: NodeJS.ProcessEnv): ChildProcess { const fd = openSync(log, "a"); const child = spawn(command, args, { cwd: root, env, detached: true, stdio: ["ignore", fd, fd] }); closeSync(fd); child.unref(); return child; }
 function readFileSafe(path: string): string { try { return readFileSync(path, "utf8"); } catch { return ""; } }
 function readConvexUrl(): string | undefined { const line = readFileSafe(join(root, ".env.local")).split(/\r?\n/).find((item) => item.startsWith("CONVEX_URL=")); return line?.slice("CONVEX_URL=".length).trim(); }
-/** Dev ES256 signing key: dev:local signs with it, Convex verifies with the JWKS derived from it (slice 05). */
+/** Dev ES256 signing key: dev:local signs with it, Convex verifies with the JWKS derived from it. */
 function devKeys(): { privatePem: string; jwks: string } {
   const privatePath = join(state, "keys", "jwt-private.pem");
   if (!readFileSafe(privatePath)) {
@@ -80,7 +80,7 @@ async function up(specs: MachineSpec[]): Promise<void> {
   await startDaemons(specs);
 }
 const hostdPid = (machine: string) => join(pidDir, `hostd-${machine}.pid`);
-/** One fixture host daemon per machine root (slice 03): its own socket, IPC token and sandboxes, each with its own guest. */
+/** One fixture host daemon per machine root: its own socket, IPC token and sandboxes, each with its own guest. */
 async function startDaemons(machines: MachineSpec[]): Promise<void> {
   if (!machines.length) return;
   execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--product", "localbox-hostd"], { cwd: root, stdio: "ignore" });
@@ -94,7 +94,7 @@ async function startDaemons(machines: MachineSpec[]): Promise<void> {
     rmSync(fixtureHome(paths.root), { recursive: true, force: true }); rmSync(join(paths.root, "agent-setup.json"), { force: true }); mkdirSync(fixtureHome(paths.root));
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
-    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
+    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
     if (!existsSync(paths.socket)) throw new Error(`machine ${machine}'s HostDaemon did not open ${paths.socket}; ${readFileSafe(log).trim() || "no diagnostic output"}`);

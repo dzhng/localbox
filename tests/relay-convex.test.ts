@@ -38,11 +38,11 @@ test("machines only see and claim their own rows; mutation replay deduplicates",
 test("relay completion enforces the output cap and daily request limit", async () => {
   const t = await setup(); const service = t.withIdentity({ subject: "service:api" }); const machine = t.withIdentity({ subject: "machine:m1", account: "a1" });
   await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "large", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "large" });
-  await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "large", response: "x".repeat(OUTPUT_CAP_BYTES) }), /response_too_large/);
+  await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "large", response: "x".repeat(OUTPUT_CAP_BYTES) }), (error: any) => error.data?.code === "resource_exhausted");
   const old = process.env.LOCALBOX_RELAY_DAILY_REQUESTS; process.env.LOCALBOX_RELAY_DAILY_REQUESTS = "3";
   try {
     for (let i = 0; i < 2; i++) await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: `q${i}`, operation: "x", payload: {} });
-    await assert.rejects(() => service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "q3", operation: "x", payload: {} }), (error: Error) => error.message.includes("relay_daily_limit") && error.message.includes("3") && error.message.includes("reset"));
+    await assert.rejects(() => service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "q3", operation: "x", payload: {} }), (error: any) => error.data?.code === "rate_limited" && error.data.details.limit === "requests" && /request limit \(3; reset/.test(error.data.message));
   } finally { if (old === undefined) delete process.env.LOCALBOX_RELAY_DAILY_REQUESTS; else process.env.LOCALBOX_RELAY_DAILY_REQUESTS = old; }
 });
 
@@ -51,12 +51,12 @@ test("past the daily result bytes, a result is refused but a small failure still
   const old = process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES; process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES = "100";
   try {
     await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "big", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "big" });
-    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "big", response: { ok: true, result: "x".repeat(200) } }), /relay_daily_limit: 100/);
+    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "big", response: { ok: true, result: "x".repeat(200) } }), (error: any) => error.data?.code === "rate_limited" && error.data.details.limit === "result_bytes" && /\(100; reset/.test(error.data.message));
     const refused = { ok: false, error: { code: "rate_limited", message: "the account's daily relay result bytes limit (100)", retryable: true, details: { limit: "result_bytes" } } };
     await machine.mutation(ref("relay:complete"), { requestId: "big", response: refused });
     assert.deepEqual(await service.query(ref("relay:result"), { requestId: "big" }), { accountId: "a1", status: "completed", response: refused });
     await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "huge-failure", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "huge-failure" });
-    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "huge-failure", response: { ok: false, error: { message: "x".repeat(5_000) } } }), /relay_daily_limit/, "only a small failure is exempt");
+    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "huge-failure", response: { ok: false, error: { message: "x".repeat(5_000) } } }), (error: any) => error.data?.code === "rate_limited", "only a small failure is exempt");
   } finally { if (old === undefined) delete process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES; else process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES = old; }
 });
 

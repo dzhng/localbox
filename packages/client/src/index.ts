@@ -1,7 +1,6 @@
 import {
   ContractError,
   failure,
-  success,
   PROTOCOL_VERSION,
   type ErrorCode,
   type Json,
@@ -29,7 +28,7 @@ export interface ClientTransport {
   dispatch(request: RequestEnvelope, options?: DispatchOptions): Promise<ResponseEnvelope>;
 }
 
-export interface RelayHttpTransportOptions {
+export interface AgentApiTransportOptions {
   /** API origin, e.g. https://localbox.sh; requests go to `${apiOrigin}/api/v1/ops`. */
   apiOrigin: string;
   accessToken?: string;
@@ -44,14 +43,14 @@ export interface RelayHttpTransportOptions {
  * and hands back a continuation for longer requests; this transport resumes it until the request's deadline.
  * It never replays a mutation on its own.
  */
-export class RelayHttpTransport implements ClientTransport {
+export class AgentApiTransport implements ClientTransport {
   readonly kind = "remote" as const;
   private readonly endpoint: string;
   private readonly accessTokenProvider?: () => Promise<string | undefined>;
   private readonly fetchImpl: typeof fetch;
   private readonly accessToken?: string;
   private readonly callerMachineId?: string;
-  constructor(options: RelayHttpTransportOptions) {
+  constructor(options: AgentApiTransportOptions) {
     this.endpoint = `${options.apiOrigin.replace(/\/$/, "")}/api/v1/ops`;
     this.accessToken = options.accessToken;
     this.accessTokenProvider = options.accessTokenProvider;
@@ -81,10 +80,7 @@ export class RelayHttpTransport implements ClientTransport {
         try { message = (JSON.parse(body) as { error?: string }).error ?? body; } catch { /* plain text */ }
         return failure(request, { code: response.status === 429 ? "rate_limited" : response.status >= 500 ? "internal" : "invalid_input", message, retryable: response.status >= 500 || response.status === 429 });
       }
-      const result = await response.json() as Json;
-      // Account operations answer with the catalog's value; everything else with the machine's envelope.
-      const envelope = result && typeof result === "object" && !Array.isArray(result) ? result.response as unknown as ResponseEnvelope | undefined : undefined;
-      return envelope ?? success(request, result);
+      return (await response.json() as { response: ResponseEnvelope }).response;
     }
   }
 }
@@ -300,10 +296,6 @@ export class AgentClient {
 
 export function fixtureTransport(kind: TransportKind, dispatcher?: FakeDispatcher): FixtureTransport {
   return kind === "remote" ? new RemoteFixtureTransport(dispatcher) : new LocalFixtureTransport(dispatcher);
-}
-
-export function transportFromEnvironment(env: NodeJS.ProcessEnv = process.env, dispatcher?: FakeDispatcher): FixtureTransport {
-  return fixtureTransport(env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local", dispatcher);
 }
 
 export { ContractError };

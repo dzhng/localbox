@@ -5,7 +5,7 @@ public struct SandboxArtifacts: Sendable {
     public let kernelURL: URL
     public let initialRamdiskURL: URL
     public let templateDiskURL: URL
-    /// Extra kernel arguments for lab diagnostics (vmlab `--kernel-args`); never identity (D2).
+    /// Extra kernel arguments for lab diagnostics (vmlab `--kernel-args`); never identity, which the guest takes from the host's hello.
     public let extraKernelArguments: String
     public init(kernelURL: URL, initialRamdiskURL: URL, templateDiskURL: URL, extraKernelArguments: String = "") {
         self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.templateDiskURL = templateDiskURL; self.extraKernelArguments = extraKernelArguments
@@ -31,13 +31,13 @@ public struct AppleSandboxFactory: SandboxBackendFactory {
         record.machineIdentifier = VZGenericMachineIdentifier().dataRepresentation.base64EncodedString()
         return ["disk": disk, "disk_allocated_bytes": String(privateBytes(directory.disk) ?? -1)]
     }
-    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any VMBackend {
+    public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         AppleVirtualizationBackend(record: record, directory: directory, artifacts: artifacts)
     }
 }
 
 /// The only place a VM configuration is made, so a saved state always restores into the configuration it was saved
-/// under: everything comes from the record and the shared artifacts, and nothing names the sandbox (D2).
+/// under: everything comes from the record and the shared artifacts, and nothing names the sandbox: its identity reaches the guest only in the host's hello.
 public enum SandboxConfigurationBuilder {
     public static func build(_ record: SandboxRecord, in directory: SandboxDirectory, artifacts: SandboxArtifacts) throws -> VZVirtualMachineConfiguration {
         for url in [artifacts.kernelURL, artifacts.initialRamdiskURL, directory.disk] where !FileManager.default.fileExists(atPath: url.path) {
@@ -98,7 +98,7 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider 
     private var machine: VZVirtualMachine?
     private var guestChannel: FramedFileHandleGuestChannel?
     private var guestConnection: VZVirtioSocketConnection?
-    /// vsock port the guest agent listens on (socat in the image's localbox-guest unit).
+    /// vsock port the guest agent listens on (socat in the image's localbox-vsock unit).
     static let guestPort: UInt32 = 1024
     /// Virtualization asserts that a VM is created and driven on one dispatch queue; every call goes through it.
     private let queue: DispatchQueue

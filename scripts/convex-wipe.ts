@@ -1,5 +1,5 @@
 // Empties every Convex table through the deploy key (`npx convex run`), the only route to the
-// internal `admin:wipe` mutation. Production needs LOCALBOX_ALLOW_PROD_WIPE=1 as well (map Q14).
+// internal `admin:wipe` mutation. Production needs LOCALBOX_ALLOW_PROD_WIPE=1 as well.
 import { execFileSync } from "node:child_process";
 
 const args = process.argv.slice(2);

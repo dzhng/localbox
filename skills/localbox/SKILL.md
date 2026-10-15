@@ -31,8 +31,10 @@ localbox login --email you@example.com --code NNNNNN   # ask the user for the co
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
   user's machines (`localbox machine list`); `--placement auto` takes the online
   machine with the most room, `--placement remote` the same but never this Mac.
-- `localbox sandbox list`, `sandbox status`, `sandbox rename`, `sandbox resize`,
-  `sandbox sleep`, `sandbox start`, `sandbox stop`, `sandbox logs`.
+- `localbox sandbox list` and `localbox sandbox status NAME` show what exists;
+  `localbox help` lists the other `sandbox` commands (rename, resize, sleep and
+  more), and `localbox help sandbox.resize` shows one
+  ([capabilities](references/capabilities.md)).
 - `localbox sandbox delete NAME --confirm NAME` only with the user's explicit
   go-ahead; it destroys the disk.
 
@@ -72,11 +74,9 @@ sandbox's browser and its 1440×900 desktop.
 - A sandbox idle for its sleep time (no request, no running job) sleeps. The next
   command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
   job never sleeps to make room.
-- Sleep frees RAM only on a Mac whose screen lock asks for no password (the
-  display may still sleep); where the lock needs a password, a locked screen
-  makes a sandbox pause in memory instead (the `slept` detail says so).
-  `localbox host check` says whether this Mac hibernates and which settings to
-  change; see [installation](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate).
+- Sleep frees RAM only where the Mac can hibernate; otherwise the `slept`
+  detail says the sandbox paused in memory. `localbox host check` says which
+  ([why and the settings](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
 - Errors name the way out: `sandbox_ambiguous` and `sandbox_not_found` list the
   names, `machine_full` lists what holds the memory, `machine_offline` is
   retryable. Never blindly repeat a mutation after `operation_uncertain`: read
@@ -91,11 +91,10 @@ user's email code.
 
 ## Keeping Localbox current
 
-Releases update themselves. `localbox update check` and `localbox update install`
-do it on demand. With agent setup on (the default), every install and every
-daemon start makes this skill and the `localbox` link match the installed
-release. For `skill status`, maintenance on or off, and project-scope or
-comparison installs, read [skill lifecycle](references/skill-lifecycle.md). To
+Releases update themselves, and this skill and the `localbox` link follow the
+installed release. For updates on demand, `skill status`, agent setup on or off,
+and project-scope or comparison installs, read
+[skill lifecycle](references/skill-lifecycle.md). To
 find any operation or its schema, read [capabilities](references/capabilities.md).
 
 If the current project has its own copy of this skill (`.claude/skills/localbox`,

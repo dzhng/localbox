@@ -12,7 +12,7 @@ const realSystem: IdentitySystem = { root: "/", run: (command, args) => { spawnS
 
 /**
  * Every sandbox's disk is a clone of one template, so it boots with the template's machine-id and SSH host keys.
- * The host's hello names the sandbox (L4): the first time this disk serves a given sandbox id it makes those its own,
+ * The host's hello names the sandbox: the first time this disk serves a given sandbox id it makes those its own,
  * then the hostname follows the sandbox's name on every hello. Returns whether the identity was regenerated.
  */
 export function adoptSandboxIdentity(sandboxId: string, hostname: string, system: IdentitySystem = realSystem): boolean {

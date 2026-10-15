@@ -1,6 +1,6 @@
 import Foundation
 
-/// An ActionReport action (P1): what a request did on the way, e.g. `["kind": "woke", "detail": …]`.
+/// An ActionReport action: what a request did on the way, e.g. `["kind": "woke", "detail": …]`.
 public typealias SandboxAction = [String: String]
 
 /// Makes the per-sandbox pieces a backend needs: the directory's contents at create, and a backend for each boot.
@@ -9,7 +9,7 @@ public protocol SandboxBackendFactory: Sendable {
     /// Returns facts for the create report, e.g. `disk: cloned`.
     func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String]
     /// A fresh backend for one boot, configured from the record as it is now.
-    func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any VMBackend
+    func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend
 }
 
 /// One sandbox's runtime: its backend, guest channel, channel epoch and lifecycle, and the record that brings it back
@@ -18,14 +18,14 @@ public actor SandboxRuntime {
     public let directory: SandboxDirectory
     public private(set) var record: SandboxRecord
     private let factory: any SandboxBackendFactory
-    private var backend: (any VMBackend)?
+    private var backend: (any SandboxBackend)?
     private var channel: (any GuestChannel)?
     private var statusValue = RuntimeStatus(lifecycle: .stopped)
     /// What the last bring-up did (woke or cold_booted, and why), for status and logs.
     private var lastBoot: SandboxAction?
     /// Agent requests the guest is serving now; a sandbox in the middle of one is never slept.
     private var inFlight = 0
-    /// When `guest.activity` last showed a running job; idle time (Q5) runs from this or the last request, if later.
+    /// When `guest.activity` last showed a running job; idle time runs from this or the last request, if later.
     private var busyAt: Date?
     /// The last `guest.activity` showed a running job, so the idle policy asks again every second.
     private(set) var watchingJobs = false
@@ -98,9 +98,9 @@ public actor SandboxRuntime {
         try? FileManager.default.removeItem(at: directory.savedState)
     }
 
-    private func boot(_ run: (any VMBackend) async throws -> Void) async throws {
+    private func boot(_ run: (any SandboxBackend) async throws -> Void) async throws {
         setStatus(.starting)
-        let next: any VMBackend
+        let next: any SandboxBackend
         do { next = try factory.backend(for: record, in: directory) } catch { setStatus(.error, detail: explain(error)); throw error }
         do {
             try await run(next)
@@ -148,7 +148,7 @@ public actor SandboxRuntime {
         await channel?.close(); channel = nil; backend = nil
     }
 
-    /// SIGTERM (D11) and power-off: save a running or sleeping sandbox so the next start restores it; where saving
+    /// SIGTERM and power-off: save a running or sleeping sandbox so the next start restores it; where saving
     /// fails or the backend cannot save, stop it and owe it a cold boot that reports why. Returns why it was not
     /// saved, or nil when it was.
     @discardableResult func hibernate() async -> String? {
@@ -169,9 +169,9 @@ public actor SandboxRuntime {
         return failure
     }
 
-    /// Sleep (Q5b): hibernate, saving the VM's state and releasing its memory, so the next use restores every process.
+    /// Sleep: hibernate, saving the VM's state and releasing its memory, so the next use restores every process.
     /// The process fixture cannot save and pauses with SIGSTOP, which admission counts as freed. Where saving fails
-    /// (a locked screen), the VM pauses in memory and keeps its RAM: the interim fallback awaiting the user (Q5b).
+    /// (the screen is locked on a Mac whose lock asks for a password), the VM pauses in memory and keeps its RAM.
     /// `power`: the Mac is going to sleep, so a sandbox serving a request sleeps too, and a saved one comes back
     /// when the Mac wakes or the daemon starts.
     func sleep(power: Bool = false) async throws -> SandboxAction {
@@ -198,7 +198,7 @@ public actor SandboxRuntime {
         }
     }
 
-    /// Frees this sandbox's memory for another start (admission, L9) and says how. A VM hibernates; where saving fails
+    /// Frees this sandbox's memory for another start (admission) and says how. A VM hibernates; where saving fails
     /// (a locked screen) it stops and owes a cold boot at its next use, since pausing would keep its memory. The process
     /// fixture cannot save, so it sleeps with SIGSTOP, which admission counts as freed.
     func sleepForRoom() async throws -> String {
@@ -220,7 +220,7 @@ public actor SandboxRuntime {
         }
     }
 
-    /// When idle time (Q5) started: the last request, boot, wake or running job; nil while a request is in flight or
+    /// When idle time started: the last request, boot, wake or running job; nil while a request is in flight or
     /// before the first boot.
     func idleSince() -> Date? {
         guard inFlight == 0, let last = record.lastActivityAt else { return nil }
@@ -238,7 +238,7 @@ public actor SandboxRuntime {
     }
 
     /// The idle policy the account catalog holds for this sandbox.
-    func setPolicy(sleepAfterMs: Int?, deleteAfterMs: Int?) {
+    func setPolicy(sleepAfterMs: Int, deleteAfterMs: Int?) {
         guard sleepAfterMs != record.sleepAfterMs || deleteAfterMs != record.deleteAfterMs else { return }
         record.sleepAfterMs = sleepAfterMs; record.deleteAfterMs = deleteAfterMs; persist()
     }
@@ -248,7 +248,7 @@ public actor SandboxRuntime {
     func runningJobs() async -> Int? {
         guard statusValue.lifecycle == .ready, inFlight == 0, let channel else { return nil }
         let id = "admission-\(UUID().uuidString)"
-        guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": "v1", "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
+        guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
               let response = try? await channel.send(request),
               let object = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
               let jobs = (object["result"] as? [String: Any])?["running_jobs"] as? NSNumber else { return nil }
@@ -310,7 +310,7 @@ public actor SandboxRuntime {
         // `ps` where the image has it, else /proc (kernel threads have an empty cmdline there). Both print "pid ppid args".
         let script = #"echo $$; if command -v ps >/dev/null 2>&1; then ps -eo pid=,ppid=,args=; else for d in /proc/[0-9]*; do c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null); [ -n "$c" ] && echo "${d#/proc/} $(awk '/^PPid/{print $2}' "$d/status") $c"; done; fi"#
         let id = "resize-\(UUID().uuidString)"
-        let request = try JSONSerialization.data(withJSONObject: ["protocol_version": "v1", "request_id": id, "operation": "shell.exec", "sandbox_id": record.sandboxID, "deadline_ms": 15_000, "mutation_id": id, "input": ["command": script]])
+        let request = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "shell.exec", "sandbox_id": record.sandboxID, "deadline_ms": 15_000, "mutation_id": id, "input": ["command": script]])
         let response = try JSONSerialization.jsonObject(with: try await forward(request)) as? [String: Any]
         guard let stdout = (response?["result"] as? [String: Any])?["stdout"] as? String else { throw HostDaemonError.unsupported("the guest did not list its processes") }
         var lines = stdout.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -344,6 +344,6 @@ struct RuntimeSnapshot: Sendable {
     let lastBoot: SandboxAction?
     /// A paused VM keeps its RAM; a paused process fixture (SIGSTOP) counts as freed.
     let pauseKeepsMemory: Bool
-    /// Admission counts a sandbox's memory while it starts or runs, and while a VM sleeps paused in memory (L9).
+    /// Admission counts a sandbox's memory while it starts or runs, and while a VM sleeps paused in memory.
     var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
 }

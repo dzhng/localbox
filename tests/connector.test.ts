@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { Connector, type ConvexLike, type HostChange, type PendingRow } from "../apps/connector/src/connector.js";
 import { MachineTokenSource, RevokedError } from "../apps/connector/src/token.js";
 import { OUTPUT_CAP_BYTES, PROTOCOL_VERSION, success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
@@ -270,7 +271,7 @@ test("a result over the daily result bytes completes as a small rate_limited fai
   const { convex, connector } = harness();
   const mutation = convex.mutation.bind(convex);
   convex.mutation = async (fn, args) => {
-    if (args.response?.ok === true) { convex.calls.push({ name: "relay:complete", args }); throw new Error("Uncaught Error: relay_daily_limit: 25000000; reset 2026-10-16T00:00:00.000Z"); }
+    if (args.response?.ok === true) { convex.calls.push({ name: "relay:complete", args }); throw new ConvexError({ code: "rate_limited", message: "the account's daily relay result bytes limit (25000000; reset 2026-10-16T00:00:00.000Z)", details: { limit: "result_bytes" } }); }
     return await mutation(fn, args);
   };
   convex.push([row("limited")]);
@@ -278,7 +279,8 @@ test("a result over the daily result bytes completes as a small rate_limited fai
   const [, completed] = convex.named("relay:complete");
   assert.equal(completed.args.response.error.code, "rate_limited");
   assert.deepEqual(completed.args.response.error.details, { limit: "result_bytes" });
-  assert.match(completed.args.response.error.message, /daily relay result bytes limit \(25000000; reset 2026-10-16T00:00:00\.000Z\)/);
+  assert.match(completed.args.response.error.message, /^the operation ran, but its result was dropped: the account's daily relay result bytes limit \(25000000; reset 2026-10-16T00:00:00\.000Z\)/);
+  assert.equal(completed.args.response.error.retryable, true);
   assert.ok(Buffer.byteLength(JSON.stringify(completed.args.response)) < 4096);
   await connector.stop();
 });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { OUTPUT_CAP_BYTES } from "../../../packages/contract/src/index.js";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
 import { countConvexCalls } from "../lib/convex-admin.js";
@@ -85,11 +86,11 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(replay.envelope.ok, true, JSON.stringify(replay.envelope));
       assert.equal(replay.envelope.result.stdout.trim(), readFileSync(join(guestRootB(), marker), "utf8").trim(), "the replay returns the one run's output");
     }));
-    checks.push(await ctx.check("a 2 MiB fs.read on B returns 900 KiB with truncated", async () => {
+    checks.push(await ctx.check(`a 2 MiB fs.read on B returns ${OUTPUT_CAP_BYTES / 1024} KiB with truncated`, async () => {
       writeFileSync(join(guestRootB(), `big-${run}.txt`), "z".repeat(2 * 1024 * 1024));
       const result = await onB("fs.read", { path: `/big-${run}.txt` });
       assert.equal(result.envelope.ok, true, JSON.stringify(result.envelope).slice(0, 500));
-      assert.equal(result.envelope.result.truncated.original_bytes, 2_097_152); assert.ok(result.envelope.result.truncated.returned_bytes <= 900 * 1024);
+      assert.equal(result.envelope.result.truncated.original_bytes, 2_097_152); assert.ok(result.envelope.result.truncated.returned_bytes <= OUTPUT_CAP_BYTES);
     }));
     checks.push(await ctx.check("with the daily request limit at usage + 3, the fourth request names the limit and reset", async () => {
       const usage = await ctx.exec("npx", ["convex", "data", "relayUsage", "--format", "jsonLines"], { env: convexEnv });

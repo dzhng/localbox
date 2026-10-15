@@ -10,7 +10,7 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
     private var closed = false
     private var ready = false
     private var channelEpoch = 0
-    /// Who the guest is (L4): it keys its machine-id and SSH host keys on the id and takes the name as its hostname.
+    /// Who the guest is: it keys its machine-id and SSH host keys on the id and takes the name as its hostname.
     private let sandboxID: String
     private var name: String
     private let wallClock: () -> Int64

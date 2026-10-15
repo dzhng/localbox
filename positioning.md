@@ -73,11 +73,14 @@ Never say "uses no RAM".
 Today: **built**. Many sandboxes per Mac, each its own VM cloned from the
 template disk, with generated names; create, rename, resize and delete; default
 sizing; idle sleep and wake with processes intact; idle deletion; making room
-from the least recently used idle sandboxes. Sleep is not yet a memory release:
-while the Mac's screen is locked, a sleeping sandbox is paused in memory and
-keeps its RAM (a sandbox put away to make room then boots fresh at its next
-use), and saving to disk to free the RAM has not been proven on an unlocked
-Mac. Say "sleeps when idle"; don't promise the RAM back.
+from the least recently used idle sandboxes. Sleep is hibernation, proven on a
+real VM: the sandbox's memory is saved to disk, its RAM is freed, and its
+processes resume on the next request. That needs a Mac whose screen lock asks
+for no password (a sleeping display is fine); where the lock asks for one and
+the screen is locked, a sleeping sandbox pauses in memory and keeps its RAM, and
+one put away to make room boots fresh. The
+[installation](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)
+procedure owns the settings.
 
 ## 2. Your machines are the fleet
 
@@ -114,8 +117,8 @@ hardware instead.
 Today: **built** and proven on a local stack. Agents sign in by email code
 over OAuth with PKCE; the token covers the account and is revocable; a Mac that
 stops answering is reported `machine_offline` within seconds. The hosted
-service at `api.localbox.sh` moves to this version with the first release, and
-real sign-in emails wait on the mail domain.
+service at `api.localbox.sh` runs this version; real sign-in emails wait on the
+mail domain.
 
 ## 4. Let your agent off the leash
 
@@ -170,7 +173,8 @@ browser, an overnight build.
 
 Today: built. Files, packages, browser and desktop state persist until the
 sandbox is deleted, and long jobs run in the background. Processes survive idle
-sleep; across an update they don't yet (see use case 1).
+sleep, and an update or service restart hibernates running sandboxes so their
+processes survive it too, wherever hibernation works (see use case 1).
 
 ## 8. Built for agents to drive
 
@@ -207,9 +211,10 @@ placeholder is [specs/sandbox-snapshots](specs/sandbox-snapshots/README.md).
   every shared access logged. It's what makes full autonomy feel safe.
 - Free and personal. Don't mention plans, seats or teams.
 - Sign-in is "your email and a code". Never mention passwords, keys or pairing.
-- Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep and
-  resume exactly where they were. Promise the memory back only once saving to
-  disk is proven; until then a locked Mac keeps a sleeping sandbox in memory.
+- Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
+  give their memory back and resume exactly where they were. Say it frees RAM on
+  a Mac set up as the installer asks (no password on the screen lock); don't
+  promise it unconditionally.
 - Marketing may describe the launch product before it ships, and the README and
   site do, and so does the pitch in `llms.txt`. Instructions an agent follows (the
   install steps and the skill) must only describe what the shipped CLI does; an

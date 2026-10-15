@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { makeFunctionReference } from "convex/server";
 import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { handleOps } from "../apps/relay/src/ops.js";
+import { runOps } from "../apps/relay/src/ops.js";
 import { success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
@@ -34,8 +34,8 @@ test("generated names are adjective-animal and unique per account", async () => 
 test("a taken name fails name_conflict listing the account's names; another account may reuse it", async () => {
   const { m1, agent, m3 } = await setup();
   await create(m1, { machineId: "m1", name: "build-box" }); await create(agent, { machineId: "m2", name: "quiet-otter" });
-  await assert.rejects(() => create(agent, { machineId: "m1", name: "build-box" }), /name_conflict: build-box is taken on this account; sandboxes: build-box, quiet-otter/);
-  await assert.rejects(() => create(m1, { machineId: "m1", name: "Bad Name" }), /label must be/);
+  await assert.rejects(() => create(agent, { machineId: "m1", name: "build-box" }), (error: any) => error.data?.code === "name_conflict" && error.data.message === "build-box is taken on this account; sandboxes: build-box, quiet-otter");
+  await assert.rejects(() => create(m1, { machineId: "m1", name: "Bad Name" }), (error: any) => error.data?.code === "invalid_input" && /3–40 lowercase/.test(error.data.message));
   assert.equal((await create(m3, { machineId: "m3", name: "build-box" })).name, "build-box");
   const sandbox = (await m1.query(ref("sandboxes:list"), {}))[0];
   await assert.rejects(() => m1.mutation(ref("sandboxes:rename"), { sandboxId: sandbox.sandbox_id, name: "quiet-otter" }), /name_conflict/);
@@ -73,7 +73,7 @@ test("the idle policy is the catalog's: mirrored to the machine, and only that m
   const idle = await create(m1, { machineId: "m1", name: "idle", sleepAfterMs: 5_000, deleteAfterMs: 10_000 });
   assert.deepEqual([kept.sleep_after_ms, kept.delete_after_ms, idle.sleep_after_ms, idle.delete_after_ms], [1_800_000, null, 5_000, 10_000]);
   assert.deepEqual((await m1.query(ref("sandboxes:forMachine"), {})).map((row: any) => [row.name, row.sleep_after_ms, row.delete_after_ms]), [["kept", 1_800_000, null], ["idle", 5_000, 10_000]]);
-  await assert.rejects(() => m2.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle" }), /sandbox_not_found/, "another machine of the account cannot");
+  await assert.rejects(() => m2.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle" }), (error: any) => error.data?.code === "sandbox_not_found", "another machine of the account cannot");
   assert.deepEqual(await m1.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle for 11 s, past its delete-after of 10 s" }), { sandbox_id: idle.sandbox_id, name: "idle", removed: true, reason: "idle for 11 s, past its delete-after of 10 s" });
   assert.deepEqual((await rows(t)).map((row: any) => row.name), ["kept"]);
 });
@@ -83,7 +83,7 @@ function machine(refuse = false) {
   const seen: RequestEnvelope[] = [];
   const answer = async (request: RequestEnvelope): Promise<ResponseEnvelope> => {
     seen.push(request);
-    if (refuse) return { protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "agent-computer-contract-v1", ok: false, error: { code: "sandbox_not_ready", message: "could not start", retryable: false } };
+    if (refuse) return { protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "localbox-contract-v1", ok: false, error: { code: "sandbox_not_ready", message: "could not start", retryable: false } };
     const removed: Record<string, Json> = request.operation === "sandbox.delete" ? { removed: ["sandbox identity"] } : {};
     return success(request, { requested: request.input, produced: { sandbox_id: request.sandbox_id, ...removed }, actions: request.operation === "sandbox.create" ? [{ kind: "created" }, { kind: "cold_booted" }] : [] });
   };
@@ -91,7 +91,7 @@ function machine(refuse = false) {
 }
 const machines = [{ machineId: "m_a", name: "studio", lastSeenAt: Date.now() }, { machineId: "m_b", name: "attic", lastSeenAt: Date.now(), capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1 } }];
 const fromA = { accountId: "acct", machineId: "m_a" };
-const ops = async (deps: any, body: Record<string, unknown>, principal: any = fromA) => ((await handleOps(principal, { request_id: `r-${Math.random()}`, mutation_id: `m-${Math.random()}`, ...body }, deps)).body as { response: ResponseEnvelope }).response;
+const ops = async (deps: any, body: Record<string, unknown>, principal: any = fromA) => ((await runOps(principal, { request_id: `r-${Math.random()}`, mutation_id: `m-${Math.random()}`, ...body }, deps)).body as { response: ResponseEnvelope }).response;
 
 test("sandbox.create reserves the name, has the machine create it, and reports the size and why", async () => {
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });
@@ -216,4 +216,19 @@ test("a sandbox whose machine is gone from the account is renamed and deleted in
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   assert.match((deleted as any).result.actions[0].detail, /removed account catalog entry; garage is gone from the account/);
   assert.deepEqual(sandboxes, []); assert.equal(relayed.size, 0, "nothing was queued for the gone machine");
+});
+
+test("deleting a sandbox that is already gone succeeds; another account's sandbox stays not found", async () => {
+  const { m1, m3 } = await setup();
+  const box = await create(m1, { machineId: "m1", name: "build-box" });
+  await assert.rejects(() => m3.mutation(ref("sandboxes:remove"), { sandboxId: box.sandbox_id }), (error: any) => error.data?.code === "sandbox_not_found");
+  assert.equal((await m1.mutation(ref("sandboxes:remove"), { sandboxId: box.sandbox_id })).removed, true);
+  assert.deepEqual(await m1.mutation(ref("sandboxes:remove"), { sandboxId: box.sandbox_id }), { sandbox_id: box.sandbox_id, removed: false, already_deleted: true });
+
+  const b = machine(); const { deps } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
+  assert.equal((await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} })).ok, true);
+  const again = await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} });
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.deepEqual((again as any).result.actions, [{ kind: "left_alone", detail: "quiet-otter is already deleted: this account has no sandbox by that name or id" }]);
+  assert.equal(b.seen.length, 1, "nothing is relayed for a sandbox that is gone");
 });

@@ -47,7 +47,7 @@ class Mac {
     const read = (key: string) => JSON.parse(execFileSync("plutil", ["-extract", key, "json", "-o", "-", plist], { encoding: "utf8" }));
     writeFileSync(this.log, "");
     const fd = openSync(this.log, "a");
-    this.daemon = spawn(read("ProgramArguments")[0], [], { env: { ...macEnv(this.home), ...read("EnvironmentVariables"), LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: this.ctx.root }, detached: true, stdio: ["ignore", fd, fd] });
+    this.daemon = spawn(read("ProgramArguments")[0], [], { env: { ...macEnv(this.home), ...read("EnvironmentVariables"), LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: this.ctx.root }, detached: true, stdio: ["ignore", fd, fd] });
     closeSync(fd);
   }
   async stopDaemon(): Promise<void> {

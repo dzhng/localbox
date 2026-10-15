@@ -1,5 +1,9 @@
 # Localbox production
 
+> Superseded by [specs/durable-sandboxes](../../durable-sandboxes/README.md), which
+> replaced this one-VM-per-Mac, polling-relay plan with many sandboxes per Mac on an
+> email account and a direct Convex subscription per Mac. Kept as history only.
+
 ## Goal
 
 Ship Localbox as a usable product: a signed macOS Apple Silicon host runs one durable Linux ARM64 VM; the host maintains an outbound HTTPS polling connection to a Vercel relay; Convex is the durable control-plane state; a logged-in CLI is the default interface; and an optional MCP endpoint exposes the same complete operation catalog. One owner account may connect any number of agents to the same MCP server. There is no invite workflow.

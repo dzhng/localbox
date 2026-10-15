@@ -50,7 +50,7 @@ test("account functions accept an agent, scoped to its account", async () => {
   const agent = t.withIdentity(identities.agent);
   const listed = await agent.query(makeFunctionReference("machines:list") as any, {}) as Array<{ machineId: string }>;
   assert.deepEqual(listed.map((row) => row.machineId), ["m1"]);
-  await assert.rejects(() => agent.mutation(makeFunctionReference("machines:remove") as any, { machineId: "m2" }), /machine not found/);
+  await assert.rejects(() => agent.mutation(makeFunctionReference("machines:remove") as any, { machineId: "m2" }), (error: any) => error.data?.code === "machine_not_found");
   // A JWT naming another account than its token family is refused.
   await assert.rejects(() => t.withIdentity({ subject: "agent:f1", account: "a2" }).query(makeFunctionReference("machines:list") as any, {}), /Forbidden/);
 });

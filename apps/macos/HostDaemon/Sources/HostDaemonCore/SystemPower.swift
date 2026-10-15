@@ -3,7 +3,7 @@ import Foundation
 import IOKit
 import IOKit.pwr_mgt
 
-/// The Mac's sleep and power-off notices (`IORegisterForSystemPower`, L6), handed to `SandboxHost.power`. The Mac
+/// The Mac's sleep and power-off notices (`IORegisterForSystemPower`), handed to `SandboxHost.power`. The Mac
 /// may sleep or power off once the sandboxes are down (`IOAllowPowerChange`); a wake brings back what the sleep took.
 public final class SystemPowerMonitor: @unchecked Sendable {
     // IOKit's message constants are C macros Swift does not import: iokit_common_msg(n) is 0xE0000000 | n.

@@ -10,7 +10,7 @@ import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-/** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked (slice 02). */
+/** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked. */
 /** Hibernate is unavailable only when the lock needs a password and the screen is locked (see apps/cli/src/host-check.ts). */
 export const screenLocked = () => checkHost().hibernate !== "available" && checkHost().screen_locked_now;
 
@@ -41,7 +41,7 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
 
   const start = async (bin: string) => {
     const fd = openSync(log, "a");
-    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_VM_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
+    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
     closeSync(fd);
     for (let attempt = 0; attempt < 120 && !existsSync(socket); attempt++) { if (daemon.exitCode !== null) break; await sleep(250); }
     assert.ok(existsSync(socket), `the daemon did not open its socket: ${readFileSync(log, "utf8").slice(-1500)}`);

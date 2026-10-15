@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import {
-  ContractError, failure, capResult, OUTPUT_CAP_BYTES, type Json, type OperationId, success, type RequestEnvelope,
+  ContractError, failure, capResult, OUTPUT_CAP_BYTES, RELEASE_ID, type Json, type OperationId, success, type RequestEnvelope,
   type ResponseEnvelope, catalogById, operationCatalog, validateRequest,
 } from "../../contract/src/index.js";
 import { FixtureClock, type DispatchContext, type Handler, type HandlerRegistry } from "../../runtime/src/index.js";
@@ -215,7 +215,7 @@ export class GuestGateway {
     try { validateRequest(request); } catch (error) { return failure(request, error instanceof ContractError ? error : new ContractError("invalid_input", "invalid request")); }
     const handler = this.handlers()[request.operation as OperationId];
     if (!handler) return failure(request, new ContractError("unsupported", `guest operation not implemented: ${request.operation}`));
-    const context = { request, operation: request.operation as OperationId, clock: new FixtureClock(this.now()), release_id: "agent-computer-contract-v1" as const, signal: options.signal, cancelled: () => options.signal?.aborted === true, assertActive: () => { if (options.signal?.aborted) throw new ContractError("operation_cancelled", "operation cancelled"); } } as DispatchContext;
+    const context = { request, operation: request.operation as OperationId, clock: new FixtureClock(this.now()), release_id: RELEASE_ID, signal: options.signal, cancelled: () => options.signal?.aborted === true, assertActive: () => { if (options.signal?.aborted) throw new ContractError("operation_cancelled", "operation cancelled"); } } as DispatchContext;
     if (catalogById.get(request.operation as OperationId)?.mutation) {
       // Re-run the handler through the journal with the full envelope.
       await this.loadJournal();

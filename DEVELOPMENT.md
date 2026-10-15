@@ -134,12 +134,13 @@ plus one fixture HostDaemon per simulated machine
 (`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`
 (`a:8G,b:16G` gives each fixture daemon that much RAM instead of this Mac's).
 `npm run proof -- 13 --tier l` runs the whole two-machine scenario; `--tier v`
-makes machine A a real daemon with real VMs.
+makes machine A a real daemon with real VMs. Real-VM proofs (tier `v` of 01, 02,
+10, 11, 12 and 13) need this Mac's screen lock to ask for no password ([why](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
 
 ### A simulated second machine
 
 A second Mac is simulated by a second machine root on this one, served by a
-fixture daemon (`LOCALBOX_VM_BACKEND=process-fixture`, which runs each
+fixture daemon (`LOCALBOX_SANDBOX_BACKEND=process-fixture`, which runs each
 sandbox's guest agent as a child process and sleeps it with `SIGSTOP`; it is
 refused unless `LOCALBOX_DEV=1`). By hand:
 
@@ -165,21 +166,26 @@ create` reserves a generated name there, then asks the machine that
 `packages/placement` chose (this one by default, `--machine NAME`, or
 `--placement auto|remote` by the room each machine last reported) to create it.
 The daemon admits each start against 75% of its RAM, sleeping its least recently
-used idle sandboxes to make room; it keeps each
-sandbox's identity, read-only, in its own directory next to its disk. `--sandbox NAME` is looked up on this Mac's daemon first, then
-in the account; it may be left out when the account has exactly one sandbox.
+used idle sandboxes to make room; it keeps each sandbox's identity, read-only, in
+its own directory next to its disk (the [host daemon](apps/macos/HostDaemon/README.md)
+README covers its layout and lifecycle). `--sandbox NAME` is looked up on this
+Mac's daemon first, then in the account; it may be left out when the account has
+exactly one sandbox.
+
 A sandbox on this Mac is reached through the daemon socket. A sandbox on another
-machine is reached through the agent API, which finds its machine: the CLI posts to the agent API
-(`POST /api/v1/ops`, `apps/relay/src/ops.ts`), which enqueues a row in Convex's
+machine is reached through the agent API, which finds its machine: the CLI posts
+to `POST /api/v1/ops` (`apps/relay/src/ops.ts`), which enqueues a row in Convex's
 `relay` module for that machine and waits on a Convex subscription for up to
 min(deadline, 50 s); longer requests come back as a continuation the client
 resumes. On each Mac, `localbox connector run` (launchd job
 `com.localbox.connector`) is the only process that talks to Convex: it exchanges
-the machine credential for a 24-hour machine token at
-`POST /api/relay/machine-token`, subscribes to `relay:pendingForMachine`, claims
-each row and forwards it to the daemon's socket. A row nobody claims within
-3 s is abandoned and the caller gets `machine_offline`; abandoned rows never run.
-Without a sign-in, only this Mac's sandboxes are reachable, and none can be created.
+the machine credential for a machine token at `POST /api/relay/machine-token`,
+subscribes to `relay:pendingForMachine`, claims each row and forwards it to the
+daemon's socket. A row nobody claims in time is abandoned and the caller gets
+`machine_offline`; abandoned rows never run. Without a sign-in, only this Mac's
+sandboxes are reachable, and none can be created. The
+[security model](SECURITY.md) owns the token lifetimes, the claim window, the
+relay's limits and retention, and what each boundary holds.
 
 On the Mac, the CLI uses the authenticated HostDaemon Unix socket. The daemon
 reads the owner-only token at
@@ -214,11 +220,6 @@ On each Mac:
 | `LOCALBOX_CLI` | The installed CLI the HostDaemon runs for agent setup (set in its launchd plist by the installer). Without it the daemon does not reconcile the skill and refuses `skill.*`. |
 | `LOCALBOX_API_ORIGIN` | The API the CLI and connector talk to; defaults to `https://api.localbox.sh`. |
 
-The OAuth route returns raw access and refresh tokens only at issuance or
-rotation; Convex stores hashes.
-
-Relay rows live 24 hours (a daily cron, `relay:cleanupExpired`).
-
 Convex environment variables (`npx convex env set`):
 
 | Setting | Purpose |
@@ -227,9 +228,9 @@ Convex environment variables (`npx convex env set`):
 | `LOCALBOX_JWKS` | The public key set printed by `npx tsx scripts/jwks.ts` from `LOCALBOX_JWT_PRIVATE_KEY`. |
 | `LOCALBOX_RELAY_DAILY_REQUESTS` | Per-account daily relayed requests; default 500. |
 | `LOCALBOX_RELAY_DAILY_RESULT_BYTES` | Per-account daily relayed result bytes; default 25,000,000. |
- Every public Convex
-function rejects callers without a valid token; operator functions such as
-`admin:wipe` are internal and run only through `npx convex run`.
+
+Which Convex functions are public, how they authenticate, and the operator-only
+functions are in the [security model](SECURITY.md#convex-is-an-authenticated-boundary).
 
 ## VM image
 
@@ -241,9 +242,9 @@ package set, ported to ARM64; `npm run image:parity` fails if it drifts from the
 vendored copy of Duet's Dockerfile in `packages/vm-image/duet-reference/`. The
 recorded substitutions live in the manifest. `minimal` is for fast proofs.
 
-The guest agent listens on vsock port 1024 (socat in the image's
-`localbox-guest` unit). Kernel and boot output go to a separate console, which
-`localbox-vmlab` keeps beside a scratch clone of the disk. To boot an image by
+The [guest agent](apps/guest-agent/README.md) is a persistent service on a Unix
+socket, with socat forwarding vsock port 1024 to it. Kernel and boot output go
+to a separate console, which `localbox-vmlab` keeps beside a scratch clone of the disk. To boot an image by
 hand: `swift build --package-path apps/macos/HostDaemon`, sign the binaries with
 the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
 `localbox-vmlab boot --artifacts dist/vm-image/minimal --json`.

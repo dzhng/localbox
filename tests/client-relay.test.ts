@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handleOps } from "../apps/relay/src/ops.js";
-import { RelayHttpTransport } from "../packages/client/src/index.js";
+import { runOps } from "../apps/relay/src/ops.js";
+import { AgentApiTransport } from "../packages/client/src/index.js";
 import type { RequestEnvelope, ResponseEnvelope } from "../packages/contract/src/index.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
 const request = (overrides: Partial<RequestEnvelope> = {}): RequestEnvelope => ({ protocol_version: "v1", request_id: `req_${Math.random()}`, operation: "system.info", sandbox_id: "sandbox_b", deadline_ms: 5_000, mutation_id: null, input: {}, ...overrides });
-const answer = (envelope: RequestEnvelope): ResponseEnvelope => ({ protocol_version: "v1", request_id: envelope.request_id, operation: envelope.operation, sandbox_id: envelope.sandbox_id, release_id: "agent-computer-contract-v1", ok: true, result: { ran_on: "attic" } });
-const transportFor = (deps: ReturnType<typeof memoryMailbox>["deps"], calls: unknown[] = []) => new RelayHttpTransport({ apiOrigin: "https://localbox.test", accessToken: "secret", fetchImpl: async (_input, init = {}) => { const body = JSON.parse(String(init.body)); calls.push(body); const result = await handleOps({ accountId: "acct", machineId: "m_a" }, body, deps); return new Response(JSON.stringify(result.body), { status: result.status }); } });
+const answer = (envelope: RequestEnvelope): ResponseEnvelope => ({ protocol_version: "v1", request_id: envelope.request_id, operation: envelope.operation, sandbox_id: envelope.sandbox_id, release_id: "localbox-contract-v1", ok: true, result: { ran_on: "attic" } });
+const transportFor = (deps: ReturnType<typeof memoryMailbox>["deps"], calls: unknown[] = []) => new AgentApiTransport({ apiOrigin: "https://localbox.test", accessToken: "secret", fetchImpl: async (_input, init = {}) => { const body = JSON.parse(String(init.body)); calls.push(body); const result = await runOps({ accountId: "acct", machineId: "m_a" }, body, deps); return new Response(JSON.stringify(result.body), { status: result.status }); } });
 const machines = [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic" }];
 const sandboxes = [{ sandbox_id: "sandbox_b", name: "quiet-otter", machine_id: "m_b" }];
 

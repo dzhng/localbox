@@ -12,7 +12,7 @@ export const fixtureHome = (machineRootPath: string) => join(machineRootPath, "h
 /** Signs a proof machine in with an email, reading the code from dev:local's log. */
 export async function login(root: string, machine: string, email: string, env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string }> {
   const devLog = join(root, ".localbox/proof/dev-local.log");
-  const options = { cwd: root, env: { LOCALBOX_API_ORIGIN: API_ORIGIN, LOCALBOX_TRANSPORT: "remote", ...env } };
+  const options = { cwd: root, env: { LOCALBOX_API_ORIGIN: API_ORIGIN, ...env } };
   const since = statSync(devLog).size;
   const start = await asMachine(machine, ["login", "--email", email], options);
   if (start.code !== 0) return start;
@@ -24,7 +24,7 @@ export async function login(root: string, machine: string, email: string, env: N
 export function startConnector(root: string, machine: string, at = machineRoot(root, machine)): ChildProcess {
   const logs = join(at, "logs"); mkdirSync(logs, { recursive: true });
   const fd = openSync(join(logs, "connector.log"), "a");
-  const child = spawn(process.execPath, ["bin/localbox.js", "connector", "run"], { cwd: root, detached: true, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_API_ORIGIN: API_ORIGIN, LOCALBOX_MACHINE_ROOT: at, LOCALBOX_MACHINE: machine } });
+  const child = spawn(process.execPath, ["bin/localbox.js", "connector", "run"], { cwd: root, detached: true, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_API_ORIGIN: API_ORIGIN, LOCALBOX_MACHINE_ROOT: at } });
   closeSync(fd); child.unref(); return child;
 }
 

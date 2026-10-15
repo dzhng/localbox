@@ -1,24 +1,23 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
-import { boundedRows, byField, fail, id } from "./lib/relay.js";
+import { boundedRows, byField, id, refuse } from "./lib/relay.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 
-/** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it (Q5). */
+/** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it. */
 const DEFAULT_SLEEP_AFTER_MS = 30 * 60_000;
 const NAME_ATTEMPTS = 20;
 
 const accountRows = async (ctx: any, accountId: string) => await boundedRows(ctx.db.query("sandboxes").withIndex("by_account", (q: any) => q.eq("accountId", accountId)), "sandbox list");
 const reservedBy = async (ctx: any, accountId: string, mutationId: string) => await ctx.db.query("sandboxes").withIndex("by_account_mutation", (q: any) => q.eq("accountId", accountId).eq("createMutationId", mutationId)).first();
 const named = async (ctx: any, accountId: string, name: string) => await ctx.db.query("sandboxes").withIndex("by_account_name", (q: any) => q.eq("accountId", accountId).eq("name", name)).first();
-/** Errors other modules map to contract codes start with `<code>:`. */
 const nameTaken = async (ctx: any, accountId: string, name: string): Promise<never> => {
   const names = (await accountRows(ctx, accountId)).map((row: any) => row.name).sort();
-  return fail(`name_conflict: ${name} is taken on this account; sandboxes: ${names.join(", ")}`);
+  return refuse("name_conflict", `${name} is taken on this account; sandboxes: ${names.join(", ")}`, { names });
 };
 async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
   const row = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", sandboxId);
-  if (!row || row.accountId !== accountId) fail(`sandbox_not_found: no sandbox ${sandboxId} on this account`);
+  if (!row || row.accountId !== accountId) refuse("sandbox_not_found", `no sandbox ${sandboxId} on this account`);
   return row;
 }
 const view = (row: any, machineName?: string) => ({
@@ -34,13 +33,13 @@ const view = (row: any, machineName?: string) => ({
 export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
-  if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) fail(`machine_not_found: no machine ${args.machineId} on this account`);
+  if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`);
   if (args.createMutationId !== undefined) { const reserved = await reservedBy(ctx, accountId, args.createMutationId); if (reserved) return view(reserved, (await byField(ctx, "machines", "by_machine", "machineId", reserved.machineId))?.name); }
   let name = args.name;
   if (name !== undefined) { validateLabel(name); if (await named(ctx, accountId, name)) await nameTaken(ctx, accountId, name); }
   else {
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
-    if (name === undefined) fail(`name_conflict: no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
+    if (name === undefined) refuse("name_conflict", `no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
   const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
@@ -75,9 +74,12 @@ export const rename = mutationGeneric({ args: { sandboxId: v.string(), name: v.s
   return { sandbox_id: row.sandboxId, name, previous_name: row.name, machine_id: row.machineId };
 } });
 
+/** Deletes the sandbox's row; one already gone is already deleted, while another account's stays not found. */
 export const remove = mutationGeneric({ args: { sandboxId: v.string() }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
-  const row = await ownSandbox(ctx, accountId, args.sandboxId);
+  const row = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId);
+  if (!row) return { sandbox_id: args.sandboxId, removed: false, already_deleted: true };
+  if (row.accountId !== accountId) refuse("sandbox_not_found", `no sandbox ${args.sandboxId} on this account`);
   await ctx.db.delete(row._id);
   return { sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, removed: true };
 } });
@@ -96,7 +98,7 @@ export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
 export const removeIdle = mutationGeneric({ args: { sandboxId: v.string(), reason: v.string() }, handler: async (ctx, args) => {
   const { machineId } = await requireIdentity(ctx, "machine");
   const row = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId);
-  if (!row || row.machineId !== machineId) fail(`sandbox_not_found: no sandbox ${args.sandboxId} on this machine`);
+  if (!row || row.machineId !== machineId) refuse("sandbox_not_found", `no sandbox ${args.sandboxId} on this machine`);
   await ctx.db.delete(row._id);
   const reason = args.reason.slice(0, 500);
   console.log(`sandbox ${row.name} (${row.sandboxId}) deleted by its machine ${machineId}: ${reason}`);

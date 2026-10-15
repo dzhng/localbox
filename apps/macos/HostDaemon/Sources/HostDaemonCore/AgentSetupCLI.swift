@@ -1,6 +1,6 @@
 import Foundation
 
-/// The installed `localbox` CLI, which owns agent setup (D16): the global skill and the `localbox` link. HostDaemon runs
+/// The installed `localbox` CLI, which owns agent setup: the global skill and the `localbox` link. HostDaemon runs
 /// it for remote and MCP callers (`agents op`) and once at every start (`agents reconcile --reason daemon_start`).
 public struct AgentSetupCLI: Sendable {
     public let executable: URL

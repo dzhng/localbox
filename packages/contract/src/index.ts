@@ -1,6 +1,6 @@
 /** Versioned operation contract shared by every adapter. */
 export const PROTOCOL_VERSION = "v1" as const;
-export const RELEASE_ID = "agent-computer-contract-v1" as const;
+export const RELEASE_ID = "localbox-contract-v1" as const;
 
 export const operationIds = [
   "account.status", "account.rename", "machine.list", "machine.rename", "machine.remove",
@@ -31,11 +31,13 @@ export type JsonSchema = {
   maxItems?: number;
 };
 
-export type ErrorCode =
-  | "invalid_input" | "unauthorized" | "forbidden" | "sandbox_not_found" | "sandbox_not_ready" | "sandbox_ambiguous" | "name_conflict"
-  | "guest_unreachable" | "operation_timeout" | "operation_cancelled" | "operation_uncertain"
-  | "conflict" | "rate_limited" | "resource_exhausted" | "host_denied" | "unsupported" | "internal"
-  | "machine_offline" | "machine_not_found" | "machine_full" | "quota_exceeded";
+export const ERROR_CODES = [
+  "invalid_input", "unauthorized", "forbidden", "sandbox_not_found", "sandbox_not_ready", "sandbox_ambiguous", "name_conflict",
+  "guest_unreachable", "operation_timeout", "operation_cancelled", "operation_uncertain",
+  "conflict", "rate_limited", "resource_exhausted", "host_denied", "unsupported", "internal",
+  "machine_offline", "machine_not_found", "machine_full",
+] as const;
+export type ErrorCode = typeof ERROR_CODES[number];
 
 export type Idempotency = "none" | "optional" | "required";
 export interface OperationLimits {
@@ -126,9 +128,9 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
 
 /** Catalog-level sandbox operations: they change the account catalog in Convex, then tell the machine. */
 const ACCOUNT_SANDBOX_OPERATIONS: readonly string[] = ["sandbox.create", "sandbox.list", "sandbox.rename", "sandbox.delete"];
-/** Agent setup (D16): the skill and the `localbox` link on one Mac. The CLI runs them; HostDaemon relays remote callers to it. */
+/** Agent setup: the skill and the `localbox` link on one Mac. The CLI runs them; HostDaemon relays remote callers to it. */
 export const AGENT_SETUP_OPERATIONS: readonly OperationId[] = ["skill.status", "skill.install", "skill.update", "skill.uninstall", "cli.status", "agents.setup.status", "agents.setup.set"];
-const HOST_OPERATIONS: readonly string[] = ["sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs", "system.info", "network.egress", "relay.status", ...AGENT_SETUP_OPERATIONS];
+const HOST_OPERATIONS: readonly string[] = ["sandbox.status", "sandbox.resize", "sandbox.start", "sandbox.stop", "sandbox.sleep", "sandbox.logs", "system.info", "relay.status", ...AGENT_SETUP_OPERATIONS];
 function executorOf(id: OperationId): OperationCatalogEntry["executor"] {
   if (id.startsWith("account.") || id.startsWith("machine.") || ACCOUNT_SANDBOX_OPERATIONS.includes(id)) return "account";
   return HOST_OPERATIONS.includes(id) ? "host" : "guest";
@@ -282,36 +284,43 @@ function utf8Prefix(value: Uint8Array, limit: number): Buffer {
 
 export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; executor: "account" | "host" | "guest"; sandbox_scoped: boolean; }
 export function helpSnapshot(): HelpSnapshotEntry[] { return operationCatalog.map(({ limits: _limits, ...entry }) => entry); }
-export function cliHelpSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }
-export function mcpToolsSnapshot(): HelpSnapshotEntry[] { return helpSnapshot(); }
 export function catalogSnapshot(): OperationCatalogEntry[] { return JSON.parse(JSON.stringify(operationCatalog)) as OperationCatalogEntry[]; }
 
-/** What a reversible request did (P1): what was asked, what resulted, and every side effect taken on the way. */
+/** What a request did: what was asked, what resulted, and every side effect taken on the way. */
 export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed"
   | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "failed";
 export interface ActionReport { requested: Json; produced: Json; actions: Array<{ kind: ActionKind; detail?: string; [key: string]: Json | undefined }> }
 
 /**
  * What a machine can still take, as its daemon reports it through `host.watch` and its connector stores on the
- * machine row. `room_bytes` is reservation-based: 75% of RAM minus what running sandboxes reserve, not live free
- * memory. `revision` changes only when the reservation does, so the connector writes it only then.
+ * machine row. `room_bytes` is reservation-based: the daemon's admission budget minus what running sandboxes reserve,
+ * not live free memory. `revision` changes only when the reservation does, so the connector writes it only then.
  */
 export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number }
 
 const GIB = 1024 ** 3;
-/** A new sandbox's size when none is asked for: half the cores and a quarter of RAM (whole GiB), at least 2 CPUs and 2 GiB. HostDaemon's `defaultSize` is the same table. */
+/** A size for a report, e.g. "2 GiB" or "1.5 GiB". */
+export const gibibytes = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
+/** The smallest size `defaultSize` gives; placement asks for room for this much when a create names no memory. */
+export const DEFAULT_SIZE_MINIMUM = { cpus: 2, memory_bytes: 2 * GIB } as const;
+/** A new sandbox's size when its create asks for none: half the host's cores and a quarter of its RAM in whole GiB, at least `DEFAULT_SIZE_MINIMUM`. */
 export function defaultSize(hostCpus: number, hostMemoryBytes: number): { cpus: number; memory_bytes: number } {
-  return { cpus: Math.max(2, Math.floor(hostCpus / 2)), memory_bytes: Math.max(2 * GIB, Math.floor(hostMemoryBytes / 4 / GIB) * GIB) };
+  return { cpus: Math.max(DEFAULT_SIZE_MINIMUM.cpus, Math.floor(hostCpus / 2)), memory_bytes: Math.max(DEFAULT_SIZE_MINIMUM.memory_bytes, Math.floor(hostMemoryBytes / 4 / GIB) * GIB) };
 }
+/** `defaultSize` in words, for a create report. */
+export const defaultSizeReason = (hostCpus: number, hostMemoryBytes: number) => `half its ${hostCpus} CPUs and a quarter of its ${gibibytes(hostMemoryBytes)}, at least ${DEFAULT_SIZE_MINIMUM.cpus} CPUs and ${gibibytes(DEFAULT_SIZE_MINIMUM.memory_bytes)}`;
 
 /** Operations HostDaemon answers itself (the rest go to the guest): the host executor plus the catalog-level sandbox operations it mirrors. */
 export function hostOperationIds(): OperationId[] { return operationCatalog.filter((entry) => entry.executor === "host" || entry.id.startsWith("sandbox.")).map((entry) => entry.id); }
 
-/** `HostOperation` for HostDaemon, so the daemon routes on the catalog's IDs. Written by `contract generate-snapshots`. */
+/** HostDaemon's copy of the contract: its protocol and release ids and the `HostOperation`s it routes. Written by `contract generate-snapshots`. */
 export function swiftHostOperations(): string {
   const caseName = (id: string) => id.split(/[._]/).map((part, index) => index === 0 ? part : part[0].toUpperCase() + part.slice(1)).join("");
   return [
     "// Generated by `npm run generate:snapshots` from packages/contract. Do not edit.",
+    "",
+    `public let protocolVersion = "${PROTOCOL_VERSION}"`,
+    `public let releaseID = "${RELEASE_ID}"`,
     "",
     "/// Catalog operations HostDaemon routes itself; the rest go straight to the guest.",
     "public enum HostOperation: String, CaseIterable, Sendable {",

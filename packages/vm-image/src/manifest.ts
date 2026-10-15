@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ImageManifest, ToolInventoryEntry } from "./index.js";
-import { DUET_REQUIRED_TOOL_NAMES, DUET_TOOL_PROBES } from "./duet-inventory.js";
 
 export interface ImageBuildPins {
   schemaVersion: "agent-computer-image-build.v1";
@@ -18,20 +16,10 @@ export interface ImageBuildPins {
   readinessMarker: string;
 }
 
-export interface ImageProbeReport {
-  architecture: string;
-  binaries: Record<string, { ok: boolean; path?: string; version?: string; machine?: string }>;
-  pythonModules: Record<string, { ok: boolean; version?: string }>;
-  loopbackBindings: string[];
-  readinessMarker: boolean;
-  guestIdentity?: string;
-}
-
 export interface BuildManifestOptions {
   pins: ImageBuildPins;
   artifacts?: Record<string, string>;
-  probe?: ImageProbeReport;
-  tools?: ToolInventoryEntry[];
+  tools: ToolInventoryEntry[];
   digest?: string;
   profile?: "minimal" | "full";
   substitutions?: Array<{ from: string; to: string; reason: string }>;
@@ -62,26 +50,9 @@ export function inventoryDigestForTools(tools: readonly ToolInventoryEntry[]): s
   })));
 }
 
-function inventoryFromProbe(probe: ImageProbeReport): ToolInventoryEntry[] {
-  return DUET_REQUIRED_TOOL_NAMES.map((name) => {
-    const binary = DUET_TOOL_PROBES[name];
-    const result = binary.kind === "python" ? probe.pythonModules[name] : probe.binaries[name];
-    const architecture = binary.kind === "python" ? "noarch" : "arm64";
-    return {
-      name,
-      kind: binary.kind,
-      version: result?.version,
-      path: binary.kind === "binary" ? (result as { path?: string }).path : undefined,
-      architecture,
-      source: "native",
-    } satisfies ToolInventoryEntry;
-  });
-}
-
-/** Build an image manifest from pinned inputs and an optional in-image probe report. */
+/** Build an image manifest from pinned inputs and the image's tool inventory. */
 export function buildImageManifest(options: BuildManifestOptions): ImageManifest {
-  const tools = options.tools ?? (options.probe ? inventoryFromProbe(options.probe) : undefined);
-  if (!tools) throw new Error("a tool inventory or in-image probe report is required");
+  const { tools } = options;
   const inventoryDigest = inventoryDigestForTools(tools);
   const unsigned = {
     architecture: "arm64" as const,
@@ -92,7 +63,7 @@ export function buildImageManifest(options: BuildManifestOptions): ImageManifest
     tools,
     display: options.pins.display,
     binaries: tools.filter((tool) => tool.kind === "binary").map((tool) => tool.name),
-    loopbackBindings: options.probe?.loopbackBindings ?? options.pins.loopbackBindings,
+    loopbackBindings: options.pins.loopbackBindings,
     readinessMarker: options.pins.readinessMarker,
     artifactDigests: options.artifacts ?? {},
     profile: options.profile,

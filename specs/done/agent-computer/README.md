@@ -41,6 +41,6 @@ Run `npm run build && npm test` for the host suite. Run `swift test --package-pa
 
 ## Decisions and dead ends
 
-The consolidated choices ledger is in [`choices.md`](choices.md). Tailscale and inbound port forwarding were rejected because they violate zero-setup installation. Raw remote desktop as the only API was rejected because routine shell/filesystem work needs a structured contract. Per-tool approval scopes were rejected because shell already grants the VM trust domain. The native VM lifecycle is kept behind an explicit adapter instead of being faked by a compatibility wrapper.
+The consolidated choices ledger is in [`choices.md`](choices.md), and the unknowns map behind it is [`MAP.md`](MAP.md). The production plan that followed this foundation, itself superseded, is in [`../agent-computer-production`](../agent-computer-production/README.md). Tailscale and inbound port forwarding were rejected because they violate zero-setup installation. Raw remote desktop as the only API was rejected because routine shell/filesystem work needs a structured contract. Per-tool approval scopes were rejected because shell already grants the VM trust domain. The native VM lifecycle is kept behind an explicit adapter instead of being faked by a compatibility wrapper.
 
 There are no visual baselines in this build: the host status model and desktop runtime have no shipped visual surface yet, so screenshot comparison would invent a target rather than preserve one.

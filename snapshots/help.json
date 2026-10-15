@@ -329,7 +329,7 @@
     "retryable": true,
     "mutation": false,
     "idempotency": "none",
-    "executor": "host",
+    "executor": "guest",
     "sandbox_scoped": true
   },
   {

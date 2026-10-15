@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { CapacityReport, RequestEnvelope, ResponseEnvelope } from "../../packages/contract/src/index.js";
 import type { OpsDeps, Principal, RelayResult, SandboxRow } from "../../apps/relay/src/ops.js";
 
@@ -19,7 +20,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "machines:list") return options.machines;
       if (name === "sandboxes:list") return sandboxes;
       if (name === "sandboxes:create") {
-        if (sandboxes.some((row) => row.name === args.name)) throw new Error(`Uncaught Error: name_conflict: ${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}`);
+        if (sandboxes.some((row) => row.name === args.name)) throw new ConvexError({ code: "name_conflict", message: `${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}` });
         const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
         const reserved = args.createMutationId && sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.createMutationId));
         if (reserved) return reserved;
@@ -32,12 +33,12 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
         return { ...row, create_input: request?.payload.input ?? null };
       }
       if (name === "sandboxes:rename") { const row = sandboxes.find((candidate) => candidate.sandbox_id === args.sandboxId)!; const previous = row.name; row.name = args.name; return { sandbox_id: row.sandbox_id, name: row.name, previous_name: previous, machine_id: row.machine_id }; }
-      if (name === "sandboxes:remove") { const index = sandboxes.findIndex((row) => row.sandbox_id === args.sandboxId); const [row] = sandboxes.splice(index, 1); return { sandbox_id: row.sandbox_id, name: row.name, machine_id: row.machine_id, removed: true }; }
+      if (name === "sandboxes:remove") { const index = sandboxes.findIndex((row) => row.sandbox_id === args.sandboxId); if (index < 0) return { sandbox_id: args.sandboxId, removed: false, already_deleted: true }; const [row] = sandboxes.splice(index, 1); return { sandbox_id: row.sandbox_id, name: row.name, machine_id: row.machine_id, removed: true }; }
       throw new Error(`unexpected account call ${name}`);
     },
     async serviceMutation(name, args: any) {
       if (name === "relay:enqueue") {
-        if (!options.machines.some((machine) => machine.machineId === args.machineId)) throw new Error(`Uncaught Error: machine_not_found: machine ${args.machineId} is not on this account (removed or never signed in)`);
+        if (!options.machines.some((machine) => machine.machineId === args.machineId)) throw new ConvexError({ code: "machine_not_found", message: `machine ${args.machineId} is not on this account (removed or never signed in)` });
         const mutationKey = args.mutationId ? `${args.machineId}:${args.sandboxId ?? ""}:${args.operation}:${args.mutationId}` : undefined; // Convex scopes dedupe to the machine
         const existing = [...rows.values()].find((row) => row.requestId === args.requestId || (mutationKey && row.mutationKey === mutationKey));
         if (existing) return { requestId: existing.requestId };

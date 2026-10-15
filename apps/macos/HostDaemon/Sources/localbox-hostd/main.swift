@@ -18,22 +18,22 @@ struct HostDaemonMain {
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
-            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(),
-                                   hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init),
-                                   admissionBytes: devAdmissionBytes(), allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup)
+            let dev = devHost()
+            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
+                                   allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
             try await server.start()
             // Every start (including the relaunch after an update) matches the skill and CLI link to the installed
-            // release (D16), in the background so it never holds up sandbox restore.
+            // release, in the background so it never holds up sandbox restore.
             if let agentSetup { Task.detached { log("agent setup (daemon_start): \(await agentSetup.reconcile())") } } else { log("agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled") }
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
-            // The Mac's sleep and power-off notices hibernate the sandboxes first (L6).
+            // The Mac's sleep and power-off notices hibernate the sandboxes first.
             do { try power(host).start() } catch { log("no power notices: \(error)") }
             // An async main already services the main queue; dispatchMain() here traps. The main task runs the idle
-            // policy (Q5) every second instead.
+            // policy every second instead.
             while true {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 for (id, action) in await host.idleTick().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
@@ -51,7 +51,7 @@ struct HostDaemonMain {
     #if os(macOS)
     /// Real VMs unless the fixture is explicitly selected; an unknown value is an error, never a fallback.
     private static func factory() throws -> any SandboxBackendFactory {
-        switch ProcessInfo.processInfo.environment["LOCALBOX_VM_BACKEND"] ?? "apple" {
+        switch ProcessInfo.processInfo.environment["LOCALBOX_SANDBOX_BACKEND"] ?? "apple" {
         case "apple":
             return AppleSandboxFactory(artifacts: SandboxArtifacts(kernelURL: pathURL("LOCALBOX_KERNEL"), initialRamdiskURL: pathURL("LOCALBOX_INITRD"), templateDiskURL: pathURL("LOCALBOX_TEMPLATE_DISK")))
         case "process-fixture":
@@ -61,11 +61,11 @@ struct HostDaemonMain {
                 workingDirectory: repo
             ))
         case let other:
-            throw HostDaemonError.unsupported("unknown LOCALBOX_VM_BACKEND \(other); expected apple or process-fixture")
+            throw HostDaemonError.unsupported("unknown LOCALBOX_SANDBOX_BACKEND \(other); expected apple or process-fixture")
         }
     }
 
-    /// SIGTERM (launchd stop, update, `kickstart -k`) hibernates every running sandbox before exiting (D11);
+    /// SIGTERM (launchd stop, update, `kickstart -k`) hibernates every running sandbox before exiting;
     /// launchd's `ExitTimeOut` must cover the saves.
     private static func installSignalHandlers(server: UnixDomainSocketServer, host: SandboxHost) {
         for signal in [SIGTERM, SIGINT] {
@@ -92,9 +92,8 @@ struct HostDaemonMain {
 
     private static func log(_ line: String) { FileHandle.standardError.write(Data("localbox-hostd: \(line)\n".utf8)) }
 
-    private static func required(_ name: String, defaultValue: String? = nil) -> String {
+    private static func required(_ name: String) -> String {
         if let value = ProcessInfo.processInfo.environment[name], !value.isEmpty { return value }
-        if let defaultValue { return defaultValue }
         FileHandle.standardError.write(Data("missing \(name)\n".utf8)); exit(78)
     }
 
@@ -114,22 +113,18 @@ struct HostDaemonMain {
         return value
     }
 
-    /// Proof runs cap the admission budget on real VMs (the RAM override is for fixtures); release builds ignore it.
-    private static func devAdmissionBytes() -> UInt64? {
+    /// Proof runs give fixture machines their own CPU and RAM sizes and cap the admission budget on real VMs; release
+    /// builds ignore all three and use this Mac's.
+    private static func devHost() -> (cpus: Int?, memoryBytes: UInt64?, admissionBytes: UInt64?) {
         #if DEBUG
-        return optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init)
+        return (optionalInteger("LOCALBOX_DEV_HOST_CPUS"), optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init))
         #else
-        return nil
+        return (nil, nil, nil)
         #endif
     }
 
     private static func optionalInteger(_ name: String) -> Int? {
         guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return nil }
-        return integer(name, defaultValue: 1)
-    }
-
-    private static func integer(_ name: String, defaultValue: Int) -> Int {
-        guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return defaultValue }
         guard let parsed = Int(value), parsed > 0 else { FileHandle.standardError.write(Data("invalid positive integer \(name)\n".utf8)); Darwin.exit(78) }
         return parsed
     }

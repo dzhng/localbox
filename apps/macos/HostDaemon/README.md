@@ -27,9 +27,10 @@ command line; a rename sends a new `hello`. A resize of a running sandbox
 restarts it and reports the processes that ended.
 
 On SIGTERM the daemon saves every running sandbox and the next start restores
-it (`woke`). Where saving fails (a locked screen) or the backend cannot save
-(the process fixture), it stops the sandbox and records why; the next start
-cold-boots it and reports `cold_booted` with that reason.
+it (`woke`). Where saving fails (the screen is locked and its lock asks for a
+password) or the backend cannot save (the process fixture), it stops the sandbox
+and records why; the next start cold-boots it and reports `cold_booted` with
+that reason.
 
 `AuthenticatedLocalIPC` is the local CLI boundary: it checks the injected
 owner-only IPC token and forwards the envelope to `SandboxHost.request` without
@@ -39,8 +40,8 @@ duplicating lifecycle state.
 seam. It creates the configured socket path (expanding `~`), refuses to replace
 an unrelated file, applies owner-only `0600` permissions, and serves one
 big-endian length-prefixed JSON request per connection. The response carries
-`envelope` on success or a stable `error` code (`unauthorized`, `malformed`,
-`frame_too_large`, or `unavailable`). The listener is non-blocking while
+`envelope` on success or a stable transport `error` code; the codes live in
+`Sources/HostDaemonCore/LocalIPC.swift`. The listener is non-blocking while
 accepted connections use blocking reads on detached tasks, so a slow CLI
 cannot stall other clients. `stop()` cancels the listener and removes the
 socket path; launchd packaging can own process startup and call the same
@@ -60,14 +61,6 @@ the saves). The checked-in
 must materialize its paths, create the token file with mode `0600`, load it with
 `launchctl`, and unload it before replacement.
 
-The repository installer does that materialization in a versioned release root:
-`scripts/install-release.sh` verifies the manifest before extracting, points
-launchd at the atomic `releases/active` app, and leaves prior verified trees in
-place for `scripts/rollback-release.sh`. It also installs
-`com.localbox.updater`, a six-hour launchd job that runs the bundled updater;
-the updater verifies the signed GitHub manifest before replacing the active
-release and refreshes a managed global skill afterward. An automatic install
-leaves that updater job loaded while it switches the active release, so the
-updater cannot terminate its own installer. `scripts/uninstall.sh`
-removes both launchd registrations and the CLI link by default, so sandbox
-disks and the token are not deleted during an ordinary uninstall.
+`scripts/install-release.sh` does that materialization in a versioned release
+root; the [development guide](../../../DEVELOPMENT.md#installing-rolling-back-and-uninstalling)
+covers install, rollback and uninstall.

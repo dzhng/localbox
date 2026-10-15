@@ -24,7 +24,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   const up = await ctx.stack("up", ["a", "b"]);
   if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
   const run = Date.now();
-  const env = (machine: string) => ({ LOCALBOX_API_ORIGIN: "http://127.0.0.1:3000", LOCALBOX_TRANSPORT: "remote", LOCALBOX_MACHINE_ROOT: join(ctx.evidence, "machines", machine) });
+  const env = (machine: string) => ({ LOCALBOX_API_ORIGIN: "http://127.0.0.1:3000", LOCALBOX_MACHINE_ROOT: join(ctx.evidence, "machines", machine) });
   const cli = (machine: string, args: string[]) => asMachine(machine, args, { cwd: ctx.root, env: env(machine) });
   const login = (machine: string, email: string) => signIn(ctx.root, machine, email, env(machine));
   const startCode = (email: string) => fetch("http://127.0.0.1:3000/api/auth/email/start", { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": "6.6.6.6" }, body: JSON.stringify({ email }) });

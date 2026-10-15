@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { makeFunctionReference } from "convex/server";
-import { failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { ContractError, failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { contractError } from "../../relay/src/ops.js";
 import { RevokedError } from "./token.js";
 
 export type ConnectorState = "connecting" | "connected" | "revoked" | "stopped";
@@ -141,14 +142,14 @@ export class Connector {
       catch (error) { response = failure(row.payload, { code: "guest_unreachable", message: `HostDaemon dispatch failed: ${message(error)}`, retryable: true }); }
       const bytes = Buffer.byteLength(JSON.stringify(response));
       if (bytes > OUTPUT_CAP_BYTES) response = tooLarge(row.payload, bytes);
-      // A result Convex refuses is replaced by a small failure naming why, so the row completes instead of staying
-      // claimed and running again on the next delivery.
+      // A result Convex refuses (too large, over the daily result bytes) is replaced by a small failure naming why,
+      // so the row completes instead of staying claimed and running again on the next delivery.
       try { await this.deps.convex.mutation(relay.complete, { requestId: id, response }); }
       catch (error) {
-        const refused = message(error);
-        if (refused.includes("response_too_large")) await this.deps.convex.mutation(relay.complete, { requestId: id, response: tooLarge(row.payload, bytes) });
-        else if (refused.includes("relay_daily_limit")) await this.deps.convex.mutation(relay.complete, { requestId: id, response: dailyLimit(row.payload, refused) });
-        else throw error;
+        const refused = contractError(error);
+        if (refused.code !== "resource_exhausted" && refused.code !== "rate_limited") throw refused;
+        const dropped = new ContractError(refused.code, `the operation ran, but its result was dropped: ${refused.message}`, refused.details, refused.retryable);
+        await this.deps.convex.mutation(relay.complete, { requestId: id, response: failure(row.payload, dropped) });
       }
       this.remember(id);
     } catch (error) {
@@ -201,7 +202,7 @@ export class Connector {
         // The daemon deleted these after their delete-after idle time; their catalog rows go too.
         for (const gone of (change.deleted ?? []).filter((item) => !removed.has(item.sandbox_id))) {
           try { await this.deps.convex.mutation(relay.removeIdle, { sandboxId: gone.sandbox_id, reason: gone.reason }); }
-          catch (error) { if (!message(error).includes("sandbox_not_found")) throw error; }
+          catch (error) { if (contractError(error).code !== "sandbox_not_found") throw error; }
           removed.add(gone.sandbox_id); states.delete(gone.sandbox_id);
           this.deps.log(`removed ${gone.name} (${gone.sandbox_id}) from the catalog: ${gone.reason}`);
         }
@@ -232,12 +233,6 @@ export class Connector {
 
 function tooLarge(request: RequestEnvelope, bytes: number): ResponseEnvelope {
   return failure(request, { code: "resource_exhausted", message: `response is ${bytes} bytes, over the ${OUTPUT_CAP_BYTES}-byte relay cap`, retryable: false });
-}
-
-/** The operation ran, but its result did not fit the account's daily result bytes; the error names the limit and its reset. */
-function dailyLimit(request: RequestEnvelope, refused: string): ResponseEnvelope {
-  const limit = refused.match(/relay_daily_limit:\s*([^\n]*)/)?.[1].trim() ?? "reached";
-  return failure(request, { code: "rate_limited", message: `the operation ran, but its result was dropped: the account's daily relay result bytes limit (${limit})`, retryable: true, details: { limit: "result_bytes" } });
 }
 
 /** Host-internal socket operations are machine-level, so they name no sandbox. */

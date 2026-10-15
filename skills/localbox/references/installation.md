@@ -13,27 +13,29 @@ Anything else (Intel, Linux, Docker) cannot run Localbox; say so and stop.
 
 ## Prepare the Mac so sandboxes can hibernate
 
-A sleeping sandbox frees its RAM by saving its memory to disk. Apple's VM
-framework encrypts that file with a key from the logged-in user's session, and
-it refuses while the screen is locked. So:
+A sleeping sandbox hibernates: its memory is saved to disk, its RAM is freed,
+and its processes resume on the next request. Updates and service restarts
+hibernate running sandboxes the same way, so their processes survive. Apple's VM
+framework encrypts the saved memory with a key from the logged-in user's
+session, and refuses while that session is locked with a password. So:
 
-- **Hibernation needs a logged-in session that never locks with a password.**
-  A sleeping display or screen saver is fine as long as no password is
-  required (measured). Where the lock needs a password and the screen is locked,
-  an idle sandbox pauses in memory instead: its processes keep
-  their state, but its RAM is not freed, and a sandbox stopped to make room
-  boots fresh at its next use.
+- **Hibernation needs a logged-in session whose screen lock asks for no
+  password.** A sleeping display or screen saver is fine (measured). Where the
+  lock asks for a password and the screen is locked, a sleeping sandbox pauses
+  in memory instead: its processes keep their state, but its RAM is not freed,
+  and a sandbox put away to make room boots fresh at its next use.
 - **A headless Mac (a Mac mini on a shelf) should be set up like a server:**
   System Settings > Users & Groups > automatic login on (so it comes back
   unlocked after a restart or power loss), and System Settings > Lock Screen >
   "Require password after screen saver begins or display is turned off" set to
-  Never. The display may still sleep; only the lock matters.
+  Never. The display may still sleep; only the password matters.
 - These are the user's settings. Tell them what to change and why; do not change
   them yourself (they need the user's password).
 
-After installing, `localbox host check` reports `hibernate: available`, or
-`only_while_unlocked` with the exact fixes; the installer prints the same as a
-`Sleep:` line when something needs changing.
+After installing, `localbox host check` reports `hibernate` as `available`,
+`only_while_unlocked` or `unknown`; anything but `available` lists the fixes.
+The installer prints a `Sleep:` line with the same fixes when something needs
+changing.
 
 ## Download and verify one release
 

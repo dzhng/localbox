@@ -68,7 +68,7 @@ If save/restore fails for every channel option, stop the build here and report.
 Falling back to stop-instead-of-hibernate is a product decision (Q5b), not the
 implementer's.
 
-## Findings so far (2026-10-15; the go/no-go is still open)
+## Findings before the decision (2026-10-15)
 
 - **Built:** NAT with a persisted MAC, a persisted machine identifier,
   `validateSaveRestoreSupport()`, atomic `save(to:)` and `restore(from:)` on

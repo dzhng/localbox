@@ -6,7 +6,7 @@ import Virtualization
 
 /// Real-VM lab for the proof harness:
 ///   vmlab boot --artifacts <dir> --json        boot a scratch clone and run `uname -m` in the guest
-///   vmlab hibernate --artifacts <dir> --json   the slice 02 hibernate scenario (save here, restore in a new process)
+///   vmlab hibernate --artifacts <dir> --json   the hibernate scenario (save here, restore in a new process)
 ///   vmlab restore --artifacts <dir> --scratch <dir> --json   phase 2 of hibernate, run by `hibernate` itself
 @main
 struct VMLabMain {
@@ -56,7 +56,7 @@ struct Lab {
         let scratch = base.appendingPathComponent("localbox-vmlab-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         let directory = SandboxDirectory(scratch)
-        var record = SandboxRecord(sandboxID: "sandbox_vmlab", name: "vmlab", cpus: 2, memoryBytes: 2 * 1024 * 1024 * 1024)
+        var record = SandboxRecord(sandboxID: "sandbox_vmlab", name: "vmlab", cpus: 2, memoryBytes: 2 * 1024 * 1024 * 1024, sleepAfterMs: .max) // vmlab runs no idle policy
         _ = try AppleSandboxFactory(artifacts: artifacts).provision(&record, in: directory)
         try directory.save(record)
         return scratch
@@ -159,7 +159,7 @@ struct Lab {
 func shell(_ backend: AppleVirtualizationBackend, _ command: String) async throws -> (stdout: String, exitCode: Int) {
     let channel = try await backend.makeGuestChannel()
     let id = UUID().uuidString
-    let envelope = try JSONSerialization.data(withJSONObject: ["protocol_version": "v1", "request_id": id, "operation": "shell.exec", "sandbox_id": "sandbox_vmlab", "deadline_ms": 60_000, "mutation_id": id, "input": ["command": command]])
+    let envelope = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "shell.exec", "sandbox_id": "sandbox_vmlab", "deadline_ms": 60_000, "mutation_id": id, "input": ["command": command]])
     let response = try JSONSerialization.jsonObject(with: try await channel.send(envelope)) as? [String: Any]
     guard response?["ok"] as? Bool == true, let result = response?["result"] as? [String: Any] else { throw LabError("guest command failed: \(command): \(response ?? [:])") }
     return (result["stdout"] as? String ?? "", result["exit_code"] as? Int ?? -1)

@@ -1,7 +1,0 @@
-#!/bin/sh
-set -eu
-# A tiny immutable-image smoke command. The real guest agent owns the readiness
-# marker; this probe only reports image identity and architecture for CI.
-arch="$(dpkg --print-architecture 2>/dev/null || uname -m)"
-[ "$arch" = arm64 ] || { echo "unsupported architecture: $arch" >&2; exit 1; }
-printf '{"architecture":"arm64","image_version":"%s","readiness_marker":"/run/localbox/ready"}\n' "${LOCALBOX_IMAGE_VERSION:-unknown}"

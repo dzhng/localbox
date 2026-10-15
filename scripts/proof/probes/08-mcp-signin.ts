@@ -60,7 +60,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("the agent token also works on the agent API (/api/v1/ops)", async () => {
       const response = await fetch(`${API_ORIGIN}/api/v1/ops`, { method: "POST", headers: { authorization: `Bearer ${tokens.access_token}`, "content-type": "application/json" }, body: JSON.stringify({ operation: "machine.list", input: {} }) });
-      assert.equal(response.status, 200); assert.ok((await response.json() as any[]).some((row) => row.machineId === machineB));
+      assert.equal(response.status, 200); assert.ok(((await response.json() as any).response.result as any[]).some((row) => row.machineId === machineB));
     }));
     checks.push(await ctx.check("another account's agent cannot reach B's sandbox by name or id, nor create one on B", async () => {
       const other = await signInAgent(`proof-08-other-${run}@example.com`, clientId, (page) => assert.match(page, /full access to your Localbox account/));

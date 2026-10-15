@@ -5,12 +5,6 @@ import Darwin
 
 private let gib: UInt64 = 1024 * 1024 * 1024
 
-/// A new sandbox's size when none is asked for: half the cores and a quarter of RAM (whole GiB), at least 2 CPUs
-/// and 2 GiB. `defaultSize` in packages/contract is the same table.
-public func defaultSize(hostCPUs: Int, hostMemoryBytes: UInt64) -> (cpus: Int, memoryBytes: UInt64) {
-    (max(2, hostCPUs / 2), max(2 * gib, hostMemoryBytes / 4 / gib * gib))
-}
-
 /// A size for a report, e.g. "2 GiB" or "1.5 GiB".
 func gibibytes(_ bytes: UInt64) -> String { "\(String(format: "%g", (Double(bytes) / Double(gib) * 10).rounded() / 10)) GiB" }
 
@@ -49,12 +43,12 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     /// The machine id whose catalog last listed it. Only that machine's catalog may delete it by leaving it out, so a
     /// push older than its reservation, or another sign-in's catalog, never deletes a disk.
     public var listedBy: String?
-    /// The idle policy (Q5), mirrored from the account catalog: sleep after this much idle time (nil: the 30 min
-    /// default), and delete after this much (nil: never).
-    public var sleepAfterMs: Int?
+    /// The idle policy, mirrored from the account catalog: sleep after this much idle time, and delete after this
+    /// much (nil: never).
+    public var sleepAfterMs: Int
     public var deleteAfterMs: Int?
-    public init(sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
-        self.sandboxID = sandboxID; self.name = name; self.cpus = cpus; self.memoryBytes = memoryBytes; self.lifecycle = lifecycle; self.inCatalog = inCatalog
+    public init(sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, sleepAfterMs: Int, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
+        self.sandboxID = sandboxID; self.name = name; self.cpus = cpus; self.memoryBytes = memoryBytes; self.sleepAfterMs = sleepAfterMs; self.lifecycle = lifecycle; self.inCatalog = inCatalog
     }
     enum CodingKeys: String, CodingKey {
         case sandboxID = "sandbox_id", name, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", lifecycle

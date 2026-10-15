@@ -120,7 +120,7 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Today a sleeping sandbox stays paused in memory while the Mac's screen is locked; freeing its RAM by saving it to disk is not proven yet.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Asleep, it saves its memory to disk and frees the RAM, on a Mac whose screen lock asks for no password (the installer tells you what to change). Where the lock asks for a password, a locked Mac keeps sleeping sandboxes paused in memory.",
   },
   {
     q: "How do I sign in?",
@@ -144,7 +144,7 @@ export const faq = [
   },
   {
     q: "What works today?",
-    a: "Email-code sign-in; many sandboxes per Mac with generated names; creating on this Mac, a named Mac or wherever has the most room; shell, files, browser and desktop; sleep when idle with processes intact, and optional idle deletion; MCP for cloud agents through the outbound relay. The hosted service moves to this version with the first release. Shared folders are next.",
+    a: "Everything on this page except shared folders, which are next. Sign-in emails start once the mail domain is set up. The positioning doc in the repository tracks each use case.",
   },
 ];
 

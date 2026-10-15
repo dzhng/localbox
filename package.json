@@ -20,7 +20,6 @@
     "image:build": "tsx packages/vm-image/scripts/build-boot-artifacts.ts --profile full",
     "image:boot": "tsx packages/vm-image/scripts/build-boot-artifacts.ts",
     "image:parity": "tsx packages/vm-image/scripts/duet-parity.ts",
-    "image:verify": "tsx packages/vm-image/scripts/verify-arm64-image.ts",
     "release": "sh scripts/release.sh",
     "update": "tsx apps/cli/src/index.ts update",
     "site:build": "npm --prefix apps/site run build",

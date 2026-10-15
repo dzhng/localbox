@@ -1,7 +1,12 @@
-/** Where `sandbox create` puts a sandbox (map Q4). Pure; the create route in the agent API is its only caller (D8). */
+import { gibibytes as gib } from "../../contract/src/index.js";
+
+/** Where `sandbox create` puts a sandbox. Pure; the create route in the agent API is its only caller. */
 
 export interface PlacementMachine {
-  id: string; name: string; online: boolean; roomBytes: number; totalBytes: number;
+  id: string; name: string;
+  /** It has reported capacity (and the relay has not just found it offline), so it may take the sandbox. */
+  reported: boolean;
+  roomBytes: number; totalBytes: number;
   /** When the machine last reported (ms), so an offline one can say how long it has been gone. */
   lastReportAt?: number;
 }
@@ -15,16 +20,20 @@ export interface PlacementInput {
   neededBytes: number;
 }
 export type PlacementErrorCode = "machine_offline" | "machine_full" | "machine_not_found" | "invalid_input";
-export interface MachineRoom { machine_id: string; name: string; online: boolean; room_bytes: number; total_bytes: number }
+export interface MachineRoom { machine_id: string; name: string; reported: boolean; room_bytes: number; total_bytes: number }
 export type Placement =
   | { machineId: string; reason: string }
   | { error: PlacementErrorCode; message: string; machines: MachineRoom[] };
 
-const GIB = 1024 ** 3;
-const gib = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
 const lastReport = (machine: PlacementMachine) => machine.lastReportAt === undefined ? "never reported" : `last report ${new Date(machine.lastReportAt).toISOString()}`;
-const room = (machine: PlacementMachine) => machine.online ? `${machine.name} (${gib(machine.roomBytes)} free of ${gib(machine.totalBytes)})` : `${machine.name} (offline, ${lastReport(machine)})`;
-const rooms = (machines: PlacementMachine[]): MachineRoom[] => machines.map((machine) => ({ machine_id: machine.id, name: machine.name, online: machine.online, room_bytes: machine.roomBytes, total_bytes: machine.totalBytes }));
+const room = (machine: PlacementMachine) => machine.reported ? `${machine.name} (${gib(machine.roomBytes)} free of ${gib(machine.totalBytes)})` : `${machine.name} (offline, ${lastReport(machine)})`;
+const rooms = (machines: PlacementMachine[]): MachineRoom[] => machines.map((machine) => ({ machine_id: machine.id, name: machine.name, reported: machine.reported, room_bytes: machine.roomBytes, total_bytes: machine.totalBytes }));
+
+/** The row `wanted` names: its id exactly, else its name in any case. The agent API resolves machines and sandboxes this way too. */
+export function byNameOrId<T extends { name: string }>(rows: readonly T[], wanted: string, id: (row: T) => string): T | undefined {
+  const lower = wanted.toLowerCase();
+  return rows.find((row) => id(row) === wanted) ?? rows.find((row) => row.name.toLowerCase() === lower);
+}
 
 /**
  * `machine` (an id or a case-insensitive name) wins; `placement: auto` takes the online machine with the most room,
@@ -41,10 +50,9 @@ export function place(input: PlacementInput): Placement {
 
   if (flags.machine !== undefined && flags.placement !== undefined) return fail("invalid_input", "pass either a machine or a placement, not both");
   if (flags.machine !== undefined) {
-    const wanted = flags.machine.toLowerCase();
-    const machine = all.find((candidate) => candidate.id === flags.machine) ?? all.find((candidate) => candidate.name.toLowerCase() === wanted);
+    const machine = byNameOrId(all, flags.machine, (candidate) => candidate.id);
     if (!machine) return fail("machine_not_found", `no machine ${flags.machine} on this account; machines: ${listed}`);
-    if (!machine.online) return fail("machine_offline", `${machine.name} is offline (${lastReport(machine)}); machines: ${listed}`);
+    if (!machine.reported) return fail("machine_offline", `${machine.name} is offline (${lastReport(machine)}); machines: ${listed}`);
     if (tooSmall(machine)) return fail("machine_full", `${machine.name} has ${gib(machine.totalBytes)} in all, less than the ${gib(neededBytes)} this sandbox needs`);
     return { machineId: machine.id, reason: `on ${machine.name}, as asked (${gib(machine.roomBytes)} free)` };
   }
@@ -52,14 +60,14 @@ export function place(input: PlacementInput): Placement {
     const remote = flags.placement === "remote";
     const pool = all.filter((machine) => !(remote && machine.id === callerMachineId));
     if (!pool.length) return fail("machine_not_found", remote ? "this account has no machine other than this one" : "this account has no machines");
-    const online = pool.filter((machine) => machine.online && !tooSmall(machine));
-    if (!online.length) {
-      const offline = pool.filter((machine) => !machine.online);
+    const candidates = pool.filter((machine) => machine.reported && !tooSmall(machine));
+    if (!candidates.length) {
+      const offline = pool.filter((machine) => !machine.reported);
       return offline.length === pool.length ? fail("machine_offline", `no ${remote ? "other " : ""}machine is online; machines: ${listed}`)
         : fail("machine_full", `no online ${remote ? "other " : ""}machine has ${gib(neededBytes)} in all; machines: ${listed}`);
     }
-    const [best] = online.sort((a, b) => b.roomBytes - a.roomBytes || Number(b.id === callerMachineId) - Number(a.id === callerMachineId) || a.name.localeCompare(b.name));
-    const skipped = pool.filter((machine) => !machine.online).map((machine) => machine.name);
+    const [best] = candidates.sort((a, b) => b.roomBytes - a.roomBytes || Number(b.id === callerMachineId) - Number(a.id === callerMachineId) || a.name.localeCompare(b.name));
+    const skipped = pool.filter((machine) => !machine.reported).map((machine) => machine.name);
     const fits = best.roomBytes >= neededBytes ? "" : `; none has ${gib(neededBytes)} free, so ${best.name} makes room`;
     return { machineId: best.id, reason: `on ${best.name}, the ${remote ? "remote " : ""}machine with the most room (${gib(best.roomBytes)} free)${fits}${skipped.length ? `; skipped offline ${skipped.join(", ")}` : ""}` };
   }
