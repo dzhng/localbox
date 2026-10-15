@@ -15,7 +15,7 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00 and 05 done (`npm run proof -- --through 05 --tier u,l` passes). In progress: 01, 04 (Codex, separate worktrees).*
+*Status 2026-10-15: slices 00, 05 and 06 done (`npm run proof -- --through 06 --tier u,l` passes). In progress: 01 (boot path debugging on this Mac), 04 (Codex).*
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).
@@ -45,7 +45,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [ ] [03 fixture machine](slices/03-fixture-machine.md)
 - [ ] [04 output cap and jobs](slices/04-output-cap-and-jobs.md)
 - [x] [05 Convex auth boundary](slices/05-convex-auth-boundary.md)
-- [ ] [06 email identity](slices/06-email-identity.md)
+- [x] [06 email identity](slices/06-email-identity.md)
 - [ ] [07 relay mailbox and connector](slices/07-relay-connector.md)
 - [ ] [08 MCP sign-in](slices/08-mcp-signin.md)
 - [ ] [09 sandbox catalog and CLI](slices/09-sandbox-catalog.md)
