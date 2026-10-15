@@ -101,7 +101,7 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   assert.equal(confirmed.status, 0);
   assert.equal(JSON.parse(confirmed.stdout).ok, true);
 
-  const login = spawnSync(process.execPath, ["bin/localbox.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_AUTH_FILE: "/tmp/localbox-test-auth.json" } });
+  const login = spawnSync(process.execPath, ["bin/localbox.js", "login", "token-fixture", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_MACHINE_ROOT: "/tmp/localbox-test-machine" } });
   assert.equal(login.status, 0);
   assert.equal(JSON.parse(login.stdout).result.authenticated, true);
 

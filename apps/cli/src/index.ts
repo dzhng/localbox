@@ -1,10 +1,8 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
-import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
-import { homedir } from "node:os";
 import {
   catalogById, catalogSnapshot, cliHelpSnapshot, mcpToolsSnapshot,
   ContractError, failure, PROTOCOL_VERSION, RELEASE_ID, requestFromInvocation, validateRequest,
@@ -17,10 +15,9 @@ import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { SkillManager } from "./skill-manager.js";
 import { checkForUpdate, installLatest } from "./updater.js";
-import { PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
+import { machinePaths, PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
-const execFileAsync = promisify(execFile);
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 const positional = args.filter((arg) => arg !== "--json");
@@ -71,13 +68,10 @@ async function writeSnapshots(): Promise<void> {
   process.stdout.write("Generated contract snapshots.\n");
 }
 
-function authPath(): string { return process.env.LOCALBOX_AUTH_FILE ?? resolve(homedir(), ".config", "localbox", "auth.json"); }
+function authPath(): string { return machinePaths().credentials; }
 interface SavedAuth { token: string; refresh_token?: string; expires_at?: number; saved_at: string }
 async function saveAuth(token: string, refreshToken?: string, expiresIn?: number): Promise<void> {
   const serialized = JSON.stringify({ token, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(expiresIn ? { expires_at: Date.now() + expiresIn * 1000 } : {}), saved_at: new Date().toISOString() } satisfies SavedAuth);
-  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
-    try { await execFileAsync("security", ["add-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w", serialized, "-U"]); return; } catch { /* fall back to the platform config file */ }
-  }
   const path = authPath(); await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${serialized}\n`, { mode: 0o600 });
 }
@@ -111,17 +105,11 @@ async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: 
 }
 async function hasAuth(): Promise<boolean> {
   if (process.env.LOCALBOX_TOKEN) return true;
-  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
-    try { await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w"]); return true; } catch { /* use config file */ }
-  }
   try { const value = JSON.parse(await readFile(authPath(), "utf8")) as { token?: string }; return typeof value.token === "string" && value.token.length > 0; }
   catch { return false; }
 }
 
 async function readAuth(): Promise<SavedAuth | undefined> {
-  if (process.platform === "darwin" && !process.env.LOCALBOX_AUTH_FILE) {
-    try { const result = await execFileAsync("security", ["find-generic-password", "-a", process.env.USER ?? "agent", "-s", "localbox-access", "-w"]); const value = result.stdout.trim(); const parsed = JSON.parse(value) as SavedAuth; return parsed.token ? parsed : { token: value, saved_at: "" }; } catch { /* use config file */ }
-  }
   try { return JSON.parse(await readFile(authPath(), "utf8")) as SavedAuth; } catch { return undefined; }
 }
 

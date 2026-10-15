@@ -119,7 +119,7 @@ Start an isolated Convex deployment and the same Web Request handlers the Vercel
 functions use:
 
 ```sh
-npx convex dev --typecheck disable --codegen disable
+CONVEX_AGENT_MODE=anonymous npx convex dev --typecheck disable --codegen disable
 npm run dev:local
 ```
 
@@ -130,10 +130,9 @@ configuration.
 
 On the Mac, the CLI uses the authenticated HostDaemon Unix socket. The daemon
 reads the owner-only token at
-`~/Library/Application Support/Localbox/ipc-token`; set `LOCALBOX_SOCKET_PATH`
-or `LOCALBOX_IPC_TOKEN_FILE` only when an installer materializes a different
-location. The in-process fixture transport is available only with
-`LOCALBOX_LOCAL_TRANSPORT=fixture`.
+`~/Library/Application Support/Localbox/ipc-token`. Set `LOCALBOX_MACHINE_ROOT`
+to relocate the complete machine state, credentials included. The in-process
+fixture transport is available only with `LOCALBOX_LOCAL_TRANSPORT=fixture`.
 
 ## Deploying the control plane
 

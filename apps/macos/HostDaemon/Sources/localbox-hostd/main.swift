@@ -22,7 +22,7 @@ struct HostDaemonMain {
                 memorySize: UInt64(integer("LOCALBOX_MEMORY_BYTES", defaultValue: 4 * 1024 * 1024 * 1024))
             )
             let daemon = HostDaemon(vmID: vmID, backend: AppleVirtualizationBackend(image: image))
-            let endpoint = LocalIPCEndpoint(socketPath: ProcessInfo.processInfo.environment["LOCALBOX_SOCKET_PATH"] ?? "~/Library/Application Support/Localbox/agent.sock")
+            let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
             try await server.start()
             try await daemon.start()
@@ -75,7 +75,7 @@ struct HostDaemonMain {
 
     private static func loadToken() throws -> String {
         if let value = ProcessInfo.processInfo.environment["LOCALBOX_IPC_TOKEN"], !value.isEmpty { return value }
-        let path = expanded(required("LOCALBOX_IPC_TOKEN_FILE"))
+        let path = expanded(required("LOCALBOX_IPC_TOKEN_PATH"))
         let value = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { throw NSError(domain: "LocalboxHostDaemon", code: 78, userInfo: [NSLocalizedDescriptionKey: "IPC token file is empty"]) }
         return value

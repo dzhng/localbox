@@ -1,0 +1,5 @@
+- Slice 00 keeps relocated credentials inside LOCALBOX_MACHINE_ROOT while the default credentials file remains ~/.config/localbox/credentials.json.
+- Slice 00: local Convex runs in `CONVEX_AGENT_MODE=anonymous` (the Convex CLI 1.42 removed `--local`, and anonymous local deployments can't be created with `deployment create`). The stack waits for "Convex functions ready" rather than trusting a stale `.env.local`.
+- Slice 00: stack children write straight to their log files (detached, no pipes) so `stack up` returns while the stack keeps running.
+- Slice 00: the runner discovers probes by their `NN-` prefix, runs `all` and `--through NN`, prints one verdict line per slice, and treats a run as blocked (exit 2) only when every failure starts with `blocked:`. Probes get `exec` and `stack` helpers on the context.
+- Slice 00: the daemon's env names became `LOCALBOX_SOCKET` and `LOCALBOX_IPC_TOKEN_PATH` (explicit paths handed over by the installer); the CLI's Keychain storage was removed here rather than in slice 06, since the credential path moved to `machinePaths()`.

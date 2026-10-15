@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { readFileSync } from "node:fs";
+import { forwardedHeaders } from "./local-vercel-ip.js";
 
 function loadEnvFile(path: string): void {
   try {
@@ -33,7 +34,7 @@ const server = createServer(async (incoming, outgoing) => {
     if (!isRelay && !isMcp) { outgoing.statusCode = 404; outgoing.end(JSON.stringify({ error: "not_found" })); return; }
     const prefix = isRelay ? "/api/relay" : "/api/mcp";
     original.pathname = original.pathname.slice(prefix.length) || "/";
-    const request = new Request(original, { method: incoming.method, headers: headers(incoming), body: body === undefined ? undefined : new Uint8Array(body) });
+    const request = new Request(original, { method: incoming.method, headers: forwardedHeaders(incoming.headers, incoming.socket.remoteAddress ?? "127.0.0.1", process.env.LOCAL_VERCEL_TRUST_CLIENT_IP === "1"), body: body === undefined ? undefined : new Uint8Array(body) });
     const response = await (isRelay ? relay : mcp)(request);
     outgoing.statusCode = response.status;
     response.headers.forEach((value, key) => outgoing.setHeader(key, value));
@@ -46,10 +47,6 @@ const server = createServer(async (incoming, outgoing) => {
 });
 
 server.listen(port, "127.0.0.1", () => console.log(`local Vercel handlers listening on http://127.0.0.1:${port}/api/{relay,mcp}`));
-
-function headers(request: IncomingMessage): Record<string, string> {
-  return Object.fromEntries(Object.entries(request.headers).flatMap(([key, value]) => value === undefined ? [] : [[key, Array.isArray(value) ? value.join(", ") : value]]));
-}
 
 function readBody(request: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {

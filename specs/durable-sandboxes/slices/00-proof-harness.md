@@ -12,7 +12,8 @@
   2 blocked (detail names the missing input). Evidence goes to
   `.localbox/proof/runs/<ts>-<slice>/`.
 - `scripts/proof/stack.ts up|down|status|logs [--machines a,b]`: starts local
-  Convex (`npx convex dev --local --typecheck disable --codegen disable`),
+  Convex (`CONVEX_AGENT_MODE=anonymous npx convex dev --typecheck disable --codegen disable`;
+  the old `--local` flag is gone),
   `npm run dev:local` with `LOCALBOX_DEV_PRINT_CODES=1` teed to
   `.localbox/proof/dev-local.log`, and per-machine processes from slice 03 on.
   Pidfiles; refuses to start when a port is held by a stranger (exit 2 with the

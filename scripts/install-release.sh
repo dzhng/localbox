@@ -10,9 +10,9 @@ INSTALL_ROOT=${LOCALBOX_INSTALL_ROOT:-$HOME/Library/Application Support/Localbox
 RELEASE_ROOT="$INSTALL_ROOT/releases"
 BIN_DIR=${LOCALBOX_BIN_DIR:-$HOME/.local/bin}
 LAUNCH_AGENTS_DIR=${LOCALBOX_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
-TOKEN_FILE=${LOCALBOX_IPC_TOKEN_FILE:-$INSTALL_ROOT/ipc-token}
-SOCKET_PATH=${LOCALBOX_SOCKET_PATH:-$INSTALL_ROOT/agent.sock}
-DISK_PATH=${LOCALBOX_DISK:-$INSTALL_ROOT/vm/disk.img}
+TOKEN_FILE=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/ipc-token
+SOCKET_PATH=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/agent.sock
+DISK_PATH=${LOCALBOX_DISK:-${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/vm/disk.img}
 PUBLIC_KEY_FILE=${LOCALBOX_RELEASE_PUBLIC_KEY_FILE:-$INSTALL_ROOT/release-public.pem}
 RELEASE_REPOSITORY=${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}
 
@@ -129,8 +129,8 @@ UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_FILE' -string "$TOKEN_FILE" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET_PATH' -string "$SOCKET_PATH" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_PATH' -string "$TOKEN_FILE" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_DISK' -string "$DISK_PATH" "$PLIST"

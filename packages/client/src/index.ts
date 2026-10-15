@@ -11,7 +11,7 @@ import {
 import { FakeDispatcher, type DispatchOptions } from "../../runtime/src/index.js";
 import { createConnection, type Socket } from "node:net";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { machinePaths } from "../../config/src/machine-paths.js";
 
 export type TransportKind = "local" | "remote";
 
@@ -102,9 +102,10 @@ export class LocalIPCTransport implements ClientTransport {
   private readonly timeoutMs: number;
 
   constructor(options: LocalIPCTransportOptions = {}) {
-    this.socketPath = expandHome(options.socketPath ?? process.env.LOCALBOX_SOCKET_PATH ?? "~/Library/Application Support/Localbox/agent.sock");
+    const paths = machinePaths();
+    this.socketPath = options.socketPath ?? paths.socket;
     this.token = options.token ?? process.env.LOCALBOX_IPC_TOKEN;
-    this.tokenFile = expandHome(options.tokenFile ?? process.env.LOCALBOX_IPC_TOKEN_FILE ?? "~/Library/Application Support/Localbox/ipc-token");
+    this.tokenFile = options.tokenFile ?? paths.ipcToken;
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     if (!Number.isSafeInteger(this.maxFrameBytes) || this.maxFrameBytes < 1) throw new TypeError("maxFrameBytes must be a positive integer");
@@ -133,11 +134,6 @@ export class LocalIPCTransport implements ClientTransport {
 }
 
 interface LocalIPCWireResponse { envelope?: string; error?: string }
-
-function expandHome(path: string): string {
-  if (path === "~") return homedir();
-  return path.startsWith("~/") ? `${homedir()}/${path.slice(2)}` : path;
-}
 
 function localIPCError(code: string): { code: ErrorCode; message: string; retryable: boolean } {
   if (code === "unauthorized") return { code: "unauthorized", message: "local IPC authentication failed", retryable: false };

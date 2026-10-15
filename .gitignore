@@ -6,6 +6,7 @@ dist/
 build/
 apps/macos/VMProbe/.build/
 .turbo/
+.localbox/
 
 apps/macos/**/.build/
 .vercel
