@@ -1,0 +1,169 @@
+{
+  "tier": "v",
+  "machine_a": "real (Apple Virtualization, minimal image)",
+  "machine_b": "fixture",
+  "screen_locked": true,
+  "machines": [
+    {
+      "name": "proof-a",
+      "capacity": {
+        "cpus": 12,
+        "reserved_bytes": 0,
+        "revision": 1,
+        "room_bytes": 19327352832,
+        "running": 0,
+        "total_bytes": 25769803776
+      }
+    },
+    {
+      "name": "proof-b",
+      "capacity": {
+        "cpus": 12,
+        "reserved_bytes": 0,
+        "revision": 1,
+        "room_bytes": 412316860416,
+        "running": 0,
+        "total_bytes": 549755813888
+      }
+    }
+  ],
+  "create_local": {
+    "sandbox_id": "sandbox_de1f6866-5300-4a46-98ec-7c9985c3338d",
+    "name": "quick-robin",
+    "machine": "proof-a",
+    "placement_reason": "on proof-a, this machine (18 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 5000,
+    "delete_after_ms": null
+  },
+  "node_server_pid": "299",
+  "create_on_b": {
+    "sandbox_id": "sandbox_31077e9a-37a4-49bf-8b8f-6f8abe80c264",
+    "name": "bright-newt",
+    "machine": "proof-b",
+    "placement_reason": "on proof-b, as asked (384 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 1800000,
+    "delete_after_ms": null
+  },
+  "create_auto": {
+    "sandbox_id": "sandbox_f6dae8a8-b6cb-4891-b88e-21c87f37a158",
+    "name": "eager-beaver",
+    "machine": "proof-b",
+    "placement_reason": "on proof-b, the machine with the most room (382 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 1800000,
+    "delete_after_ms": null
+  },
+  "convex_calls_per_relayed_request": 16,
+  "relayed_round_trip_ms": [
+    177,
+    136,
+    126,
+    128,
+    129
+  ],
+  "mcp_shell_exec": {
+    "sandbox": "quick-robin",
+    "stdout": "aarch64",
+    "actions": [
+      {
+        "detail": "woke quick-robin from sleep",
+        "kind": "woke"
+      }
+    ]
+  },
+  "machine_offline": {
+    "ms": 3208,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T15:48:29.011Z"
+  },
+  "asleep": {
+    "lifecycle": "paused",
+    "memory_bytes": 2147483648,
+    "name": "quick-robin",
+    "cpus": 1,
+    "channel_epoch": 2,
+    "sandbox_id": "sandbox_de1f6866-5300-4a46-98ec-7c9985c3338d",
+    "delete_after_ms": null,
+    "detail": "paused in memory: hibernate needs an unlocked screen",
+    "state": "sleeping",
+    "last_boot": {
+      "kind": "cold_booted",
+      "detail": "cold-booted quick-robin"
+    },
+    "sleep_after_ms": 5000
+  },
+  "asleep_on_daemon": {
+    "lifecycle": "paused",
+    "detail": "paused in memory: hibernate needs an unlocked screen"
+  },
+  "woke": [
+    {
+      "kind": "woke",
+      "detail": "woke quick-robin from sleep"
+    }
+  ],
+  "connector_exit": {
+    "code": 0,
+    "ms": 104,
+    "log": [
+      "Uncaught Error: Forbidden: machine revoked or unknown",
+      "Uncaught Error: Forbidden: machine revoked or unknown",
+      "2026-10-15T15:48:44.904Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T15:48:44.904Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T15:48:44.905Z connector: ended: revoked"
+    ]
+  },
+  "checks": [
+    {
+      "name": "A: the minimal image, the host daemon and its signature are built, and the real daemon starts",
+      "ok": true
+    },
+    {
+      "name": "A and B sign in with one email: the account shows 2 machines, both connectors connect and report their room",
+      "ok": true
+    },
+    {
+      "name": "a create from A with no option lands on A as a real VM, with --sleep-after 5s",
+      "ok": true
+    },
+    {
+      "name": "a background Node server starts in A's real sandbox",
+      "ok": true
+    },
+    {
+      "name": "--machine <B> from A lands on B",
+      "ok": true
+    },
+    {
+      "name": "--placement auto from A lands on B, the machine with the most room, and says why",
+      "ok": true
+    },
+    {
+      "name": "shell exec from A on B's sandbox runs on B; Convex function calls per relayed request (over 5)",
+      "ok": true
+    },
+    {
+      "name": "an MCP tools/call from a signed-in agent runs shell.exec in A's sandbox (the real VM)",
+      "ok": true
+    },
+    {
+      "name": "B's connector stopped: A's next call on B gets machine_offline; restarted, B serves again",
+      "ok": true
+    },
+    {
+      "name": "A's sandbox sleeps when idle (paused in memory: the screen is locked) and the next exec reports woke; the Node server kept its PID",
+      "ok": true
+    },
+    {
+      "name": "machines remove <B> from A: B's connector exits with code 0 and A's account shows 1 machine",
+      "ok": true
+    }
+  ]
+}

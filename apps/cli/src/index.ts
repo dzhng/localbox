@@ -11,6 +11,7 @@ import { AgentClient, fixtureTransport, LocalIPCTransport, RelayHttpTransport, t
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { AgentSetup, isAgentSetupOperation, REASONS, type Reason } from "./agent-setup.js";
 import { checkForUpdate, installLatest } from "./updater.js";
+import { restartConnectorJob } from "./connector-job.js";
 import { render } from "./render.js";
 import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 import { readCredentials, writeCredentials, deleteCredentials, type Credentials } from "../../../packages/credentials/src/index.js";
@@ -288,8 +289,10 @@ async function main(): Promise<void> {
     const current = await readCredentials(machinePaths().credentials); if (current && current.account_id !== result.account_id) throw new Error(`this Mac is already signed in to account ${current.account_name}`);
     const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret };
     await writeCredentials(machinePaths().credentials, credentials);
-    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
-    if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.\n`);
+    const connector = await restartConnectorJob();
+    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count, connector: connector.state, ...(connector.detail ? { connector_detail: connector.detail } : {}) };
+    const connectorLine = connector.state === "started" ? " Connector started." : connector.state === "failed" ? ` The connector did not start (${connector.detail}); other machines and cloud agents cannot reach this Mac until it runs.` : "";
+    if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.${connectorLine}\n`);
     return;
   }
   if (group === "logout") {

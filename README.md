@@ -38,11 +38,11 @@ starts by reinstalling the world. A Localbox sandbox keeps its files, installed
 packages, browser profile and desktop across sessions, sleep and reconnects. Set
 it up once and it's still set up next week.
 
-Durable doesn't mean hogging your Mac. A sandbox nobody has used for 30 minutes
-goes to sleep: its memory is saved to disk and the RAM comes back to you. The next
-request wakes it in seconds with every process exactly where it was, down to the
-dev server it left running. When a sandbox should be disposable, give it an idle
-timeout and it deletes itself once nobody's using it. Nothing to prune.
+Durable doesn't mean always running. A sandbox nobody has used for 30 minutes
+goes to sleep, and the next request wakes it with every process exactly where it
+was, down to the dev server it left running. When a sandbox should be disposable,
+give it an idle timeout and it deletes itself once nobody's using it. Nothing to
+prune.
 
 **[Get started →](#get-started)** Your agent installs it for you.
 
@@ -55,8 +55,6 @@ timeout and it deletes itself once nobody's using it. Nothing to prune.
 > "Give each of these three branches its own sandbox and dev server."
 
 > "Use the Mac mini in the closet for tonight's full build."
-
-> "Share `~/code/app` read-only with the sandbox, then show me every file it read."
 
 > "Pick up where we left off yesterday. The dev server should still be running."
 
@@ -99,17 +97,17 @@ wants on their own laptop. Inside a sandbox, let it. The sandbox is the boundary
 so there's nothing inside worth prompting about: install anything, run untrusted
 scripts, break things. The worst case is deleting the sandbox.
 
-## Share a folder, see every access
+## Coming next: share a folder, see every access
 
 <p align="center">
   <img src=".github/readme/06-share-a-folder.png" alt="One shared folder reaches the sandbox through a tube while Xiaohei logs every access in a ledger" width="85%">
 </p>
 
-A sandbox sees nothing on your Mac by default. When your agent needs a project,
-share exactly that folder, read-only unless you say otherwise, and Localbox logs
-every file the sandbox reads or writes through it. Your processes, credentials and
-screen are never shared. The [security model](SECURITY.md) spells out the
-boundary.
+A sandbox sees nothing on your Mac, and today that's the whole story: no host
+folder is shared. Next, your agent will be able to share exactly the folder it
+needs, read-only unless you say otherwise, with Localbox logging every file the
+sandbox reads or writes through it. Your processes, credentials and screen are
+never shared. The [security model](SECURITY.md) spells out the boundary.
 
 ## One catalog, two ways in
 
@@ -132,16 +130,35 @@ make room, the output it trimmed. Your agent never has to guess.
 | **Files** | List, read, write, create and remove paths inside the sandbox |
 | **Browser** | Open, navigate and close tabs; click, type, send keys and take screenshots |
 | **Desktop** | Screenshot, move, click, scroll and type on a 1440×900 virtual display |
-| **Shared folders** | Share a host folder read-only or read-write, and read its access log |
+| **Shared folders** | Coming next: share a host folder read-only or read-write, and read its access log |
 
 ## What works today
 
-This README describes the product we're launching. Today one Mac runs one durable sandbox: lifecycle, shell, files, browser and
-desktop operations, the CLI and optional MCP, the outbound relay, and signed
-releases with automatic updates. Creating and deleting sandboxes on demand, sleep
-and idle deletion, sizing and resize, multi-machine fleets and placement, email
-sign-in, and shared folders with an access log are in progress. Sleep needs
-macOS 14. The [positioning](positioning.md) doc tracks each one.
+Built, and proven end to end on one Mac with real VMs and a simulated second Mac:
+
+- Sign in with your email and a 6-digit code; every Mac you sign in joins one account.
+- Sandboxes with generated, renameable names, many per Mac, each its own Linux VM.
+- Create on this Mac, on a named Mac, or wherever has the most room; from any
+  Mac in the account, use a sandbox on another one.
+- Shell, files, browser and desktop operations, from the CLI or MCP.
+- Idle sandboxes sleep and wake on the next request with their processes intact;
+  a sandbox can delete itself after an idle timeout; a full Mac makes room from
+  its least recently used idle sandboxes and says which.
+- Cloud agents sign in over MCP and reach your sandboxes through the outbound relay.
+- Signed releases that keep the CLI and the Localbox skill current.
+
+Not yet:
+
+- The hosted service at `api.localbox.sh` moves to this version with the first
+  release, and sign-in emails start once the mail domain is set up.
+- While a Mac's screen is locked, a sleeping sandbox is paused in memory and
+  keeps its RAM, and a sandbox put away to make room boots fresh at its next use.
+  Saving a sleeping sandbox to disk to free its RAM is not proven yet.
+- An update restarts the Localbox service. Running sandboxes keep their disks;
+  keeping their processes across it waits on the same save-to-disk step.
+- Shared folders.
+
+The [positioning](positioning.md) doc tracks each use case.
 
 ## Get started
 

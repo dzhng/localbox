@@ -55,7 +55,6 @@ export const asks = [
   "Run this with permissions off, inside a sandbox, not on my laptop.",
   "Give each of these three branches its own sandbox and dev server.",
   "Use the Mac mini in the closet for tonight's full build.",
-  "Share ~/code/app read-only with the sandbox, then show me every file it read.",
   "Pick up where we left off yesterday. The dev server should still be running.",
   "That sandbox is too small for the full test suite. Give it 8 GB.",
 ];
@@ -67,7 +66,7 @@ export const features = [
     alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
     kicker: "durable",
     title: "Still set up next week",
-    body: "A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Idle for 30 minutes, it goes to sleep and gives your RAM back; the next request wakes it with every process where it was, dev server included. Want one disposable? Give it an idle timeout.",
+    body: "A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Idle for 30 minutes, it goes to sleep; the next request wakes it with every process where it was, dev server included. Want one disposable? Give it an idle timeout.",
   },
   {
     image: "05-your-machines-are-the-fleet.png",
@@ -93,9 +92,9 @@ export const features = [
   {
     image: "06-share-a-folder.png",
     alt: "One shared folder reaches the sandbox through a tube while Xiaohei logs every access in a ledger",
-    kicker: "audited",
+    kicker: "coming next",
     title: "Share a folder, see every access",
-    body: "A sandbox sees nothing on your Mac by default. Share exactly the folder your agent needs, read-only unless you say otherwise, and Localbox logs every file it reads or writes.",
+    body: "A sandbox sees nothing on your Mac, and today no host folder is shared. Next: share exactly the folder your agent needs, read-only unless you say otherwise, with Localbox logging every file it reads or writes.",
   },
 ];
 
@@ -105,7 +104,7 @@ export const capabilities = [
   { area: "Shell", body: "Run bounded commands, or start long jobs and wait, poll, cancel or read their output." },
   { area: "Files", body: "List, stat, read, write, create and remove paths inside the sandbox." },
   { area: "Browser and desktop", body: "Open and drive browser tabs; click, type, scroll and screenshot a 1440×900 virtual desktop." },
-  { area: "Shared folders", body: "Share a host folder read-only or read-write, and read its access log." },
+  { area: "Shared folders", body: "Coming next: share a host folder read-only or read-write, and read its access log." },
 ];
 
 export const humanSteps = [
@@ -121,7 +120,7 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "Only while it's working. A sandbox idle for 30 minutes goes to sleep: its memory is saved to disk and the RAM comes back to you. The next request wakes it in seconds with every process exactly where it was.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Today a sleeping sandbox stays paused in memory while the Mac's screen is locked; freeing its RAM by saving it to disk is not proven yet.",
   },
   {
     q: "How do I sign in?",
@@ -129,7 +128,7 @@ export const faq = [
   },
   {
     q: "Can a sandbox see my files?",
-    a: "Not unless you share a folder with it. Shares are read-only by default, every access through them is logged, and your processes, credentials and screen are never shared.",
+    a: "No. No host folder is shared with a sandbox, and your processes, credentials and screen never are. Audited shared folders, read-only by default, are coming next.",
   },
   {
     q: "How is this different from Docker?",
@@ -145,7 +144,7 @@ export const faq = [
   },
   {
     q: "What works today?",
-    a: "Today one Mac runs one durable sandbox with shell, files, browser and desktop, the CLI and optional MCP, and the outbound relay. Creating sandboxes on demand, sleep and idle deletion, sizing, multi-machine fleets and placement, email sign-in and shared folders are in progress.",
+    a: "Email-code sign-in; many sandboxes per Mac with generated names; creating on this Mac, a named Mac or wherever has the most room; shell, files, browser and desktop; sleep when idle with processes intact, and optional idle deletion; MCP for cloud agents through the outbound relay. The hosted service moves to this version with the first release. Shared folders are next.",
   },
 ];
 
@@ -157,7 +156,7 @@ export function llmsText() {
 
 ## Why use it
 
-- **Durable.** Installed packages, files, browser profiles and running processes survive across sessions. Idle sandboxes sleep and wake with every process intact.
+- **Durable.** Installed packages, files and browser profiles survive across sessions. Idle sandboxes sleep and wake with every process intact.
 - **Safe to run with permissions off.** The sandbox is the boundary; the user's own files, credentials and screen are not shared with it.
 - **The user's hardware, not a rented cloud sandbox.** No per-minute bill, no session limit, and the code stays on machines the user owns. Cloud agents reach those machines through an outbound relay.
 - **Built for agents.** One CLI, with MCP as an option. Every command reports exactly what it did.

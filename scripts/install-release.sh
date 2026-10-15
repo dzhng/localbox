@@ -37,6 +37,14 @@ if [ "$(uname -m)" != "arm64" ]; then
   echo "localbox releases require arm64" >&2
   exit 1
 fi
+# LOCALBOX_MACOS_VERSION stands in for sw_vers in installer tests.
+MACOS_VERSION=${LOCALBOX_MACOS_VERSION:-$(sw_vers -productVersion)}
+MACOS_MAJOR=${MACOS_VERSION%%.*}
+case "$MACOS_MAJOR" in ''|*[!0-9]*) MACOS_MAJOR=0 ;; esac
+if [ "$MACOS_MAJOR" -lt 14 ]; then
+  echo "Localbox requires macOS 14 (Sonoma) or newer; this Mac runs macOS $MACOS_VERSION. Update macOS, then install again." >&2
+  exit 1
+fi
 if [ -z "${RELEASE_PUBLIC_KEY:-}" ] && [ "$ALLOW_UNSIGNED" != "1" ]; then
   echo "RELEASE_PUBLIC_KEY is required; set ALLOW_UNSIGNED=1 only for local install checks" >&2
   exit 1

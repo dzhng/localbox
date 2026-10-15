@@ -14,10 +14,13 @@ class FakeConvex implements ConvexLike {
   fetchToken?: (args: { forceRefreshToken: boolean }) => Promise<string | null | undefined>;
   onAuth?: (authenticated: boolean) => void;
   private listeners = new Map<string, (rows: any) => unknown>();
+  private errorListeners = new Map<string, (error: Error) => unknown>();
   claimAnswer: (requestId: string) => Promise<{ claimed: boolean; status: string }> = async () => ({ claimed: true, status: "claimed" });
   setAuth(fetchToken: FakeConvex["fetchToken"], onChange?: (authenticated: boolean) => void): void { this.fetchToken = fetchToken; this.onAuth = onChange; }
-  onUpdate(query: any, args: any, callback: (rows: any) => unknown): () => void {
-    const name = getFunctionName(query); this.calls.push({ name, args }); this.listeners.set(name, callback); return () => { this.listeners.delete(name); };
+  onUpdate(query: any, args: any, callback: (rows: any) => unknown, onError?: (error: Error) => unknown): () => void {
+    const name = getFunctionName(query); this.calls.push({ name, args }); this.listeners.set(name, callback);
+    if (onError) this.errorListeners.set(name, onError);
+    return () => { this.listeners.delete(name); this.errorListeners.delete(name); };
   }
   async mutation(fn: any, args: any): Promise<any> {
     const name = getFunctionName(fn); this.calls.push({ name, args });
@@ -27,6 +30,7 @@ class FakeConvex implements ConvexLike {
   async close(): Promise<void> { this.closed = true; }
   push(rows: PendingRow[]): void { this.listeners.get("relay:pendingForMachine")?.(rows); }
   pushSandboxes(rows: unknown[]): void { this.listeners.get("sandboxes:forMachine")?.(rows); }
+  fail(name: string, error: Error): void { this.errorListeners.get(name)?.(error); }
   named(name: string) { return this.calls.filter((call) => call.name === name); }
 }
 
@@ -165,6 +169,28 @@ test("a revoked machine credential stops the connector and closes Convex", async
   assert.equal(convex.closed, true);
   await settle();
   assert.equal(daemon.reports().at(-1), "revoked");
+});
+
+test("a subscription refused because the machine was removed ends the connector once the token route refuses too", async () => {
+  let removed = false; const forced: boolean[] = [];
+  const { convex, connector } = harness({ fetchToken: async (force) => { forced.push(force); if (removed) throw new RevokedError(); return "jwt"; } });
+  convex.fail("relay:pendingForMachine", new Error("[CONVEX Q(relay:pendingForMachine)] Server Error: Forbidden: machine revoked or unknown"));
+  await settle();
+  assert.equal(connector.state().state, "connecting", "while the token route still answers, the connector keeps going");
+  removed = true;
+  convex.fail("relay:pendingForMachine", new Error("Server Error: Forbidden: machine revoked or unknown"));
+  assert.equal(await connector.finished, "revoked");
+  assert.deepEqual(forced, [true, true]);
+  assert.equal(convex.closed, true);
+});
+
+test("a subscription error that is not about the machine identity does not touch the token", async () => {
+  const forced: boolean[] = [];
+  const { convex, connector } = harness({ fetchToken: async (force) => { forced.push(force); return "jwt"; } });
+  convex.fail("sandboxes:forMachine", new Error("Server Error: something else"));
+  await settle();
+  assert.deepEqual(forced, []);
+  await connector.stop();
 });
 
 test("auth changes move the state and are reported to the daemon", async () => {

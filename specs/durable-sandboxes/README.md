@@ -15,7 +15,9 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-15: slices 00, 01, 03–12 and 14 done. Sandboxes are an account catalog with generated names, driven by `localbox sandbox …` (`npm run proof -- 09 --tier l`); each sandbox has its own runtime, cloned disk and identity under `SandboxHost` (`npm run proof -- 10 --tier s,v`); creates land on this Mac, `--machine` or `--placement auto|remote`, and a full Mac sleeps its least recently used idle sandboxes to make room (`npm run proof -- 11 --tier u,l,v`); idle sandboxes sleep (`--sleep-after`, 30 min default), wake on the next use and say `woke` or `cold_booted`, delete themselves with `--delete-after`, and sleep with the Mac (`npm run proof -- 12 --tier s,l,v`); agent setup keeps the skill and the `localbox` link matched to the installed release at install and every daemon start, through the CLI or MCP, and the skill is rewritten for the shipped product (`npm run proof -- 14 --tier u,l`). In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM and admission stop sandboxes and cold-boot them later, and idle sleep pauses VMs in memory (interim, choices slice 12); the unlocked save/restore run (02, 10's unlocked SIGTERM check, 12's hibernate branch) plus Q5b's locked-Mac fallback wait on the user. Next: 13.*
+*Status 2026-10-15: slices 00, 01, 03–12 and 14 done; 13 done except the production cutover. The whole scenario passes on this Mac: two machines signed in to one account, local, `--machine` and `--placement auto` creates, cross-machine exec, an MCP call, `machine_offline` and recovery, idle sleep with `woke`, a removed machine's connector exiting 0, and on the real A a Node server keeping its PID across sleep (`npm run proof -- 13 --tier l,v`; [evidence](evidence/13-scenario.json)). User docs (README, site, positioning), [SECURITY.md](../../SECURITY.md), the DEVELOPMENT settings and the [two-Mac runbook](two-mac-runbook.md) describe what shipped; the installer refuses macOS below 14. In progress: 02 (hibernate go/no-go): save fails while the Mac's screen is locked (a keychain constraint, see the slice), so SIGTERM and admission stop sandboxes and cold-boot them later, and idle sleep pauses VMs in memory (interim, choices slice 12). Next: the production cutover (orchestrator), then the user's two-Mac run.*
+
+**Open user decisions:** Q5b, the locked-Mac sleep fallback (pause in memory, keeping RAM, today); the slice 02 unlocked save/restore run (also 10's unlocked SIGTERM check and 12's hibernate branch, and step 7 of the runbook); the Resend account, API key and DNS for `mail.localbox.sh`.
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).
@@ -53,7 +55,8 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [x] [11 placement and capacity](slices/11-placement-capacity.md)
 - [x] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)
 - [x] [14 agent setup: skill and CLI kept current](slices/14-agent-setup.md)
-- [ ] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md)
+- [x] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md), except:
+- [ ] production cutover (orchestrator)
 
 ## Slice graph
 

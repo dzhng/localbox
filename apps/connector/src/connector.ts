@@ -83,10 +83,10 @@ export class Connector {
       this.setState(authenticated ? "connected" : "connecting", authenticated ? undefined : "Convex rejected the machine token");
     });
     this.unsubscribe = this.deps.convex.onUpdate(relay.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
-      (error) => { if (!this.ended) this.setState(this.status.state, `subscription error: ${message(error)}`); });
+      (error) => { if (!this.ended) { this.setState(this.status.state, `subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // The daemon's identity mirror follows the catalog, so a rename or delete made while this Mac was offline lands on reconnect.
     this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[]) => void this.mirror(rows ?? []),
-      (error) => { if (!this.ended) this.deps.log(`sandbox mirror subscription error: ${message(error)}`); });
+      (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
   }
 
@@ -106,6 +106,7 @@ export class Connector {
     for (let attempt = 0; !this.ended; attempt++) {
       try { return await this.deps.fetchToken(forceRefresh); }
       catch (error) {
+        if (this.ended) return null;
         if (error instanceof RevokedError) { this.deps.log(`machine credential revoked: ${error.message}; stopping`); void this.end("revoked", error); return null; }
         this.status.lastError = message(error);
         if (attempt >= TOKEN_RETRY_DELAYS_MS.length) { void this.end("stopped", error instanceof Error ? error : new Error(message(error))); return null; }
@@ -114,6 +115,14 @@ export class Connector {
       }
     }
     return null;
+  }
+
+  /**
+   * Convex checks revocation on every call, so a removed machine's subscriptions fail with a Forbidden error while
+   * its JWT is still valid. The token route is the authority: a forced refresh it refuses ends the connector as revoked.
+   */
+  private recheckIdentity(error: unknown): void {
+    if (/Forbidden: machine/.test(message(error))) void this.token(true);
   }
 
   private async run(row: PendingRow): Promise<void> {

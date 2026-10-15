@@ -33,9 +33,9 @@ export async function cli(root: string, machine: string, args: string[]): Promis
   return { ...result, envelope };
 }
 
-export async function waitConnected(root: string, machine: string): Promise<void> {
+export async function waitConnected(root: string, machine: string, at = machineRoot(root, machine)): Promise<void> {
   for (let attempt = 0; attempt < 60; attempt++) {
-    if (readFileSync(join(machineRoot(root, machine), "logs/connector.log"), "utf8").split("started for machine").at(-1)?.includes("state connected")) return;
+    if (readFileSync(join(at, "logs/connector.log"), "utf8").split("started for machine").at(-1)?.includes("state connected")) return;
     await sleep(250);
   }
   throw new Error(`machine ${machine}'s connector never reported connected`);

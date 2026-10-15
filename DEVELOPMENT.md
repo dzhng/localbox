@@ -11,8 +11,8 @@ invariants and rejected alternatives.
 ## Product boundary
 
 Localbox gives an agent durable sandboxes on the user's own machines. A sandbox
-is a Linux VM: product copy says "sandbox", and "VM" belongs to technical docs,
-code and the current operation catalog. The [positioning](positioning.md) doc
+is a Linux VM: product copy says "sandbox", and "VM" belongs to technical docs
+and code. The [positioning](positioning.md) doc
 owns the product message, the use cases and what each one needs before it ships.
 
 Shell is the authority inside the VM; filesystem, browser, screenshot and desktop
@@ -37,14 +37,14 @@ interpretation, and do not make any feature depend on MCP.
 
 ## Fail closed, never guess
 
-- Unknown operations and fields, malformed values, stale VM IDs, stale relay
-  epochs, expired authorization and missing mutation IDs are refused.
+- Unknown operations and fields, malformed values, unknown sandbox names or IDs,
+  expired or revoked authorization and missing mutation IDs are refused.
 - A mutation is never retried implicitly after a lost response. It is reported
   as `operation_uncertain`; the caller resolves it with a status query or an
   exact replay of the same mutation ID.
-- Deployed functions refuse to start without Convex, the API origin, the owner
-  subject configuration. Fixture transports and in-memory
-  providers are opt-in for local tests only.
+- Deployed functions refuse to start without Convex, the API origin and the
+  token signing key. Fixture transports, the dev mailer and the process-fixture
+  VM backend are opt-in for local tests only.
 - A missing native capability reports itself as unsupported rather than
   silently falling back to a fixture backend.
 
@@ -70,9 +70,10 @@ automatic placement. Failures leave the prior state intact.
 
 ## Destructive actions are explicit
 
-Reset requires `discard_state` and a typed confirmation. Reprovision, update,
-rollback and uninstall preserve the VM disk and guest state unless the caller
-confirms discarding them. Unmanaged and project-local skills are never replaced.
+Deleting a sandbox is the one way to discard its disk; `sandbox delete` takes an
+optional `--confirm NAME` that must match. Update, rollback and uninstall
+preserve every sandbox's disk. Unmanaged and project-local skills are never
+replaced.
 
 ## Releases are the only install path
 
@@ -132,6 +133,30 @@ without Convex configuration.
 plus one fixture HostDaemon per simulated machine
 (`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`
 (`a:8G,b:16G` gives each fixture daemon that much RAM instead of this Mac's).
+`npm run proof -- 13 --tier l` runs the whole two-machine scenario; `--tier v`
+makes machine A a real daemon with real VMs.
+
+### A simulated second machine
+
+A second Mac is simulated by a second machine root on this one, served by a
+fixture daemon (`LOCALBOX_VM_BACKEND=process-fixture`, which runs each
+sandbox's guest agent as a child process and sleeps it with `SIGSTOP`; it is
+refused unless `LOCALBOX_DEV=1`). By hand:
+
+```sh
+npx tsx scripts/proof/stack.ts up --machines a,b      # Convex, dev:local, two daemons
+export LOCALBOX_API_ORIGIN=http://127.0.0.1:3000
+LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js login --email you@example.com
+# the code is printed in .localbox/proof/dev-local.log (localbox.dev.email_code)
+LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js login --email you@example.com --code 123456
+LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js connector run &
+# repeat login and connector for machine b, then create and run across them:
+LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js sandbox create --placement remote
+npx tsx scripts/proof/stack.ts down
+```
+
+Every CLI call names its machine with `LOCALBOX_MACHINE_ROOT`; without it the CLI
+uses this Mac's real install.
 
 ### How a request reaches a sandbox
 
@@ -172,17 +197,37 @@ The relay and MCP endpoint deploy from `apps/relay/api/[...path].ts` and
 | `LOCALBOX_API_ORIGIN` | Public API origin, normally `https://api.localbox.sh`. The MCP resource and relay URLs derive from it. |
 | `CONVEX_URL` | Durable Convex deployment: accounts, machines, relay rows and OAuth state. |
 | `LOCALBOX_JWT_PRIVATE_KEY` | ES256 (P-256) private key, PEM. Vercel signs short-lived Convex tokens with it; deployed functions refuse to start without it. |
+| `RESEND_API_KEY` | Resend API key for sign-in codes, sent from `login@mail.localbox.sh`. Without it (and outside local dev) sign-in fails with "email delivery is not configured". |
+
+Local development only (`npm run dev:local` sets `LOCALBOX_LOCAL_SERVICES=1`):
+
+| Setting | Purpose |
+| --- | --- |
+| `LOCALBOX_DEV_PRINT_CODES` | `1` prints sign-in codes to the dev server's log (`localbox.dev.email_code`) instead of emailing them. Refused unless local services are on. |
+| `LOCALBOX_DEV` | `1` lets a HostDaemon use the process-fixture backend and `host.simulate_power`. |
+
+On each Mac:
+
+| Setting | Purpose |
+| --- | --- |
+| `LOCALBOX_MACHINE_ROOT` | Relocates the whole machine state (credentials, IPC token, socket, sandboxes, logs); used for simulated machines and fixture installs. |
+| `LOCALBOX_CLI` | The installed CLI the HostDaemon runs for agent setup (set in its launchd plist by the installer). Without it the daemon does not reconcile the skill and refuses `skill.*`. |
+| `LOCALBOX_API_ORIGIN` | The API the CLI and connector talk to; defaults to `https://api.localbox.sh`. |
 
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes.
 
-Relay rows live 24 hours (a daily cron, `relay:cleanupExpired`). Per-account
-daily limits are Convex environment variables: `LOCALBOX_RELAY_DAILY_REQUESTS`
-(default 500) and `LOCALBOX_RELAY_DAILY_RESULT_BYTES` (default 25,000,000).
+Relay rows live 24 hours (a daily cron, `relay:cleanupExpired`).
 
-Convex itself needs two environment variables (`npx convex env set`): `LOCALBOX_API_ORIGIN`
-(the token issuer, the same origin as above) and `LOCALBOX_JWKS`, the public key
-set printed by `npx tsx scripts/jwks.ts` from the signing key. Every public Convex
+Convex environment variables (`npx convex env set`):
+
+| Setting | Purpose |
+| --- | --- |
+| `LOCALBOX_API_ORIGIN` | The token issuer, the same origin as above. |
+| `LOCALBOX_JWKS` | The public key set printed by `npx tsx scripts/jwks.ts` from `LOCALBOX_JWT_PRIVATE_KEY`. |
+| `LOCALBOX_RELAY_DAILY_REQUESTS` | Per-account daily relayed requests; default 500. |
+| `LOCALBOX_RELAY_DAILY_RESULT_BYTES` | Per-account daily relayed result bytes; default 25,000,000. |
+ Every public Convex
 function rejects callers without a valid token; operator functions such as
 `admin:wipe` are internal and run only through `npx convex run`.
 

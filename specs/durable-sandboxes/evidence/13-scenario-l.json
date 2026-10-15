@@ -1,0 +1,155 @@
+{
+  "tier": "l",
+  "machine_a": "fixture",
+  "machine_b": "fixture",
+  "screen_locked": false,
+  "machines": [
+    {
+      "name": "proof-a",
+      "capacity": {
+        "cpus": 12,
+        "reserved_bytes": 0,
+        "revision": 1,
+        "room_bytes": 6442450944,
+        "running": 0,
+        "total_bytes": 8589934592
+      }
+    },
+    {
+      "name": "proof-b",
+      "capacity": {
+        "cpus": 12,
+        "reserved_bytes": 0,
+        "revision": 1,
+        "room_bytes": 12884901888,
+        "running": 0,
+        "total_bytes": 17179869184
+      }
+    }
+  ],
+  "create_local": {
+    "sandbox_id": "sandbox_c79c8cb6-ef3f-4892-abfb-ab895634c61c",
+    "name": "witty-newt",
+    "machine": "proof-a",
+    "placement_reason": "on proof-a, this machine (6 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 5000,
+    "delete_after_ms": null
+  },
+  "create_on_b": {
+    "sandbox_id": "sandbox_7c4b09a0-5115-47f4-8e4b-2582382a8010",
+    "name": "amber-zebra",
+    "machine": "proof-b",
+    "placement_reason": "on proof-b, as asked (12 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 1800000,
+    "delete_after_ms": null
+  },
+  "create_auto": {
+    "sandbox_id": "sandbox_73e7a7ec-34bd-4d2e-9819-162f053192d4",
+    "name": "calm-koala",
+    "machine": "proof-b",
+    "placement_reason": "on proof-b, the machine with the most room (10 GiB free)",
+    "cpus": 1,
+    "memory_bytes": 2147483648,
+    "size_reason": "as requested",
+    "sleep_after_ms": 1800000,
+    "delete_after_ms": null
+  },
+  "convex_calls_per_relayed_request": 15,
+  "relayed_round_trip_ms": [
+    184,
+    130,
+    126,
+    127,
+    127
+  ],
+  "mcp_shell_exec": {
+    "sandbox": "witty-newt",
+    "stdout": "arm64",
+    "actions": [
+      {
+        "detail": "woke witty-newt from sleep",
+        "kind": "woke"
+      }
+    ]
+  },
+  "machine_offline": {
+    "ms": 3197,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T15:46:05.538Z"
+  },
+  "asleep": {
+    "cpus": 1,
+    "sleep_after_ms": 5000,
+    "memory_bytes": 2147483648,
+    "name": "witty-newt",
+    "lifecycle": "paused",
+    "last_boot": {
+      "kind": "cold_booted",
+      "detail": "cold-booted witty-newt"
+    },
+    "delete_after_ms": null,
+    "channel_epoch": 2,
+    "sandbox_id": "sandbox_c79c8cb6-ef3f-4892-abfb-ab895634c61c",
+    "state": "sleeping"
+  },
+  "woke": [
+    {
+      "kind": "woke",
+      "detail": "woke witty-newt from sleep"
+    }
+  ],
+  "connector_exit": {
+    "code": 0,
+    "ms": 104,
+    "log": [
+      "Uncaught Error: Forbidden: machine revoked or unknown",
+      "Uncaught Error: Forbidden: machine revoked or unknown",
+      "2026-10-15T15:46:18.162Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T15:46:18.162Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T15:46:18.163Z connector: ended: revoked"
+    ]
+  },
+  "checks": [
+    {
+      "name": "A and B sign in with one email: the account shows 2 machines, both connectors connect and report their room",
+      "ok": true
+    },
+    {
+      "name": "a create from A with no option lands on A, with --sleep-after 5s",
+      "ok": true
+    },
+    {
+      "name": "--machine <B> from A lands on B",
+      "ok": true
+    },
+    {
+      "name": "--placement auto from A lands on B, the machine with the most room, and says why",
+      "ok": true
+    },
+    {
+      "name": "shell exec from A on B's sandbox runs on B; Convex function calls per relayed request (over 5)",
+      "ok": true
+    },
+    {
+      "name": "an MCP tools/call from a signed-in agent runs shell.exec in A's sandbox",
+      "ok": true
+    },
+    {
+      "name": "B's connector stopped: A's next call on B gets machine_offline; restarted, B serves again",
+      "ok": true
+    },
+    {
+      "name": "A's sandbox sleeps when idle and the next exec reports woke",
+      "ok": true
+    },
+    {
+      "name": "machines remove <B> from A: B's connector exits with code 0 and A's account shows 1 machine",
+      "ok": true
+    }
+  ]
+}

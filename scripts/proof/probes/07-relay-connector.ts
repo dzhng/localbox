@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
+import { countConvexCalls } from "../lib/convex-admin.js";
 import { API_ORIGIN, startConnector, stopConnector } from "../lib/login.js";
 import { guestRoot as guestRootOf, inAnyGuestRoot, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
 
@@ -37,14 +38,6 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     assert.equal(data.code, 0, data.stderr);
     return data.stdout.trim().split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
   };
-  /** Counts Convex function executions while `during` runs, from the local backend's function log. */
-  const countCalls = async (during: () => Promise<void>): Promise<number> => {
-    let count = 0; const child: ChildProcess = spawn("npx", ["convex", "logs", "--success", "--jsonl", "--history", "0"], { cwd: ctx.root, env: { ...process.env, ...convexEnv }, stdio: ["ignore", "pipe", "ignore"], detached: true });
-    child.stdout!.on("data", (chunk: Buffer) => { count += chunk.toString().split("\n").filter((line) => line.includes("\"udfType\"") || line.includes("\"identifier\"")).length; });
-    await sleep(3000); count = 0;
-    try { await during(); await sleep(2000); } finally { try { process.kill(-child.pid!, "SIGTERM"); } catch { /* gone */ } }
-    return count;
-  };
   const connectors: Record<string, ChildProcess | undefined> = {};
   try {
     const checks: Check[] = [];
@@ -60,14 +53,14 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(JSON.parse(exec.stdout).ok, true, exec.stdout + exec.stderr);
       assert.ok(existsSync(join(guestRootB(), marker)), "the command ran in B's guest"); assert.ok(!inAnyGuestRoot(ctx.root, "a", marker), "and not in A's");
       const timings: number[] = [];
-      const relayed = await countCalls(async () => { for (let index = 0; index < 10; index++) { const result = await onB("fs.stat", { path: "/" }); assert.equal(result.envelope.ok, true, JSON.stringify(result.envelope)); timings.push(result.ms); } });
+      const relayed = await countConvexCalls(ctx.root, async () => { for (let index = 0; index < 10; index++) { const result = await onB("fs.stat", { path: "/" }); assert.equal(result.envelope.ok, true, JSON.stringify(result.envelope)); timings.push(result.ms); } });
       const ours = (await rows()).filter((row) => row.operation === "fs.stat" && row.claimedAt);
       const claim = ours.map((row) => row.claimedAt - row.createdAt);
       assert.equal(claim.length, 10); assert.ok(median(claim) < 1000, `median claim latency ${median(claim)} ms`);
       Object.assign(budget, { claim_latency_ms: claim, round_trip_ms: timings, convex_calls_per_request: relayed / 10, payload_bytes: ours.map((row) => JSON.stringify(row.payload).length) });
     }));
     checks.push(await ctx.check("over 60 s idle neither machine makes a Convex function call", async () => {
-      const idle = await countCalls(async () => { await sleep(60_000); }); budget.idle_calls_60s = idle;
+      const idle = await countConvexCalls(ctx.root, async () => { await sleep(60_000); }); budget.idle_calls_60s = idle;
       assert.equal(idle, 0, `${idle} function calls while idle`);
     }));
     checks.push(await ctx.check("B's connector stopped: A gets machine_offline in under 5 s, the row is abandoned, and B never runs it", async () => {

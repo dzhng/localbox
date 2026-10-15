@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { activateRelease, activeRelease, makeManifest, rollbackRelease, signManifest, verifyManifestSignature, writeRelease, verifyRelease } from "../scripts/release.js";
 
@@ -75,4 +76,21 @@ test("release verification rejects artifact path traversal", async () => {
     ...manifest,
     artifacts: [{ ...manifest.artifacts[0], name: "../outside" }],
   }), /invalid artifact name/);
+});
+
+test("the installer refuses macOS below 14 and names the version; 14 and newer pass the check", async () => {
+  const home = await mkdtemp(join(tmpdir(), "localbox-installer-home-")); const release = await mkdtemp(join(tmpdir(), "localbox-installer-release-"));
+  const install = (version: string) => spawnSync("sh", ["scripts/install-release.sh", release], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: home, ALLOW_UNSIGNED: "1", LOCALBOX_MACOS_VERSION: version } });
+  try {
+    for (const version of ["13.6.1", "12.7"]) {
+      const refused = install(version);
+      assert.equal(refused.status, 1);
+      assert.equal(refused.stderr.trim(), `Localbox requires macOS 14 (Sonoma) or newer; this Mac runs macOS ${version}. Update macOS, then install again.`);
+    }
+    for (const version of ["14.0", "26.1"]) {
+      const passed = install(version);
+      assert.doesNotMatch(passed.stderr, /requires macOS/);
+      assert.match(passed.stderr, /release directory is missing/, "it went on to read the (empty) release");
+    }
+  } finally { await rm(home, { recursive: true, force: true }); await rm(release, { recursive: true, force: true }); }
 });
