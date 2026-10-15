@@ -48,6 +48,8 @@ export class FakeDispatcher {
   readonly clock: FixtureClock;
   readonly handlers: Map<OperationId, Handler>;
   private readonly mutationResults = new Map<string, ResponseEnvelope>();
+  /** A mutation replayed while its first run is still going (a restarted connector) waits for that run. */
+  private readonly mutationsInFlight = new Map<string, Promise<ResponseEnvelope>>();
   constructor(options: { clock?: FixtureClock; handlers?: HandlerRegistry } = {}) {
     this.clock = options.clock ?? new FixtureClock();
     this.handlers = new Map(operationCatalog.map((entry) => [entry.id, (_input: Json, context: DispatchContext) => defaultResult(context.request, context.clock)]));
@@ -65,6 +67,13 @@ export class FakeDispatcher {
     const entry = catalogById.get(request.operation as OperationId)!;
     const key = request.mutation_id ? `${request.vm_id}:${request.operation}:${request.mutation_id}` : undefined;
     if (key && this.mutationResults.has(key)) return this.mutationResults.get(key)!;
+    if (key && this.mutationsInFlight.has(key)) return await this.mutationsInFlight.get(key)!;
+    if (!key) return await this.run(request, entry, key, options);
+    const running = this.run(request, entry, key, options);
+    this.mutationsInFlight.set(key, running);
+    try { return await running; } finally { this.mutationsInFlight.delete(key); }
+  }
+  private async run(request: RequestEnvelope, entry: NonNullable<ReturnType<typeof catalogById.get>>, key: string | undefined, options: DispatchOptions): Promise<ResponseEnvelope> {
     const started = this.clock.now();
     const signal = options.signal;
     const context: DispatchContext = {

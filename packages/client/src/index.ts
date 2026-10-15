@@ -29,58 +29,57 @@ export interface ClientTransport {
 }
 
 export interface RelayHttpTransportOptions {
-  baseUrl: string;
+  /** API origin, e.g. https://localbox.sh; requests go to `${apiOrigin}/api/v1/ops`. */
+  apiOrigin: string;
+  /** The target machine (name or id). Remote calls always name one; there is no implicit routing. */
+  machine: string;
   accessToken?: string;
   accessTokenProvider?: () => Promise<string | undefined>;
   fetchImpl?: typeof fetch;
-  pollMs?: number;
 }
 
-/** Stateless HTTPS transport for the Vercel relay. It never retries a mutation. */
+/**
+ * Runs a request on another machine of the account through the agent API. The server waits up to 50 s per call
+ * and hands back a continuation for longer requests; this transport resumes it until the request's deadline.
+ * It never replays a mutation on its own.
+ */
 export class RelayHttpTransport implements ClientTransport {
   readonly kind = "remote" as const;
-  private readonly baseUrl: string;
+  private readonly endpoint: string;
+  private readonly machine: string;
   private readonly accessTokenProvider?: () => Promise<string | undefined>;
   private readonly fetchImpl: typeof fetch;
-  private readonly pollMs: number;
-  private accessToken?: string;
+  private readonly accessToken?: string;
   constructor(options: RelayHttpTransportOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.endpoint = `${options.apiOrigin.replace(/\/$/, "")}/api/v1/ops`;
+    this.machine = options.machine;
     this.accessToken = options.accessToken;
     this.accessTokenProvider = options.accessTokenProvider;
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.pollMs = options.pollMs ?? 50;
   }
   async dispatch(request: RequestEnvelope, options: DispatchOptions = {}): Promise<ResponseEnvelope> {
     const token = this.accessTokenProvider ? await this.accessTokenProvider() : this.accessToken;
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (token) headers.authorization = `Bearer ${token}`;
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${this.baseUrl}/v1/requests`, { method: "POST", headers, body: JSON.stringify(request), signal: options.signal });
-    } catch (error) {
-      throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay request failed", true);
-    }
-    if (response.status === 401 || response.status === 403) return failure(request, { code: "unauthorized", message: "remote authentication failed", retryable: false });
-    if (!response.ok) return failure(request, { code: response.status === 429 ? "rate_limited" : "internal", message: await response.text(), retryable: response.status >= 500 || response.status === 429 });
-    const submitted = await response.json() as { status?: string; response?: ResponseEnvelope; request_id?: string };
-    if (submitted.response) return submitted.response;
-    const requestId = submitted.request_id ?? request.request_id;
-    const deadline = Date.now() + request.deadline_ms;
-    while (Date.now() < deadline) {
-      let polled: Response;
+    let body: Record<string, unknown> = { operation: request.operation, input: request.input, machine: this.machine, vm_id: request.vm_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms };
+    for (;;) {
+      let response: Response;
       try {
-        polled = await this.fetchImpl(`${this.baseUrl}/v1/requests/${encodeURIComponent(requestId)}`, { method: "GET", headers, signal: options.signal });
+        response = await this.fetchImpl(this.endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: options.signal });
       } catch (error) {
-        throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay poll failed", true);
+        throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay request failed", true);
       }
-      if (polled.status === 202 || polled.status === 404) { await new Promise((resolve) => setTimeout(resolve, this.pollMs)); continue; }
-      if (!polled.ok) return failure(request, { code: polled.status === 401 ? "unauthorized" : "internal", message: await polled.text(), retryable: polled.status >= 500 });
-      const result = await polled.json() as { response?: ResponseEnvelope; status?: string };
+      if (response.status === 401 || response.status === 403) return failure(request, { code: "unauthorized", message: "this machine was removed or is signed out; run localbox login", retryable: false });
+      if (response.status === 202) {
+        const pending = await response.json() as { request_id: string; deadline_at: number };
+        body = { continue: pending.request_id, deadline_at: pending.deadline_at };
+        continue;
+      }
+      if (!response.ok) return failure(request, { code: response.status === 429 ? "rate_limited" : "internal", message: await response.text(), retryable: response.status >= 500 || response.status === 429 });
+      const result = await response.json() as { response?: ResponseEnvelope };
       if (result.response) return result.response;
-      await new Promise((resolve) => setTimeout(resolve, this.pollMs));
+      return failure(request, { code: "internal", message: "the agent API returned no response", retryable: false });
     }
-    return failure(request, { code: "operation_timeout", message: "relay response deadline exceeded", retryable: true });
   }
 }
 

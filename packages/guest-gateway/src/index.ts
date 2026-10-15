@@ -9,7 +9,6 @@ import {
 } from "../../contract/src/index.js";
 import { FixtureClock, type DispatchContext, type Handler, type HandlerRegistry } from "../../runtime/src/index.js";
 import { DesktopRuntime, desktopHandlers } from "../../desktop/src/index.js";
-import { PUBLIC_RELAY_URL } from "../../config/src/index.js";
 
 export interface GuestGatewayOptions {
   root: string;
@@ -194,7 +193,6 @@ export class GuestGateway {
       "vm.reset": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "reset" }; },
       "vm.logs": async () => ({ lines: [] }),
       "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
-      "relay.status": async () => ({ connected: true, relay_url: PUBLIC_RELAY_URL }),
       "job.status": async (input) => { const j = this.job(input); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
       "job.wait": async (input) => { const i = input as { job_id: string; timeout_ms: number }; const j = this.job(i); await Promise.race([j.done, new Promise<void>((resolve) => setTimeout(resolve, i.timeout_ms))]); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
       "job.cancel": async (input) => { const j = this.job(input); if (j.status === "running" && j.child.pid) killTree(j.child); return { job_id: j.job_id, cancelled: true }; },

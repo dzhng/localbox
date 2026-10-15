@@ -9,17 +9,6 @@ export interface RelayStateRepository {
   createOwner(input: OwnerInput): Promise<OwnerRecord>;
   createVm(input: VmInput): Promise<VmRecord>;
   listVms(ownerId: string): Promise<VmRecord[]>;
-  issueChannelGrant(input: ChannelGrantInput): Promise<ChannelGrantRecord>;
-  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string): Promise<ChannelGrantRecord>;
-  revokeChannel(channelId: string): Promise<void>;
-  getChannel(channelId: string): Promise<ChannelGrantRecord | undefined>;
-  validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }): Promise<ChannelGrantRecord>;
-  enqueueRequest(input: RequestFrameInput): Promise<RequestFrameRecord>;
-  getRequest(requestId: string): Promise<RequestFrameRecord | undefined>;
-  claimRequests(input: ClaimInput): Promise<RequestFrameRecord[]>;
-  recordResponse(input: ResponseFrameInput): Promise<ResponseFrameRecord>;
-  getResponse(requestId: string): Promise<ResponseFrameRecord | undefined>;
-  ackRequest(requestId: string, leaseOwner: string): Promise<void>;
   createAuthorizationCode(input: AuthorizationCodeInput): Promise<AuthorizationCodeRecord>;
   consumeAuthorizationCode(code: string, verifier: string): Promise<AuthorizationCodeRecord>;
   issueOAuthTokens(input: OAuthTokenInput): Promise<OAuthTokenRecord>;
@@ -29,20 +18,12 @@ export interface RelayStateRepository {
   revokeOAuthFamily(familyId: string): Promise<void>;
   appendAudit(input: AuditInput): Promise<AuditRecord>;
   quota(input: QuotaInput): Promise<QuotaRecord>;
-  ownerStatus(ownerId: string, vmId?: string): Promise<{ channels: number; queued: number }>;
 }
 
 export interface OwnerInput { ownerId?: string; subject: string; displayName?: string }
 export interface OwnerRecord { ownerId: string; subject: string; displayName?: string; createdAt: number }
 export interface VmInput { ownerId: string; vmId?: string; name?: string }
 export interface VmRecord { vmId: string; ownerId: string; name?: string; createdAt: number; revokedAt?: number }
-export interface ChannelGrantInput { ownerId: string; vmId: string; channelId?: string; token: string; epoch?: number; expiresAt?: number }
-export interface ChannelGrantRecord { channelId: string; ownerId: string; vmId: string; tokenHash: string; epoch: number; expiresAt: number; revokedAt?: number }
-export interface RequestFrameInput { ownerId: string; vmId: string; requestId: string; operation: string; mutationId?: string | null; payload: Json; deadlineAt?: number }
-export interface RequestFrameRecord extends RequestFrameInput { frameId: string; payloadHash: string; status: "queued" | "leased" | "completed"; createdAt: number; leaseOwner?: string; leaseExpiresAt?: number }
-export interface ClaimInput { ownerId?: string; leaseOwner: string; limit?: number; leaseMs?: number; vmId?: string }
-export interface ResponseFrameInput { requestId: string; response: Json; payloadHash?: string; leaseOwner?: string }
-export interface ResponseFrameRecord { requestId: string; response: Json; responseHash: string; recordedAt: number }
 export interface AuthorizationCodeInput { ownerId: string; clientId: string; redirectUri: string; resource: string; vmId: string; codeChallenge: string; code?: string; expiresAt?: number; scope?: string }
 export interface AuthorizationCodeRecord extends AuthorizationCodeInput { code: string; codeHash: string; expiresAt: number; usedAt?: number }
 export interface OAuthTokenInput { ownerId: string; vmId: string; resource: string; scope?: string; familyId?: string; accessToken: string; refreshToken: string; accessExpiresAt: number; refreshExpiresAt: number }
@@ -52,7 +33,8 @@ export interface AuditInput { ownerId?: string; vmId?: string; requestId?: strin
 export interface AuditRecord extends AuditInput { auditId: string; at: number; metadata?: Json }
 export interface QuotaInput { ownerId: string; bucket: string; limit: number; amount?: number }
 export interface QuotaRecord { ownerId: string; bucket: string; used: number; limit: number; resetAt: number }
-export interface StateSnapshot { owners: OwnerRecord[]; vms: VmRecord[]; channels: ChannelGrantRecord[]; requests: RequestFrameRecord[]; responses: ResponseFrameRecord[]; audit: AuditRecord[]; quotas: QuotaRecord[] }
+/** The in-memory repository's row tables; OAuth codes and tokens stay hashed in private maps. */
+export interface StateSnapshot { owners: OwnerRecord[]; vms: VmRecord[]; audit: AuditRecord[]; quotas: QuotaRecord[] }
 
 export class StateConflictError extends Error { constructor(message: string) { super(message); this.name = "StateConflictError"; } }
 export class StateNotFoundError extends Error { constructor(message: string) { super(message); this.name = "StateNotFoundError"; } }
@@ -76,8 +58,6 @@ interface Store extends StateSnapshot {
   oauth: Map<string, OAuthTokenRecord>;
   revokedFamilies: Set<string>;
   ownersBySubject: Map<string, string>;
-  requestById: Map<string, string>;
-  dedupe: Map<string, { payloadHash: string; requestId: string }>;
 }
 export interface LocalRepositoryOptions { deploymentId?: string; now?: () => number; id?: (prefix: string) => string; store?: Store }
 
@@ -90,22 +70,11 @@ export class InMemoryRelayStateRepository implements RelayStateRepository {
   constructor(options: LocalRepositoryOptions = {}) {
     this.deploymentId = options.deploymentId ?? "local"; this.now = options.now ?? (() => Date.now());
     let sequence = 0; this.id = options.id ?? ((prefix) => `${prefix}_${++sequence}`);
-    this.store = options.store ?? { deploymentId: this.deploymentId, owners: [], vms: [], channels: [], requests: [], responses: [], audit: [], quotas: [], authCodes: new Map(), oauth: new Map(), revokedFamilies: new Set(), ownersBySubject: new Map(), requestById: new Map(), dedupe: new Map() };
+    this.store = options.store ?? { deploymentId: this.deploymentId, owners: [], vms: [], audit: [], quotas: [], authCodes: new Map(), oauth: new Map(), revokedFamilies: new Set(), ownersBySubject: new Map() };
   }
   async createOwner(input: OwnerInput): Promise<OwnerRecord> { const existing = this.store.ownersBySubject.get(input.subject); if (existing) return clone(this.store.owners.find((x) => x.ownerId === existing)!); const record = { ownerId: input.ownerId ?? this.id("owner"), subject: input.subject, displayName: input.displayName, createdAt: this.now() }; this.store.owners.push(record); this.store.ownersBySubject.set(record.subject, record.ownerId); return clone(record); }
   async createVm(input: VmInput): Promise<VmRecord> { this.requireOwner(input.ownerId); if (this.store.vms.some((x) => x.vmId === input.vmId)) throw new StateConflictError("VM already exists"); const record = { vmId: input.vmId ?? this.id("vm"), ownerId: input.ownerId, name: input.name, createdAt: this.now() }; this.store.vms.push(record); return clone(record); }
   async listVms(ownerId: string): Promise<VmRecord[]> { this.requireOwner(ownerId); return clone(this.store.vms.filter((x) => x.ownerId === ownerId && !x.revokedAt)); }
-  async issueChannelGrant(input: ChannelGrantInput): Promise<ChannelGrantRecord> { this.requireVm(input.ownerId, input.vmId); const existing = this.store.channels.find((x) => x.channelId === input.channelId); if (existing) throw new StateConflictError("channel already exists"); const record = { channelId: input.channelId ?? this.id("channel"), ownerId: input.ownerId, vmId: input.vmId, tokenHash: hash(input.token), epoch: input.epoch ?? 1, expiresAt: input.expiresAt ?? this.now() + 86_400_000 }; this.store.channels.push(record); return clone(record); }
-  async rotateChannelGrant(channelId: string, expectedEpoch: number, token: string): Promise<ChannelGrantRecord> { const record = this.channel(channelId); this.assertLiveChannel(record); if (record.epoch !== expectedEpoch) throw new StateConflictError("stale channel epoch"); record.epoch++; record.tokenHash = hash(token); return clone(record); }
-  async revokeChannel(channelId: string): Promise<void> { const record = this.channel(channelId); record.revokedAt = this.now(); }
-  async getChannel(channelId: string): Promise<ChannelGrantRecord | undefined> { const record = this.store.channels.find((x) => x.channelId === channelId); return record && clone(record); }
-  async validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }): Promise<ChannelGrantRecord> { const record = this.channel(input.channelId); this.assertLiveChannel(record); if (record.vmId !== input.vmId || record.epoch !== input.epoch || record.tokenHash !== hash(input.token)) throw new StateUnauthorizedError("channel grant is stale, revoked, or VM-bound"); return clone(record); }
-  async enqueueRequest(input: RequestFrameInput): Promise<RequestFrameRecord> { this.requireVm(input.ownerId, input.vmId); const payloadHash = hash(JSON.stringify(input.payload)); const dedupeKey = input.mutationId ? `${input.vmId}:${input.operation}:${input.mutationId}` : undefined; if (this.store.requestById.has(input.requestId)) { const old = this.request(input.requestId); if (old.payloadHash !== payloadHash) throw new StateConflictError("request id conflicts with payload"); return clone(old); } if (dedupeKey && this.store.dedupe.has(dedupeKey)) { const old = this.request(this.store.dedupe.get(dedupeKey)!.requestId); if (old.payloadHash !== payloadHash) throw new StateConflictError("mutation id conflicts with payload"); return clone(old); } const record: RequestFrameRecord = { ...input, mutationId: input.mutationId ?? null, frameId: this.id("frame"), payloadHash, status: "queued", createdAt: this.now() }; this.store.requests.push(record); this.store.requestById.set(input.requestId, record.frameId); if (dedupeKey) this.store.dedupe.set(dedupeKey, { payloadHash, requestId: input.requestId }); return clone(record); }
-  async getRequest(requestId: string): Promise<RequestFrameRecord | undefined> { const record = this.store.requests.find((x) => x.requestId === requestId); return record && clone(record); }
-  async claimRequests(input: ClaimInput): Promise<RequestFrameRecord[]> { const now = this.now(); const leaseMs = input.leaseMs ?? 30_000; const limit = input.limit ?? 20; const available = this.store.requests.filter((record) => (!input.ownerId || record.ownerId === input.ownerId) && (!input.vmId || record.vmId === input.vmId) && (record.status === "queued" || (record.status === "leased" && (record.leaseExpiresAt ?? 0) <= now))).slice(0, limit); for (const record of available) { record.status = "leased"; record.leaseOwner = input.leaseOwner; record.leaseExpiresAt = now + leaseMs; } return clone(available); }
-  async recordResponse(input: ResponseFrameInput): Promise<ResponseFrameRecord> { const request = this.request(input.requestId); const existing = this.store.responses.find((x) => x.requestId === input.requestId); const responseHash = hash(JSON.stringify(input.response)); if (existing) { if (existing.responseHash !== responseHash) throw new StateConflictError("response conflicts with recorded response"); return clone(existing); } if (request.status !== "leased" || !input.leaseOwner || request.leaseOwner !== input.leaseOwner || (request.leaseExpiresAt ?? 0) <= this.now()) throw new StateConflictError("request lease is not owned or has expired"); request.status = "completed"; request.leaseOwner = undefined; request.leaseExpiresAt = undefined; const record = { requestId: input.requestId, response: input.response, responseHash, recordedAt: this.now() }; this.store.responses.push(record); return clone(record); }
-  async getResponse(requestId: string): Promise<ResponseFrameRecord | undefined> { const record = this.store.responses.find((x) => x.requestId === requestId); return record && clone(record); }
-  async ackRequest(requestId: string, leaseOwner: string): Promise<void> { const request = this.request(requestId); if (request.status !== "leased" || request.leaseOwner !== leaseOwner || (request.leaseExpiresAt ?? 0) <= this.now()) throw new StateConflictError("request lease is not owned"); request.status = "completed"; request.leaseOwner = undefined; request.leaseExpiresAt = undefined; }
   async createAuthorizationCode(input: AuthorizationCodeInput): Promise<AuthorizationCodeRecord> { this.requireVm(input.ownerId, input.vmId); const code = input.code ?? this.id("code"); const record = { ...input, code, codeHash: hash(code), expiresAt: input.expiresAt ?? this.now() + 300_000 }; this.store.authCodes.set(record.codeHash, record); return clone(record); }
   async consumeAuthorizationCode(code: string, verifier: string): Promise<AuthorizationCodeRecord> { const record = this.store.authCodes.get(hash(code)); const standardChallenge = createHash("sha256").update(verifier).digest("base64url"); if (!record || record.usedAt || record.expiresAt <= this.now() || (hash(verifier) !== record.codeChallenge && standardChallenge !== record.codeChallenge)) throw new StateUnauthorizedError("authorization code invalid, expired, or already used"); record.usedAt = this.now(); return clone(record); }
   async issueOAuthTokens(input: OAuthTokenInput): Promise<OAuthTokenRecord> { this.requireVm(input.ownerId, input.vmId); const record = { ...input, scope: input.scope ?? "vm", familyId: input.familyId ?? this.id("family"), accessTokenHash: hash(input.accessToken), refreshTokenHash: hash(input.refreshToken) }; this.store.oauth.set(record.refreshTokenHash, record); return clone(record); }
@@ -115,13 +84,9 @@ export class InMemoryRelayStateRepository implements RelayStateRepository {
   async revokeOAuthToken(token: string, hint?: "access_token" | "refresh_token"): Promise<void> { const digest = hash(token); const record = [...this.store.oauth.values()].find((candidate) => (hint === "refresh_token" ? candidate.refreshTokenHash === digest : hint === "access_token" ? candidate.accessTokenHash === digest : candidate.accessTokenHash === digest || candidate.refreshTokenHash === digest)); if (record) await this.revokeOAuthFamily(record.familyId); }
   async appendAudit(input: AuditInput): Promise<AuditRecord> { const record = { ...input, auditId: this.id("audit"), at: this.now(), ...(input.metadata === undefined ? {} : { metadata: redact(input.metadata) }) }; this.store.audit.push(record); return clone(record); }
   async quota(input: QuotaInput): Promise<QuotaRecord> { const current = this.store.quotas.find((x) => x.ownerId === input.ownerId && x.bucket === input.bucket); const amount = input.amount ?? 0; const record = current ?? { ownerId: input.ownerId, bucket: input.bucket, used: 0, limit: input.limit, resetAt: this.now() + 86_400_000 }; if (record.used + amount > input.limit) throw new StateConflictError("quota exceeded"); record.used += amount; record.limit = input.limit; if (!current) this.store.quotas.push(record); return clone(record); }
-  async ownerStatus(ownerId: string, vmId?: string): Promise<{ channels: number; queued: number }> { return { channels: this.store.channels.filter((x) => x.ownerId === ownerId && (!vmId || x.vmId === vmId) && !x.revokedAt).length, queued: this.store.requests.filter((x) => x.ownerId === ownerId && (!vmId || x.vmId === vmId) && x.status !== "completed").length }; }
-  async snapshot(): Promise<StateSnapshot> { return clone({ owners: this.store.owners, vms: this.store.vms, channels: this.store.channels, requests: this.store.requests, responses: this.store.responses, audit: this.store.audit, quotas: this.store.quotas }); }
+  async snapshot(): Promise<StateSnapshot> { return clone({ owners: this.store.owners, vms: this.store.vms, audit: this.store.audit, quotas: this.store.quotas }); }
   private requireOwner(ownerId: string): OwnerRecord { const owner = this.store.owners.find((x) => x.ownerId === ownerId); if (!owner) throw new StateNotFoundError(`owner ${ownerId} not found`); return owner; }
   private requireVm(ownerId: string, vmId: string): VmRecord { this.requireOwner(ownerId); const vm = this.store.vms.find((x) => x.vmId === vmId && x.ownerId === ownerId && !x.revokedAt); if (!vm) throw new StateNotFoundError(`VM ${vmId} not found`); return vm; }
-  private channel(channelId: string): ChannelGrantRecord { const record = this.store.channels.find((x) => x.channelId === channelId); if (!record) throw new StateNotFoundError(`channel ${channelId} not found`); return record; }
-  private assertLiveChannel(record: ChannelGrantRecord): void { if (record.revokedAt || record.expiresAt <= this.now()) throw new StateUnauthorizedError("channel revoked or expired"); }
-  private request(requestId: string): RequestFrameRecord { const record = this.store.requests.find((x) => x.requestId === requestId); if (!record) throw new StateNotFoundError(`request ${requestId} not found`); return record; }
 }
 
 /** Isolated local Convex-compatible deployment. Restart keeps committed state; close drops it. */
@@ -135,7 +100,7 @@ export class LocalConvexHarness {
   static async start(options: LocalRepositoryOptions = {}): Promise<LocalConvexHarness> { const harness = new LocalConvexHarness(options); harness.repository = new InMemoryRelayStateRepository(harness.options); return harness; }
   async pushSchema(): Promise<{ deploymentId: string; version: number }> { this.assertOpen(); return { deploymentId: this.deploymentId, version: this.schemaVersion }; }
   client(): RelayStateRepository { this.assertOpen(); return this.repository!; }
-  /** Whole-store view for tests; deployed Convex exposes the same only as the internal `snapshots:get`. */
+  /** Whole-store view for tests; deployed Convex dumps every table only through the internal `snapshots:get`. */
   snapshot(): Promise<StateSnapshot> { this.assertOpen(); return this.repository!.snapshot(); }
   async restart(): Promise<RelayStateRepository> { this.assertOpen(); this.repository = new InMemoryRelayStateRepository({ ...this.options, store: (this.repository as any).store }); return this.repository; }
   async close(): Promise<void> { this.closed = true; this.repository = undefined; }
@@ -159,17 +124,6 @@ export class ConvexRelayStateRepository implements RelayStateRepository {
   createOwner(input: OwnerInput) { return this.call<OwnerRecord>("mutation", "owners:create", input); }
   createVm(input: VmInput) { return this.call<VmRecord>("mutation", "vms:create", input); }
   listVms(ownerId: string) { return this.call<VmRecord[]>("query", "vms:list", { ownerId }); }
-  issueChannelGrant(input: ChannelGrantInput) { return this.call<ChannelGrantRecord>("mutation", "channels:issue", input); }
-  rotateChannelGrant(channelId: string, expectedEpoch: number, token: string) { return this.call<ChannelGrantRecord>("mutation", "channels:rotate", { channelId, expectedEpoch, token }); }
-  async revokeChannel(channelId: string) { await this.call("mutation", "channels:revoke", { channelId }); }
-  getChannel(channelId: string) { return this.call<ChannelGrantRecord | undefined>("query", "channels:get", { channelId }); }
-  validateChannelGrant(input: { channelId: string; token: string; vmId: string; epoch: number }) { return this.call<ChannelGrantRecord>("query", "channels:validate", input); }
-  enqueueRequest(input: RequestFrameInput) { return this.call<RequestFrameRecord>("mutation", "requests:enqueue", input); }
-  getRequest(requestId: string) { return this.call<RequestFrameRecord | undefined>("query", "requests:get", { requestId }); }
-  claimRequests(input: ClaimInput) { return this.call<RequestFrameRecord[]>("mutation", "requests:claim", input); }
-  recordResponse(input: ResponseFrameInput) { return this.call<ResponseFrameRecord>("mutation", "requests:recordResponse", input); }
-  getResponse(requestId: string) { return this.call<ResponseFrameRecord | undefined>("query", "requests:getResponse", { requestId }); }
-  async ackRequest(requestId: string, leaseOwner: string) { await this.call("mutation", "requests:ack", { requestId, leaseOwner }); }
   createAuthorizationCode(input: AuthorizationCodeInput) { return this.call<AuthorizationCodeRecord>("mutation", "authCodes:create", input); }
   consumeAuthorizationCode(code: string, verifier: string) { return this.call<AuthorizationCodeRecord>("mutation", "authCodes:consume", { code, verifier }); }
   issueOAuthTokens(input: OAuthTokenInput) { return this.call<OAuthTokenRecord>("mutation", "oauth:issue", input); }
@@ -183,7 +137,6 @@ export class ConvexRelayStateRepository implements RelayStateRepository {
   async revokeOAuthFamily(familyId: string) { await this.call("mutation", "oauth:revokeFamily", { familyId }); }
   appendAudit(input: AuditInput) { return this.call<AuditRecord>("mutation", "audit:append", input); }
   quota(input: QuotaInput) { return this.call<QuotaRecord>("mutation", "quotas:consume", input); }
-  ownerStatus(ownerId: string, vmId?: string) { return this.call<{ channels: number; queued: number }>("query", "status:owner", { ownerId, vmId }); }
 }
 
 export const pkceChallenge = (verifier: string): string => hash(verifier);

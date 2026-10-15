@@ -1,25 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createConvexTestHarness, createLocalConvexHarness, StateConflictError, StateUnauthorizedError, pkceChallenge } from "../packages/state/src/index.js";
+import { createLocalConvexHarness, StateConflictError, StateUnauthorizedError, pkceChallenge } from "../packages/state/src/index.js";
 
-test("local Convex harness preserves relay state across restart and enforces dedupe/leases", async () => {
-  let now = 1_700_000_000_000;
-  const harness = await createLocalConvexHarness({ now: () => now, id: (() => { let n = 0; return (prefix: string) => `${prefix}_${++n}`; })() });
+test("local Convex harness preserves state across restart and refuses use after close", async () => {
+  const harness = await createLocalConvexHarness();
   await harness.pushSchema(); const repo = harness.client();
-  const owner = await repo.createOwner({ subject: "user_1" }); const vm = await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
-  await repo.issueChannelGrant({ ownerId: owner.ownerId, vmId: vm.vmId, channelId: "channel_1", token: "raw-token" });
-  const rotatedChannel = await repo.rotateChannelGrant("channel_1", 1, "next-token");
-  assert.equal(rotatedChannel.epoch, 2);
-  await assert.rejects(() => repo.validateChannelGrant({ channelId: "channel_1", token: "raw-token", vmId: vm.vmId, epoch: 1 }), StateUnauthorizedError);
-  assert.equal((await repo.validateChannelGrant({ channelId: "channel_1", token: "next-token", vmId: vm.vmId, epoch: 2 })).epoch, 2);
-  const frame = await repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_1", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo hi" } });
-  assert.equal((await repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_1", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo hi" } })).frameId, frame.frameId);
-  await assert.rejects(() => repo.enqueueRequest({ ownerId: owner.ownerId, vmId: vm.vmId, requestId: "req_2", operation: "shell.exec", mutationId: "mut_1", payload: { command: "echo bye" } }), StateConflictError);
-  const claimed = await repo.claimRequests({ leaseOwner: "agent_a", leaseMs: 10 }); assert.equal(claimed.length, 1);
-  assert.equal((await repo.claimRequests({ leaseOwner: "agent_b" })).length, 0);
-  now += 11; assert.equal((await repo.claimRequests({ leaseOwner: "agent_b" })).length, 1);
-  await repo.recordResponse({ requestId: "req_1", response: { ok: true }, leaseOwner: "agent_b" });
-  const restarted = await harness.restart(); assert.ok(await restarted.getResponse("req_1"));
+  const owner = await repo.createOwner({ subject: "user_1" }); await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
+  await assert.rejects(() => repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" }), StateConflictError);
+  const restarted = await harness.restart(); assert.deepEqual((await restarted.listVms(owner.ownerId)).map((vm) => vm.vmId), ["vm_01"]);
   await harness.close(); await assert.rejects(() => harness.pushSchema(), StateConflictError);
 });
 

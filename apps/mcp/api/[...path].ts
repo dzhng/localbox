@@ -5,11 +5,10 @@ import { OAuthAuthorizationServer, OAuthError } from "../../relay/src/oauth.js";
 import { oauthErrorResponse, oauthRedirect, RepositoryOAuthServer } from "../../relay/src/repository-oauth.js";
 import { McpAdapter } from "../src/index.js";
 import { signServiceToken } from "../../../packages/tokens/src/index.js";
-import { PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
+import { PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 
 const resource = PUBLIC_MCP_RESOURCE;
 const issuer = resource.replace(/\/$/, "");
-const relayUrl = PUBLIC_RELAY_URL;
 if (process.env.VERCEL && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed MCP endpoint");
 if (process.env.VERCEL && process.env.CONVEX_URL && !process.env.LOCALBOX_JWT_PRIVATE_KEY) throw new Error("LOCALBOX_JWT_PRIVATE_KEY is required for the deployed MCP endpoint");
 if (process.env.VERCEL && !process.env.LOCALBOX_OWNER_SUBJECT) throw new Error("LOCALBOX_OWNER_SUBJECT is required for the deployed MCP endpoint");
@@ -28,7 +27,9 @@ export default async function handle(request: Request): Promise<Response> {
   if (oauthResponse) return oauthResponse;
   const authorization = request.headers.get("authorization") ?? "";
   const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-  const client = new AgentClient({ transport: new RelayHttpTransport({ baseUrl: relayUrl, accessToken: token }) });
+  // Between slices 07 and 08 MCP tool calls have no route: the agent API takes machine credentials, and slice 08
+  // makes this endpoint call it in-process with an account token.
+  const client = new AgentClient({ transport: new RelayHttpTransport({ apiOrigin: PUBLIC_API_ORIGIN, machine: url.searchParams.get("machine") ?? "", accessToken: token }) });
   const adapter = new McpAdapter({ client, oauth: fixtureOAuth, endpoint: resource, accessTokenValidator: durableOAuth ? (access) => durableOAuth.validateAccessToken(access).then((identity) => ({ vm_id: identity.vm_id })) : undefined });
   const body = request.method === "GET" ? undefined : await request.text();
   if (body !== undefined && Buffer.byteLength(body) > 1024 * 1024) return new Response(JSON.stringify({ error: "payload_too_large", error_description: "MCP request exceeds the configured size limit" }), { status: 413, headers: { "content-type": "application/json" } });

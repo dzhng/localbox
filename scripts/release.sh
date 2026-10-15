@@ -156,6 +156,7 @@ cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/localbox-hostd
   || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd"
 cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.hostd.plist" "$APP/Contents/Resources/com.localbox.hostd.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.updater.plist" "$APP/Contents/Resources/com.localbox.updater.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.connector.plist" "$APP/Contents/Resources/com.localbox.connector.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
 cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
 cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"

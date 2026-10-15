@@ -16,10 +16,9 @@ public struct DaemonStatus: Codable, Equatable, Sendable {
     public let lifecycle: DaemonLifecycle
     public let vmID: String
     public let channelEpoch: Int
-    public let relayConnected: Bool
     public let detail: String?
-    public init(lifecycle: DaemonLifecycle, vmID: String, channelEpoch: Int = 0, relayConnected: Bool = false, detail: String? = nil) {
-        self.lifecycle = lifecycle; self.vmID = vmID; self.channelEpoch = channelEpoch; self.relayConnected = relayConnected; self.detail = detail
+    public init(lifecycle: DaemonLifecycle, vmID: String, channelEpoch: Int = 0, detail: String? = nil) {
+        self.lifecycle = lifecycle; self.vmID = vmID; self.channelEpoch = channelEpoch; self.detail = detail
     }
 }
 
@@ -59,22 +58,26 @@ public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
 public actor HostDaemon {
     private let backend: any VMBackend
     private var channel: (any GuestChannel)?
-    private var statusValue: DaemonStatus
-    public init(vmID: String = "vm_01", backend: any VMBackend) {
+    private var statusValue: DaemonStatus { didSet { if statusValue.lifecycle != oldValue.lifecycle { bumpStateVersion() } } }
+    private var stateVersion = 0
+    private var watchers: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var connectorReport: ConnectorReport?
+    private let now: @Sendable () -> Date
+    public init(vmID: String = "vm_01", backend: any VMBackend, now: @escaping @Sendable () -> Date = { Date() }) {
         self.backend = backend
         self.statusValue = DaemonStatus(lifecycle: .firstRun, vmID: vmID)
+        self.now = now
     }
     public func status() -> DaemonStatus { statusValue }
     public func attach(channel: any GuestChannel) {
         self.channel = channel
-        statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected)
+        statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1)
     }
-    public func markRelay(connected: Bool) { statusValue = DaemonStatus(lifecycle: statusValue.lifecycle, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: connected, detail: statusValue.detail) }
     public func start() async throws {
         if statusValue.lifecycle == .ready { return }
         if statusValue.lifecycle == .paused { try await resume(); return }
         guard statusValue.lifecycle == .firstRun || statusValue.lifecycle == .stopped else { throw HostDaemonError.invalidState("VM cannot start from \(statusValue.lifecycle.rawValue)") }
-        statusValue = DaemonStatus(lifecycle: .starting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: statusValue.relayConnected)
+        statusValue = DaemonStatus(lifecycle: .starting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch)
         do {
             try await backend.start()
             if let provider = backend as? any GuestChannelProvider {
@@ -82,14 +85,14 @@ public actor HostDaemon {
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
             }
-            statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected)
+            statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1)
         }
-        catch { await channel?.close(); channel = nil; try? await backend.stop(); statusValue = DaemonStatus(lifecycle: .error, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false, detail: String(describing: error)); throw error }
+        catch { await channel?.close(); channel = nil; try? await backend.stop(); statusValue = DaemonStatus(lifecycle: .error, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, detail: String(describing: error)); throw error }
     }
-    public func pause() async throws { guard statusValue.lifecycle == .ready else { throw HostDaemonError.invalidState("VM is not ready") }; try await backend.pause(); statusValue = DaemonStatus(lifecycle: .paused, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false) }
-    public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM is not paused") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1, relayConnected: statusValue.relayConnected) }
-    public func stop() async throws { guard statusValue.lifecycle != .stopped else { return }; statusValue = DaemonStatus(lifecycle: .stopping, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false); await channel?.close(); try await backend.stop(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
-    public func reset(confirm: String) async throws { guard confirm == "RESET" else { throw HostDaemonError.invalidState("reset requires confirmation RESET") }; statusValue = DaemonStatus(lifecycle: .resetting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch, relayConnected: false); await channel?.close(); try await backend.reset(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
+    public func pause() async throws { guard statusValue.lifecycle == .ready else { throw HostDaemonError.invalidState("VM is not ready") }; try await backend.pause(); statusValue = DaemonStatus(lifecycle: .paused, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch) }
+    public func resume() async throws { guard statusValue.lifecycle == .paused else { throw HostDaemonError.invalidState("VM is not paused") }; try await backend.resume(); statusValue = DaemonStatus(lifecycle: .ready, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
+    public func stop() async throws { guard statusValue.lifecycle != .stopped else { return }; statusValue = DaemonStatus(lifecycle: .stopping, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch); await channel?.close(); try await backend.stop(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
+    public func reset(confirm: String) async throws { guard confirm == "RESET" else { throw HostDaemonError.invalidState("reset requires confirmation RESET") }; statusValue = DaemonStatus(lifecycle: .resetting, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch); await channel?.close(); try await backend.reset(); channel = nil; statusValue = DaemonStatus(lifecycle: .stopped, vmID: statusValue.vmID, channelEpoch: statusValue.channelEpoch + 1) }
     public func request(_ envelope: Data) async throws -> Data {
         guard let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any],
               let operation = object["operation"] as? String,
@@ -97,14 +100,30 @@ public actor HostDaemon {
             guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
             return try await channel.send(envelope)
         }
+        // Machine-level operations for the connector; they are not in the public catalog and ignore vm_id.
+        switch operation {
+        case "host.watch":
+            let input = object["input"] as? [String: Any] ?? [:]
+            let since = (input["since"] as? NSNumber)?.intValue ?? 0
+            let timeout = min(max((input["timeout_ms"] as? NSNumber)?.intValue ?? 25_000, 0), 50_000)
+            await waitForChange(since: since, timeoutMs: timeout)
+            return hostSuccess(object, result: ["version": stateVersion, "lifecycle": statusValue.lifecycle.rawValue, "capacity": ["memory_bytes": ProcessInfo.processInfo.physicalMemory, "cpus": ProcessInfo.processInfo.activeProcessorCount]])
+        case "connector.report":
+            guard let input = object["input"] as? [String: Any], let state = input["state"] as? String, !state.isEmpty else {
+                return hostFailure(object, code: "invalid_input", message: "connector.report requires state")
+            }
+            connectorReport = ConnectorReport(state: state, detail: input["detail"] as? String, reportedAt: now())
+            return hostSuccess(object, result: ["recorded": true])
+        default: break
+        }
         guard vmID == statusValue.vmID else { return hostFailure(object, code: "vm_not_found", message: "request VM does not match host") }
         switch operation {
         case "system.info":
-            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "lifecycle": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "relay_connected": statusValue.relayConnected, "runtime": "host"])
+            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "lifecycle": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "runtime": "host"])
         case "vm.list":
             return hostSuccess(object, result: ["vms": [["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]]])
         case "vm.status":
-            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch, "relay_connected": statusValue.relayConnected])
+            return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue, "channel_epoch": statusValue.channelEpoch])
         case "vm.start":
             do { try await start(); return hostSuccess(object, result: ["vm_id": statusValue.vmID, "status": statusValue.lifecycle.rawValue]) }
             catch { return hostFailure(object, code: "conflict", message: String(describing: error)) }
@@ -123,12 +142,41 @@ public actor HostDaemon {
         case "vm.logs":
             return hostSuccess(object, result: ["lines": statusValue.detail.map { [$0] } ?? []])
         case "relay.status":
-            return hostSuccess(object, result: ["connected": statusValue.relayConnected, "channel_epoch": statusValue.channelEpoch])
+            let fresh = connectorReport.map { now().timeIntervalSince($0.reportedAt) <= Self.connectorReportTTL } ?? false
+            let state = fresh ? connectorReport!.state : "not_running"
+            var result: [String: Any] = ["connector": state, "connected": state == "connected", "detail": NSNull(), "reported_at": NSNull()]
+            if let report = connectorReport {
+                result["reported_at"] = ISO8601DateFormatter().string(from: report.reportedAt)
+                result["detail"] = fresh ? (report.detail as Any? ?? NSNull()) : "last connector report is older than 120 s"
+            }
+            return hostSuccess(object, result: result)
         default:
             guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
             return try await channel.send(envelope)
         }
     }
+
+    /// Returns once the state version passes `since`, or at the timeout.
+    private func waitForChange(since: Int, timeoutMs: Int) async {
+        guard stateVersion <= since, timeoutMs > 0 else { return }
+        let id = UUID()
+        let timer = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeoutMs) * 1_000_000)
+            await self?.releaseWatcher(id)
+        }
+        await withCheckedContinuation { continuation in watchers[id] = continuation }
+        timer.cancel()
+    }
+
+    private func releaseWatcher(_ id: UUID) { watchers.removeValue(forKey: id)?.resume() }
+
+    private func bumpStateVersion() {
+        stateVersion += 1
+        let waiting = watchers; watchers = [:]
+        for continuation in waiting.values { continuation.resume() }
+    }
+
+    private static let connectorReportTTL: TimeInterval = 120
 
     private func hostSuccess(_ request: [String: Any], result: Any) -> Data {
         hostEnvelope(request, values: ["ok": true, "result": result])
@@ -148,6 +196,12 @@ public actor HostDaemon {
         ].merging(values) { _, latest in latest }
         return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data("{}".utf8)
     }
+}
+
+struct ConnectorReport: Sendable {
+    let state: String
+    let detail: String?
+    let reportedAt: Date
 }
 
 public actor FakeGuestChannel: GuestChannel {

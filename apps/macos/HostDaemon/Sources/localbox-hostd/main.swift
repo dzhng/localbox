@@ -10,6 +10,9 @@ import Glibc
 struct HostDaemonMain {
     static func main() async {
         #if os(macOS)
+        // A client that dies mid-reply (a killed connector) must cost one failed write, not the daemon: SIGPIPE's
+        // default action kills the process silently.
+        Darwin.signal(SIGPIPE, SIG_IGN)
         do {
             let vmID = required("LOCALBOX_VM_ID", defaultValue: "vm_01")
             let token = try loadToken()

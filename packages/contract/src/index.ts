@@ -32,7 +32,8 @@ export type JsonSchema = {
 export type ErrorCode =
   | "invalid_input" | "unauthorized" | "forbidden" | "vm_not_found" | "vm_not_ready"
   | "guest_unreachable" | "operation_timeout" | "operation_cancelled" | "operation_uncertain"
-  | "conflict" | "rate_limited" | "resource_exhausted" | "host_denied" | "unsupported" | "internal";
+  | "conflict" | "rate_limited" | "resource_exhausted" | "host_denied" | "unsupported" | "internal"
+  | "machine_offline" | "machine_not_found";
 
 export type Idempotency = "none" | "optional" | "required";
 export interface OperationLimits {

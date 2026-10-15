@@ -123,9 +123,27 @@ CONVEX_AGENT_MODE=anonymous npx convex dev --typecheck disable --codegen disable
 npm run dev:local
 ```
 
-The local server listens on `http://127.0.0.1:3000/api/{relay,mcp}` and reads the
-Convex URL written to `.env.local`. Deployed functions fail closed without Convex.
-configuration.
+The local server listens on `http://127.0.0.1:3000/api/{relay,auth,v1,mcp}` and
+reads the Convex URL written to `.env.local`. Deployed functions fail closed
+without Convex configuration.
+
+`npm run proof -- 03 --tier l` and later proofs start all of this for you,
+plus one fixture HostDaemon per simulated machine
+(`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`.
+
+### How a request reaches another machine
+
+`localbox shell exec --machine NAME -- …` posts to the agent API
+(`POST /api/v1/ops`, `apps/relay/src/ops.ts`), which enqueues a row in Convex's
+`relay` module for that machine and waits on a Convex subscription for up to
+min(deadline, 50 s); longer requests come back as a continuation the client
+resumes. On each Mac, `localbox connector run` (launchd job
+`com.localbox.connector`) is the only process that talks to Convex: it exchanges
+the machine credential for a 24-hour machine token at
+`POST /api/relay/machine-token`, subscribes to `relay:pendingForMachine`, claims
+each row and forwards it to the daemon's socket. A row nobody claims within
+3 s is abandoned and the caller gets `machine_offline`; abandoned rows never run.
+Without `--machine`, commands run on this Mac only.
 
 On the Mac, the CLI uses the authenticated HostDaemon Unix socket. The daemon
 reads the owner-only token at
@@ -147,6 +165,10 @@ The relay and MCP endpoint deploy from `apps/relay/api/[...path].ts` and
 
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes.
+
+Relay rows live 24 hours (a daily cron, `relay:cleanupExpired`). Per-account
+daily limits are Convex environment variables: `LOCALBOX_RELAY_DAILY_REQUESTS`
+(default 500) and `LOCALBOX_RELAY_DAILY_RESULT_BYTES` (default 25,000,000).
 
 Convex itself needs two environment variables (`npx convex env set`): `LOCALBOX_API_ORIGIN`
 (the token issuer, the same origin as above) and `LOCALBOX_JWKS`, the public key

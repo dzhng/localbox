@@ -10,15 +10,6 @@ test("typed authenticated Convex functions run the relay state machine", async (
   const owner = await service.mutation(ref("owners:create"), { ownerId: "owner_test", subject: "subject_test" }) as any;
   await service.mutation(ref("vms:create"), { ownerId: owner.ownerId, vmId: "vm_test" });
   await assert.rejects(() => service.mutation(ref("vms:create"), { ownerId: owner.ownerId, vmId: "vm_test" }), /already exists/);
-  await service.mutation(ref("channels:issue"), { ownerId: owner.ownerId, vmId: "vm_test", channelId: "channel_test", token: "token_test" });
-  const rotated = await service.mutation(ref("channels:rotate"), { channelId: "channel_test", expectedEpoch: 1, token: "token_rotated" }) as any;
-  assert.equal(rotated.epoch, 2);
-  await service.mutation(ref("requests:enqueue"), { ownerId: owner.ownerId, vmId: "vm_test", requestId: "request_test", operation: "shell.exec", payload: { command: "true" } });
-  const claimed = await t.withIdentity({ subject: "service:api" }).mutation(ref("requests:claim"), { ownerId: owner.ownerId, vmId: "vm_test", leaseOwner: "host_test" });
-  assert.equal((claimed as any[])[0]?.requestId, "request_test");
-  await t.withIdentity({ subject: "service:api" }).mutation(ref("requests:recordResponse"), { requestId: "request_test", leaseOwner: "host_test", response: { exitCode: 0 } });
-  assert.deepEqual((await service.query(ref("requests:getResponse"), { requestId: "request_test" }) as any).response, { exitCode: 0 });
-  assert.deepEqual(await service.query(ref("status:owner"), { ownerId: owner.ownerId }), { channels: 1, queued: 0 });
 });
 
 test("typed OAuth functions revoke a refresh family on replay", async () => {

@@ -80,7 +80,8 @@ async function startDaemons(machines: string[]): Promise<void> {
     const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: join(state, "machines", machine) });
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
     if (!readFileSafe(paths.ipcToken).trim()) writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 });
-    rmSync(paths.socket, { force: true });
+    // `up` wipes local Convex, so a machine's old credential would point at an account that no longer exists.
+    rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
     const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: root, LOCALBOX_VM_ID: "vm_01", LOCALBOX_SANDBOX_DIR: join(paths.sandboxes, "vm_01"), LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken });
     writeFileSync(hostdPid(machine), String(child.pid));

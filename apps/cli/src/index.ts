@@ -11,7 +11,7 @@ import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { SkillManager } from "./skill-manager.js";
 import { checkForUpdate, installLatest } from "./updater.js";
-import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
+import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 import { readCredentials, writeCredentials, deleteCredentials, type Credentials } from "../../../packages/credentials/src/index.js";
 import { machineName } from "../../../packages/names/src/index.js";
 import { hostname } from "node:os";
@@ -19,7 +19,11 @@ import { hostname } from "node:os";
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const args = process.argv.slice(2);
 const json = args.includes("--json");
-const positional = args.filter((arg) => arg !== "--json");
+/** `--machine NAME` (before any `--`) sends the command to another machine on the account; without it, it runs here. */
+const optionsEnd = args.indexOf("--") < 0 ? args.length : args.indexOf("--");
+const machineIndex = args.slice(0, optionsEnd).indexOf("--machine");
+const targetMachine = machineIndex >= 0 ? args[machineIndex + 1] : undefined;
+const positional = args.filter((arg, index) => arg !== "--json" && (machineIndex < 0 || (index !== machineIndex && index !== machineIndex + 1)));
 
 function requestEnvelope(operation: string, result: Json): ResponseEnvelope {
   return { protocol_version: PROTOCOL_VERSION, request_id: "cli-local", operation, vm_id: "vm_01", release_id: RELEASE_ID, ok: true, result };
@@ -46,7 +50,7 @@ function printUsage(): void {
     "  vm probe [--json]               Run the host virtualization viability probe",
     "  recovery probe [--json]         Emit injected recovery timeline",
     "  vm start|stop|pause [--json]    Change VM lifecycle",
-    "  shell exec [--json] -- CMD ...  Execute a guest shell command",
+    "  shell exec [--machine NAME] [--json] -- CMD ...  Execute a guest shell command (here, or on NAME)",
     "  login --email EMAIL [--code CODE]  Sign in with an email code",
     "  logout                            Revoke this machine",
     "  machines list|rename|remove       Manage account machines",
@@ -54,7 +58,8 @@ function printUsage(): void {
     "  mcp install [--json]             Print optional MCP installation config",
     "  update check|install [--json]    Check or install the latest GitHub release",
     "  skill status|install|update|uninstall  Manage the global Localbox skill",
-    "  invoke OPERATION [options]       Invoke any catalog operation",
+    "  connector run                    Run the relay connector (launchd job)",
+    "  invoke OPERATION [--machine NAME] [options]  Invoke any catalog operation (here, or on NAME)",
     "  help [OPERATION]                 Show catalog-generated schemas",
     "  contract probe|generate-snapshots  Inspect contract fixtures", "",
   ].join("\n"));
@@ -70,11 +75,13 @@ async function writeSnapshots(): Promise<void> {
 }
 
 async function makeClient(): Promise<AgentClient> {
-  const kind: TransportKind = process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local";
-  if (kind === "remote") {
+  if (machineIndex >= 0 && !targetMachine) throw new Error("--machine needs a machine name or id");
+  if (targetMachine) {
     const credentials = await readCredentials(machinePaths().credentials);
-    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: PUBLIC_RELAY_URL, accessToken: credentials?.secret }) });
+    if (!credentials) throw new Error("this Mac is not signed in; run localbox login --email you@example.com");
+    return new AgentClient({ transport: new RelayHttpTransport({ apiOrigin: PUBLIC_API_ORIGIN, machine: targetMachine, accessToken: credentials.secret }) });
   }
+  const kind: TransportKind = process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local";
   if (kind === "local" && process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") {
     return new AgentClient({ transport: new LocalIPCTransport() });
   }
@@ -200,6 +207,7 @@ async function main(): Promise<void> {
     if (subcommand !== "status" && result.state === "needs_attention") process.exitCode = 1;
     return;
   }
+  if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector()); }
   if (group === "invoke" && subcommand) { await invokeOperation(subcommand, rest); return; }
   const client = await makeClient();
   if (group === "status") { printResponse(await client.status()); return; }

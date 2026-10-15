@@ -1,38 +1,59 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RelayHttpAdapter } from "../apps/relay/src/http.js";
+import { handleOps } from "../apps/relay/src/ops.js";
 import { RelayHttpTransport } from "../packages/client/src/index.js";
-import { createLocalConvexHarness } from "../packages/state/src/index.js";
+import type { RequestEnvelope, ResponseEnvelope } from "../packages/contract/src/index.js";
+import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
-test("RelayHttpTransport submits and polls through the stateless adapter", async () => {
-  const harness = await createLocalConvexHarness({ id: (() => { let i = 0; return (prefix: string) => `${prefix}_${++i}`; })() });
-  const repo = harness.client();
-  const owner = await repo.createOwner({ subject: "client-user" });
-  await repo.createVm({ ownerId: owner.ownerId, vmId: "vm_01" });
-  await repo.issueOAuthTokens({ ownerId: owner.ownerId, vmId: "vm_01", resource: "https://relay.test/mcp", accessToken: "access", refreshToken: "refresh", accessExpiresAt: Date.now() + 60_000, refreshExpiresAt: Date.now() + 60_000 });
-  await repo.issueChannelGrant({ ownerId: owner.ownerId, vmId: "vm_01", channelId: "channel_1", token: "channel-token" });
-  const relay = new RelayHttpAdapter({ repository: repo, resource: "https://relay.test/mcp" });
-  const fetchImpl: typeof fetch = async (input, init = {}) => {
-    const url = String(input);
-    const body = init.body ? JSON.parse(String(init.body)) : undefined;
-    const headers = Object.fromEntries(new Headers(init.headers).entries());
-    if (url.endsWith("/v1/requests") && init.method === "POST") {
-      const result = await relay.handle({ method: "POST", url, headers, body });
-      return new Response(JSON.stringify(result.body), { status: result.status, headers: result.headers });
-    }
-    if (url.includes("/v1/requests/") && init.method === "GET") {
-      const requestId = url.split("/").at(-1)!;
-      const hostHeaders = { "x-channel-id": "channel_1", "x-channel-token": "channel-token", "x-channel-epoch": "1", "x-vm-id": "vm_01" };
-      const poll = await relay.handle({ method: "POST", url: "https://relay.test/host/poll", headers: hostHeaders, body: { lease_owner: "host_1" } });
-      const frame = (poll.body as { frames: Array<{ request_id: string }> }).frames[0];
-      if (frame) await relay.handle({ method: "POST", url: `https://relay.test/host/responses/${frame.request_id}`, headers: hostHeaders, body: { lease_owner: "host_1", response: { protocol_version: "v1", request_id: requestId, operation: "system.info", vm_id: "vm_01", release_id: "agent-computer-contract-v1", ok: true, result: { ready: true } } } });
-      const result = await relay.handle({ method: "GET", url, headers });
-      return new Response(JSON.stringify(result.body), { status: result.status, headers: result.headers });
-    }
-    return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
-  };
-  const client = new RelayHttpTransport({ baseUrl: "https://relay.test", accessToken: "access", fetchImpl, pollMs: 1 });
-  const response = await client.dispatch({ protocol_version: "v1", request_id: "req_client", operation: "system.info", vm_id: "vm_01", deadline_ms: 1000, mutation_id: null, input: {} });
-  assert.equal(response.ok, true);
-  assert.deepEqual(response.ok && response.result, { ready: true });
+const request = (overrides: Partial<RequestEnvelope> = {}): RequestEnvelope => ({ protocol_version: "v1", request_id: `req_${Math.random()}`, operation: "system.info", vm_id: "vm_01", deadline_ms: 5_000, mutation_id: null, input: {}, ...overrides });
+const answer = (envelope: RequestEnvelope): ResponseEnvelope => ({ protocol_version: "v1", request_id: envelope.request_id, operation: envelope.operation, vm_id: envelope.vm_id, release_id: "agent-computer-contract-v1", ok: true, result: { ran_on: "attic" } });
+const transportFor = (deps: ReturnType<typeof memoryMailbox>["deps"], machine = "attic", calls: unknown[] = []) => new RelayHttpTransport({ apiOrigin: "https://localbox.test", machine, accessToken: "secret", fetchImpl: async (_input, init = {}) => { const body = JSON.parse(String(init.body)); calls.push(body); const result = await handleOps({ accountId: "acct", machineId: "m_a" }, body, deps); return new Response(JSON.stringify(result.body), { status: result.status }); } });
+const machines = [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic" }];
+
+test("a request for machine B runs on B's connector and returns inline", async () => {
+  const { deps } = memoryMailbox({ machines, connectors: { m_b: async (envelope) => answer(envelope) } });
+  const response = await transportFor(deps).dispatch(request());
+  assert.equal(response.ok, true); assert.deepEqual(response.ok && response.result, { ran_on: "attic" });
+});
+
+test("an unclaimed request is abandoned and reported machine_offline with the last-seen time", async () => {
+  const { deps, rows } = memoryMailbox({ machines, connectors: {} });
+  const response = await transportFor(deps).dispatch(request({ request_id: "req_offline" }));
+  assert.equal(response.ok, false); assert.equal(!response.ok && response.error.code, "machine_offline");
+  assert.match(!response.ok ? response.error.message : "", /last seen 2023-11-14T22:13:20.000Z/);
+  assert.equal(rows.get("req_offline")?.status, "abandoned");
+});
+
+test("a request still running when the server's wait ends resumes through a continuation", async () => {
+  const { deps } = memoryMailbox({ machines, maxWaitMs: 20, connectors: { m_b: async (envelope) => { await new Promise((resolve) => setTimeout(resolve, 80)); return answer(envelope); } } });
+  const calls: Array<Record<string, unknown>> = [];
+  const response = await transportFor(deps, "attic", calls).dispatch(request());
+  assert.equal(response.ok, true); assert.ok(calls.length >= 2, "at least one continuation"); assert.equal(typeof calls[1].continue, "string");
+});
+
+test("a claimed request that never answers before the deadline is operation_uncertain; replaying the mutation returns the original result", async () => {
+  let answerNow = false; const pending: Array<() => void> = [];
+  const { deps } = memoryMailbox({ machines, connectors: { m_b: async (envelope) => { if (!answerNow) await new Promise<void>((resolve) => pending.push(resolve)); return answer(envelope); } } });
+  const first = await transportFor(deps).dispatch(request({ operation: "shell.exec", mutation_id: "m1", deadline_ms: 100, input: { command: "true" } }));
+  assert.equal(!first.ok && first.error.code, "operation_uncertain");
+  answerNow = true; for (const resolve of pending) resolve();
+  const replay = await transportFor(deps).dispatch(request({ operation: "shell.exec", mutation_id: "m1", input: { command: "true" } }));
+  assert.equal(replay.ok, true);
+});
+
+test("an unknown machine name is machine_not_found", async () => {
+  const { deps } = memoryMailbox({ machines, connectors: {} });
+  const response = await transportFor(deps, "garage").dispatch(request());
+  assert.equal(!response.ok && response.error.code, "machine_not_found");
+});
+
+test("a mutation replayed while its first run is still going runs once and both callers get its result", async () => {
+  const { FakeDispatcher } = await import("../packages/runtime/src/index.js");
+  let runs = 0; let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
+  const dispatcher = new FakeDispatcher({ handlers: { "shell.exec": async () => { runs++; await gate; return { stdout: "once" }; } } });
+  const envelope = request({ operation: "shell.exec", mutation_id: "same", input: { command: "true" } });
+  const first = dispatcher.dispatch(envelope); const second = dispatcher.dispatch({ ...envelope, request_id: "replay" });
+  release();
+  assert.deepEqual((await first).ok && (await first as any).result, { stdout: "once" });
+  assert.deepEqual((await second as any).result, { stdout: "once" }); assert.equal(runs, 1);
 });

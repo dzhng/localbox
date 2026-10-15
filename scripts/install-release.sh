@@ -126,8 +126,10 @@ NODE
 ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
 PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
 UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
+CONNECTOR_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.connector.plist"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
+cp "$ACTIVE_APP/Contents/Resources/com.localbox.connector.plist" "$CONNECTOR_PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_PATH' -string "$TOKEN_FILE" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$PLIST"
@@ -141,6 +143,10 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_INSTALL_ROOT' -string "$INSTALL_R
 plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_REPOSITORY' -string "$RELEASE_REPOSITORY" "$UPDATER_PLIST"
 if [ -f "$PUBLIC_KEY_FILE" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_PUBLIC_KEY' -string "$PUBLIC_KEY_FILE" "$UPDATER_PLIST"; fi
 chmod 600 "$UPDATER_PLIST"
+/usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/localbox" "$CONNECTOR_PLIST"
+if [ -n "${LOCALBOX_API_ORIGIN:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_API_ORIGIN' -string "$LOCALBOX_API_ORIGIN" "$CONNECTOR_PLIST"; fi
+if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$CONNECTOR_PLIST"; fi
+chmod 600 "$CONNECTOR_PLIST"
 
 if [ ! -s "$TOKEN_FILE" ]; then
   umask 077
@@ -170,6 +176,9 @@ if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
     launchctl bootstrap "$DOMAIN" "$UPDATER_PLIST"
     launchctl kickstart -k "$DOMAIN/com.localbox.updater"
   fi
+  launchctl bootout "$DOMAIN/com.localbox.connector" >/dev/null 2>&1 || true
+  launchctl bootstrap "$DOMAIN" "$CONNECTOR_PLIST"
+  launchctl kickstart -k "$DOMAIN/com.localbox.connector"
 fi
 
 echo "installed Localbox $VERSION"

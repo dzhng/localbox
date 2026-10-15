@@ -37,6 +37,9 @@ no spec.
   1 GB database I/O, 0.5 GB storage, 1,000 concurrent sessions and 1 MiB per
   document, all hard caps. Vercel Hobby has 1M invocations, a 300 s max duration
   and is for non-commercial use.
+- Measured relay cost (slice 07, local stack): 12 Convex function calls per
+  relayed request and zero while idle, so 1M calls a month is about 83,000
+  relayed requests across the deployment.
 - Test host: this Mac mini (Mac18,5, macOS 27.0.1, 24 GB). The daemon is signed
   with `com.apple.security.virtualization`.
 

@@ -64,6 +64,45 @@ final class HostDaemonCoreTests: XCTestCase {
         do { _ = try await daemon.request(guestRequest); XCTFail("stopped VM should reject guest work") } catch { }
     }
 
+    func testHostWatchAnswersImmediatelyWhenTheCallerIsBehind() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        let started = Date()
+        let watched = try await hostCall(daemon, "host.watch", #"{"since":0,"timeout_ms":5000}"#)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+        XCTAssertEqual(watched["lifecycle"] as? String, "ready")
+        XCTAssertGreaterThan(watched["version"] as? Int ?? 0, 0)
+        XCTAssertGreaterThan(((watched["capacity"] as? [String: Any])?["cpus"] as? Int) ?? 0, 0)
+    }
+
+    func testHostWatchWaitsForALifecycleChangeOrTheTimeout() async throws {
+        let daemon = HostDaemon(backend: FakeVMBackend())
+        try await daemon.start()
+        let version = try await hostCall(daemon, "host.watch", #"{"since":0}"#)["version"] as! Int
+        let timedOut = try await hostCall(daemon, "host.watch", #"{"since":\#(version),"timeout_ms":50}"#)
+        XCTAssertEqual(timedOut["version"] as? Int, version)
+        let waiter = Task { try await hostCall(daemon, "host.watch", #"{"since":\#(version),"timeout_ms":5000}"#) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        try await daemon.pause()
+        let changed = try await waiter.value
+        XCTAssertGreaterThan(changed["version"] as? Int ?? 0, version)
+        XCTAssertEqual(changed["lifecycle"] as? String, "paused")
+    }
+
+    func testRelayStatusAnswersFromTheConnectorReport() async throws {
+        let clock = TestClock()
+        let daemon = HostDaemon(backend: FakeVMBackend(), now: { clock.now })
+        let none = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        XCTAssertEqual(none["connector"] as? String, "not_running"); XCTAssertEqual(none["connected"] as? Bool, false)
+        _ = try await hostCall(daemon, "connector.report", #"{"state":"connected"}"#)
+        let connected = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        XCTAssertEqual(connected["connector"] as? String, "connected"); XCTAssertEqual(connected["connected"] as? Bool, true)
+        XCTAssertNotNil(connected["reported_at"] as? String)
+        clock.now = clock.now.addingTimeInterval(121)
+        let stale = try await hostCall(daemon, "relay.status", "{}", vmID: "vm_01")
+        XCTAssertEqual(stale["connector"] as? String, "not_running"); XCTAssertEqual(stale["connected"] as? Bool, false)
+    }
+
     func testFramedGuestChannelSpeaksTheGuestFrameProtocol() async throws {
         let toGuest = Pipe(); let fromGuest = Pipe()
         let channel = FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting)
@@ -134,6 +173,17 @@ extension HostDaemonCoreTests {
         XCTAssertThrowsError(try ProcessFixtureBackend(configuration: configuration, environment: ["LOCALBOX_VM_BACKEND": "apple"]))
         XCTAssertNoThrow(try ProcessFixtureBackend(configuration: configuration, environment: ["LOCALBOX_VM_BACKEND": "process-fixture"]))
     }
+}
+
+private final class TestClock: @unchecked Sendable {
+    var now = Date(timeIntervalSince1970: 1_800_000_000)
+}
+
+private func hostCall(_ daemon: HostDaemon, _ operation: String, _ input: String, vmID: String = "host") async throws -> [String: Any] {
+    let request = Data(#"{"protocol_version":"v1","request_id":"r-\#(operation)","operation":"\#(operation)","vm_id":"\#(vmID)","deadline_ms":60000,"mutation_id":null,"input":\#(input)}"#.utf8)
+    let response = try JSONSerialization.jsonObject(with: try await daemon.request(request)) as! [String: Any]
+    XCTAssertEqual(response["ok"] as? Bool, true, "\(operation): \(response)")
+    return response["result"] as? [String: Any] ?? [:]
 }
 
 private func XCTAssertThrowsErrorAsync(_ expression: @autoclosure () async throws -> Void) async {
