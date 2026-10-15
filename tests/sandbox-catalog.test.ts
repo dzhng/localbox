@@ -78,7 +78,7 @@ function machine(refuse = false) {
   };
   return { seen, answer };
 }
-const machines = [{ machineId: "m_a", name: "studio" }, { machineId: "m_b", name: "attic", capacity: { cpus: 12, memory_bytes: 24 * GIB } }];
+const machines = [{ machineId: "m_a", name: "studio", lastSeenAt: Date.now() }, { machineId: "m_b", name: "attic", lastSeenAt: Date.now(), capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1 } }];
 const fromA = { accountId: "acct", machineId: "m_a" };
 const ops = async (deps: any, body: Record<string, unknown>, principal: any = fromA) => ((await handleOps(principal, { request_id: `r-${Math.random()}`, mutation_id: `m-${Math.random()}`, ...body }, deps)).body as { response: ResponseEnvelope }).response;
 
@@ -87,7 +87,7 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const created = await ops(deps, { operation: "sandbox.create", input: { machine: "attic", name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
-  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB" });
+  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB" });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
   assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", cpus: 6, memory_bytes: 6 * GIB }]);
   assert.equal(sandboxes.length, 1);
@@ -96,6 +96,31 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const agent = await ops(deps, { operation: "sandbox.create", input: {} }, { accountId: "acct", familyId: "f" });
   assert.equal(!agent.ok && agent.error.code, "invalid_input"); assert.match(!agent.ok ? agent.error.message : "", /name a machine/);
 });
+
+test("sandbox.create places by the caller's machine, --machine or --placement, and says why", async () => {
+  const capacity = (total: number, room: number) => ({ cpus: 8, total_bytes: total * GIB, reserved_bytes: (total * 0.75 - room) * GIB, room_bytes: room * GIB, running: 0, revision: 1 });
+  const fleet = [
+    { machineId: "m_a", name: "studio", lastSeenAt: Date.now(), capacity: capacity(8, 6) },
+    { machineId: "m_b", name: "attic", lastSeenAt: Date.now(), capacity: capacity(16, 12) },
+    // Reported once, quiet since (idle Macs make no calls) and in fact gone: auto tries it, then moves on.
+    { machineId: "m_c", name: "garage", lastSeenAt: Date.now() - 31 * 60_000, capacity: capacity(64, 48) },
+  ];
+  const a = machine(); const b = machine();
+  const { deps } = memoryMailbox({ machines: fleet, connectors: { m_a: a.answer, m_b: b.answer } });
+  const where = async (body: Record<string, unknown>, principal: any = fromA) => { const response = await ops(deps, { operation: "sandbox.create", ...body }, principal); return response.ok ? (response.result as any).produced : response.error; };
+  assert.deepEqual(pick(await where({ input: {}, caller_machine_id: "m_a" })), ["studio", "on studio, this machine (6 GiB free)"]);
+  assert.deepEqual(pick(await where({ input: { placement: "auto" }, caller_machine_id: "m_a" })), ["attic", "on attic, the machine with the most room (12 GiB free); skipped offline garage"]);
+  assert.deepEqual(pick(await where({ input: { placement: "remote" }, caller_machine_id: "m_b" }, { accountId: "acct", machineId: "m_b" })), ["studio", "on studio, the remote machine with the most room (6 GiB free); skipped offline garage"]);
+  const offline = await where({ input: { machine: "garage" } });
+  assert.equal(offline.code, "machine_offline"); assert.match(offline.message, /did not pick up the request/);
+  // No caller machine (an agent, or a CLI whose local daemon did not answer): the error lists every machine with its room.
+  const agent = await where({ input: {} }, { accountId: "acct", familyId: "f" });
+  assert.equal(agent.code, "invalid_input"); assert.match(agent.message, /name a machine or use --placement auto: attic \(12 GiB free of 16 GiB\), garage \(48 GiB free of 64 GiB\), studio \(6 GiB free of 8 GiB\)/);
+  assert.deepEqual(agent.details.machines.map((row: any) => [row.name, row.room_bytes / GIB]), [["attic", 12], ["garage", 48], ["studio", 6]]);
+  const spoofed = await where({ input: {}, caller_machine_id: "m_b" });
+  assert.equal(spoofed.code, "invalid_input", "a machine can only name itself as the caller");
+});
+const pick = (produced: any) => [produced.machine, produced.placement_reason];
 
 test("a machine that refuses the create releases the reserved name", async () => {
   const b = machine(true); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });

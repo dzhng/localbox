@@ -18,7 +18,8 @@ struct HostDaemonMain {
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(),
-                                   hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init))
+                                   hostCPUs: optionalInteger("LOCALBOX_DEV_HOST_CPUS"), hostMemoryBytes: optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init),
+                                   admissionBytes: devAdmissionBytes())
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
@@ -95,6 +96,15 @@ struct HostDaemonMain {
         let value = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { throw NSError(domain: "LocalboxHostDaemon", code: 78, userInfo: [NSLocalizedDescriptionKey: "IPC token file is empty"]) }
         return value
+    }
+
+    /// Proof runs cap the admission budget on real VMs (the RAM override is for fixtures); release builds ignore it.
+    private static func devAdmissionBytes() -> UInt64? {
+        #if DEBUG
+        return optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init)
+        #else
+        return nil
+        #endif
     }
 
     private static func optionalInteger(_ name: String) -> Int? {

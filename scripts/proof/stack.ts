@@ -45,7 +45,16 @@ async function startConvex(keys: { jwks: string }, convexEnv: NodeJS.ProcessEnv)
   for (let attempt = 0; attempt < 240; attempt++) { if (ready()) return readConvexUrl(); if (!alive(pid(convexPid))) return undefined; await sleep(250); }
   return undefined;
 }
-async function up(machines: string[]): Promise<void> {
+/** A fixture machine: `a`, or `a:8G` / `a:8G:4` to give its daemon that much RAM (and CPUs) instead of this Mac's. */
+interface MachineSpec { name: string; memoryBytes?: number; cpus?: number }
+function machineSpec(value: string): MachineSpec {
+  const [name, memory, cpus] = value.split(":");
+  const size = memory?.match(/^(\d+(?:\.\d+)?)G$/i);
+  if (!name || (memory !== undefined && !size) || (cpus !== undefined && !/^\d+$/.test(cpus))) throw new Error(`--machines takes name[:<GiB>G[:cpus]], not ${value}`);
+  return { name, ...(size ? { memoryBytes: Math.round(Number(size[1]) * 1024 ** 3) } : {}), ...(cpus ? { cpus: Number(cpus) } : {}) };
+}
+async function up(specs: MachineSpec[]): Promise<void> {
+  const machines = specs.map((spec) => spec.name);
   mkdirSync(pidDir, { recursive: true }); mkdirSync(state, { recursive: true });
   for (const machine of machines) mkdirSync(join(state, "machines", machine), { recursive: true });
   for (const port of [3000, 3210]) { const owner = portOwner(port); if (owner) throw new Error(`port ${port} is held by pid ${owner}`); }
@@ -67,15 +76,15 @@ async function up(machines: string[]): Promise<void> {
   if (!alive(existingLocal) && !alive(pid(localPid))) { writeFileSync(localLog, ""); const child = spawnLogged("npm", ["run", "dev:local"], localLog, { ...process.env, CONVEX_URL: convexUrl, LOCALBOX_DEV_PRINT_CODES: "1", LOCALBOX_API_ORIGIN: "http://127.0.0.1:3000", LOCALBOX_JWT_PRIVATE_KEY: keys.privatePem }); writeFileSync(localPid, String(child.pid)); }
   for (let attempt = 0; attempt < 120 && !readFileSafe(localLog).includes("listening on"); attempt++) { if (!alive(pid(localPid))) throw new Error(`dev:local exited; ${readFileSafe(localLog).trim()}`); await sleep(250); }
   if (!readFileSafe(localLog).includes("listening on")) throw new Error("dev:local did not start listening within 30 s");
-  await startDaemons(machines);
+  await startDaemons(specs);
 }
 const hostdPid = (machine: string) => join(pidDir, `hostd-${machine}.pid`);
 /** One fixture host daemon per machine root (slice 03): its own socket, IPC token and sandboxes, each with its own guest. */
-async function startDaemons(machines: string[]): Promise<void> {
+async function startDaemons(machines: MachineSpec[]): Promise<void> {
   if (!machines.length) return;
   execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--product", "localbox-hostd"], { cwd: root, stdio: "ignore" });
   const bin = execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"], { cwd: root, encoding: "utf8" }).trim();
-  for (const machine of machines) {
+  for (const { name: machine, memoryBytes, cpus } of machines) {
     if (alive(pid(hostdPid(machine)))) continue;
     const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: join(state, "machines", machine) });
     if (!readFileSafe(paths.ipcToken).trim()) { mkdirSync(paths.root, { recursive: true }); writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 }); }
@@ -83,7 +92,7 @@ async function startDaemons(machines: string[]): Promise<void> {
     rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true });
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
-    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: root, LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken });
+    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_VM_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: root, LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
     if (!existsSync(paths.socket)) throw new Error(`machine ${machine}'s HostDaemon did not open ${paths.socket}; ${readFileSafe(log).trim() || "no diagnostic output"}`);
@@ -105,4 +114,4 @@ async function down(): Promise<void> {
 function status(): void { mkdirSync(pidDir, { recursive: true }); process.stdout.write(`${JSON.stringify({ convex: alive(pid(convexPid)), devLocal: alive(pid(localPid)), daemons: Object.fromEntries(daemonPidFiles().map((path) => [path.slice(path.lastIndexOf("hostd-") + 6, -4), alive(pid(path))])) })}\n`); }
 function logs(): void { process.stdout.write(`== convex ==\n${readFileSafe(convexLog)}== dev-local ==\n${readFileSafe(localLog)}`); }
 const [command, ...args] = process.argv.slice(2); const machinesIndex = args.indexOf("--machines"); const machines = machinesIndex >= 0 ? (args[machinesIndex + 1] ?? "").split(",").filter(Boolean) : [];
-try { if (command === "up") await up(machines); else if (command === "down") await down(); else if (command === "status") status(); else if (command === "logs") logs(); else { process.stderr.write("usage: stack.ts up|down|status|logs [--machines a,b]\n"); process.exitCode = 2; } } catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 2; }
+try { if (command === "up") await up(machines.map(machineSpec)); else if (command === "down") await down(); else if (command === "status") status(); else if (command === "logs") logs(); else { process.stderr.write("usage: stack.ts up|down|status|logs [--machines a,b | a:8G,b:16G]\n"); process.exitCode = 2; } } catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 2; }

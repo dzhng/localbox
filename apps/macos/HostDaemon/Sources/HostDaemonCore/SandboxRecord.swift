@@ -11,6 +11,9 @@ public func defaultSize(hostCPUs: Int, hostMemoryBytes: UInt64) -> (cpus: Int, m
     (max(2, hostCPUs / 2), max(2 * gib, hostMemoryBytes / 4 / gib * gib))
 }
 
+/// A size for a report, e.g. "2 GiB" or "1.5 GiB".
+func gibibytes(_ bytes: UInt64) -> String { "\(String(format: "%g", (Double(bytes) / Double(gib) * 10).rounded() / 10)) GiB" }
+
 /// What a sandbox was doing when its record was last written, so the next daemon start knows what to bring back.
 public enum SavedLifecycle: String, Codable, Sendable {
     case running, sleeping, stopped, hibernated

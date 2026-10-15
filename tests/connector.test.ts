@@ -65,6 +65,8 @@ function harness(options: { fetchToken?: (force: boolean) => Promise<string> } =
   return { convex, daemon, watch, logs, connector };
 }
 
+const GIB = 1024 ** 3;
+
 test("a queued row is claimed, dispatched to the daemon and completed with its response", async () => {
   const { convex, daemon, connector } = harness();
   convex.push([row("r1")]);
@@ -137,17 +139,21 @@ test("a daemon dispatch error completes with guest_unreachable", async () => {
   await connector.stop();
 });
 
-test("capacity is reported to Convex only when it changes", async () => {
+test("capacity is reported to Convex only when its revision changes", async () => {
   const { convex, watch, connector } = harness();
-  const capacity = { memory_bytes: 16, cpus: 8 };
+  const capacity = { cpus: 8, total_bytes: 16 * GIB, reserved_bytes: 0, room_bytes: 12 * GIB, running: 0, revision: 1 };
+  const started = { ...capacity, reserved_bytes: 4 * GIB, room_bytes: 8 * GIB, running: 1, revision: 2 };
   watch.emit({ version: 1, capacity });
   await settle();
+  // A rename or mirror push moves the watch version but not the capacity revision.
   watch.emit({ version: 2, capacity: { ...capacity } });
   await settle();
-  watch.emit({ version: 3, capacity: { memory_bytes: 16, cpus: 4 } });
+  watch.emit({ version: 3, capacity: started });
   await settle();
-  assert.deepEqual(convex.named("relay:reportCapacity").map((call) => call.args.capacity), [capacity, { memory_bytes: 16, cpus: 4 }]);
-  assert.deepEqual(watch.sinces, [0, 1, 2, 3]);
+  watch.emit({ version: 4, capacity: { ...started } });
+  await settle();
+  assert.deepEqual(convex.named("relay:reportCapacity").map((call) => call.args.capacity.revision), [1, 2]);
+  assert.deepEqual(watch.sinces, [0, 1, 2, 3, 4]);
   await connector.stop();
 });
 
@@ -174,7 +180,7 @@ test("auth changes move the state and are reported to the daemon", async () => {
 test("an idle connector makes no Convex calls", async () => {
   const { convex, watch, connector } = harness();
   convex.onAuth!(true);
-  watch.emit({ version: 1, capacity: { cpus: 8 } });
+  watch.emit({ version: 1, capacity: { cpus: 8, total_bytes: 16 * GIB, reserved_bytes: 0, room_bytes: 12 * GIB, running: 0, revision: 1 } });
   await settle();
   const before = convex.calls.length;
   await new Promise((resolve) => setTimeout(resolve, 200));

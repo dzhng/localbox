@@ -1,4 +1,4 @@
-import type { RequestEnvelope, ResponseEnvelope } from "../../packages/contract/src/index.js";
+import type { CapacityReport, RequestEnvelope, ResponseEnvelope } from "../../packages/contract/src/index.js";
 import type { OpsDeps, Principal, RelayResult, SandboxRow } from "../../apps/relay/src/ops.js";
 
 type Row = RelayResult & { requestId: string; accountId: string; machineId: string; mutationKey?: string; payload: RequestEnvelope };
@@ -8,7 +8,7 @@ type Row = RelayResult & { requestId: string; accountId: string; machineId: stri
  * logic and the client transport can be tested without Convex. `connectors[machineId]` answers a request;
  * a machine with no connector never claims, so its requests go offline.
  */
-export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; capacity?: { cpus: number; memory_bytes: number } }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
+export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
   const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, state: "running", ...row })) as SandboxRow[];
   const rows = new Map<string, Row>(); const watchers = new Map<string, Set<(result: RelayResult | null) => void>>();
   const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, response: row.response }); };
@@ -28,7 +28,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
     },
     async serviceMutation(name, args: any) {
       if (name === "relay:enqueue") {
-        const mutationKey = args.mutationId ? `${args.sandboxId ?? ""}:${args.operation}:${args.mutationId}` : undefined;
+        const mutationKey = args.mutationId ? `${args.machineId}:${args.sandboxId ?? ""}:${args.operation}:${args.mutationId}` : undefined; // Convex scopes dedupe to the machine
         const existing = [...rows.values()].find((row) => row.requestId === args.requestId || (mutationKey && row.mutationKey === mutationKey));
         if (existing) return { requestId: existing.requestId };
         const row: Row = { requestId: args.requestId, accountId: args.accountId, machineId: args.machineId, mutationKey, payload: args.payload, status: "queued" };

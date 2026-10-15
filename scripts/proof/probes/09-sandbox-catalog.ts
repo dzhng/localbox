@@ -75,7 +75,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.match(report.produced.size_reason, /^default for .+: half its \d+ CPUs and a quarter of its/);
       assert.equal(report.produced.machine, machineA);
       assert.match(second.stdout, /^- created: /m); assert.match(second.stdout, /^- cold_booted: /m, "each sandbox boots its own runtime");
-      sameFacts("sandbox create", first.envelope, second.stdout, ["sandbox_id", "name", "kind", "detail"]);
+      sameFacts("sandbox create", first.envelope, second.stdout, ["sandbox_id", "name", "kind", "detail", "placement_reason"]);
     }));
     checks.push(await ctx.check("sandbox create --name <taken> fails name_conflict listing the names", async () => {
       const envelope = await both("sandbox create --name taken", "a", ["sandbox", "create", "--name", names[0]]);

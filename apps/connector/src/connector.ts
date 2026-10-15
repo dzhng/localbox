@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { makeFunctionReference } from "convex/server";
-import { failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 import { RevokedError } from "./token.js";
 
 export type ConnectorState = "connecting" | "connected" | "revoked" | "stopped";
@@ -30,7 +30,7 @@ export interface ConnectorDeps {
 }
 
 /** One `host.watch` answer: the daemon's state version, host capacity and each sandbox's runtime state. */
-export interface HostChange { version: number; capacity?: unknown; sandboxes?: SandboxState[] }
+export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[] }
 export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
 
 export const relay = {
@@ -153,15 +153,18 @@ export class Connector {
   }
 
   private async watch(): Promise<void> {
-    let since = 0; let reported = false; let capacity: unknown; let backoff = 1_000;
+    let since = 0; let capacity: CapacityReport | undefined; let backoff = 1_000;
     const states = new Map<string, SandboxState>();
     while (!this.ended) {
       try {
         const change = await this.deps.hostWatch(since);
         if (this.ended) return;
-        if ("capacity" in change && (!reported || !isDeepStrictEqual(change.capacity, capacity))) {
-          await this.deps.convex.mutation(relay.reportCapacity, { capacity: change.capacity });
-          reported = true; capacity = change.capacity;
+        // The daemon moves `revision` only when what its sandboxes reserve changes. A restarted daemon counts
+        // revisions from the start again, so the whole report is compared as well.
+        const report = change.capacity;
+        if (report && (!capacity || report.revision !== capacity.revision || !isDeepStrictEqual(report, capacity))) {
+          await this.deps.convex.mutation(relay.reportCapacity, { capacity: report });
+          capacity = report;
         }
         const changed = (change.sandboxes ?? []).filter((sandbox) => !isDeepStrictEqual(states.get(sandbox.sandbox_id), sandbox));
         if (changed.length) {

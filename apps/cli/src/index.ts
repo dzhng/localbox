@@ -109,6 +109,12 @@ async function signedIn(): Promise<Credentials> {
   return credentials;
 }
 const accountTransport = async () => new RelayHttpTransport({ apiOrigin: PUBLIC_API_ORIGIN, accessToken: (await signedIn()).secret });
+/** A create defaults to this Mac only when its daemon answers here; otherwise it needs --machine or --placement. */
+async function createTransport(): Promise<ClientTransport> {
+  const credentials = await signedIn();
+  const daemon = await (await localTransport()).dispatch(call("sandbox.list", {})).catch(() => undefined);
+  return new RelayHttpTransport({ apiOrigin: PUBLIC_API_ORIGIN, accessToken: credentials.secret, ...(daemon?.ok ? { callerMachineId: credentials.machine_id } : {}) });
+}
 const newId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 const call = (operation: OperationId, input: Json, sandboxId: string | null = null): RequestEnvelope => requestFromInvocation({ operation, input, sandbox_id: sandboxId, request_id: newId("cli"), mutation_id: catalogById.get(operation)!.idempotency === "required" ? newId("cli") : null });
 const rowsOf = (response: ResponseEnvelope) => response.ok ? (response.result as { sandboxes?: Array<{ sandbox_id: string; name: string; machine_id?: string }> }).sandboxes ?? [] : [];
@@ -147,7 +153,7 @@ async function run(request: RequestEnvelope, wanted: string | undefined): Promis
     validateRequest(request);
     // Without a sign-in there is no account catalog, only this Mac's daemon.
     const local = entry.executor === "account" ? entry.id === "sandbox.list" && !(await readCredentials(machinePaths().credentials)) : where!.local;
-    return await (local ? await localTransport() : await accountTransport()).dispatch(request);
+    return await (local ? await localTransport() : entry.id === "sandbox.create" ? await createTransport() : await accountTransport()).dispatch(request);
   } catch (error) {
     return failure(request, error instanceof ContractError ? error : new ContractError("internal", error instanceof Error ? error.message : String(error)));
   }

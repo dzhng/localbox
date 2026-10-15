@@ -35,6 +35,8 @@ export interface RelayHttpTransportOptions {
   accessToken?: string;
   accessTokenProvider?: () => Promise<string | undefined>;
   fetchImpl?: typeof fetch;
+  /** The machine this client runs on, sent only when its daemon answers locally; placement defaults to it. */
+  callerMachineId?: string;
 }
 
 /**
@@ -48,17 +50,19 @@ export class RelayHttpTransport implements ClientTransport {
   private readonly accessTokenProvider?: () => Promise<string | undefined>;
   private readonly fetchImpl: typeof fetch;
   private readonly accessToken?: string;
+  private readonly callerMachineId?: string;
   constructor(options: RelayHttpTransportOptions) {
     this.endpoint = `${options.apiOrigin.replace(/\/$/, "")}/api/v1/ops`;
     this.accessToken = options.accessToken;
     this.accessTokenProvider = options.accessTokenProvider;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.callerMachineId = options.callerMachineId;
   }
   async dispatch(request: RequestEnvelope, options: DispatchOptions = {}): Promise<ResponseEnvelope> {
     const token = this.accessTokenProvider ? await this.accessTokenProvider() : this.accessToken;
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (token) headers.authorization = `Bearer ${token}`;
-    let body: Record<string, unknown> = { operation: request.operation, input: request.input, sandbox: request.sandbox_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms };
+    let body: Record<string, unknown> = { operation: request.operation, input: request.input, sandbox: request.sandbox_id, request_id: request.request_id, mutation_id: request.mutation_id, deadline_ms: request.deadline_ms, ...(this.callerMachineId ? { caller_machine_id: this.callerMachineId } : {}) };
     for (;;) {
       let response: Response;
       try {

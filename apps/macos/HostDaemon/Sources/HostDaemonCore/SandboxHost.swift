@@ -78,6 +78,17 @@ public enum HostDaemonError: Error, CustomStringConvertible, Sendable {
     }
 }
 
+/// The admission knob (L9): running sandboxes may reserve this share of the host's RAM; the rest is the host's.
+public let admissionFraction = 0.75
+
+/// A start that cannot fit even after sleeping every sandbox that may sleep: what holds the memory.
+struct AdmissionRefused: Error, Sendable {
+    struct Holder: Sendable { let sandboxID: String; let name: String; let memoryBytes: UInt64; let runningJobs: Int? }
+    let message: String
+    let neededBytes: UInt64, budgetBytes: UInt64, reservedBytes: UInt64
+    let holders: [Holder]
+}
+
 /// The single owner of this Mac's sandboxes: one `SandboxRuntime` per directory under `sandboxes/`, each request
 /// routed by `sandbox_id`, and the machine-level operations the connector and CLI use.
 public actor SandboxHost {
@@ -92,15 +103,28 @@ public actor SandboxHost {
     private var connectorReport: ConnectorReport?
     private let hostCPUs: Int
     private let hostMemoryBytes: UInt64
+    /// What running sandboxes may reserve: `admissionFraction` of RAM, or a dev cap.
+    private let budgetBytes: UInt64
+    /// Changes only when what sandboxes reserve changes (a lifecycle event), so the connector writes capacity only then.
+    private var capacityRevision = 0
+    private var lastReserved: (bytes: UInt64, running: Int)?
+    /// Sandboxes admitted and starting, counted against the budget until their runtime reports `starting` or later.
+    private var admitted: Set<String> = []
+    /// Admission decisions run one at a time, so two starts never both take the same room.
+    private var admissionBusy = false
+    private var admissionWaiters: [CheckedContinuation<Void, Never>] = []
     private let now: @Sendable () -> Date
 
     private let changes: ChangeSignal
 
-    /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this Mac's.
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
+    /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
         root = sandboxesDirectory; self.factory = factory; self.now = now
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
-        self.hostMemoryBytes = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
+        let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
+        self.hostMemoryBytes = memory
+        budgetBytes = admissionBytes ?? UInt64(Double(memory) * admissionFraction)
         let changes = ChangeSignal(); self.changes = changes
         var found: [String: SandboxRuntime] = [:], strays: [String] = []
         for name in ((try? FileManager.default.contentsOfDirectory(atPath: sandboxesDirectory.path)) ?? []).sorted() where !name.hasPrefix(".") {
@@ -121,11 +145,14 @@ public actor SandboxHost {
     public func sandboxes() async -> [SandboxRecord] { await snapshots().map(\.record) }
 
     /// At daemon start: restore hibernated sandboxes, cold-boot those owed one, all at once. Returns each one's action.
+    /// Each passes admission without making room, so one that no longer fits stays down until it is started.
     @discardableResult public func recover() async -> [String: SandboxAction] {
         await withTaskGroup(of: (String, SandboxAction?).self) { group in
             for (id, runtime) in runtimes {
                 group.addTask {
-                    do { return (id, try await runtime.recover()) }
+                    guard await runtime.owesRecovery else { return (id, nil) }
+                    do { return (id, try await self.start(runtime, makeRoom: false) { try await $0.recover() }.last) }
+                    catch let refused as AdmissionRefused { return (id, ["kind": "error", "detail": "left \(await runtime.record.name) down: \(refused.message)"]) }
                     catch { return (id, ["kind": "error", "detail": explain(error)]) }
                 }
             }
@@ -153,11 +180,8 @@ public actor SandboxHost {
             await waitForChange(since: since, timeoutMs: timeout)
             let version = stateVersion
             let all = await snapshots()
-            // Unlisted sandboxes still hold what they run with.
-            let running = await snapshots(includingUnlisted: true).filter(\.holdsResources)
-            let committed: [String: Any] = ["cpus": running.map(\.record.cpus).reduce(0, +), "memory_bytes": running.map(\.record.memoryBytes).reduce(0, +)]
             let states = all.map { ["sandbox_id": $0.record.sandboxID, "state": $0.status.lifecycle.sandboxState, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes] as [String: Any] }
-            return hostSuccess(object, result: ["version": version, "capacity": ["memory_bytes": hostMemoryBytes, "cpus": hostCPUs, "committed": committed], "sandboxes": states])
+            return hostSuccess(object, result: ["version": version, "capacity": await capacity(), "sandboxes": states])
         case "connector.report":
             guard let state = input["state"] as? String, !state.isEmpty else { return hostFailure(object, code: "invalid_input", message: "connector.report requires state") }
             connectorReport = ConnectorReport(state: state, detail: input["detail"] as? String, reportedAt: now())
@@ -194,11 +218,16 @@ public actor SandboxHost {
             bumpStateVersion()
             return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": next, "previous_name": name], actions: [["kind": "renamed", "detail": "renamed \(name) to \(next)"]]))
         case .sandboxResize:
+            let cpus = (input["cpus"] as? NSNumber)?.intValue, memory = (input["memory_bytes"] as? NSNumber)?.uint64Value
             do {
-                let action = try await runtime.resize(cpus: (input["cpus"] as? NSNumber)?.intValue, memoryBytes: (input["memory_bytes"] as? NSNumber)?.uint64Value)
+                // A running or sleeping sandbox boots again at the new size, so that size must fit.
+                let actions = [.ready, .paused].contains(sandbox.status.lifecycle)
+                    ? try await start(runtime, memoryBytes: memory ?? sandbox.record.memoryBytes) { try await $0.resize(cpus: cpus, memoryBytes: memory) }
+                    : (try await runtime.resize(cpus: cpus, memoryBytes: memory)).map { [$0] } ?? []
                 let resized = await runtime.snapshot()
-                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "cpus": resized.record.cpus, "memory_bytes": resized.record.memoryBytes, "state": resized.status.lifecycle.sandboxState], actions: action.map { [$0] } ?? []))
-            } catch { return hostFailure(object, code: "conflict", message: "could not resize \(name): \(explain(error))") }
+                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "cpus": resized.record.cpus, "memory_bytes": resized.record.memoryBytes, "state": resized.status.lifecycle.sandboxState], actions: actions))
+            } catch let refused as AdmissionRefused { return machineFull(object, refused) }
+            catch { return hostFailure(object, code: "conflict", message: "could not resize \(name): \(explain(error))") }
         case .sandboxDelete:
             try? await runtime.stop()
             runtimes[sandboxID] = nil
@@ -208,9 +237,10 @@ public actor SandboxHost {
             return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": name, "removed": removed], actions: [["kind": "deleted", "detail": "removed \(name) from this machine"]]))
         case .sandboxStart:
             do {
-                let action = try await runtime.bringUp()
-                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": await runtime.status().lifecycle.sandboxState], actions: action.map { [$0] } ?? []))
-            } catch { return hostFailure(object, code: "conflict", message: explain(error)) }
+                let actions = try await start(runtime) { try await $0.bringUp() }
+                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": await runtime.status().lifecycle.sandboxState], actions: actions))
+            } catch let refused as AdmissionRefused { return machineFull(object, refused) }
+            catch { return hostFailure(object, code: "conflict", message: explain(error)) }
         case .sandboxStop:
             do { try await runtime.stop(); return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "state": await runtime.status().lifecycle.sandboxState], actions: [])) }
             catch { return hostFailure(object, code: "conflict", message: explain(error)) }
@@ -272,15 +302,88 @@ public actor SandboxHost {
             bumpStateVersion()
             actions.append(["kind": "created", "detail": "created \(name) with \(record.cpus) CPUs and \(record.memoryBytes / (1024 * 1024 * 1024)) GiB" + (facts["disk"].map { "; disk \($0)" } ?? "")])
         }
-        do { if let action = try await runtime.bringUp() { actions.append(action) } }
+        do { actions += try await start(runtime) { try await $0.bringUp() } }
         catch {
             if existing == nil { try? await runtime.stop(); runtimes[sandboxID] = nil; try? FileManager.default.removeItem(at: runtime.directory.url); bumpStateVersion() }
+            if let refused = error as? AdmissionRefused { return machineFull(object, refused) }
             return hostFailure(object, code: "sandbox_not_ready", message: "\(name) could not start: \(explain(error))")
         }
         let sandbox = await runtime.snapshot()
         var produced: [String: Any] = ["sandbox_id": sandboxID, "name": name, "cpus": sandbox.record.cpus, "memory_bytes": sandbox.record.memoryBytes, "state": sandbox.status.lifecycle.sandboxState]
         for (key, value) in facts { produced[key] = Int(value).map { $0 as Any } ?? value }
         return hostSuccess(object, result: report(input, produced: produced, actions: actions))
+    }
+
+    /// What this Mac can still take (L9): reservation-based, not live free memory. Unlisted sandboxes still hold
+    /// what they run with.
+    private func capacity() async -> [String: Any] {
+        let holding = await snapshots(includingUnlisted: true).filter(\.reservesMemory)
+        let reserved = holding.map(\.record.memoryBytes).reduce(0, +)
+        if lastReserved?.bytes != reserved || lastReserved?.running != holding.count { capacityRevision += 1; lastReserved = (reserved, holding.count) }
+        return ["cpus": hostCPUs, "total_bytes": hostMemoryBytes, "reserved_bytes": reserved, "room_bytes": budgetBytes > reserved ? budgetBytes - reserved : 0, "running": holding.count, "revision": capacityRevision]
+    }
+
+    /// Admits `runtime` (making room unless told not to), then runs `body`, which starts it. Returns the made_room
+    /// actions followed by what `body` did. The sandbox counts against the budget from admission on.
+    private func start(_ runtime: SandboxRuntime, memoryBytes: UInt64? = nil, makeRoom: Bool = true, _ body: @Sendable (SandboxRuntime) async throws -> SandboxAction?) async throws -> [SandboxAction] {
+        let id = await runtime.record.sandboxID
+        await lockAdmission()
+        let made: [SandboxAction]
+        do { made = try await admit(start: id, memoryBytes: memoryBytes, makeRoom: makeRoom) } catch { unlockAdmission(); throw error }
+        admitted.insert(id); unlockAdmission()
+        defer { admitted.remove(id) }
+        return made + ((try await body(runtime)).map { [$0] } ?? [])
+    }
+
+    /// Admission (L9): a start or wake of `sandboxID` (at `memoryBytes`, else its own size) must fit in the budget.
+    /// If it does not, least-recently-used running sandboxes sleep until it does, never one running a job or serving a
+    /// request; each is reported as `made_room`. Nothing sleeps unless the start then fits; otherwise this throws
+    /// `AdmissionRefused` naming every sandbox that holds memory. Callers hold the admission lock.
+    func admit(start sandboxID: String, memoryBytes: UInt64? = nil, makeRoom: Bool = true) async throws -> [SandboxAction] {
+        guard let runtime = runtimes[sandboxID] else { throw HostDaemonError.invalidState("no sandbox \(sandboxID) on this machine") }
+        let sandbox = await runtime.snapshot()
+        if memoryBytes == nil, sandbox.reservesMemory { return [] }
+        let needed = memoryBytes ?? sandbox.record.memoryBytes
+        let others = await snapshots(includingUnlisted: true).filter { $0.record.sandboxID != sandboxID }
+        let holding = others.filter { $0.reservesMemory || admitted.contains($0.record.sandboxID) }
+        var reserved = holding.map(\.record.memoryBytes).reduce(0, +)
+        guard reserved + needed > budgetBytes else { return [] }
+        let candidates = holding.filter { $0.status.lifecycle == .ready && !admitted.contains($0.record.sandboxID) }
+            .sorted { ($0.record.lastActivityAt ?? .distantPast, $0.record.sandboxID) < ($1.record.lastActivityAt ?? .distantPast, $1.record.sandboxID) }
+        var jobs: [String: Int?] = [:]
+        for candidate in candidates { jobs[candidate.record.sandboxID] = await runtimes[candidate.record.sandboxID]?.runningJobs() }
+        var victims: [SandboxRuntime] = []
+        for candidate in candidates where reserved + needed > budgetBytes && (jobs[candidate.record.sandboxID] ?? nil) == 0 {
+            if let victim = runtimes[candidate.record.sandboxID] { victims.append(victim); reserved -= candidate.record.memoryBytes }
+        }
+        guard makeRoom, reserved + needed <= budgetBytes else {
+            let holders = holding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
+            let listed = holding.map { held -> String in
+                let jobs = jobs[held.record.sandboxID] ?? nil
+                let doing = held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
+                return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
+            }
+            let total = holding.map(\.record.memoryBytes).reduce(0, +)
+            throw AdmissionRefused(message: "\(sandbox.record.name) needs \(gibibytes(needed)), but sandboxes reserve \(gibibytes(total)) of this machine's \(gibibytes(budgetBytes)) and \(makeRoom ? "not enough of them can sleep" : "none is slept at daemon start"): \(listed.isEmpty ? "none running" : listed.joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: total, holders: holders)
+        }
+        var actions: [SandboxAction] = []
+        for victim in victims { actions.append(["kind": "made_room", "detail": try await victim.sleepForRoom()]) }
+        return actions
+    }
+
+    private func lockAdmission() async {
+        guard admissionBusy else { admissionBusy = true; return }
+        await withCheckedContinuation { admissionWaiters.append($0) }
+    }
+
+    /// Hands the lock to the next waiter, or frees it.
+    private func unlockAdmission() {
+        if admissionWaiters.isEmpty { admissionBusy = false } else { admissionWaiters.removeFirst().resume() }
+    }
+
+    private func machineFull(_ object: [String: Any], _ refused: AdmissionRefused) -> Data {
+        let holders = refused.holders.map { ["sandbox_id": $0.sandboxID, "name": $0.name, "memory_bytes": $0.memoryBytes, "running_jobs": $0.runningJobs as Any? ?? NSNull()] as [String: Any] }
+        return hostFailure(object, code: "machine_full", message: refused.message, details: ["needed_bytes": refused.neededBytes, "budget_bytes": refused.budgetBytes, "reserved_bytes": refused.reservedBytes, "sandboxes": holders])
     }
 
     private func snapshots(includingUnlisted: Bool = false) async -> [RuntimeSnapshot] {
@@ -323,8 +426,10 @@ public actor SandboxHost {
         hostEnvelope(request, values: ["ok": true, "result": result])
     }
 
-    private func hostFailure(_ request: [String: Any], code: String, message: String) -> Data {
-        hostEnvelope(request, values: ["ok": false, "error": ["code": code, "message": message, "retryable": false]])
+    private func hostFailure(_ request: [String: Any], code: String, message: String, details: [String: Any]? = nil) -> Data {
+        var error: [String: Any] = ["code": code, "message": message, "retryable": false]
+        if let details { error["details"] = details }
+        return hostEnvelope(request, values: ["ok": false, "error": error])
     }
 
     private func hostEnvelope(_ request: [String: Any], values: [String: Any]) -> Data {

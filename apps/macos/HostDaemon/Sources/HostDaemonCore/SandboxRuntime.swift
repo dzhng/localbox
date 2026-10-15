@@ -23,6 +23,8 @@ public actor SandboxRuntime {
     private var statusValue = RuntimeStatus(lifecycle: .stopped)
     /// What the last bring-up did (woke or cold_booted, and why), for status and logs.
     private var lastBoot: SandboxAction?
+    /// Agent requests the guest is serving now; a sandbox in the middle of one is never slept to make room.
+    private var inFlight = 0
     private let onChange: @Sendable () -> Void
     private let now: @Sendable () -> Date
 
@@ -49,10 +51,13 @@ public actor SandboxRuntime {
         return remember(["kind": "cold_booted", "detail": reason.map { "cold-booted \(record.name): \($0)" } ?? "cold-booted \(record.name)"])
     }
 
+    /// Whether the daemon's start brings this sandbox back: it was running, hibernated or is owed a cold boot.
+    var owesRecovery: Bool { record.lifecycle != .stopped || record.coldBootPending != nil }
+
     /// At daemon start: bring back what was running, hibernated or owed a cold boot; a sandbox stopped on purpose stays down.
     func recover() async throws -> SandboxAction? {
         if (record.lifecycle == .running || record.lifecycle == .sleeping) && record.coldBootPending == nil { record.coldBootPending = "the daemon exited without saving it" }
-        guard record.lifecycle != .stopped || record.coldBootPending != nil else { return nil }
+        guard owesRecovery else { return nil }
         return try await bringUp()
     }
 
@@ -85,7 +90,8 @@ public actor SandboxRuntime {
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
             }
-            record.coldBootPending = nil; record.lifecycle = .running; persist()
+            // A boot counts as activity, so a sandbox that was just started is not the first slept to make room.
+            record.coldBootPending = nil; record.lifecycle = .running; record.lastActivityAt = now(); persist()
             setStatus(.ready, epoch: statusValue.channelEpoch + 1)
         } catch {
             await channel?.close(); channel = nil; backend = nil; try? await next.stop()
@@ -100,7 +106,7 @@ public actor SandboxRuntime {
 
     public func resume() async throws {
         guard statusValue.lifecycle == .paused, let backend else { throw HostDaemonError.invalidState("\(record.name) is not asleep") }
-        try await backend.resume(); setStatus(.ready, epoch: statusValue.channelEpoch + 1)
+        try await backend.resume(); record.lastActivityAt = now(); setStatus(.ready, epoch: statusValue.channelEpoch + 1)
     }
 
     public func stop() async throws {
@@ -112,11 +118,12 @@ public actor SandboxRuntime {
         setStatus(.stopped, epoch: statusValue.channelEpoch + 1)
     }
 
-    /// SIGTERM (D11): save a running or sleeping sandbox so the next start restores it; where saving fails or the
-    /// backend cannot save, stop it and owe it a cold boot that reports why.
-    func hibernate() async {
-        guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { return }
-        let reason: String
+    /// SIGTERM (D11) and admission: save a running or sleeping sandbox so the next start restores it; where saving
+    /// fails or the backend cannot save, stop it and owe it a cold boot that reports why. Returns why it was not
+    /// saved, or nil when it was.
+    @discardableResult func hibernate() async -> String? {
+        guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { return nil }
+        let failure: String, reason: String
         if let saver = backend as? any HibernateBackend {
             do {
                 if statusValue.lifecycle == .paused { try await resume() }
@@ -124,18 +131,43 @@ public actor SandboxRuntime {
                 await channel?.close(); channel = nil; self.backend = nil
                 setStatus(.stopped)
                 record.lifecycle = .hibernated; persist()
-                return
-            } catch { reason = "could not save its state: \(explain(error))" }
+                return nil
+            } catch { failure = explain(error); reason = "could not save its state: \(failure)" }
         } else {
-            reason = "fixture: the process fixture cannot save its state"
+            failure = "the process fixture cannot save its state"; reason = "fixture: \(failure)"
         }
         try? await stop()
         record.coldBootPending = reason; persist()
+        return failure
+    }
+
+    /// Frees this sandbox's memory for another start (admission, L9) and says how. A VM sleeps by hibernating, the
+    /// same path as SIGTERM, so a failed save (a locked screen) stops it and owes it a cold boot. The process
+    /// fixture cannot save, so it sleeps with SIGSTOP, which admission counts as freed.
+    func sleepForRoom() async throws -> String {
+        guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
+        let size = "\(record.name) (\(gibibytes(record.memoryBytes)))"
+        guard backend is any HibernateBackend else { try await pause(); return "slept \(size) to make room" }
+        if let failure = await hibernate() { return "stopped \(size) to make room: \(failure)" }
+        return "slept \(size) to make room"
+    }
+
+    /// The guest's running Localbox jobs (`guest.activity`), or nil when it is serving a request or does not say.
+    /// Asking is not activity, so it leaves `lastActivityAt` alone.
+    func runningJobs() async -> Int? {
+        guard statusValue.lifecycle == .ready, inFlight == 0, let channel else { return nil }
+        let id = "admission-\(UUID().uuidString)"
+        guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": "v1", "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
+              let response = try? await channel.send(request),
+              let object = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
+              let jobs = (object["result"] as? [String: Any])?["running_jobs"] as? NSNumber else { return nil }
+        return jobs.intValue
     }
 
     public func forward(_ envelope: Data) async throws -> Data {
         guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
         record.lastActivityAt = now()
+        inFlight += 1; defer { inFlight -= 1 }
         return try await channel.send(envelope)
     }
 
@@ -163,10 +195,9 @@ public actor SandboxRuntime {
         try await stop()
         record.cpus = cpus; record.memoryBytes = memory; persist()
         try await coldBoot()
-        let gib = Double(memory) / Double(1024 * 1024 * 1024)
         let commands = Array(Set(ended)).sorted()
         let listed = commands.isEmpty ? "" : ": \(commands.prefix(20).joined(separator: ", "))\(commands.count > 20 ? ", …" : "")"
-        return ["kind": "restarted", "detail": "restarted \(record.name) at \(cpus) CPUs and \(String(format: "%g", gib)) GiB; \(ended.count) process\(ended.count == 1 ? "" : "es") ended\(listed)"]
+        return ["kind": "restarted", "detail": "restarted \(record.name) at \(cpus) CPUs and \(gibibytes(memory)); \(ended.count) process\(ended.count == 1 ? "" : "es") ended\(listed)"]
     }
 
     /// The guest's user processes, by command, leaving out kernel threads and the guest agent serving this request.
@@ -206,5 +237,6 @@ struct RuntimeSnapshot: Sendable {
     let record: SandboxRecord
     let status: RuntimeStatus
     let lastBoot: SandboxAction?
-    var holdsResources: Bool { [.starting, .ready, .paused, .stopping].contains(status.lifecycle) }
+    /// Admission counts a sandbox's memory while it starts or runs; a sleeping one has given it back (L9).
+    var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) }
 }

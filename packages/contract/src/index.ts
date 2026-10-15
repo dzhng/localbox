@@ -73,7 +73,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "machine.list": ["List machines in the account.", empty(), true, false, "none"],
   "machine.rename": ["Rename an account machine.", object({ machine_id: string(), name: string() }, ["machine_id", "name"]), false, true, "required"],
   "machine.remove": ["Remove an account machine.", object({ machine_id: string() }, ["machine_id"]), false, true, "required"],
-  "sandbox.create": ["Create a sandbox on a machine of the account; reports its name and size.", object({ name: string(), machine: string(), cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required"],
+  "sandbox.create": ["Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size.", object({ name: string(), machine: string(), placement: { type: "string", enum: ["auto", "remote"] }, cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required"],
   "sandbox.list": ["List the account's sandboxes with their machine and last reported state.", empty(), true, false, "none"],
   "sandbox.rename": ["Rename a sandbox.", object({ name: string() }, ["name"]), false, true, "required"],
   "sandbox.delete": ["Delete a sandbox; `confirm`, when given, must be its name.", object({ confirm: string() }), false, true, "required"],
@@ -274,6 +274,13 @@ export function catalogSnapshot(): OperationCatalogEntry[] { return JSON.parse(J
 /** What a reversible request did (P1): what was asked, what resulted, and every side effect taken on the way. */
 export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed";
 export interface ActionReport { requested: Json; produced: Json; actions: Array<{ kind: ActionKind; detail?: string; [key: string]: Json | undefined }> }
+
+/**
+ * What a machine can still take, as its daemon reports it through `host.watch` and its connector stores on the
+ * machine row. `room_bytes` is reservation-based: 75% of RAM minus what running sandboxes reserve, not live free
+ * memory. `revision` changes only when the reservation does, so the connector writes it only then.
+ */
+export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number }
 
 const GIB = 1024 ** 3;
 /** A new sandbox's size when none is asked for: half the cores and a quarter of RAM (whole GiB), at least 2 CPUs and 2 GiB. HostDaemon's `defaultSize` is the same table. */

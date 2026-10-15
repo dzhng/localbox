@@ -17,6 +17,7 @@ public struct SandboxArtifacts: Sendable {
 }
 
 #if os(macOS)
+import IOKit
 import Virtualization
 
 /// Real sandboxes: each disk is an APFS clone of the template, each has its own MAC and machine identifier.
@@ -71,6 +72,14 @@ public enum SandboxConfigurationBuilder {
         try configuration.validateSaveRestoreSupport()
         return configuration
     }
+}
+
+/// Whether a console user's screen is locked (`CGSSessionScreenIsLocked` in the registry's `IOConsoleUsers`).
+func consoleScreenIsLocked() -> Bool {
+    let root = IORegistryGetRootEntry(kIOMainPortDefault)
+    defer { IOObjectRelease(root) }
+    let users = IORegistryEntryCreateCFProperty(root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? [[String: Any]]
+    return users?.contains { $0["CGSSessionScreenIsLocked"] as? Bool == true } ?? false
 }
 
 /// Records why the guest stopped, so a dead guest is reported instead of surfacing as a closed channel.
@@ -140,7 +149,8 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider 
             await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil; self.machine = nil
         } catch {
             try? await resumeMachine(machine)
-            throw error
+            // The VM service keeps the saved-state key in the keychain, which refuses while the console is locked (slice 02).
+            throw consoleScreenIsLocked() ? HostDaemonError.unsupported("hibernate unavailable while the screen is locked") : error
         }
     }
 

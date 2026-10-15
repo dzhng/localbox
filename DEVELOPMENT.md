@@ -130,13 +130,17 @@ without Convex configuration.
 
 `npm run proof -- 03 --tier l` and later proofs start all of this for you,
 plus one fixture HostDaemon per simulated machine
-(`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`.
+(`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`
+(`a:8G,b:16G` gives each fixture daemon that much RAM instead of this Mac's).
 
 ### How a request reaches a sandbox
 
 Sandboxes are an account catalog in Convex (`sandboxes`): `localbox sandbox
-create` reserves a generated name there, then asks the chosen machine (this one
-by default, `--machine NAME` otherwise) to create it; the daemon keeps each
+create` reserves a generated name there, then asks the machine that
+`packages/placement` chose (this one by default, `--machine NAME`, or
+`--placement auto|remote` by the room each machine last reported) to create it.
+The daemon admits each start against 75% of its RAM, sleeping its least recently
+used idle sandboxes to make room; it keeps each
 sandbox's identity, read-only, in its own directory next to its disk. `--sandbox NAME` is looked up on this Mac's daemon first, then
 in the account; it may be left out when the account has exactly one sandbox.
 A sandbox on this Mac is reached through the daemon socket. A sandbox on another

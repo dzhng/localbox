@@ -1,7 +1,8 @@
 import {
   catalogById, ContractError, defaultSize, failure, requestFromInvocation, success, validateJson,
-  type ActionReport, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
+  type ActionReport, type CapacityReport, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
+import { place } from "../../../packages/placement/src/index.js";
 
 /** The caller: one of the account's machines (machine credential) or a signed-in agent (OAuth token family). */
 export interface Principal { accountId: string; machineId?: string; familyId?: string }
@@ -24,6 +25,9 @@ export interface OpsDeps {
 
 export interface OpsResponse { status: number; body: unknown }
 
+/** A row of `machines:list`: the machine's last capacity report and when it last reached the relay. */
+interface MachineRow { machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport; capacityAt?: number }
+
 /** A row of `sandboxes:list`. */
 export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; state: string }
 
@@ -35,6 +39,13 @@ export const ACCOUNT_OPERATIONS: Record<string, ["mutation" | "query", string]> 
 };
 
 const GIB = 1024 ** 3;
+/**
+ * A machine counts as online for placement when it reached the relay (a claim or a token fetch) or reported capacity
+ * this recently. Connectors write only on change, so an idle Mac can read offline; a create relayed to a machine that
+ * is really gone still fails within the 3 s claim window.
+ */
+/** Placement prefers machines with room for the sandbox; with no size asked, that is the smallest default size. */
+const SMALLEST_DEFAULT_BYTES = 2 * GIB;
 const errorCodes: ErrorCode[] = ["name_conflict", "sandbox_not_found", "machine_not_found", "quota_exceeded", "invalid_input"];
 /** Convex functions signal contract errors as `<code>: message`; anything else is not the caller's to see. */
 function contractError(error: unknown): ContractError {
@@ -70,7 +81,7 @@ export async function handleOps(principal: Principal, input: Record<string, unkn
   const base = requestFromInvocation({ operation: entry.id, request_id: typeof input.request_id === "string" ? input.request_id : `req_${crypto.randomUUID()}`, deadline_ms: typeof input.deadline_ms === "number" ? input.deadline_ms : undefined, mutation_id: typeof input.mutation_id === "string" ? input.mutation_id : null, input: payload });
   try {
     validateJson(payload, entry.input_schema);
-    if (entry.id === "sandbox.create") return await createSandbox(principal, base, deps);
+    if (entry.id === "sandbox.create") return await createSandbox(principal, base, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
     const target = await resolveSandbox(principal, typeof input.sandbox === "string" ? input.sandbox : undefined, deps);
     const request = { ...base, sandbox_id: target.sandbox_id };
     if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
@@ -95,40 +106,55 @@ export async function resolveSandbox(principal: Principal, wanted: string | unde
   throw new ContractError("sandbox_ambiguous", `this account has ${rows.length} sandboxes; name one: ${names.join(", ")}`, { names });
 }
 
-async function resolveMachine(principal: Principal, wanted: string, deps: OpsDeps): Promise<{ machineId: string; name: string; capacity?: { cpus?: number; memory_bytes?: number } } | undefined> {
-  const machines = await deps.accountCall(principal, "query", "machines:list", {}) as Array<{ machineId: string; name: string; capacity?: { cpus?: number; memory_bytes?: number } }>;
-  return machines.find((row) => row.machineId === wanted) ?? machines.find((row) => row.name.toLowerCase() === wanted.toLowerCase());
-}
-
 const gib = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
 
-/** Reserve the identity in Convex, then have the machine create it; a machine that refuses releases the name. */
-async function createSandbox(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
-  const asked = base.input as { name?: string; machine?: string; cpus?: number; memory_bytes?: number };
-  const wanted = asked.machine ?? principal.machineId;
-  if (!wanted) throw new ContractError("invalid_input", "name a machine: pass machine (a name or id from machine.list)");
-  const machine = await resolveMachine(principal, wanted, deps);
-  if (!machine) throw new ContractError("machine_not_found", `no machine ${wanted} on this account`);
-  const { cpus: hostCpus, memory_bytes: hostMemory } = machine.capacity ?? {};
-  if ((asked.cpus === undefined || asked.memory_bytes === undefined) && (!hostCpus || !hostMemory)) throw new ContractError("machine_offline", `${machine.name} has not connected yet, so its size is unknown; start its connector or pass cpus and memory_bytes`, undefined, true);
-  const fallback = hostCpus && hostMemory ? defaultSize(hostCpus, hostMemory) : undefined;
-  const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
-  const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
-    : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: half its ${hostCpus} CPUs and a quarter of its ${gib(hostMemory!)}, at least 2 CPUs and 2 GiB`;
-  const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes }) as SandboxRow;
-  const request: RequestEnvelope = { ...base, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes } };
-  const relayed = await relay(principal, machine.machineId, request, deps);
-  const response = (relayed.body as { response?: ResponseEnvelope }).response;
-  // A pending create keeps its reservation: the machine took the request and its answer arrives by continuation.
-  if (!response) return relayed;
-  if (!response.ok) { await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id }); return answer({ ...response, request_id: base.request_id, sandbox_id: null }); }
-  const machineReport = response.result as unknown as ActionReport;
-  const report: ActionReport = {
-    requested: asked as Json,
-    produced: { sandbox_id: row.sandbox_id, name: row.name, machine: machine.name, cpus, memory_bytes: memoryBytes, size_reason: sizeReason },
-    actions: machineReport.actions ?? [],
-  };
-  return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));
+/**
+ * Place the sandbox (`place`, D8), reserve its identity in Convex, then have the machine create it; a machine that
+ * refuses releases the name. `callerMachineId` is the calling machine, sent by a CLI whose local daemon answers; a
+ * machine can only name itself, and agents have no machine.
+ */
+async function createSandbox(principal: Principal, base: RequestEnvelope, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { name?: string; machine?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number };
+  if (callerMachineId !== undefined && callerMachineId !== principal.machineId) throw new ContractError("invalid_input", "caller_machine_id must be the calling machine's own id");
+  const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
+  // An idle connected Mac makes no Convex calls, so report age says nothing about presence. A machine counts as
+  // online once it has reported capacity; the relayed create itself finds a gone machine in 3 s (machine_offline),
+  // and auto/remote placement then moves on to the next candidate.
+  const machines = rows.map((row) => {
+    const lastReportAt = Math.max(row.lastSeenAt ?? 0, row.capacityAt ?? 0) || undefined;
+    return { id: row.machineId, name: row.name, online: row.capacity !== undefined, roomBytes: row.capacity?.room_bytes ?? 0, totalBytes: row.capacity?.total_bytes ?? 0, lastReportAt };
+  });
+  const tried = new Set<string>();
+  for (;;) {
+    const placed = place({ flags: { machine: asked.machine, placement: asked.placement }, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, online: false } : machine), neededBytes: asked.memory_bytes ?? SMALLEST_DEFAULT_BYTES });
+    if ("error" in placed) throw new ContractError(placed.error, placed.message, { machines: placed.machines as unknown as Json }, placed.error === "machine_offline");
+    const machine = rows.find((row) => row.machineId === placed.machineId)!;
+    const { cpus: hostCpus, total_bytes: hostMemory } = machine.capacity ?? {};
+    if ((asked.cpus === undefined || asked.memory_bytes === undefined) && (!hostCpus || !hostMemory)) throw new ContractError("machine_offline", `${machine.name} has not connected yet, so its size is unknown; start its connector or pass cpus and memory_bytes`, undefined, true);
+    const fallback = hostCpus && hostMemory ? defaultSize(hostCpus, hostMemory) : undefined;
+    const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
+    const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
+      : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: half its ${hostCpus} CPUs and a quarter of its ${gib(hostMemory!)}, at least 2 CPUs and 2 GiB`;
+    const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes }) as SandboxRow;
+    // Each placement attempt is a new relay row (request ids are scoped to one machine).
+    const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes } };
+    const relayed = await relay(principal, machine.machineId, request, deps);
+    const response = (relayed.body as { response?: ResponseEnvelope }).response;
+    // A pending create keeps its reservation: the machine took the request and its answer arrives by continuation.
+    if (!response) return relayed;
+    if (!response.ok) {
+      await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id });
+      if (response.error.code === "machine_offline" && asked.placement && !asked.machine) { tried.add(machine.machineId); continue; }
+      return answer({ ...response, request_id: base.request_id, sandbox_id: null });
+    }
+    const machineReport = response.result as unknown as ActionReport;
+    const report: ActionReport = {
+      requested: asked as Json,
+      produced: { sandbox_id: row.sandbox_id, name: row.name, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason },
+      actions: machineReport.actions ?? [],
+    };
+    return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));
+  }
 }
 
 /** Rename in the catalog, then tell the machine; an offline machine takes the name from its mirror when it reconnects. */

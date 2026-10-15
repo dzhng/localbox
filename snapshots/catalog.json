@@ -140,7 +140,7 @@
   },
   {
     "id": "sandbox.create",
-    "description": "Create a sandbox on a machine of the account; reports its name and size.",
+    "description": "Create a sandbox on the caller's own machine, on `machine`, or by `placement`: auto takes the online machine with the most room, remote the same without the caller's; reports where and why, its name and size.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -151,6 +151,13 @@
         "machine": {
           "type": "string",
           "minLength": 1
+        },
+        "placement": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "remote"
+          ]
         },
         "cpus": {
           "type": "integer",

@@ -1,19 +1,14 @@
 import assert from "node:assert/strict";
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
-import { LocalIPCTransport } from "../../../packages/client/src/index.js";
-import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { buildRealVMs, realDaemon, screenLocked } from "../lib/real-daemon.js";
 
 export const id = "10";
 export const tiers = ["u", "s", "v"];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-/** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked (slice 02). */
-const screenLocked = () => /"CGSSessionScreenIsLocked"=Yes/.test(execFileSync("ioreg", ["-n", "Root", "-d1"], { encoding: "utf8" }));
 const GIB = 1024 ** 3;
 
 export async function run(ctx: ProofContext): Promise<Check[]> {
@@ -36,51 +31,18 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
 /** One real host daemon on this Mac (Apple backend, minimal image) in a temporary machine root, driven over its socket. */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {
   const artifacts = join(ctx.root, "dist/vm-image/minimal");
-  const machine = mkdtempSync(join(tmpdir(), "localbox-proof-10-"));
-  const sandboxes = join(machine, "sandboxes"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
-  const token = randomBytes(32).toString("hex"); writeFileSync(tokenFile, token, { mode: 0o600 });
-  const log = join(ctx.evidence, "10-hostd.log");
-  const transport = new LocalIPCTransport({ socketPath: socket, token, timeoutMs: 300_000 });
+  const { machine, sandboxes, start, stop, ok, sh, record, cleanup } = realDaemon(ctx, { probe: "10" });
   const evidence: Record<string, unknown> = { machine_root: machine, screen_locked: screenLocked() };
-  let daemon: ChildProcess | undefined; let bin = ""; let calls = 0;
-
-  const startDaemon = async () => {
-    const fd = openSync(log, "a");
-    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_VM_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile } });
-    closeSync(fd);
-    for (let attempt = 0; attempt < 120 && !existsSync(socket); attempt++) { if (daemon.exitCode !== null) break; await sleep(250); }
-    assert.ok(existsSync(socket), `the daemon did not open its socket: ${readFileSync(log, "utf8").slice(-1500)}`);
-  };
-  const stopDaemon = async (signal: NodeJS.Signals, timeoutMs = 120_000) => {
-    const child = daemon; if (!child || child.exitCode !== null) return;
-    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-    child.kill(signal);
-    await Promise.race([exited, sleep(timeoutMs).then(() => { child.kill("SIGKILL"); })]);
-    await exited;
-  };
-  const call = async (operation: string, sandboxId: string | null, input: Json = {}, mutation = true): Promise<ResponseEnvelope> => {
-    const requestId = `p10-${Date.now()}-${calls++}`;
-    return transport.dispatch({ protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, sandbox_id: sandboxId, deadline_ms: 120_000, mutation_id: mutation ? requestId : null, input } as any);
-  };
-  const ok = async (operation: string, sandboxId: string | null, input: Json = {}): Promise<any> => {
-    const response = await call(operation, sandboxId, input);
-    assert.equal(response.ok, true, `${operation}: ${JSON.stringify(response).slice(0, 1500)}`);
-    return (response as any).result;
-  };
-  const sh = async (sandboxId: string, command: string): Promise<string> => (await ok("shell.exec", sandboxId, { command, cwd: "/" })).stdout.trim();
-  const record = (sandboxId: string) => JSON.parse(readFileSync(join(sandboxes, sandboxId, "sandbox.json"), "utf8"));
+  let bin = "";
+  const startDaemon = () => start(bin);
+  const stopDaemon = stop;
   const ids = { alpha: "sandbox_p10_alpha", beta: "sandbox_p10_beta" };
   const names: Record<string, string> = { [ids.alpha]: "alpha-otter", [ids.beta]: "beta-heron" };
 
   const checks: Check[] = [];
   try {
     checks.push(await ctx.check("the minimal image (with this guest agent), the host daemon and its signature are built", async () => {
-      assert.equal((await ctx.exec("npm", ["run", "-s", "build"])).code, 0, "npm run build");
-      const image = await ctx.exec("npm", ["run", "-s", "image:boot", "--", "--profile", "minimal"]);
-      if (image.code !== 0) throw new Error(`blocked: could not build the minimal image (Docker running?): ${(image.stderr || image.stdout).slice(-600)}`);
-      const build = await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon"]); assert.equal(build.code, 0, build.stderr.slice(-1500));
-      assert.equal((await ctx.exec("sh", ["scripts/proof/lib/sign-dev.sh"])).code, 0);
-      bin = (await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"])).stdout.trim();
+      bin = await buildRealVMs(ctx);
       evidence.template_du_kb = Number(execFileSync("du", ["-k", join(artifacts, "template.img")], { encoding: "utf8" }).split("\t")[0]);
       await startDaemon();
     }));
@@ -160,9 +122,8 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       assert.deepEqual((await ok("sandbox.list", null)).sandboxes, []);
     }));
   } finally {
-    await stopDaemon("SIGKILL", 10_000);
+    await cleanup();
     writeFileSync(join(ctx.evidence, "10-multi-sandbox.json"), `${JSON.stringify(evidence, null, 2)}\n`);
-    rmSync(machine, { recursive: true, force: true });
   }
   return checks;
 }

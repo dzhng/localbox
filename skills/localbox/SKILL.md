@@ -18,9 +18,13 @@ For the complete bootstrap, read [installation](references/installation.md).
 ## Everyday use
 
 Run `localbox login --email <address>`, then repeat it with the six-digit
-code from the user. Create a sandbox with `localbox sandbox create` (it reports
-the generated name and the size it chose; `--name`, `--machine`, `--cpus` and
-`--memory 4G` override), then use `localbox shell exec --sandbox NAME --
+code from the user. Create a sandbox with `localbox sandbox create`: it lands
+on this Mac, on `--machine NAME`, or with `--placement auto` (the machine with
+the most room) or `--placement remote` (the same, never this Mac), and reports
+where and why, the generated name and the size it chose (`--name`, `--cpus`,
+`--memory 4G` override). A full Mac makes room by sleeping its least recently
+used sandboxes and reports each as `made_room`; one running a job is never
+slept. Then use `localbox shell exec --sandbox NAME --
 <command>`, `localbox fs read --sandbox NAME PATH` and `localbox sandbox list`.
 `--sandbox` may be left out only when the account has exactly one sandbox; a
 sandbox on another Mac needs no `--machine`. Every command prints short text

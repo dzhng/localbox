@@ -21,7 +21,7 @@ const samples: Array<[string, ResponseEnvelope | Json]> = [
   ["shell exec", envelope("shell.exec", { stdout: "hello\nworld\n", stderr: "", exit_code: 0, truncated: false })],
   ["shell exec without --sandbox", failed("shell.exec", "sandbox_ambiguous", "2 sandboxes; pass --sandbox with one of: build-box, quiet-otter", { names: ["build-box", "quiet-otter"] })],
   ["fs read", envelope("fs.read", { path: "/big.txt", content: "zzzz", offset: 0, next_offset: 4, eof: false, truncated: { original_bytes: 2_097_152, returned_bytes: 921_600 } })],
-  ["machines list", envelope("machine.list", [{ machineId: "machine_1", name: "attic", lastSeenAt: 1_760_000_000_000, capacity: { cpus: 12, memory_bytes: 24 * GIB } }])],
+  ["machines list", envelope("machine.list", [{ machineId: "machine_1", name: "attic", lastSeenAt: 1_760_000_000_000, capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1 } }])],
   ["account show", envelope("account.status", { accountId: "account_1", email: "you@example.com", name: "brave-walrus-482", createdAt: 1_760_000_000_000 })],
   ["login", { account_name: "brave-walrus-482", machine_name: "studio", machine_count: 2 }],
 ];
