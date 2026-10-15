@@ -10,7 +10,7 @@ export const openIn = [
   { label: "Open in Codex", href: `codex://new?prompt=${encodeURIComponent(agentPrompt)}` },
 ];
 
-export const requirements = "Apple Silicon · macOS 13 or newer";
+export const requirements = "Apple Silicon · macOS 14 or newer";
 
 export const links = {
   repo,
@@ -57,6 +57,7 @@ export const asks = [
   "Use the Mac mini in the closet for tonight's full build.",
   "Share ~/code/app read-only with the sandbox, then show me every file it read.",
   "Pick up where we left off yesterday. The dev server should still be running.",
+  "That sandbox is too small for the full test suite. Give it 8 GB.",
 ];
 
 /** Illustrations live in .github/readme and are copied to /art at build time. */
@@ -66,21 +67,21 @@ export const features = [
     alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
     kicker: "durable",
     title: "Still set up next week",
-    body: "A sandbox keeps its files, installed packages, browser profile and desktop across sessions, sleep and reconnects, until someone deletes it. Want one disposable? Give it an idle timeout and it cleans itself up.",
+    body: "A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Idle for 30 minutes, it goes to sleep and gives your RAM back; the next request wakes it with every process where it was, dev server included. Want one disposable? Give it an idle timeout.",
   },
   {
     image: "05-your-machines-are-the-fleet.png",
     alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out",
     kicker: "your fleet",
     title: "Your machines are the fleet",
-    body: "Sign in on each Mac you own and it joins your fleet. Your agent asks for a sandbox and gets one on whichever machine has room. No per-minute billing, no session limit.",
+    body: "Sign in on each Mac you own with your email and it joins your fleet, even from another country. Sandboxes stay on your agent's machine unless it names another or asks Localbox to pick the roomiest. No per-minute billing, no session limit.",
   },
   {
     image: "03-outbound-only.png",
     alt: "The house's front door stays padlocked while Xiaohei sits on the roof reeling a line up to the relay",
     kicker: "outbound only",
     title: "Cloud agents, your computers",
-    body: "Codex cloud, Claude Code on the web and other background agents work in your sandboxes through a relay your Mac connects out to: no port forwarding, VPN or Tailscale. Their access is a token you can revoke any time.",
+    body: "Codex cloud, Claude Code on the web and other background agents work in your sandboxes through a relay your Mac connects out to: no port forwarding, VPN or Tailscale. They sign in with your email and a code, and you can revoke them any time.",
   },
   {
     image: "04-host-stays-outside.png",
@@ -99,11 +100,11 @@ export const features = [
 ];
 
 export const capabilities = [
-  { area: "Sandboxes", body: "Create, list, start, stop, pause and delete. Keep durable, or set an idle timeout." },
+  { area: "Sandboxes", body: "Create, rename, resize, sleep, wake and delete. Sized to the machine, durable by default, optional idle deletion." },
+  { area: "Machines", body: "Sign in with an email code. Place sandboxes locally, on a named machine, or automatically." },
   { area: "Shell", body: "Run bounded commands, or start long jobs and wait, poll, cancel or read their output." },
   { area: "Files", body: "List, stat, read, write, create and remove paths inside the sandbox." },
-  { area: "Browser", body: "Open, navigate, focus and close tabs. Click, type, send keys, take screenshots." },
-  { area: "Desktop", body: "Screenshot, move, click, scroll and type on a 1440×900 virtual display." },
+  { area: "Browser and desktop", body: "Open and drive browser tabs; click, type, scroll and screenshot a 1440×900 virtual desktop." },
   { area: "Shared folders", body: "Share a host folder read-only or read-write, and read its access log." },
 ];
 
@@ -117,6 +118,14 @@ export const faq = [
   {
     q: "Is it really free?",
     a: "Yes. It runs on machines you already own, so there's nothing to rent. You sign in with your email so your machines and sandboxes belong to one account.",
+  },
+  {
+    q: "Doesn't a VM eat my RAM?",
+    a: "Only while it's working. A sandbox idle for 30 minutes goes to sleep: its memory is saved to disk and the RAM comes back to you. The next request wakes it in seconds with every process exactly where it was.",
+  },
+  {
+    q: "How do I sign in?",
+    a: "With your email and a 6-digit code. No password. Your agent runs the login and asks you for the code. Sign in with the same email on another Mac and it joins the same account.",
   },
   {
     q: "Can a sandbox see my files?",
@@ -136,7 +145,7 @@ export const faq = [
   },
   {
     q: "What works today?",
-    a: "Localbox is pre-release. Today one Mac runs one durable sandbox with shell, files, browser and desktop, the CLI and optional MCP, and the outbound relay. Creating sandboxes on demand, idle timeouts, multi-machine fleets, shared folders and email sign-in are in progress.",
+    a: "Localbox is pre-release. Today one Mac runs one durable sandbox with shell, files, browser and desktop, the CLI and optional MCP, and the outbound relay. Creating sandboxes on demand, sleep and idle deletion, sizing, multi-machine fleets and placement, email sign-in and shared folders are in progress.",
   },
 ];
 

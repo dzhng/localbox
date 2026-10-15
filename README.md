@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/dzhng/localbox/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dzhng/localbox?label=release"></a>
-  <img alt="macOS 13+ on Apple Silicon" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20Silicon-black">
+  <img alt="macOS 14+ on Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-black">
   <img alt="Works with Claude Code, Codex and MCP agents" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20MCP-blue">
   <img alt="Free" src="https://img.shields.io/badge/price-free-green">
 </p>
@@ -38,8 +38,11 @@ starts by reinstalling the world. A Localbox sandbox keeps its files, installed
 packages, browser profile and desktop across sessions, sleep and reconnects. Set
 it up once and it's still set up next week.
 
-When a sandbox should be disposable, give it an idle timeout and it deletes itself
-once nobody's using it. Nothing to prune.
+Durable doesn't mean hogging your Mac. A sandbox nobody has used for 30 minutes
+goes to sleep: its memory is saved to disk and the RAM comes back to you. The next
+request wakes it in seconds with every process exactly where it was, down to the
+dev server it left running. When a sandbox should be disposable, give it an idle
+timeout and it deletes itself once nobody's using it. Nothing to prune.
 
 **[Get started →](#get-started)** Your agent installs it for you.
 
@@ -57,6 +60,8 @@ once nobody's using it. Nothing to prune.
 
 > "Pick up where we left off yesterday. The dev server should still be running."
 
+> "That sandbox is too small for the full test suite. Give it 8 GB."
+
 ## Your machines are the fleet
 
 <p align="center">
@@ -64,9 +69,11 @@ once nobody's using it. Nothing to prune.
 </p>
 
 You probably already own spare compute: a Mac mini on the shelf, last year's
-laptop. Sign each one in to Localbox and it joins your fleet. When your agent asks
-for a sandbox, it gets one on whichever machine has room. No per-minute billing,
-no session limit, and your code never leaves hardware you own.
+laptop. Sign each one in with your email and it joins your fleet, even from
+another country. Sandboxes stay on the machine your agent is running on unless it
+asks otherwise: name a machine, or let Localbox pick whichever has the most room.
+No per-minute billing, no session limit, and your code never leaves hardware you
+own.
 
 ## Cloud agents, your computers
 
@@ -76,9 +83,10 @@ no session limit, and your code never leaves hardware you own.
 
 Background agents like Codex cloud and Claude Code on the web can do their work in
 your sandboxes instead of rented ones. Each Mac connects **out** to a hosted relay,
-so there's no port forwarding, VPN or Tailscale. Agents get an OAuth token for your
-account that you can revoke any time, and a request that may have half-applied is
-reported as uncertain, never silently retried.
+so there's no port forwarding, VPN or Tailscale. A cloud agent signs in with your
+email and a code, gets a token for your account that you can revoke any time, and a
+request that may have half-applied is reported as uncertain, never silently
+retried.
 
 ## Let your agent off the leash
 
@@ -109,13 +117,17 @@ boundary.
   <img src=".github/readme/02-two-handles-one-door.png" alt="One door with a CLI knob and an MCP handle; the same operations wait behind it" width="85%">
 </p>
 
-The CLI is the product. MCP is an adapter over the same operation catalog, with
-identical operations, schemas, errors and permissions, so a request means the same
-thing from a shell, Claude Code, Codex or a script.
+The CLI is the product, and its customer is your agent. MCP is an adapter over
+the same operation catalog, with identical operations, schemas, errors and
+permissions, so a request means the same thing from a shell, Claude Code, Codex or
+a script. Every command does what it was asked when the result can be undone, then
+says exactly what it did: the size and machine it chose, the sandboxes it slept to
+make room, the output it trimmed. Your agent never has to guess.
 
 | | What your agent can use |
 | --- | --- |
-| **Sandboxes** | Create, list, start, stop, pause and delete; keep durable or set an idle timeout |
+| **Sandboxes** | Create, list, rename, resize, sleep, wake and delete; sized to the machine, durable by default, optional idle deletion |
+| **Machines** | Sign in with an email code; list, rename and remove machines; place sandboxes locally, on a named machine, or automatically |
 | **Shell** | Run bounded commands, or start long jobs and wait, poll, cancel or read their output |
 | **Files** | List, read, write, create and remove paths inside the sandbox |
 | **Browser** | Open, navigate and close tabs; click, type, send keys and take screenshots |
@@ -127,13 +139,14 @@ thing from a shell, Claude Code, Codex or a script.
 Localbox is pre-release, and this README describes the product we're launching.
 Today one Mac runs one durable sandbox: lifecycle, shell, files, browser and
 desktop operations, the CLI and optional MCP, the outbound relay, and signed
-releases with automatic updates. Creating and deleting sandboxes on demand, idle
-timeouts, multi-machine fleets, shared folders with an access log, and email
-sign-in are in progress. The [positioning](positioning.md) doc tracks each one.
+releases with automatic updates. Creating and deleting sandboxes on demand, sleep
+and idle deletion, sizing and resize, multi-machine fleets and placement, email
+sign-in, and shared folders with an access log are in progress. Sleep needs
+macOS 14. The [positioning](positioning.md) doc tracks each one.
 
 ## Get started
 
-Requires **Apple Silicon and macOS 13 or newer**. Free.
+Requires **Apple Silicon and macOS 14 or newer**. Free.
 
 Open Claude Code or Codex and say:
 

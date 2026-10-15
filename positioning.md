@@ -12,8 +12,14 @@ shared folder is logged.
 **Sandbox** is the product word. The VM is the implementation behind it; say "VM"
 only in technical docs. **Durable** is the default and the differentiator:
 cloud sandboxes and containers are disposable by design, and a Localbox sandbox
-keeps its installs, files and browser state until it's deleted. Disposable is an
-option (an idle timeout), not the default.
+keeps its installs, files and browser state until it's deleted. Idle sandboxes
+go to sleep instead: memory is saved to disk, RAM comes back, and every process,
+down to a running dev server, resumes on the next request. Disposable is an
+option (delete after an idle period), not the default.
+
+Every sandbox, machine and account gets a generated, renameable name like
+`quiet-otter` or `brave-walrus-482`. Names are friendly handles; they never grant
+access.
 
 The product is a tool *for* agents, not an agent. It has no built-in AI and makes
 no decisions about the work; the user's agent (Claude Code, Codex, any harness)
@@ -28,11 +34,17 @@ It's free. The account exists so the identity is stable; it is not a paywall.
 
 ## Identity
 
-An account is one person, identified by a verified email address. Every machine
-the person runs Localbox on, and every sandbox on those machines, belongs to that
-account, and every agent token is issued to it. The email is the stable identity
-that premium features can attach to later. Machines join an account by signing in
-once; agents get a scoped token through the same sign-in.
+An account is one person, identified by a verified email address. Signing in is
+an email code, never a password: `localbox login` asks for the email, Localbox
+emails a 6-digit code, and the agent pastes it back. The same email from a new
+MacBook in another country joins the same account; nothing at home has to do
+anything, and losing every machine just means logging in again.
+
+Every machine the person signs in, and every sandbox on those machines, belongs to
+that account. A machine keeps one credential that lasts until it logs out or is
+removed. Cloud agents connecting over MCP sign in with the same email and code,
+and the page says plainly that the agent gets full access to the account. The
+email is the stable identity that premium features can attach to later.
 
 ## 1. Sandboxes without the container tax
 
@@ -45,17 +57,21 @@ should you.
   each.
 - New sandboxes are copy-on-write clones of a template disk: they start fast and
   share storage until they diverge.
-- Sandboxes start when used and stop when idle. A sandbox can opt into deleting
-  itself after an idle period.
+- Each sandbox is sized to its machine by default (half the cores, a quarter of
+  the RAM) and can be resized; the agent is told exactly what it got.
+- Idle sandboxes sleep after 30 minutes and wake on the next request with every
+  process intact. A sandbox can opt into deleting itself after an idle period.
+- When a machine runs out of room, Localbox sleeps the least recently used
+  sandboxes to fit the new one, and tells the agent which.
 - A sandbox is a whole computer, not a process: it can run Docker inside itself, a
   browser, a desktop app or a system service.
 
 The honest resource claim: a running sandbox reserves memory like any VM. What
-changes is the lifecycle: start on demand, stop when idle, delete in one command.
+changes is the lifecycle: start on demand, sleep when idle, delete in one command.
 Never say "uses no RAM".
 
 Today: one durable VM per Mac, started and stopped by the agent. Create, delete,
-template clones and idle timeouts are **planned**.
+template clones, sizing, sleep and idle deletion are **planned**.
 
 ## 2. Your machines are the fleet
 
@@ -63,8 +79,10 @@ Cloud sandboxes and cloud VMs bill every month and by the minute, cap session
 length, and put your code on someone else's computer. Plenty of developers
 already own idle compute: a Mac mini on the shelf, last year's laptop.
 
-- Every Mac signed in to your account joins your fleet. An agent asks for a
-  sandbox and gets one on whichever machine has room.
+- Every Mac signed in to your account joins your fleet.
+- Sandboxes stay on the machine the agent is running on unless it asks otherwise:
+  name a machine, or ask for automatic placement across all of them. Nothing lands
+  on another computer by surprise.
 - No per-minute bill and no session limit. The hardware is already paid for.
 - Code and data stay on machines you own.
 
@@ -79,7 +97,8 @@ hardware instead.
 
 - The Mac connects out to the hosted relay; there is no port forwarding, VPN or
   Tailscale.
-- Access is an OAuth token for your account, revocable at any time.
+- The agent signs in on a Localbox page with your email and a code; its token
+  covers your account and is revocable at any time.
 - Requests that might have half-applied are reported as uncertain, never retried
   silently.
 
@@ -139,6 +158,21 @@ browser, an overnight build.
 Today: built. One durable VM with files, packages, browser and desktop state
 preserved.
 
+## 8. Built for agents to drive
+
+The CLI's customer is an agent, not a person. Every command does what it was asked
+when the result can be undone, and says exactly what it did: the size and machine
+it chose, the sandboxes it slept to make room, the restart a resize needed, the
+output it trimmed. The agent never has to guess or ask a follow-up question.
+
+Today: the one-catalog CLI and MCP exist; the act-then-report results ship with
+the features above.
+
+## Build plan
+
+The launch scope is mapped in [specs/durable-sandboxes](specs/durable-sandboxes/map.md):
+every decision behind the use cases above, with what each needs before it ships.
+
 ## Not yet
 
 Snapshots and rollback (checkpoint a sandbox before a risky step, restore it
@@ -156,6 +190,9 @@ placeholder is [specs/sandbox-snapshots](specs/sandbox-snapshots/README.md).
 - Keep "your files stay yours" visible: nothing shared unless you choose, and
   every shared access logged. It's what makes full autonomy feel safe.
 - Free and personal. Don't mention plans, seats or teams.
+- Sign-in is "your email and a code". Never mention passwords, keys or pairing.
+- Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes give their
+  memory back and resume exactly where they were.
 - Marketing may describe the launch product before it ships, and the README and
   site do. Agent-facing instructions (`llms.txt`, the skill, Agent setup) must only
   describe what the shipped CLI does; an agent that runs a planned command fails.
