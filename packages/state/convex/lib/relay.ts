@@ -10,7 +10,8 @@ export async function byField(ctx: DbContext, table: string, index: string, fiel
 export async function jsonHash(value: unknown): Promise<string> { const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value)); const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes); return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""); }
 export async function base64Hash(value: string): Promise<string> { const bytes = new TextEncoder().encode(value); const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes)); let binary = ""; for (const byte of digest) binary += String.fromCharCode(byte); return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
 export async function familyRevoked(ctx: DbContext, familyId: string): Promise<any | undefined> { return await ctx.db.query("oauthRevocations").withIndex("by_family", (q: any) => q.eq("familyId", familyId)).first(); }
-export async function persistFamilyRevocation(ctx: DbContext, familyId: string, at: number): Promise<void> { if (!(await familyRevoked(ctx, familyId))) await ctx.db.insert("oauthRevocations", { familyId, revokedAt: at }); const rows = await boundedRows(ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", familyId)), "OAuth token family"); for (const row of rows) if (row.revokedAt === undefined) await ctx.db.patch(row._id, { revokedAt: at }); }
+/** Revokes a token family with one row; every token check consults it, so no token row is touched (a family of any age stays revocable). */
+export async function persistFamilyRevocation(ctx: DbContext, familyId: string, at: number): Promise<void> { if (!(await familyRevoked(ctx, familyId))) await ctx.db.insert("oauthRevocations", { familyId, revokedAt: at }); }
 
 const HOUR = 60 * 60 * 1000;
 /** Fixed one-hour window counter; false once `key` has used `maximum` calls of `bucket`. */

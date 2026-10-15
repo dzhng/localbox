@@ -141,8 +141,8 @@ export class RepositoryOAuthServer {
         try { await this.mailer().sendCode({ to: email, code: started.code, idempotencyKey: `${email}:${started.code}` }); }
         catch { return html(renderEmailPage({ ...base, email, error: "We couldn't send the email. Try again in a minute." }), 502); }
       }
-      // Rate-limited sends look the same as sent ones; only the account name is unknown then.
-      return html(renderCodePage({ ...base, email, accountName: started.issued ? started.accountName : undefined }));
+      // Rate-limited sends look the same as sent ones.
+      return html(renderCodePage({ ...base, email }));
     }
     if (fields.step === "code") {
       if (!email) return html(renderEmailPage(base), 400);
@@ -151,7 +151,7 @@ export class RepositoryOAuthServer {
       let verified;
       try { verified = await this.repository.verifyForAgent({ email, code, ip }); }
       catch (error) { if (/rate limit/i.test(error instanceof Error ? error.message : "")) return html(renderCodePage({ ...base, email, error: "Too many attempts from this network. Try again in an hour." }), 429); throw error; }
-      if (!verified.valid) return html(renderCodePage({ ...base, email, accountName: verified.accountName, error: "That code is wrong or has expired." }), 400);
+      if (!verified.valid) return html(renderCodePage({ ...base, email, error: "That code is wrong or has expired." }), 400);
       const authorizationCode = opaque(32);
       await this.repository.createCode({ code: authorizationCode, accountId: verified.accountId, clientId: checked.client.clientId, redirectUri: fields.redirect_uri, resource: this.resource, codeChallenge: fields.code_challenge, expiresAt: Date.now() + this.codeTtl * 1000 });
       const redirect = new URL(fields.redirect_uri); redirect.searchParams.set("code", authorizationCode); if (fields.state) redirect.searchParams.set("state", fields.state);

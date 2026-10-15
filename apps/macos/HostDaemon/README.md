@@ -13,10 +13,13 @@ directory, or one the account catalog no longer lists, is refused
 `npm run generate:snapshots` writes from the contract catalog; every other
 operation goes to that sandbox's guest.
 
-The connector's `sandbox.mirror` push follows the catalog's names and marks
-which local sandboxes it lists; it never creates or deletes a directory (only
-`sandbox.create` and `sandbox.delete` do) and reports directories the catalog
-lacks. `SandboxConfigurationBuilder` is the only place a VM configuration is
+The connector's `sandbox.mirror` push (`source: catalog` with its
+`machine_id`, the signed-in machine's subscription) follows the catalog's names
+and records which machine's catalog listed each sandbox. A sandbox this
+machine's catalog listed before and no longer does (deleted while this Mac was
+offline) is deleted here, disk included, and reported; one it never listed
+(created and not yet listed, or listed by an earlier sign-in) is only hidden. `localbox logout` pushes `source: signed_out`, which
+hides every sandbox and deletes nothing. A push never creates a directory. `SandboxConfigurationBuilder` is the only place a VM configuration is
 made, from the record and the shared boot artifacts, so a saved state always
 restores into the configuration it was saved under. The guest learns its
 identity from the `hello` frame (sandbox id and name), never from the kernel

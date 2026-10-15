@@ -40,7 +40,7 @@ non-expiring machine credential; the CLI shows the account and its machines
   `localbox login --email x` → "Code sent to x. Ask the user for the 6-digit code,
   then run: localbox login --email x --code NNNNNN". The second step prints the
   account name, this machine's name and the machine count (S2). `logout` revokes
-  then deletes. `machines list|rename|remove`, `account show|rename`. Text by
+  then deletes. `machine list|rename|remove`, `account show|rename`. Text by
   default, the same facts with `--json` (S3). Signing in on a Mac already signed
   in to another account refuses and names that account.
 - Delete `loginWithPkce`, Keychain and `auth.json` code, `LOCALBOX_TOKEN`,
@@ -50,7 +50,7 @@ non-expiring machine credential; the CLI shows the account and its machines
 
 `npm run proof -- 06 --tier u,l`: machine A logs in with a code read from the dev
 log; B logs in with the same email and the reply says 2 machines; credential mode
-is 0600; `machines list` shows both; `machines remove b` from A makes B's next
+is 0600; `machine list` shows both; `machine remove b` from A makes B's next
 call fail "this machine was removed; run localbox login"; a sixth send in the
 hour still says "code sent" with no code issued; five wrong guesses kill the code;
 a spoofed `x-forwarded-for` does not change the rate key. Tier u pins the Q9

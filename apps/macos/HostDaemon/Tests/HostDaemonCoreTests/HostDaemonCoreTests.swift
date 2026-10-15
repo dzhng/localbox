@@ -84,22 +84,51 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual((listed["sandboxes"] as? [[String: Any]])?.first?["name"] as? String, "calm-heron")
     }
 
-    func testTheMirrorFollowsNamesAndNeverDeletesADisk() async throws {
+    func testTheMirrorFollowsNamesAndHidesASandboxItNeverListed() async throws {
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 4, hostMemoryBytes: 8 * gib)
         _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":3,"memory_bytes":3221225472}"#, sandboxID: "sandbox_1")
         _ = try await hostCall(host, "sandbox.create", #"{"name":"two"}"#, sandboxID: "sandbox_2")
         let version = try await hostCall(host, "host.watch", #"{"since":0}"#)["version"] as! Int
-        let pushed = try await hostCall(host, "sandbox.mirror", #"{"sandboxes":[{"sandbox_id":"sandbox_1","name":"renamed","cpus":2,"memory_bytes":2147483648},{"sandbox_id":"sandbox_9","name":"elsewhere"}]}"#)
+        let pushed = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"renamed","cpus":2,"memory_bytes":2147483648},{"sandbox_id":"sandbox_9","name":"elsewhere"}]}"#)
         XCTAssertEqual(pushed["unknown"] as? [String], ["sandbox_2"]); XCTAssertEqual(pushed["missing"] as? [String], ["sandbox_9"])
         let records = await host.sandboxes()
         XCTAssertEqual(records.map(\.name), ["renamed"]); XCTAssertEqual(records.first?.cpus, 3, "the daemon keeps the size it runs a sandbox at")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_2/sandbox.json").path), "a push never deletes a sandbox")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_2/sandbox.json").path), "a push older than a sandbox's reservation does not delete it")
+        XCTAssertEqual((pushed["deleted"] as? [Any])?.count, 0)
         let hidden = try await call(host, envelope("shell.exec", #"{"command":"true"}"#, mutation: "h", sandboxID: "sandbox_2"))
         XCTAssertEqual((hidden["error"] as? [String: Any])?["code"] as? String, "sandbox_not_found", "a sandbox the catalog no longer lists does not answer")
         let watched = try await hostCall(host, "host.watch", #"{"since":\#(version),"timeout_ms":50}"#)
         XCTAssertGreaterThan(watched["version"] as? Int ?? 0, version, "a mirror push bumps the watch version")
         XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.compactMap { $0["sandbox_id"] as? String }, ["sandbox_1"])
+    }
+
+    /// A sandbox deleted from the catalog while this Mac was offline goes when the next catalog push leaves it out; a
+    /// sign-out hides sandboxes and keeps their disks, and a later catalog push does not delete those either.
+    func testACatalogPushDeletesWhatTheCatalogDroppedButASignOutKeepsDisks() async throws {
+        let root = try scratch()
+        let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(), hostCPUs: 12, hostMemoryBytes: 24 * gib)
+        for (id, name) in [("sandbox_1", "one"), ("sandbox_2", "two")] { _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","cpus":2,"memory_bytes":2147483648}"#, sandboxID: id) }
+        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"},{"sandbox_id":"sandbox_2","name":"two"}]}"#)
+        let dropped = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"}]}"#)
+        XCTAssertEqual(dropped["deleted"] as? [[String: String]], [["sandbox_id": "sandbox_2", "name": "two", "detail": "deleted two: the account catalog no longer lists it"]])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_2").path), "its directory and disk are gone")
+        let watched = try await hostCall(host, "host.watch", #"{"since":0}"#)
+        XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.compactMap { $0["sandbox_id"] as? String }, ["sandbox_1"])
+
+        let otherMachine = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_9","sandboxes":[]}"#)
+        XCTAssertEqual((otherMachine["deleted"] as? [Any])?.count, 0, "only the machine whose catalog listed a sandbox deletes it by leaving it out")
+        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_1","name":"one"}]}"#)
+        let signedOut = try await hostCall(host, "sandbox.mirror", #"{"source":"signed_out","sandboxes":[]}"#)
+        XCTAssertEqual((signedOut["deleted"] as? [Any])?.count, 0); XCTAssertEqual(signedOut["unknown"] as? [String], ["sandbox_1"])
+        let afterSignIn = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_2","sandboxes":[]}"#)
+        XCTAssertEqual((afterSignIn["deleted"] as? [Any])?.count, 0, "a sandbox hidden by a sign-out is never deleted by the next sign-in's catalog")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_1/sandbox.json").path))
+
+        for input in [#"{"sandboxes":[]}"#, #"{"source":"catalog","sandboxes":[]}"#] {
+            let unnamed = try await call(host, envelope("sandbox.mirror", input, sandboxID: nil))
+            XCTAssertEqual((unnamed["error"] as? [String: Any])?["code"] as? String, "invalid_input", "a push says whether it is a sign-out or which machine's catalog it is")
+        }
     }
 
     func testResizeReportsRestart() async throws {
@@ -280,7 +309,7 @@ final class HostDaemonCoreTests: XCTestCase {
         let watched = try await hostCall(host, "host.watch", #"{"since":0}"#)
         XCTAssertEqual(watched["deleted"] as? [[String: String]], [["sandbox_id": "sandbox_1", "name": "one", "reason": "idle for 11 s, past its delete-after of 10 s"]], "the connector removes it from the catalog")
         XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.compactMap { $0["sandbox_id"] as? String }, ["sandbox_2"])
-        _ = try await hostCall(host, "sandbox.mirror", #"{"sandboxes":[{"sandbox_id":"sandbox_2","name":"two","sleep_after_ms":1800000,"delete_after_ms":null}]}"#)
+        _ = try await hostCall(host, "sandbox.mirror", #"{"source":"catalog","machine_id":"machine_1","sandboxes":[{"sandbox_id":"sandbox_2","name":"two","sleep_after_ms":1800000,"delete_after_ms":null}]}"#)
         let after = try await hostCall(host, "host.watch", #"{"since":0}"#)
         XCTAssertEqual((after["deleted"] as? [Any])?.count, 0, "once the catalog drops it, it is no longer reported")
     }

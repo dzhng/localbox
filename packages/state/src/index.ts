@@ -4,9 +4,8 @@ export interface OAuthClientRecord { clientId: string; clientName: string; redir
 export interface IssuedTokens { accessToken: string; refreshToken: string; accessExpiresAt: number; refreshExpiresAt: number }
 export interface TokenGrant { accountId: string; familyId: string }
 export interface AccessGrant extends TokenGrant { clientId: string; scopes: string[]; accessExpiresAt: number }
-/** `accountName` null: the email has no account yet. Absent: unknown (the send was rate-limited or the code is gone). */
-export interface SignInStart { issued: boolean; code?: string; accountName?: string | null }
-export type AgentVerification = { valid: true; accountId: string; accountName: string } | { valid: false; accountName?: string | null };
+export interface SignInStart { issued: boolean; code?: string }
+export type AgentVerification = { valid: true; accountId: string } | { valid: false };
 
 /** Durable state behind MCP sign-in. Every method is a service-identity Convex function. */
 export interface OAuthRepository {

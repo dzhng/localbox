@@ -46,6 +46,20 @@ test("relay completion enforces the output cap and daily request limit", async (
   } finally { if (old === undefined) delete process.env.LOCALBOX_RELAY_DAILY_REQUESTS; else process.env.LOCALBOX_RELAY_DAILY_REQUESTS = old; }
 });
 
+test("past the daily result bytes, a result is refused but a small failure still completes the row", async () => {
+  const t = await setup(); const service = t.withIdentity({ subject: "service:api" }); const machine = t.withIdentity({ subject: "machine:m1", account: "a1" });
+  const old = process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES; process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES = "100";
+  try {
+    await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "big", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "big" });
+    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "big", response: { ok: true, result: "x".repeat(200) } }), /relay_daily_limit: 100/);
+    const refused = { ok: false, error: { code: "rate_limited", message: "the account's daily relay result bytes limit (100)", retryable: true, details: { limit: "result_bytes" } } };
+    await machine.mutation(ref("relay:complete"), { requestId: "big", response: refused });
+    assert.deepEqual(await service.query(ref("relay:result"), { requestId: "big" }), { accountId: "a1", status: "completed", response: refused });
+    await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "huge-failure", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "huge-failure" });
+    await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "huge-failure", response: { ok: false, error: { message: "x".repeat(5_000) } } }), /relay_daily_limit/, "only a small failure is exempt");
+  } finally { if (old === undefined) delete process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES; else process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES = old; }
+});
+
 test("cleanupExpired removes rows before a supplied cutoff", async () => {
   const t = await setup(); const service = t.withIdentity({ subject: "service:api" });
   await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "old", operation: "x", payload: {} });

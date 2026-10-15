@@ -6,10 +6,11 @@ type Row = RelayResult & { requestId: string; accountId: string; machineId: stri
 /**
  * An in-memory stand-in for the Convex relay tables plus one connector per machine, so the agent API's waiting
  * logic and the client transport can be tested without Convex. `connectors[machineId]` answers a request;
- * a machine with no connector never claims, so its requests go offline.
+ * a machine with no connector never claims, so its requests go offline; one not in `machines` (removed) is refused.
  */
 export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
   const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
+  const reservations = new Map<string, string>(); // create mutation id -> sandbox id
   const rows = new Map<string, Row>(); const watchers = new Map<string, Set<(result: RelayResult | null) => void>>();
   const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, response: row.response }); };
   const deps: OpsDeps = {
@@ -20,7 +21,15 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "sandboxes:create") {
         if (sandboxes.some((row) => row.name === args.name)) throw new Error(`Uncaught Error: name_conflict: ${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}`);
         const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
+        const reserved = args.createMutationId && sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.createMutationId));
+        if (reserved) return reserved;
+        if (args.createMutationId) reservations.set(args.createMutationId, row.sandbox_id);
         sandboxes.push(row); return row;
+      }
+      if (name === "sandboxes:byCreateMutation") {
+        const row = sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.mutationId)); if (!row) return null;
+        const request = [...rows.values()].find((candidate) => candidate.mutationKey === `${row.machine_id}:${row.sandbox_id}:sandbox.create:${args.mutationId}`);
+        return { ...row, create_input: request?.payload.input ?? null };
       }
       if (name === "sandboxes:rename") { const row = sandboxes.find((candidate) => candidate.sandbox_id === args.sandboxId)!; const previous = row.name; row.name = args.name; return { sandbox_id: row.sandbox_id, name: row.name, previous_name: previous, machine_id: row.machine_id }; }
       if (name === "sandboxes:remove") { const index = sandboxes.findIndex((row) => row.sandbox_id === args.sandboxId); const [row] = sandboxes.splice(index, 1); return { sandbox_id: row.sandbox_id, name: row.name, machine_id: row.machine_id, removed: true }; }
@@ -28,6 +37,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
     },
     async serviceMutation(name, args: any) {
       if (name === "relay:enqueue") {
+        if (!options.machines.some((machine) => machine.machineId === args.machineId)) throw new Error(`Uncaught Error: machine_not_found: machine ${args.machineId} is not on this account (removed or never signed in)`);
         const mutationKey = args.mutationId ? `${args.machineId}:${args.sandboxId ?? ""}:${args.operation}:${args.mutationId}` : undefined; // Convex scopes dedupe to the machine
         const existing = [...rows.values()].find((row) => row.requestId === args.requestId || (mutationKey && row.mutationKey === mutationKey));
         if (existing) return { requestId: existing.requestId };

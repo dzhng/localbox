@@ -160,3 +160,60 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   assert.deepEqual((deleted as any).result.actions.map((action: any) => action.kind), ["deleted"]);
   assert.deepEqual(sandboxes.map((row) => row.name), ["quiet-otter"]);
 });
+
+test("removing or signing out a machine deletes its sandboxes' rows, and says how many", async () => {
+  const { t, m1, m2, agent } = await setup();
+  await create(m1, { machineId: "m1", name: "one" }); await create(m1, { machineId: "m1", name: "two" }); await create(m1, { machineId: "m2", name: "kept" });
+  assert.deepEqual(await agent.mutation(ref("machines:remove"), { machineId: "m1" }), { machine_id: "m1", removed: true, sandboxes_removed: 2 });
+  assert.deepEqual((await rows(t)).map((row: any) => row.name), ["kept"]);
+  assert.deepEqual(await m2.mutation(ref("machines:revokeSelf"), {}), { revoked: true, sandboxes_removed: 1 });
+  assert.deepEqual(await rows(t), []);
+});
+
+test("a create's mutation id finds its reservation, with the input it relayed", async () => {
+  const { t, m1, agent } = await setup();
+  const first = await create(m1, { machineId: "m1", name: "one", createMutationId: "cli-1" });
+  assert.deepEqual(await create(m1, { machineId: "m1", name: "other", createMutationId: "cli-1" }), first, "a second reserve with the same id returns the first");
+  assert.equal((await rows(t)).length, 1);
+  assert.deepEqual(await agent.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-1" }), { ...first, create_input: null });
+  const input = { name: "one", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000 };
+  await t.withIdentity({ subject: "service:api" }).mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", sandboxId: first.sandbox_id, requestId: "r1", operation: "sandbox.create", mutationId: "cli-1", payload: { sandbox_id: first.sandbox_id, input } });
+  await m1.mutation(ref("sandboxes:rename"), { sandboxId: first.sandbox_id, name: "renamed" });
+  assert.deepEqual((await agent.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-1" })).create_input, input, "the relayed input, not the renamed row");
+  const { m3 } = await setup();
+  assert.equal(await m3.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-1" }), null);
+});
+
+test("a replayed create relays the first create again and makes no second sandbox", async () => {
+  const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: b.answer } });
+  const body = { operation: "sandbox.create", mutation_id: "cli-same", input: { machine: "attic", cpus: 2, memory_bytes: 2 * GIB } };
+  const first = await ops(deps, { ...body, request_id: "r-1" });
+  const replay = await ops(deps, { ...body, request_id: "r-2" });
+  assert.equal(first.ok && replay.ok, true, JSON.stringify(replay));
+  assert.equal(sandboxes.length, 1); assert.equal(b.seen.length, 1, "the relay's dedupe answered with the first result");
+  assert.equal((replay as any).result.produced.sandbox_id, (first as any).result.produced.sandbox_id);
+  assert.equal((replay as any).result.produced.name, (first as any).result.produced.name);
+});
+
+test("a create that outlives its deadline keeps its reservation and says it may still complete", async () => {
+  let finish!: () => void; const b = machine();
+  const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: async (request) => { await new Promise<void>((resolve) => { finish = resolve; }); return await b.answer(request); } } });
+  const late = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", deadline_ms: 100, input: { machine: "attic", name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
+  assert.equal(!late.ok && late.error.code, "operation_uncertain");
+  assert.match(!late.ok ? late.error.message : "", /the create may still complete on attic: slow-box stays reserved \(replay with mutation id cli-late/);
+  assert.deepEqual(sandboxes.map((row) => row.name), ["slow-box"]);
+  finish();
+  const replay = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", input: { machine: "attic", name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
+  assert.equal(replay.ok, true, JSON.stringify(replay)); assert.equal(sandboxes.length, 1);
+});
+
+test("a sandbox whose machine is gone from the account is renamed and deleted in the catalog alone", async () => {
+  const { deps, sandboxes, rows: relayed } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "orphan", machine_id: "m_gone", machine_name: "garage" }], connectors: {} });
+  const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "orphan", input: { name: "stray" } });
+  assert.equal(renamed.ok, true, JSON.stringify(renamed));
+  assert.match((renamed as any).result.actions[0].detail, /garage is gone from the account, so only the catalog changed/);
+  const deleted = await ops(deps, { operation: "sandbox.delete", sandbox: "stray", input: {} });
+  assert.equal(deleted.ok, true, JSON.stringify(deleted));
+  assert.match((deleted as any).result.actions[0].detail, /removed account catalog entry; garage is gone from the account/);
+  assert.deepEqual(sandboxes, []); assert.equal(relayed.size, 0, "nothing was queued for the gone machine");
+});

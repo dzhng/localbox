@@ -67,11 +67,15 @@ CLI and the connector both read it.
 The connector exchanges the secret at `POST /api/relay/machine-token` for a
 24-hour machine token, and that token is the only way the Mac talks to Convex.
 
-Revocation: `localbox logout` on the Mac, or `localbox machines remove` from any
+Revocation: `localbox logout` on the Mac, or `localbox machine remove` from any
 machine or agent in the account, marks the machine revoked. Every Convex call
 checks that mark, so a removed machine is refused at once, even while its
 24-hour token has not expired. The token route then refuses the secret, and the
-connector on the removed Mac stops and exits.
+connector on the removed Mac stops and exits. The machine's sandboxes leave the
+account catalog with it; their disks stay on that Mac, which is never told to
+delete them. A Mac removed elsewhere can still run `localbox logout` to delete
+its credential file. The sign-in code page names no account, so it reveals
+nothing about an email before its code is verified.
 
 ## Agent tokens (MCP and the agent API)
 
@@ -83,8 +87,9 @@ Remote agents sign in with OAuth 2.1 against `api.localbox.sh`:
   the agent gets **full access to the account**: it can create, use and delete
   sandboxes on every machine in it. There is one scope, `account`.
 - Access tokens last 15 minutes. Refresh tokens last 30 days and rotate on
-  every use; replaying an old refresh token revokes the whole token family,
-  including the newest tokens. Tokens can also be revoked at the revocation
+  every use; replaying the refresh token a client last rotated away revokes the
+  whole token family, including the newest tokens (older ones are deleted at
+  rotation and simply refused). Tokens can also be revoked at the revocation
   endpoint. Convex stores token hashes only.
 - An agent token reaches only its own account's machines and sandboxes; another
   account's sandbox is reported as not found, by name or by ID.

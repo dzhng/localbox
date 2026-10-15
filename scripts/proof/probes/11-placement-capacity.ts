@@ -53,11 +53,11 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
       // Both fixture machines start as this Mac's hostname; distinct names make "which machine" readable.
       for (const machine of ["a", "b"] as const) {
         names[machine] = `proof-${machine}`;
-        const renamed = await as(machine, ["machines", "rename", machineId(machine), names[machine]]);
+        const renamed = await as(machine, ["machine", "rename", machineId(machine), names[machine]]);
         assert.equal(renamed.code, 0, renamed.stdout + renamed.stderr);
       }
       let machines: any[] = [];
-      for (let attempt = 0; attempt < 40 && machines.filter((row) => row.capacity).length < 2; attempt++) { machines = (await as("a", ["machines", "list", "--json"])).envelope.result ?? []; await sleep(250); }
+      for (let attempt = 0; attempt < 40 && machines.filter((row) => row.capacity).length < 2; attempt++) { machines = (await as("a", ["machine", "list", "--json"])).envelope.result ?? []; await sleep(250); }
       const capacity = Object.fromEntries(machines.map((row) => [row.name, row.capacity]));
       assert.equal(capacity[names.a]?.total_bytes, 8 * GIB); assert.equal(capacity[names.a]?.room_bytes, 6 * GIB, "75% of 8 GiB");
       assert.equal(capacity[names.b]?.total_bytes, 16 * GIB); assert.equal(capacity[names.b]?.room_bytes, 12 * GIB);
@@ -110,7 +110,7 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
       let listed: any[] = [];
       for (let attempt = 0; attempt < 40; attempt++) { listed = (await as("b", ["sandbox", "list", "--json"])).envelope.result.sandboxes; if (listed.find((row) => row.name === onA[1])?.state === "sleeping") break; await sleep(250); }
       assert.deepEqual(Object.fromEntries(listed.filter((row) => row.machine_name === names.a).map((row) => [row.name, row.state])), { [onA[0]]: "running", [onA[1]]: "sleeping", [onA[2]]: "running", [onA[3]]: "running" });
-      const capacity = (await as("b", ["machines", "list", "--json"])).envelope.result.find((row: any) => row.name === names.a).capacity;
+      const capacity = (await as("b", ["machine", "list", "--json"])).envelope.result.find((row: any) => row.name === names.a).capacity;
       assert.equal(capacity.room_bytes, 0); assert.equal(capacity.reserved_bytes, 6 * GIB); assert.equal(capacity.running, 3);
     }));
     return checks;

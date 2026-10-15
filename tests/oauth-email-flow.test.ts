@@ -23,7 +23,7 @@ test("an MCP client signs in by email code and gets a rotating account token", a
   assert.equal(codePage.status, 200);
   const codeHtml = text(await codePage.text());
   assert.equal(sent.length, 1); assert.equal(sent[0].to, "agent@example.com");
-  assert.ok(codeHtml.includes("Signing in gives Claude (claude.ai) full access to your new account: it can create, use and delete sandboxes on all your machines."), codeHtml);
+  assert.ok(codeHtml.includes("Signing in gives Claude (claude.ai) full access to your Localbox account: it can create, use and delete sandboxes on all your machines."), codeHtml);
   assert.match(codeHtml, /Sign in/);
 
   const wrong = sent[0].code === "000000" ? "000001" : "000000";
@@ -31,7 +31,7 @@ test("an MCP client signs in by email code and gets a rotating account token", a
   assert.equal(retry.status, 400);
   const retryHtml = text(await retry.text());
   assert.match(retryHtml, /That code is wrong or has expired/);
-  assert.ok(retryHtml.includes("full access to your new account"), "a wrong code re-renders the same grant");
+  assert.ok(retryHtml.includes("full access to your Localbox account"), "a wrong code re-renders the same grant");
 
   const redirected = await call("/oauth/authorize", form({ ...params, step: "code", email: "agent@example.com", code: sent[0].code }));
   assert.equal(redirected.status, 302);
@@ -47,10 +47,13 @@ test("an MCP client signs in by email code and gets a rotating account token", a
   assert.equal((await exchange({})).status, 400, "a code works once");
   await assert.rejects(() => oauth.validateAccessToken(tokens.access_token), "reusing a code revokes what it issued");
 
-  // A second sign-in on the same email now names the account the first one created.
+  // A second sign-in on the same email, which now has an account, still names no account before the code is checked.
   const again = pkcePair(); const againParams = authorizeParams(client.client_id, redirectUri, again.challenge);
-  const named = text(await (await call("/oauth/authorize", form({ ...againParams, step: "email", email: "agent@example.com" }))).text());
-  const accountName = named.match(/full access to account ([a-z0-9-]+):/)?.[1]; assert.ok(accountName, named);
+  const unnamed = text(await (await call("/oauth/authorize", form({ ...againParams, step: "email", email: "agent@example.com" }))).text());
+  assert.ok(unnamed.includes("full access to your Localbox account:"), unnamed);
+  const wrongAgain = sent.at(-1)!.code === "000000" ? "000001" : "000000";
+  const retried = text(await (await call("/oauth/authorize", form({ ...againParams, step: "code", email: "agent@example.com", code: wrongAgain }))).text());
+  assert.ok(retried.includes("full access to your Localbox account:") && !/full access to account /.test(retried), "a wrong code does not reveal the account either");
   const second = await call("/oauth/authorize", form({ ...againParams, step: "code", email: "agent@example.com", code: sent.at(-1)!.code }));
   const secondCode = new URL(second.headers.get("location")!).searchParams.get("code")!;
   const fresh = await (await call("/oauth/token", form({ grant_type: "authorization_code", code: secondCode, client_id: client.client_id, redirect_uri: redirectUri, code_verifier: again.verifier, resource: RESOURCE }))).json() as Record<string, any>;

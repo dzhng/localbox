@@ -44,7 +44,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       ({ metadata, clientId } = await registerClient("Proof Agent"));
     }));
     checks.push(await ctx.check("authorize by email code (read from the dev log), redirect with code and state, exchange with PKCE", async () => {
-      tokens = await signInAgent(email, clientId, (page) => assert.match(page, /Signing in gives Proof Agent \(127\.0\.0\.1:47123\) full access to account [a-z]+-[a-z]+-\d+: it can create, use and delete sandboxes on all your machines\./));
+      tokens = await signInAgent(email, clientId, (page) => { assert.match(page, /Signing in gives Proof Agent \(127\.0\.0\.1:47123\) full access to your Localbox account: it can create, use and delete sandboxes on all your machines\./); assert.doesNotMatch(page, /full access to account /, "the page names no account before the code is checked"); });
       assert.equal(tokens.scope, "account"); assert.equal(tokens.token_type, "Bearer");
     }));
     checks.push(await ctx.check("MCP tools/call shell.exec with sandbox = B's sandbox runs on B; with one sandbox it may be left out", async () => {
@@ -63,7 +63,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(response.status, 200); assert.ok((await response.json() as any[]).some((row) => row.machineId === machineB));
     }));
     checks.push(await ctx.check("another account's agent cannot reach B's sandbox by name or id, nor create one on B", async () => {
-      const other = await signInAgent(`proof-08-other-${run}@example.com`, clientId, (page) => assert.match(page, /full access to your new account/));
+      const other = await signInAgent(`proof-08-other-${run}@example.com`, clientId, (page) => assert.match(page, /full access to your Localbox account/));
       for (const sandbox of [sandboxB, sandboxIdB, undefined]) {
         const called = await mcp(other.access_token, "tools/call", { name: "fs.stat", arguments: { ...(sandbox ? { sandbox } : {}), path: "/" } });
         assert.equal(called.body.result.isError, true); assert.equal(called.body.result.structuredContent?.code, "sandbox_not_found", JSON.stringify(called.body));

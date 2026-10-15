@@ -28,7 +28,7 @@ export async function runConnector(env: NodeJS.ProcessEnv = process.env): Promis
     const watcher = new LocalIPCTransport({ socketPath: paths.socket, tokenFile: paths.ipcToken, timeoutMs: WATCH_TIMEOUT_MS + 15_000 });
     let watchSeq = 0;
     const connector = new Connector({
-      convex, daemon, log,
+      machineId: credentials.machine_id, convex, daemon, log,
       fetchToken: async (force) => (await tokens.get(force)).token,
       hostWatch: async (since) => {
         const response = await watcher.dispatch(hostRequest("host.watch", { since, timeout_ms: WATCH_TIMEOUT_MS }, `host-watch-${++watchSeq}`, WATCH_TIMEOUT_MS + 10_000));

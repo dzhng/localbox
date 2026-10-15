@@ -13,7 +13,7 @@ export async function shootSignInPages(dir: string): Promise<string[]> {
   if (!existsSync(CHROME)) throw new Error(`blocked: Google Chrome is not installed at ${CHROME}`);
   mkdirSync(dir, { recursive: true });
   const sample = { action: "/api/mcp/oauth/authorize", clientName: "Claude", redirectHost: "claude.ai", params: { response_type: "code", client_id: "client_sample", redirect_uri: "https://claude.ai/api/mcp/auth_callback", state: "s", code_challenge: "x".repeat(43), code_challenge_method: "S256", resource: "https://api.localbox.sh/api/mcp" } };
-  const pages = { "08-signin-email": renderEmailPage(sample), "08-signin-code": renderCodePage({ ...sample, email: "you@example.com", accountName: "brave-fox-378" }) };
+  const pages = { "08-signin-email": renderEmailPage(sample), "08-signin-code": renderCodePage({ ...sample, email: "you@example.com" }) };
   const shots: string[] = [];
   for (const [name, html] of Object.entries(pages)) {
     const file = join(dir, `${name}.html`); writeFileSync(file, html);

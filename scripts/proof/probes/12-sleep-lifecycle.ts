@@ -177,7 +177,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("kill -9 of the daemon and a relaunch: the next result reports cold_booted exactly once", async () => {
       // Keep it awake from here on (a mirror push sets the catalog's policy), so the daemon dies while it runs.
-      await ok("sandbox.mirror", null, { sandboxes: [{ sandbox_id: sandboxId, name, sleep_after_ms: 3_600_000, delete_after_ms: null }] });
+      await ok("sandbox.mirror", null, { source: "catalog", machine_id: "proof-12", sandboxes: [{ sandbox_id: sandboxId, name, sleep_after_ms: 3_600_000, delete_after_ms: null }] });
       assert.equal((await ok("sandbox.status", sandboxId)).state, "running");
       await stop("SIGKILL", 10_000);
       // The VM service outlives a SIGKILLed daemon briefly; ours only (Colima's VM is one too).

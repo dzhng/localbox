@@ -64,7 +64,7 @@ function row(requestId: string, status = "queued"): PendingRow {
 
 function harness(options: { fetchToken?: (force: boolean) => Promise<string> } = {}) {
   const convex = new FakeConvex(); const daemon = new FakeDaemon(); const watch = new FakeWatch(); const logs: string[] = [];
-  const connector = new Connector({ convex, daemon, hostWatch: watch.watch, fetchToken: options.fetchToken ?? (async () => "jwt"), log: (line) => logs.push(line), sleep: async () => {} });
+  const connector = new Connector({ machineId: "machine_1", convex, daemon, hostWatch: watch.watch, fetchToken: options.fetchToken ?? (async () => "jwt"), log: (line) => logs.push(line), sleep: async () => {} });
   connector.start();
   return { convex, daemon, watch, logs, connector };
 }
@@ -243,7 +243,43 @@ test("the daemon's sandbox mirror follows the catalog subscription", async () =>
   convex.pushSandboxes(rows);
   await settle();
   const mirrored = daemon.requests.filter((request) => request.operation === "sandbox.mirror");
-  assert.equal(mirrored.length, 1); assert.deepEqual(mirrored[0].input, { sandboxes: rows }); assert.equal(mirrored[0].sandbox_id, null);
+  assert.equal(mirrored.length, 1); assert.deepEqual(mirrored[0].input, { source: "catalog", machine_id: "machine_1", sandboxes: rows }); assert.equal(mirrored[0].sandbox_id, null);
+  await connector.stop();
+});
+
+test("mirror pushes reach the daemon in the order Convex sent them, and what the daemon deleted is logged", async () => {
+  const { convex, daemon, logs, connector } = harness();
+  const order: number[] = []; const releases: Array<() => void> = [];
+  const dispatch = daemon.dispatch.bind(daemon);
+  daemon.dispatch = async (request) => {
+    if (request.operation !== "sandbox.mirror") return await dispatch(request);
+    const count = (request.input as { sandboxes: unknown[] }).sandboxes.length;
+    if (count === 1) await new Promise<void>((resolve) => releases.push(resolve));
+    order.push(count);
+    return success(request, { deleted: count ? [] : [{ sandbox_id: "sandbox_1", detail: "deleted quiet-otter: the catalog no longer lists it" }] });
+  };
+  convex.pushSandboxes([{ sandbox_id: "sandbox_1", name: "quiet-otter" }]); convex.pushSandboxes([]);
+  await settle(); assert.deepEqual(order, [], "the second push waits for the first");
+  releases.forEach((release) => release()); await settle();
+  assert.deepEqual(order, [1, 0]);
+  assert.ok(logs.includes("sandbox sandbox_1 is no longer in the catalog: deleted quiet-otter: the catalog no longer lists it"), logs.join("\n"));
+  await connector.stop();
+});
+
+test("a result over the daily result bytes completes as a small rate_limited failure naming the limit", async () => {
+  const { convex, connector } = harness();
+  const mutation = convex.mutation.bind(convex);
+  convex.mutation = async (fn, args) => {
+    if (args.response?.ok === true) { convex.calls.push({ name: "relay:complete", args }); throw new Error("Uncaught Error: relay_daily_limit: 25000000; reset 2026-10-16T00:00:00.000Z"); }
+    return await mutation(fn, args);
+  };
+  convex.push([row("limited")]);
+  await settle();
+  const [, completed] = convex.named("relay:complete");
+  assert.equal(completed.args.response.error.code, "rate_limited");
+  assert.deepEqual(completed.args.response.error.details, { limit: "result_bytes" });
+  assert.match(completed.args.response.error.message, /daily relay result bytes limit \(25000000; reset 2026-10-16T00:00:00\.000Z\)/);
+  assert.ok(Buffer.byteLength(JSON.stringify(completed.args.response)) < 4096);
   await connector.stop();
 });
 

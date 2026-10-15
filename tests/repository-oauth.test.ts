@@ -78,3 +78,25 @@ test("refresh is bound to its client, and revoke ends the whole family", async (
   assert.equal((await refresh({ refresh_token: "garbage" })).status, 400);
   assert.equal((await call("/oauth/token", form({ grant_type: "password" }))).status, 400);
 });
+
+test("rotation keeps a family at two rows, replaying the last used refresh token still revokes it, and a family of any size is revocable", async () => {
+  const { t, call, signIn, oauth } = oauthFixture();
+  const first = await signIn("rotate@example.com");
+  const refresh = (token: string) => call("/oauth/token", form({ grant_type: "refresh_token", refresh_token: token, client_id: first.clientId }));
+  let current = first.refresh_token;
+  for (let index = 0; index < 5; index++) current = (await (await refresh(current)).json() as any).refresh_token;
+  const familyRows = async () => await t.run(async (ctx) => await ctx.db.query("oauthTokens").collect());
+  assert.equal((await familyRows()).length, 2, "the current row and the one it rotated from");
+  assert.equal((await refresh(first.refresh_token)).status, 400, "a long-superseded refresh token is refused");
+  const latest = await (await refresh(current)).json() as any; await oauth.validateAccessToken(latest.access_token);
+  const replay = await refresh(current);
+  assert.equal(replay.status, 400); assert.equal((await replay.json() as any).error, "invalid_grant");
+  await assert.rejects(() => oauth.validateAccessToken(latest.access_token), "replaying the last used refresh token revokes the family");
+
+  // A family left over with more rows than one read may take is still revoked with a single row.
+  const big = await signIn("big@example.com");
+  const { familyId } = await oauth.validateAccessToken(big.access_token) as any;
+  await t.run(async (ctx) => { const [row] = await ctx.db.query("oauthTokens").withIndex("by_family", (q) => q.eq("familyId", familyId)).collect(); for (let index = 0; index < 1_100; index++) await ctx.db.insert("oauthTokens", { ...row, _id: undefined, _creationTime: undefined, accessTokenHash: `a${index}`, refreshTokenHash: `r${index}` } as any); });
+  assert.equal((await call("/oauth/revoke", form({ token: big.refresh_token }))).status, 200);
+  await assert.rejects(() => oauth.validateAccessToken(big.access_token));
+});

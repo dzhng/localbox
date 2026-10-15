@@ -10,10 +10,12 @@ const nextMidnight = (at: number) => new Date(Date.UTC(new Date(at).getUTCFullYe
 /** Daily per-account knobs (Convex env), read per call so `npx convex env set` takes effect at once. */
 const limit = (name: string, fallback: number) => Number(process.env[name] ?? fallback);
 const limitError = (value: number, at: number) => new Error(`relay_daily_limit: ${value}; reset ${nextMidnight(at)}`);
+/** A failure envelope this small always completes (and still counts), so a connector can report a refused result instead of leaving the row claimed. */
+const SMALL_FAILURE_BYTES = 4 * 1024;
 
 async function machineFor(ctx: any, accountId: string, machineId: string) {
   const machine = await byField(ctx, "machines", "by_machine", "machineId", machineId);
-  if (!machine || machine.revokedAt !== undefined || machine.accountId !== accountId) fail("machine not found");
+  if (!machine || machine.revokedAt !== undefined || machine.accountId !== accountId) fail(`machine_not_found: machine ${machineId} is not on this account (removed or never signed in)`);
   return machine;
 }
 
@@ -74,7 +76,8 @@ export const complete = mutationGeneric({ args: { requestId: v.string(), respons
   if (row.status !== "claimed") return fail(`request is ${row.status}`);
   const at = Date.now(); const usage = await ctx.db.query("relayUsage").withIndex("by_account_day", (q: any) => q.eq("accountId", row.accountId).eq("day", dayOf(at))).first();
   const resultLimit = limit("LOCALBOX_RELAY_DAILY_RESULT_BYTES", 25_000_000);
-  if ((usage?.resultBytes ?? 0) + bytes > resultLimit) throw limitError(resultLimit, at);
+  const smallFailure = args.response?.ok === false && bytes <= SMALL_FAILURE_BYTES;
+  if (!smallFailure && (usage?.resultBytes ?? 0) + bytes > resultLimit) throw limitError(resultLimit, at);
   if (usage) await ctx.db.patch(usage._id, { resultBytes: usage.resultBytes + bytes }); else await ctx.db.insert("relayUsage", { accountId: row.accountId, day: dayOf(at), requests: 0, resultBytes: bytes });
   await ctx.db.patch(row._id, { status: "completed" });
   const response = { requestId: args.requestId, accountId: row.accountId, response: args.response, bytes, recordedAt: at }; await ctx.db.insert("responses", response); return response;

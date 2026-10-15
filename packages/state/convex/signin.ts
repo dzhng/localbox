@@ -7,18 +7,18 @@ import { accountName, machineName, validateLabel } from "../../names/src/index.j
 const normalize = (email: string) => email.trim().toLowerCase();
 const accountByEmail = async (ctx: any, email: string) => await byField(ctx, "accounts", "by_email", "email", email);
 
-/** Checks and consumes a code under the shared limits; five wrong guesses delete it. `live` means it can still be tried. */
-async function checkCode(ctx: any, args: { email: string; code: string; ip: string }): Promise<{ valid: boolean; live: boolean; email: string }> {
+/** Checks and consumes a code under the shared limits; five wrong guesses delete it. */
+async function checkCode(ctx: any, args: { email: string; code: string; ip: string }): Promise<{ valid: boolean; email: string }> {
   const email = normalize(args.email); if (!/^\d{6}$/.test(args.code)) fail("code must be six digits");
   if (!await rateLimit(ctx, args.ip, "ip_verify", 50)) fail("verification rate limit exceeded");
   const row = await byField(ctx, "emailCodes", "by_email", "email", email);
-  if (!row || row.expiresAt <= Date.now()) return { valid: false, live: false, email };
+  if (!row || row.expiresAt <= Date.now()) return { valid: false, email };
   if (row.codeHash !== await jsonHash(args.code)) {
     const attempts = row.attempts + 1; if (attempts >= 5) await ctx.db.delete(row._id); else await ctx.db.patch(row._id, { attempts });
-    return { valid: false, live: attempts < 5, email };
+    return { valid: false, email };
   }
   await ctx.db.delete(row._id);
-  return { valid: true, live: false, email };
+  return { valid: true, email };
 }
 
 async function accountFor(ctx: any, email: string) {
@@ -37,9 +37,8 @@ export const start = mutationGeneric({ args: { email: v.string(), ip: v.string()
   const draw = new Uint32Array(1); do crypto.getRandomValues(draw); while (draw[0] >= 4_294_000_000);
   const code = String(draw[0] % 1_000_000).padStart(6, "0");
   await ctx.db.insert("emailCodes", { email, codeHash: await jsonHash(code), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0, createdAt: Date.now() });
-  // The MCP sign-in page names the account it grants (null: a new one). Only a send that passed the limits learns it.
-  const account = await accountByEmail(ctx, email);
-  return { sent: true as const, issued: true as const, code, accountName: account ? account.name as string : null };
+  // Nothing about the email's account is returned before its code is verified: the page names no account.
+  return { sent: true as const, issued: true as const, code };
 } });
 
 export const verify = mutationGeneric({ args: { email: v.string(), code: v.string(), machineName: v.string(), ip: v.string() }, handler: async (ctx, args) => {
@@ -54,20 +53,13 @@ export const verify = mutationGeneric({ args: { email: v.string(), code: v.strin
   return { valid: true as const, account_id: account.accountId, account_name: account.name, machine_id: machineId, machine_name: label, secret, machine_count: machineCount };
 } });
 
-/**
- * MCP sign-in: the same code check and limits as `verify`, but an agent signs in, so no machine is created. While
- * a wrong code can still be retried the result names the account, so the page re-renders the same grant.
- */
+/** MCP sign-in: the same code check and limits as `verify`, but an agent signs in, so no machine is created. */
 export const verifyForAgent = mutationGeneric({ args: { email: v.string(), code: v.string(), ip: v.string() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
   const checked = await checkCode(ctx, args);
-  if (!checked.valid) {
-    if (!checked.live) return { valid: false as const };
-    const existing = await accountByEmail(ctx, checked.email);
-    return { valid: false as const, accountName: existing ? existing.name as string : null };
-  }
+  if (!checked.valid) return { valid: false as const };
   const account = await accountFor(ctx, checked.email);
-  return { valid: true as const, accountId: account.accountId as string, accountName: account.name as string };
+  return { valid: true as const, accountId: account.accountId as string };
 } });
 
 export const authenticate = queryGeneric({ args: { secret: v.string() }, handler: async (ctx, args) => {

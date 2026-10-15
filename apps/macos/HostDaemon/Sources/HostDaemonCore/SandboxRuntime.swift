@@ -274,6 +274,12 @@ public actor SandboxRuntime {
         record.inCatalog = listed; persist(); onChange()
     }
 
+    /// Records the machine whose catalog listed this sandbox (see `SandboxRecord.listedBy`).
+    func setListedBy(_ machineID: String) {
+        guard record.listedBy != machineID else { return }
+        record.listedBy = machineID; persist()
+    }
+
     /// A size takes effect at boot, so a running sandbox restarts; the action names the processes that ended.
     func resize(cpus: Int?, memoryBytes: UInt64?) async throws -> SandboxAction? {
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes

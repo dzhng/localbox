@@ -20,6 +20,8 @@ export interface PendingRow {
 }
 
 export interface ConnectorDeps {
+  /** This machine's id; its catalog pushes name it, so the daemon deletes only sandboxes this machine's catalog listed. */
+  machineId: string;
   convex: ConvexLike;
   daemon: { dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> };
   hostWatch(since: number): Promise<HostChange>;
@@ -64,6 +66,8 @@ export class Connector {
   private unsubscribe?: () => void;
   private unsubscribeMirror?: () => void;
   private mirrorSeq = 0;
+  /** Mirror pushes go to the daemon one at a time, in the order Convex sent them, so an older list never lands last. */
+  private mirrorQueue: Promise<void> = Promise.resolve();
   private lastReportAt = 0;
   private reportSeq = 0;
   private settle!: { resolve(state: ConnectorState): void; reject(error: Error): void };
@@ -85,7 +89,7 @@ export class Connector {
     this.unsubscribe = this.deps.convex.onUpdate(relay.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
       (error) => { if (!this.ended) { this.setState(this.status.state, `subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // The daemon's identity mirror follows the catalog, so a rename or delete made while this Mac was offline lands on reconnect.
-    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[]) => void this.mirror(rows ?? []),
+    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[]) => { this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows ?? [])); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
   }
@@ -137,10 +141,14 @@ export class Connector {
       catch (error) { response = failure(row.payload, { code: "guest_unreachable", message: `HostDaemon dispatch failed: ${message(error)}`, retryable: true }); }
       const bytes = Buffer.byteLength(JSON.stringify(response));
       if (bytes > OUTPUT_CAP_BYTES) response = tooLarge(row.payload, bytes);
+      // A result Convex refuses is replaced by a small failure naming why, so the row completes instead of staying
+      // claimed and running again on the next delivery.
       try { await this.deps.convex.mutation(relay.complete, { requestId: id, response }); }
       catch (error) {
-        if (!message(error).includes("response_too_large")) throw error;
-        await this.deps.convex.mutation(relay.complete, { requestId: id, response: tooLarge(row.payload, bytes) });
+        const refused = message(error);
+        if (refused.includes("response_too_large")) await this.deps.convex.mutation(relay.complete, { requestId: id, response: tooLarge(row.payload, bytes) });
+        else if (refused.includes("relay_daily_limit")) await this.deps.convex.mutation(relay.complete, { requestId: id, response: dailyLimit(row.payload, refused) });
+        else throw error;
       }
       this.remember(id);
     } catch (error) {
@@ -156,10 +164,18 @@ export class Connector {
     if (this.recent.size > RECENT_LIMIT) this.recent.delete(this.recent.values().next().value!);
   }
 
+  /**
+   * Pushes the catalog's list of this machine's sandboxes. It comes from a subscription that succeeded while this
+   * machine is signed in (a revoked machine's subscription errors instead), so it is authoritative (`source:
+   * "catalog"`): the daemon deletes a sandbox this machine's catalog listed and no longer does, such as one deleted
+   * while this Mac was off.
+   */
   private async mirror(rows: Json[]): Promise<void> {
+    if (this.ended) return;
     try {
-      const response = await this.deps.daemon.dispatch(hostRequest("sandbox.mirror", { sandboxes: rows }, `sandbox-mirror-${++this.mirrorSeq}`));
-      if (!response.ok) this.deps.log(`sandbox mirror refused: ${response.error.code}: ${response.error.message}`);
+      const response = await this.deps.daemon.dispatch(hostRequest("sandbox.mirror", { source: "catalog", machine_id: this.deps.machineId, sandboxes: rows }, `sandbox-mirror-${++this.mirrorSeq}`));
+      if (!response.ok) { this.deps.log(`sandbox mirror refused: ${response.error.code}: ${response.error.message}`); return; }
+      for (const deleted of (response.result as { deleted?: Array<{ sandbox_id: string; detail: string }> }).deleted ?? []) this.deps.log(`sandbox ${deleted.sandbox_id} is no longer in the catalog: ${deleted.detail}`);
     } catch (error) { this.deps.log(`sandbox mirror failed: ${message(error)}`); }
   }
 
@@ -216,6 +232,12 @@ export class Connector {
 
 function tooLarge(request: RequestEnvelope, bytes: number): ResponseEnvelope {
   return failure(request, { code: "resource_exhausted", message: `response is ${bytes} bytes, over the ${OUTPUT_CAP_BYTES}-byte relay cap`, retryable: false });
+}
+
+/** The operation ran, but its result did not fit the account's daily result bytes; the error names the limit and its reset. */
+function dailyLimit(request: RequestEnvelope, refused: string): ResponseEnvelope {
+  const limit = refused.match(/relay_daily_limit:\s*([^\n]*)/)?.[1].trim() ?? "reached";
+  return failure(request, { code: "rate_limited", message: `the operation ran, but its result was dropped: the account's daily relay result bytes limit (${limit})`, retryable: true, details: { limit: "result_bytes" } });
 }
 
 /** Host-internal socket operations are machine-level, so they name no sandbox. */

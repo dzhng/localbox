@@ -68,3 +68,10 @@ test("the check fails on a command that does not exist", async () => {
   const result = await help(["sandboxes", "make"], await mkdtemp(join(tmpdir(), "localbox-skill-commands-")));
   assert.equal(result.code, 2); assert.match(result.output, /unknown command: localbox sandboxes make/);
 });
+
+test("commands use the catalog's group name; the old `machines` spelling is not a command", async () => {
+  const home = await mkdtemp(join(tmpdir(), "localbox-skill-commands-"));
+  assert.equal((await help(["machine", "list"], home)).code, 0);
+  const alias = await help(["machines", "list"], home);
+  assert.equal(alias.code, 2); assert.match(alias.output, /unknown command: localbox machines list/);
+});

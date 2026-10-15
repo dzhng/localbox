@@ -9,6 +9,7 @@ const DEFAULT_SLEEP_AFTER_MS = 30 * 60_000;
 const NAME_ATTEMPTS = 20;
 
 const accountRows = async (ctx: any, accountId: string) => await boundedRows(ctx.db.query("sandboxes").withIndex("by_account", (q: any) => q.eq("accountId", accountId)), "sandbox list");
+const reservedBy = async (ctx: any, accountId: string, mutationId: string) => await ctx.db.query("sandboxes").withIndex("by_account_mutation", (q: any) => q.eq("accountId", accountId).eq("createMutationId", mutationId)).first();
 const named = async (ctx: any, accountId: string, name: string) => await ctx.db.query("sandboxes").withIndex("by_account_name", (q: any) => q.eq("accountId", accountId).eq("name", name)).first();
 /** Errors other modules map to contract codes start with `<code>:`. */
 const nameTaken = async (ctx: any, accountId: string, name: string): Promise<never> => {
@@ -26,20 +27,37 @@ const view = (row: any, machineName?: string) => ({
   state: row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null,
 });
 
-/** Reserves a sandbox's identity on one of the caller's machines; the agent API then asks that machine to create it. */
-export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()) }, handler: async (ctx, args) => {
+/**
+ * Reserves a sandbox's identity on one of the caller's machines; the agent API then asks that machine to create it.
+ * A create carrying a mutation id this account already reserved with returns that reservation instead of a second one.
+ */
+export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) fail(`machine_not_found: no machine ${args.machineId} on this account`);
+  if (args.createMutationId !== undefined) { const reserved = await reservedBy(ctx, accountId, args.createMutationId); if (reserved) return view(reserved, (await byField(ctx, "machines", "by_machine", "machineId", reserved.machineId))?.name); }
   let name = args.name;
   if (name !== undefined) { validateLabel(name); if (await named(ctx, accountId, name)) await nameTaken(ctx, accountId, name); }
   else {
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) fail(`name_conflict: no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
+} });
+
+/**
+ * The sandbox a create with `mutationId` reserved on the caller's account, with the input that create relayed (null
+ * once its relay row expired), so a replay relays the very same create; null when there is none.
+ */
+export const byCreateMutation = queryGeneric({ args: { mutationId: v.string() }, handler: async (ctx, args) => {
+  const { accountId } = await requireAccount(ctx);
+  const row = await reservedBy(ctx, accountId, args.mutationId);
+  if (!row) return null;
+  const machine = await byField(ctx, "machines", "by_machine", "machineId", row.machineId);
+  const request = await ctx.db.query("requests").withIndex("by_dedupe", (q: any) => q.eq("machineId", row.machineId).eq("sandboxId", row.sandboxId).eq("operation", "sandbox.create").eq("mutationId", args.mutationId)).first();
+  return { ...view(row, machine?.name), create_input: request?.payload?.input ?? null };
 } });
 
 export const list = queryGeneric({ args: {}, handler: async (ctx) => {

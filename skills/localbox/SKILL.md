@@ -29,7 +29,7 @@ localbox login --email you@example.com --code NNNNNN   # ask the user for the co
   `--memory 4G`, `--sleep-after 10m` (default 30 min idle), `--delete-after 2h`
   (only when it should be disposable).
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
-  user's machines (`localbox machines list`); `--placement auto` takes the online
+  user's machines (`localbox machine list`); `--placement auto` takes the online
   machine with the most room, `--placement remote` the same but never this Mac.
 - `localbox sandbox list`, `sandbox status`, `sandbox rename`, `sandbox resize`,
   `sandbox sleep`, `sandbox start`, `sandbox stop`, `sandbox logs`.

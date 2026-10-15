@@ -23,8 +23,6 @@ const argv = process.argv.slice(2);
 const head = (argv.indexOf("--") < 0 ? argv : argv.slice(0, argv.indexOf("--"))).filter((word) => word !== "--json");
 const tail = argv.indexOf("--") < 0 ? [] : argv.slice(argv.indexOf("--") + 1);
 const json = (argv.indexOf("--") < 0 ? argv : argv.slice(0, argv.indexOf("--"))).includes("--json");
-/** CLI group names that differ from the catalog prefix. */
-const GROUPS: Record<string, string> = { machines: "machine" };
 const VERBS: Record<string, string> = { "account.show": "account.status" };
 const CONTROL_FLAGS = new Set(["sandbox", "machine", "input-json", "request-id", "mutation-id", "deadline-ms", "memory", "sleep-after", "delete-after"]);
 /** Commands that are not catalog operations. */
@@ -66,12 +64,11 @@ function parse(words: string[], schema?: JsonSchema): { flags: Record<string, st
 function usage(): string {
   const groups = new Map<string, OperationCatalogEntry[]>();
   for (const entry of operationCatalog) { const prefix = entry.id.split(".")[0]; groups.set(prefix, [...(groups.get(prefix) ?? []), entry]); }
-  const cliGroup = (prefix: string) => Object.entries(GROUPS).find(([, value]) => value === prefix)?.[0] ?? prefix;
   const out = ["localbox <command> [options]", "",
     "Operations on one sandbox take --sandbox NAME; leave it out when the account has exactly one sandbox.",
     "--json prints the response envelope; text prints the same facts.", ""];
   for (const [prefix, entries] of groups) {
-    out.push(cliGroup(prefix));
+    out.push(prefix);
     for (const entry of entries) out.push(`  ${commandLine(entry).padEnd(58)} ${entry.description}`);
   }
   out.push("", "other");
@@ -90,9 +87,8 @@ function commandLine(entry: OperationCatalogEntry): string {
 
 /** The catalog operation `words` name (`sandbox create`, `agents setup status`, `agents setup on`), the words after it and any input the words imply. */
 function catalogEntry(words: string[]): { entry: OperationCatalogEntry; rest: string[]; input: Record<string, Json> } | undefined {
-  const [group, verb, third] = words;
-  if (!group || !verb || verb.startsWith("-")) return undefined;
-  const prefix = GROUPS[group] ?? group;
+  const [prefix, verb, third] = words;
+  if (!prefix || !verb || verb.startsWith("-")) return undefined;
   if (prefix === "agents" && verb === "setup" && (third === "on" || third === "off")) return { entry: catalogById.get("agents.setup.set")!, rest: words.slice(3), input: { enabled: third === "on" } };
   const three = third && !third.startsWith("-") ? catalogById.get(`${prefix}.${verb}.${third}`.replaceAll("-", "_") as OperationId) : undefined;
   if (three) return { entry: three, rest: words.slice(3), input: {} };
@@ -111,7 +107,7 @@ function localCommand(words: string[]): [string, string] | undefined {
 
 function operationHelp(entry: OperationCatalogEntry): Json {
   const { limits: _limits, ...help } = entry;
-  return { usage: `localbox ${Object.entries(GROUPS).find(([, value]) => value === entry.id.split(".")[0])?.[0] ?? entry.id.split(".")[0]} ${commandLine(entry)}`, ...help } as unknown as Json;
+  return { usage: `localbox ${entry.id.split(".")[0]} ${commandLine(entry)}`, ...help } as unknown as Json;
 }
 
 async function writeSnapshots(): Promise<void> {
@@ -248,10 +244,13 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
   print(await run(request, sandbox));
 }
 
+/** A refused identity call; `status` is the HTTP status (401: this Mac's credential was revoked). */
+class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+
 async function apiCall(path: string, body?: Record<string, unknown>): Promise<any> {
   const credentials = await readCredentials(machinePaths().credentials);
   const response = await fetch(`${PUBLIC_API_ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(credentials ? { authorization: `Bearer ${credentials.secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error_description ?? result.error ?? `request failed (${response.status})`); return result;
+  const result = await response.json().catch(() => ({})); if (!response.ok) throw new ApiError(result.error_description ?? result.error ?? `request failed (${response.status})`, response.status); return result;
 }
 
 async function main(): Promise<void> {
@@ -284,9 +283,11 @@ async function main(): Promise<void> {
     const { flags } = parse(head.slice(1));
     const email = typeof flags.email === "string" ? flags.email : undefined; const code = typeof flags.code === "string" ? flags.code : undefined;
     if (!email) throw new Error("login requires --email");
+    // A second login would mint a new machine and strand this one's sandboxes, so it is refused before any code is sent.
+    const current = await readCredentials(machinePaths().credentials);
+    if (current) throw new Error(`this Mac is already signed in to ${current.account_name}; run localbox logout first`);
     if (!code) { await apiCall("/api/auth/email/start", { email }); process.stdout.write(`Code sent to ${email}. Ask the user for the 6-digit code, then run: localbox login --email ${email} --code NNNNNN\n`); return; }
     const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
-    const current = await readCredentials(machinePaths().credentials); if (current && current.account_id !== result.account_id) throw new Error(`this Mac is already signed in to account ${current.account_name}`);
     const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret };
     await writeCredentials(machinePaths().credentials, credentials);
     const connector = await restartConnectorJob();
@@ -296,10 +297,14 @@ async function main(): Promise<void> {
     return;
   }
   if (group === "logout") {
-    await apiCall("/api/auth/logout"); await deleteCredentials(machinePaths().credentials);
-    // The mirror holds the old account's sandboxes; an account signed in next must not find them here.
-    const cleared = await new LocalIPCTransport().dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { sandboxes: [] } });
-    print({ signed_out: true, sandboxes_forgotten: cleared.ok }); return;
+    // A Mac removed from another machine is already revoked (401); its credential file still goes.
+    let alreadyRemoved = false;
+    try { await apiCall("/api/auth/logout"); } catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; alreadyRemoved = true; }
+    await deleteCredentials(machinePaths().credentials);
+    // The mirror holds the old account's sandboxes; an account signed in next must not find them here. `signed_out`
+    // hides them and keeps their disks; only the signed-in connector's catalog push deletes a sandbox.
+    const cleared = await new LocalIPCTransport().dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { source: "signed_out", sandboxes: [] } });
+    print({ signed_out: true, ...(alreadyRemoved ? { machine: "already removed from the account; deleted this Mac's credentials" } : {}), sandboxes_forgotten: cleared.ok }); return;
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }
   if (group === "update" && (subcommand === "check" || subcommand === "install")) { print(await (subcommand === "check" ? checkForUpdate() : installLatest({ automatic: rest.includes("--auto") })) as unknown as Json); return; }

@@ -4,8 +4,8 @@ export interface PageClient { clientName: string; redirectHost: string }
 /** The OAuth request, carried through both steps in hidden fields and re-validated on every post. */
 export type AuthorizeParams = Record<string, string>;
 export interface EmailPageInput extends PageClient { action: string; params: AuthorizeParams; email?: string; error?: string }
-/** `accountName` null: the email has no account yet. Undefined: not known (for example a rate-limited send). */
-export interface CodePageInput extends PageClient { action: string; params: AuthorizeParams; email: string; accountName?: string | null; error?: string }
+/** The code page names no account: nothing about the email's account is known before its code is verified. */
+export interface CodePageInput extends PageClient { action: string; params: AuthorizeParams; email: string; error?: string }
 
 const escape = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 const hidden = (params: AuthorizeParams) => Object.entries(params).map(([name, value]) => `<input type="hidden" name="${escape(name)}" value="${escape(value)}">`).join("");
@@ -26,7 +26,6 @@ p { margin: 0 0 16px; }
 .muted { color: var(--muted); font-size: 15px; }
 .grant { margin: 0 0 20px; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--orange); border-radius: 10px; background: var(--paper-soft); font-size: 16px; }
 .grant strong { overflow-wrap: anywhere; }
-.grant .account { white-space: nowrap; }
 code { font: 600 0.92em var(--mono); overflow-wrap: anywhere; }
 label { display: block; margin: 0 0 6px; font-weight: 600; font-size: 15px; }
 input[type=email], input[type=text] { width: 100%; padding: 12px 14px; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid #a9a39a; border-radius: 10px; }
@@ -59,11 +58,10 @@ ${errorLine(input.error)}<form method="post" action="${escape(input.action)}">${
 }
 
 export function renderCodePage(input: CodePageInput): string {
-  const target = input.accountName ? `account <strong class="account">${escape(input.accountName)}</strong>` : input.accountName === null ? "<strong>your new account</strong>" : "<strong>your account</strong>";
   const restart = `${input.action}?${new URLSearchParams(input.params).toString()}`;
   return page("Enter your code · Localbox", `<h1>Enter your code</h1>
 <p class="muted">We sent a 6-digit code to <strong>${escape(input.email)}</strong>. It expires in 10 minutes.</p>
-<p class="grant">Signing in gives ${who(input)} full access to ${target}: it can create, use and delete sandboxes on all your machines.</p>
+<p class="grant">Signing in gives ${who(input)} full access to your Localbox account: it can create, use and delete sandboxes on all your machines.</p>
 ${errorLine(input.error)}<form method="post" action="${escape(input.action)}">${hidden(input.params)}<input type="hidden" name="step" value="code"><input type="hidden" name="email" value="${escape(input.email)}">
 <label for="code">Code</label><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required autofocus>
 <button type="submit">Sign in</button></form>

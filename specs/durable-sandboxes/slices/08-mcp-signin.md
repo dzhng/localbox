@@ -8,8 +8,9 @@ open authorize hole and removes seam T3.
 
 - `RepositoryOAuthServer` becomes account-based. `GET /oauth/authorize` renders an
   email page, then a code page that states the grant: "Signing in gives
-  `<client_name>` (`<redirect host>`) full access to account `<account name>`: it
-  can create, use and delete sandboxes on all your machines."
+  `<client_name>` (`<redirect host>`) full access to your Localbox account: it
+  can create, use and delete sandboxes on all your machines." The page names no
+  account: nothing about an email's account is revealed before its code is verified.
 - Dynamic client registration (`POST /oauth/register`, RFC 7591) stores
   `client_name` and exact `redirect_uris`; authorize requires an exact redirect
   match and PKCE S256.

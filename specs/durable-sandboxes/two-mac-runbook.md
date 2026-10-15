@@ -63,10 +63,10 @@ Repeat on B with the same email. Expected: the same account name,
 Then, on either Mac, give them readable names and check both are there:
 
 ```sh
-localbox machines list               # two machines, with their IDs
-localbox machines rename <A's machine_id> mac-a
-localbox machines rename <B's machine_id> mac-b
-localbox machines list               # mac-a and mac-b, each with its room
+localbox machine list               # two machines, with their IDs
+localbox machine rename <A's machine_id> mac-a
+localbox machine rename <B's machine_id> mac-b
+localbox machine list               # mac-a and mac-b, each with its room
 ```
 
 ## 3. Create a sandbox on each Mac
@@ -182,14 +182,14 @@ saved to disk and its memory released.
 On A:
 
 ```sh
-localbox machines remove <B's machine_id>
-localbox machines list                    # only mac-a
+localbox machine remove <B's machine_id>
+localbox machine list                    # only mac-a
 ```
 
 On B:
 
 ```sh
-localbox machines list                    # refused: this Mac was removed or must sign in again
+localbox machine list                    # refused: this Mac was removed or must sign in again
 launchctl print gui/$(id -u)/com.localbox.connector | grep -E 'state =|last exit code'
 ```
 

@@ -269,14 +269,19 @@ public actor SandboxHost {
 
     private func deleteIdle(_ id: String, _ runtime: SandboxRuntime, idleFor idle: TimeInterval, deleteAfter: TimeInterval) async -> SandboxAction {
         let name = await runtime.record.name
-        try? await runtime.stop()
-        runtimes[id] = nil
         let reason = "idle for \(spoken(idle)), past its delete-after of \(spoken(deleteAfter))"
         var detail = "deleted \(name): \(reason)"
-        do { try FileManager.default.removeItem(at: runtime.directory.url) } catch { detail += "; could not remove \(runtime.directory.url.path): \(explain(error))" }
+        if let failure = await discard(id, runtime) { detail += "; \(failure)" }
         idleDeletions[id] = (name, reason)
-        bumpStateVersion()
         return ["kind": "deleted", "detail": detail]
+    }
+
+    /// Stops a sandbox, forgets it and removes its directory (disk included). Returns what could not be removed.
+    private func discard(_ id: String, _ runtime: SandboxRuntime) async -> String? {
+        try? await runtime.stop()
+        runtimes[id] = nil
+        defer { bumpStateVersion() }
+        do { try FileManager.default.removeItem(at: runtime.directory.url); return nil } catch { return "could not remove \(runtime.directory.url.path): \(explain(error))" }
     }
 
     /// The runtimes whose lifecycle is one of `lifecycles`.
@@ -318,7 +323,14 @@ public actor SandboxHost {
             return hostSuccess(object, result: ["recorded": true])
         case "sandbox.mirror":
             guard let rows = input["sandboxes"] as? [[String: Any]] else { return hostFailure(object, code: "invalid_input", message: "sandbox.mirror requires sandboxes") }
-            return await mirror(object, rows: rows)
+            let machineID = input["machine_id"] as? String
+            let source: MirrorSource
+            switch input["source"] as? String {
+            case "catalog" where !(machineID ?? "").isEmpty: source = .catalog(machineID: machineID!)
+            case "signed_out": source = .signedOut
+            default: return hostFailure(object, code: "invalid_input", message: "sandbox.mirror takes source catalog with machine_id (the signed-in connector's list) or signed_out")
+            }
+            return await mirror(object, rows: rows, source: source)
         case "host.simulate_power":
             guard allowsSimulatedPower else { return hostFailure(object, code: "unsupported", message: "host.simulate_power needs a daemon started with LOCALBOX_DEV=1") }
             guard let event = (input["event"] as? String).flatMap(PowerEvent.init(rawValue:)) else { return hostFailure(object, code: "invalid_input", message: "host.simulate_power takes event will_sleep, will_power_off or did_wake") }
@@ -385,11 +397,8 @@ public actor SandboxHost {
             } catch let refused as AdmissionRefused { return machineFull(object, refused) }
             catch { return hostFailure(object, code: "conflict", message: "could not resize \(name): \(explain(error))") }
         case .sandboxDelete:
-            try? await runtime.stop()
-            runtimes[sandboxID] = nil
             let removed = runtime.directory.contents()
-            do { try FileManager.default.removeItem(at: runtime.directory.url) } catch { return hostFailure(object, code: "internal", message: "stopped \(name) but could not remove \(runtime.directory.url.path): \(explain(error))") }
-            bumpStateVersion()
+            if let failure = await discard(sandboxID, runtime) { return hostFailure(object, code: "internal", message: "stopped \(name) but \(failure)") }
             return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": name, "removed": removed], actions: [["kind": "deleted", "detail": "removed \(name) from this machine"]]))
         case .sandboxStart:
             do {
@@ -419,27 +428,41 @@ public actor SandboxHost {
         return (try? JSONSerialization.data(withJSONObject: envelope)) ?? response
     }
 
-    /// Follows the account catalog: names and idle policies change, and a sandbox the catalog no longer lists stops
-    /// answering. A push never creates or deletes a directory (only create, delete and the idle policy do); local
-    /// directories the catalog lacks are reported.
-    private func mirror(_ object: [String: Any], rows: [[String: Any]]) async -> Data {
+    /// Who sent a mirror push. `catalog` is the signed-in connector's subscription, the catalog's word on the
+    /// sandboxes of machine `machineID`; `signedOut` is `localbox logout`, which hides every sandbox and deletes nothing.
+    enum MirrorSource { case catalog(machineID: String), signedOut }
+
+    /// Follows the account catalog: names and idle policies change. A `catalog` push deletes a sandbox it no longer
+    /// lists that this machine's catalog listed before (deleted while this Mac was offline): stopped, its directory and
+    /// disk removed, reported in `deleted`. A sandbox this machine's catalog never listed (created and not yet listed,
+    /// or hidden by a sign-out and so listed by an earlier sign-in) only stops answering and is reported in `unknown`,
+    /// as are directories without a record. A push never creates a directory.
+    private func mirror(_ object: [String: Any], rows: [[String: Any]], source: MirrorSource) async -> Data {
         var names: [String: String] = [:], policies: [String: (sleep: Int?, delete: Int?)] = [:]
         for row in rows {
             guard let id = row["sandbox_id"] as? String, let name = row["name"] as? String else { continue }
             names[id] = name
             if row["sleep_after_ms"] != nil { policies[id] = ((row["sleep_after_ms"] as? NSNumber)?.intValue, (row["delete_after_ms"] as? NSNumber)?.intValue) }
         }
-        var unknown = strays
+        var catalogMachine: String?
+        if case .catalog(let machineID) = source { catalogMachine = machineID }
+        var unknown = strays, deleted: [[String: String]] = []
         for (id, runtime) in runtimes.sorted(by: { $0.key < $1.key }) {
             if let name = names[id] {
+                if let catalogMachine { await runtime.setListedBy(catalogMachine) }
                 await runtime.setInCatalog(true); try? await runtime.rename(name)
                 if let policy = policies[id] { await runtime.setPolicy(sleepAfterMs: policy.sleep, deleteAfterMs: policy.delete) }
+            } else if let catalogMachine, await runtime.record.inCatalog, await runtime.record.listedBy == catalogMachine {
+                let name = await runtime.record.name
+                var detail = "deleted \(name): the account catalog no longer lists it"
+                if let failure = await discard(id, runtime) { detail += "; \(failure)" }
+                deleted.append(["sandbox_id": id, "name": name, "detail": detail])
             } else { await runtime.setInCatalog(false); unknown.append(id) }
         }
         // The catalog no longer lists an idle-deleted sandbox once the connector removed it.
         idleDeletions = idleDeletions.filter { names[$0.key] != nil }
         bumpStateVersion()
-        return hostSuccess(object, result: ["sandboxes": names.keys.filter { runtimes[$0] != nil }.count, "missing": names.keys.filter { runtimes[$0] == nil }.sorted(), "unknown": unknown.sorted()])
+        return hostSuccess(object, result: ["sandboxes": names.keys.filter { runtimes[$0] != nil }.count, "missing": names.keys.filter { runtimes[$0] == nil }.sorted(), "unknown": unknown.sorted(), "deleted": deleted])
     }
 
     /// The connector's last report; machine-level, so it answers with or without sandboxes.
@@ -484,7 +507,7 @@ public actor SandboxHost {
         }
         do { actions += try await start(runtime) { try await $0.bringUp() } }
         catch {
-            if existing == nil { try? await runtime.stop(); runtimes[sandboxID] = nil; try? FileManager.default.removeItem(at: runtime.directory.url); bumpStateVersion() }
+            if existing == nil { _ = await discard(sandboxID, runtime) }
             if let refused = error as? AdmissionRefused { return machineFull(object, refused) }
             return hostFailure(object, code: "sandbox_not_ready", message: "\(name) could not start: \(explain(error))")
         }

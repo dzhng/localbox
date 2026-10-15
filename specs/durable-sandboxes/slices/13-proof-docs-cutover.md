@@ -9,7 +9,7 @@ exists for the user.
 - `scripts/proof/probes/13-scenario.ts` (V-L topology): log in A and B (machine
   count 2); create locally on A; `--machine b`; `--placement auto`; remote `shell
   exec` on B from A; an MCP call; kill B's connector → `machine_offline`;
-  `machines remove b` → B's connector exits; idle sleep with a short policy;
+  `machine remove b` → B's connector exits; idle sleep with a short policy;
   hibernate/wake with a Node server surviving on the real A. Writes
   `evidence/13-scenario.json` including Convex calls per request.
 - Agent docs: the skill rewrite is slice 14's; here the README's Agent setup and

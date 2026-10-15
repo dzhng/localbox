@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { asMachine } from "../lib/as-machine.js";
@@ -35,15 +35,25 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const a = await login("a", email); assert.equal(a.code, 0, a.stderr);
       const b = await login("b", email); assert.equal(b.code, 0, b.stderr); assert.match(b.stdout, /2 machines/);
     }));
+    checks.push(await ctx.check("login again on a signed-in Mac is refused before a code is sent; the account keeps 2 machines", async () => {
+      const since = logSize(ctx.root);
+      const again = await cli("a", ["login", "--email", email]); assert.equal(again.code, 1);
+      assert.match(again.stderr, /this Mac is already signed in to [a-z0-9-]+; run localbox logout first/);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(codeLines(ctx.root, email, since), 0, "no code was sent");
+      const listed = await cli("a", ["machine", "list", "--json"]); assert.equal(JSON.parse(listed.stdout).result.length, 2);
+    }));
     checks.push(await ctx.check("credentials.json is mode 0600", () => {
       assert.equal(statSync(join(ctx.evidence, "machines/a/credentials.json")).mode & 0o777, 0o600);
     }));
     checks.push(await ctx.check("removing machine B from A revokes B", async () => {
-      const listed = await cli("a", ["machines", "list", "--json"]); assert.equal(listed.code, 0, listed.stderr);
+      const listed = await cli("a", ["machine", "list", "--json"]); assert.equal(listed.code, 0, listed.stderr);
       const b = JSON.parse(readFileSync(join(ctx.evidence, "machines/b/credentials.json"), "utf8"));
       assert.match(listed.stdout, new RegExp(b.machine_id));
-      const removed = await cli("a", ["machines", "remove", b.machine_id, "--json"]); assert.equal(removed.code, 0, removed.stderr);
-      const denied = await cli("b", ["machines", "list"]); assert.notEqual(denied.code, 0); assert.match(denied.stderr + denied.stdout, /removed|login/);
+      const removed = await cli("a", ["machine", "remove", b.machine_id, "--json"]); assert.equal(removed.code, 0, removed.stderr);
+      const denied = await cli("b", ["machine", "list"]); assert.notEqual(denied.code, 0); assert.match(denied.stderr + denied.stdout, /removed|login/);
+      const loggedOut = await cli("b", ["logout", "--json"]); assert.equal(loggedOut.code, 0, loggedOut.stderr);
+      assert.match(JSON.parse(loggedOut.stdout).machine, /already removed/); assert.ok(!existsSync(join(ctx.evidence, "machines/b/credentials.json")), "a removed Mac can still log out");
     }));
     checks.push(await ctx.check("a sixth send in an hour still says 'code sent' but issues no code", async () => {
       const limited = `proof-limit-${run}@example.com`; const since = logSize(ctx.root);
@@ -53,11 +63,12 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("five wrong guesses kill the code", async () => {
       const guessed = `proof-guess-${run}@example.com`; const since = logSize(ctx.root);
-      assert.equal((await cli("a", ["login", "--email", guessed])).code, 0);
+      // A Mac that is not signed in: a signed-in one refuses login before sending a code.
+      assert.equal((await cli("guess", ["login", "--email", guessed])).code, 0);
       const code = await waitForCode(guessed, { sinceByte: since, logPath: devLog(ctx.root) });
       const wrong = code === "000000" ? "000001" : "000000";
-      for (let index = 0; index < 5; index++) assert.notEqual((await cli("a", ["login", "--email", guessed, "--code", wrong])).code, 0);
-      assert.notEqual((await cli("a", ["login", "--email", guessed, "--code", code])).code, 0, "the real code still worked after five wrong guesses");
+      for (let index = 0; index < 5; index++) assert.notEqual((await cli("guess", ["login", "--email", guessed, "--code", wrong])).code, 0);
+      assert.notEqual((await cli("guess", ["login", "--email", guessed, "--code", code])).code, 0, "the real code still worked after five wrong guesses");
     }));
     checks.push(await ctx.check("a spoofed x-forwarded-for does not become the rate-limit key", async () => {
       await startCode(`proof-ip-${run}@example.com`);

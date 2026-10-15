@@ -28,8 +28,8 @@
     }
   ],
   "create_local": {
-    "sandbox_id": "sandbox_c79c8cb6-ef3f-4892-abfb-ab895634c61c",
-    "name": "witty-newt",
+    "sandbox_id": "sandbox_f31539b7-268f-4543-b119-96e62326f0d2",
+    "name": "nimble-walrus",
     "machine": "proof-a",
     "placement_reason": "on proof-a, this machine (6 GiB free)",
     "cpus": 1,
@@ -39,8 +39,8 @@
     "delete_after_ms": null
   },
   "create_on_b": {
-    "sandbox_id": "sandbox_7c4b09a0-5115-47f4-8e4b-2582382a8010",
-    "name": "amber-zebra",
+    "sandbox_id": "sandbox_34f7dd84-330d-4198-8ea0-68c0b21f76e8",
+    "name": "kind-narwhal",
     "machine": "proof-b",
     "placement_reason": "on proof-b, as asked (12 GiB free)",
     "cpus": 1,
@@ -50,8 +50,8 @@
     "delete_after_ms": null
   },
   "create_auto": {
-    "sandbox_id": "sandbox_73e7a7ec-34bd-4d2e-9819-162f053192d4",
-    "name": "calm-koala",
+    "sandbox_id": "sandbox_0e0d3bce-afed-48b2-a2f7-af99f2653c66",
+    "name": "brave-narwhal",
     "machine": "proof-b",
     "placement_reason": "on proof-b, the machine with the most room (10 GiB free)",
     "cpus": 1,
@@ -62,56 +62,56 @@
   },
   "convex_calls_per_relayed_request": 15,
   "relayed_round_trip_ms": [
-    184,
-    130,
+    170,
     126,
-    127,
-    127
+    125,
+    125,
+    126
   ],
   "mcp_shell_exec": {
-    "sandbox": "witty-newt",
+    "sandbox": "nimble-walrus",
     "stdout": "arm64",
     "actions": [
       {
-        "detail": "woke witty-newt from sleep",
+        "detail": "woke nimble-walrus from sleep",
         "kind": "woke"
       }
     ]
   },
   "machine_offline": {
-    "ms": 3197,
-    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T15:46:05.538Z"
+    "ms": 3204,
+    "message": "the machine did not pick up the request within 3 s; last seen 2026-10-15T16:26:37.383Z"
   },
   "asleep": {
-    "cpus": 1,
+    "sandbox_id": "sandbox_f31539b7-268f-4543-b119-96e62326f0d2",
+    "state": "sleeping",
     "sleep_after_ms": 5000,
-    "memory_bytes": 2147483648,
-    "name": "witty-newt",
+    "cpus": 1,
+    "name": "nimble-walrus",
     "lifecycle": "paused",
+    "delete_after_ms": null,
     "last_boot": {
       "kind": "cold_booted",
-      "detail": "cold-booted witty-newt"
+      "detail": "cold-booted nimble-walrus"
     },
-    "delete_after_ms": null,
-    "channel_epoch": 2,
-    "sandbox_id": "sandbox_c79c8cb6-ef3f-4892-abfb-ab895634c61c",
-    "state": "sleeping"
+    "memory_bytes": 2147483648,
+    "channel_epoch": 2
   },
   "woke": [
     {
       "kind": "woke",
-      "detail": "woke witty-newt from sleep"
+      "detail": "woke nimble-walrus from sleep"
     }
   ],
   "connector_exit": {
     "code": 0,
-    "ms": 104,
+    "ms": 102,
     "log": [
       "Uncaught Error: Forbidden: machine revoked or unknown",
       "Uncaught Error: Forbidden: machine revoked or unknown",
-      "2026-10-15T15:46:18.162Z connector: machine credential revoked: machine token refused (401); stopping",
-      "2026-10-15T15:46:18.162Z connector: state revoked: machine token refused (401)",
-      "2026-10-15T15:46:18.163Z connector: ended: revoked"
+      "2026-10-15T16:26:49.992Z connector: machine credential revoked: machine token refused (401); stopping",
+      "2026-10-15T16:26:49.992Z connector: state revoked: machine token refused (401)",
+      "2026-10-15T16:26:49.993Z connector: ended: revoked"
     ]
   },
   "checks": [
@@ -148,7 +148,7 @@
       "ok": true
     },
     {
-      "name": "machines remove <B> from A: B's connector exits with code 0 and A's account shows 1 machine",
+      "name": "machine remove <B> from A: B's connector exits with code 0, A's account shows 1 machine and none of B's sandboxes",
       "ok": true
     }
   ]

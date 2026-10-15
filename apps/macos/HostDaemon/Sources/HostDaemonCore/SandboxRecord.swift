@@ -46,6 +46,9 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     /// False once the account catalog stops listing it (deleted while this Mac was offline, or signed out): the disk
     /// stays, but no request reaches it until a catalog lists it again.
     public var inCatalog: Bool
+    /// The machine id whose catalog last listed it. Only that machine's catalog may delete it by leaving it out, so a
+    /// push older than its reservation, or another sign-in's catalog, never deletes a disk.
+    public var listedBy: String?
     /// The idle policy (Q5), mirrored from the account catalog: sleep after this much idle time (nil: the 30 min
     /// default), and delete after this much (nil: never).
     public var sleepAfterMs: Int?
@@ -55,7 +58,7 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     }
     enum CodingKeys: String, CodingKey {
         case sandboxID = "sandbox_id", name, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", lifecycle
-        case lastActivityAt = "last_activity_at", coldBootPending = "cold_boot_pending", inCatalog = "in_catalog"
+        case lastActivityAt = "last_activity_at", coldBootPending = "cold_boot_pending", inCatalog = "in_catalog", listedBy = "listed_by"
         case sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms"
     }
 }
