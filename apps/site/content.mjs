@@ -3,7 +3,7 @@ export const repo = "https://github.com/dzhng/agent-computer";
 const raw = "https://raw.githubusercontent.com/dzhng/agent-computer/main";
 
 export const agentPrompt =
-  "Install Localbox for me by following https://localbox.dev/llms.txt";
+  "Install Localbox for me by following https://localbox.sh/llms.txt";
 
 export const openIn = [
   { label: "Open in Claude Code", href: `claude-cli://open?q=${encodeURIComponent(agentPrompt)}` },

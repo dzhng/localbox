@@ -24,7 +24,7 @@ export function createVercelRelayHandler(repository: RelayStateRepository, optio
     const result = await adapter.handle({
       method: request.method,
       url: request.url,
-      headers: Object.fromEntries(request.headers.entries()),
+      headers: requestHeaders(request.headers),
       body: parsedBody,
     });
     const responseBody: BodyInit | undefined = result.body === undefined ? undefined : result.body instanceof Uint8Array ? result.body as unknown as BodyInit : JSON.stringify(result.body);
@@ -33,6 +33,11 @@ export function createVercelRelayHandler(repository: RelayStateRepository, optio
       headers: result.headers,
     });
   };
+}
+
+function requestHeaders(value: Headers | Record<string, string | string[]>): Record<string, string> {
+  if (typeof (value as Headers).entries === "function") return Object.fromEntries((value as Headers).entries());
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key.toLowerCase(), Array.isArray(item) ? item.join(", ") : item]));
 }
 
 async function readJson(request: Request, maxBytes: number): Promise<unknown> {

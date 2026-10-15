@@ -19,6 +19,9 @@ const fixtureOAuth = new OAuthAuthorizationServer({ issuer, resource });
 
 export default async function handle(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  const metadata = url.searchParams.get("metadata");
+  if (request.method === "GET" && metadata === "oauth-protected-resource") return json(200, durableOAuth?.protectedResourceMetadata() ?? fixtureOAuth.protectedResourceMetadata());
+  if (request.method === "GET" && metadata === "oauth-authorization-server") return json(200, durableOAuth?.authorizationServerMetadata() ?? fixtureOAuth.authorizationServerMetadata());
   const oauthResponse = await handleOAuth(request, url);
   if (oauthResponse) return oauthResponse;
   const authorization = request.headers.get("authorization") ?? "";
@@ -29,8 +32,13 @@ export default async function handle(request: Request): Promise<Response> {
   if (body !== undefined && Buffer.byteLength(body) > 1024 * 1024) return new Response(JSON.stringify({ error: "payload_too_large", error_description: "MCP request exceeds the configured size limit" }), { status: 413, headers: { "content-type": "application/json" } });
   let parsed: unknown;
   try { parsed = body ? JSON.parse(body) : undefined; } catch { return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400, headers: { "content-type": "application/json" } }); }
-  const result = await adapter.handle({ method: request.method, url: request.url, headers: Object.fromEntries(request.headers.entries()), body: parsed });
+  const result = await adapter.handle({ method: request.method, url: request.url, headers: requestHeaders(request.headers), body: parsed });
   return new Response(result.body === undefined ? undefined : JSON.stringify(result.body), { status: result.status, headers: result.headers });
+}
+
+function requestHeaders(value: Headers | Record<string, string | string[]>): Record<string, string> {
+  if (typeof (value as Headers).entries === "function") return Object.fromEntries((value as Headers).entries());
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key.toLowerCase(), Array.isArray(item) ? item.join(", ") : item]));
 }
 
 async function handleOAuth(request: Request, url: URL): Promise<Response | undefined> {

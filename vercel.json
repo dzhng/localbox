@@ -1,6 +1,13 @@
 {
+  "framework": null,
+  "buildCommand": "echo no-build",
+  "outputDirectory": ".",
   "functions": {
     "api/relay/[...path].ts": { "maxDuration": 60 },
     "api/mcp/[...path].ts": { "maxDuration": 60 }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/mcp/.well-known/oauth-protected-resource", "destination": "/api/mcp/metadata?metadata=oauth-protected-resource" },
+    { "source": "/api/mcp/.well-known/oauth-authorization-server", "destination": "/api/mcp/metadata?metadata=oauth-authorization-server" }
+  ]
 }

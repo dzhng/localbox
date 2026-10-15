@@ -7,7 +7,7 @@ makes that VM available to AI agents through a CLI and an optional MCP adapter.
 
 Tell your agent:
 
-> Install Localbox for me by following https://localbox.dev/llms.txt
+> Install Localbox for me by following https://localbox.sh/llms.txt
 
 The agent downloads and verifies the tagged release, installs the CLI and
 managed skill, and registers the local HostDaemon. There is no browser app

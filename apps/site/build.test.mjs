@@ -36,5 +36,5 @@ test("the landing page offers agent actions instead of a browser download", () =
 
 test("the build refuses a README without the agent install prompt", () => {
   const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
-  assert.throws(() => files(readme.replace("https://localbox.dev/llms.txt", "https://wrong.example/install")), /agent install prompt/);
+  assert.throws(() => files(readme.replace("https://localbox.sh/llms.txt", "https://wrong.example/install")), /agent install prompt/);
 });
