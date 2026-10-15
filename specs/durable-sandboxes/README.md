@@ -15,13 +15,12 @@ placement, and an agent-first CLI that acts and then reports what it did.
 
 ## Next Agent Prompt
 
-*Status 2026-10-14: spec written; no slice started.*
+*Status 2026-10-15: slice 00 done (`npm run proof -- 00 --tier u,l` passes). In progress: 01, 04, 05 (Codex, separate worktrees).*
 
 You are building durable sandboxes. Read this README, then the slice you are
 picking up. Work on this Mac mini; the second machine is simulated (slice 03).
 
-1. Run `npm ci`. Implement [00-proof-harness](slices/00-proof-harness.md) and
-   confirm `npm run proof -- 00 --tier u,l` exits 0 twice in a row.
+1. Run `npm ci`. Slice 00 is done; `npm run proof -- 00 --tier u,l` must stay green.
 2. Then run the two lanes, in either order or interleaved:
    - **Lane V (real VMs):** 01 → 02. Slice 02 is the go/no-go for hibernate: if
      save/restore fails for every channel option, stop and report; Q5b goes
@@ -40,7 +39,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 
 **TODO**
 
-- [ ] [00 proof harness](slices/00-proof-harness.md)
+- [x] [00 proof harness](slices/00-proof-harness.md)
 - [ ] [01 boot artifacts](slices/01-boot-artifacts.md)
 - [ ] [02 hibernate spike](slices/02-hibernate-spike.md) — go/no-go
 - [ ] [03 fixture machine](slices/03-fixture-machine.md)
