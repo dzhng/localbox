@@ -10,15 +10,21 @@ invariants and rejected alternatives.
 
 ## Product boundary
 
-Localbox is one durable Linux computer for an agent, on the user's Mac. Shell is
-the authority inside the VM; filesystem, browser, screenshot and desktop
+Localbox gives an agent durable sandboxes on the user's own machines. A sandbox
+is a Linux VM: product copy says "sandbox", and "VM" belongs to technical docs,
+code and the current operation catalog. The [positioning](positioning.md) doc
+owns the product message, the use cases and what each one needs before it ships.
+
+Shell is the authority inside the VM; filesystem, browser, screenshot and desktop
 operations are convenience interfaces over that same authority. Do not add
 per-tool approval scopes or payload allowlists inside the VM: an agent that can
 run a shell can already do what they would forbid.
 
 The host is outside the boundary. The VM must not gain access to the Mac's
 files, processes, credentials or UI except through a narrow, reviewed interface
-added as an explicit product feature.
+added as an explicit product feature. Shared folders are the planned one: a
+folder the user names, read-only by default, served by Localbox itself so every
+access can be logged.
 
 ## One catalog
 
@@ -58,8 +64,11 @@ on the host's Node toolchain or a network package fetch.
 
 ## Documentation ownership
 
-The README is the product pitch and the agent install path. This file owns
-contributor principles and operations. Package-level behaviour belongs in the
+The README is the product pitch and the agent install path, and it may describe
+the launch product ahead of the code. Agent-facing instructions (`llms.txt`, the
+consumer skill, the README's Agent setup) describe only what the shipped CLI does.
+The positioning doc owns the message and use cases. This file owns contributor
+principles and operations. Package-level behaviour belongs in the
 owning code and its README; closed specs in `specs/done` hold rationale, not
 current instructions.
 

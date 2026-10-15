@@ -117,7 +117,7 @@ const footer = () => {
   const { links } = content;
   return `<footer class="foot">
   ${blob("foot-blob")}
-  <p>Localbox is CLI-first and built in the open on <a href="${links.repo}">GitHub</a>.</p>
+  <p>Localbox is free, CLI-first and built in the open on <a href="${links.repo}">GitHub</a>.</p>
   <p class="foot-links"><a href="${links.releases}">Releases</a> · <a href="/llms.txt">llms.txt</a> · <a href="${links.agentSetup}">Agent setup</a> · <a href="${links.security}">Security</a> · <a href="${links.development}">Development</a></p>
 </footer>`;
 };
@@ -232,7 +232,7 @@ ${bar({ modeSwitch: false })}
 <main class="missing" id="main">
   ${blob("lost-blob")}
   <h1>Nothing here.</h1>
-  <p class="lede">This page isn't on the computer. The <a href="/">home page</a> is, and so is <a href="/llms.txt">/llms.txt</a>.</p>
+  <p class="lede">This page isn't in the sandbox. The <a href="/">home page</a> is, and so is <a href="/llms.txt">/llms.txt</a>.</p>
 </main>
 ${footer()}
 <script type="module" src="/main.js"></script>

@@ -23,39 +23,40 @@ export const links = {
 };
 
 export const meta = {
-  title: "Localbox — a computer your agent can use",
+  title: "Localbox — durable sandboxes for your agent",
   description:
-    "Localbox gives Claude Code, Codex and any agent a durable Linux computer on your Mac: shell, files, browser and desktop through one CLI, with optional MCP.",
-  imageAlt: "Xiaohei sits in a little house on a laptop, typing on its own tiny computer",
+    "Localbox turns your Mac, or a shelf of Mac minis, into durable sandboxes that Claude Code, Codex and any agent create, use and delete on their own. Free.",
+  imageAlt: "Xiaohei slides a sandbox out of a shelf of home computers and sends it to your agent",
 };
 
 export const hero = {
   kicker: "for Claude Code, Codex & any agent",
-  title: "Your agent gets a computer.",
-  accent: "You keep yours.",
-  lede: "Localbox runs a durable Linux VM on your Mac and hands it to your agent: a shell, files, a browser and a desktop that are still set up next week.",
+  title: "Durable sandboxes",
+  accent: "for your agent.",
+  lede: "On computers you already own. Localbox turns your Mac, or a shelf of Mac minis, into sandboxes your agent creates, uses and deletes on its own, each a whole Linux computer that stays exactly as the agent left it.",
 };
 
 /** The honest pitch: what each place to run an agent actually gives you. */
 export const compare = {
-  title: "A computer, not a sandbox",
-  body: "Your laptop is too precious to hand over. A cloud sandbox forgets everything when the session ends. Localbox is the agent's own machine.",
-  columns: ["Your laptop", "Cloud sandbox", "Localbox"],
+  title: "No container tax, no sandbox bill",
+  body: "Docker on a Mac claims gigabytes of RAM the moment it starts and leaves containers to prune. Cloud sandboxes bill monthly, cap sessions and hold your code. Localbox runs on the machines you already own.",
+  columns: ["Docker on your Mac", "Cloud sandbox", "Localbox"],
   rows: [
-    { label: "Keeps installs, files and browser state", values: [true, false, true] },
-    { label: "Keeps the agent away from your files", values: [false, true, true] },
-    { label: "Reachable from a remote agent", values: [false, true, true] },
-    { label: "Runs on hardware you own", values: [true, false, true] },
+    { label: "Its own kernel, isolated from your Mac", values: [false, true, true] },
+    { label: "Keeps its state between sessions", values: [true, false, true] },
+    { label: "Reachable from cloud agents", values: [false, true, true] },
+    { label: "No monthly bill or session limit", values: [true, false, true] },
+    { label: "Code stays on your machines", values: [true, false, true] },
   ],
 };
 
 export const asks = [
-  "Install Postgres and Node in the VM and get this repo's tests passing.",
-  "Open the staging site in the VM's browser and click through checkout.",
-  "Run this untrusted script somewhere that isn't my laptop.",
-  "Kick off the full build and screenshot the desktop when it's done.",
-  "Pick up where we left off yesterday. The dev server should still be there.",
-  "Connect from my cloud agent and run the integration suite on my Mac.",
+  "Spin up a sandbox, clone this repo and get the tests passing.",
+  "Run this with permissions off, inside a sandbox, not on my laptop.",
+  "Give each of these three branches its own sandbox and dev server.",
+  "Use the Mac mini in the closet for tonight's full build.",
+  "Share ~/code/app read-only with the sandbox, then show me every file it read.",
+  "Pick up where we left off yesterday. The dev server should still be running.",
 ];
 
 /** Illustrations live in .github/readme and are copied to /art at build time. */
@@ -65,65 +66,77 @@ export const features = [
     alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
     kicker: "durable",
     title: "Still set up next week",
-    body: "Files, installed packages, browser profiles and desktop state persist across sessions, sleep, VM stops and reconnects. Set it up once; the next session, or the next agent, starts where the last one stopped.",
+    body: "A sandbox keeps its files, installed packages, browser profile and desktop across sessions, sleep and reconnects, until someone deletes it. Want one disposable? Give it an idle timeout and it cleans itself up.",
   },
   {
-    image: "02-two-handles-one-door.png",
-    alt: "One door with a CLI knob and an MCP handle, and Xiaohei holding the single key",
-    kicker: "one catalog",
-    title: "Two handles, one door",
-    body: "The CLI is the product. MCP is an optional adapter over the same operation catalog, with identical operations, schemas, errors and permissions. `localbox help` and the MCP tool list are generated from one source.",
+    image: "05-your-machines-are-the-fleet.png",
+    alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out",
+    kicker: "your fleet",
+    title: "Your machines are the fleet",
+    body: "Sign in on each Mac you own and it joins your fleet. Your agent asks for a sandbox and gets one on whichever machine has room. No per-minute billing, no session limit.",
   },
   {
     image: "03-outbound-only.png",
     alt: "The house's front door stays padlocked while Xiaohei sits on the roof reeling a line up to the relay",
     kicker: "outbound only",
-    title: "Reachable from anywhere, open to nothing",
-    body: "Locally the CLI talks to the daemon over an authenticated socket. Remote agents go through a hosted relay that your Mac connects out to: no port forwarding, no VPN, no Tailscale. OAuth access can be revoked at any time.",
+    title: "Cloud agents, your computers",
+    body: "Codex cloud, Claude Code on the web and other background agents work in your sandboxes through a relay your Mac connects out to: no port forwarding, VPN or Tailscale. Their access is a token you can revoke any time.",
   },
   {
     image: "04-host-stays-outside.png",
     alt: "Xiaohei builds freely inside a glass jar while your files sit untouched outside it",
-    kicker: "the boundary",
-    title: "Your Mac stays outside",
-    body: "The VM is the security boundary. Inside, an authorized agent can do anything a shell can, so there are no per-tool prompts to click through. Your files, processes, credentials and screen are not shared with it.",
+    kicker: "off the leash",
+    title: "Permissions off, safely",
+    body: "Run your agent with permission prompts off inside a sandbox. Install anything, run untrusted scripts, break things. The sandbox is the boundary, and the worst case is deleting it.",
+  },
+  {
+    image: "06-share-a-folder.png",
+    alt: "One shared folder reaches the sandbox through a tube while Xiaohei logs every access in a ledger",
+    kicker: "audited",
+    title: "Share a folder, see every access",
+    body: "A sandbox sees nothing on your Mac by default. Share exactly the folder your agent needs, read-only unless you say otherwise, and Localbox logs every file it reads or writes.",
   },
 ];
 
 export const capabilities = [
-  { area: "Lifecycle", body: "Start, stop, pause and reset the VM. Read status, logs and egress identity." },
+  { area: "Sandboxes", body: "Create, list, start, stop, pause and delete. Keep durable, or set an idle timeout." },
   { area: "Shell", body: "Run bounded commands, or start long jobs and wait, poll, cancel or read their output." },
-  { area: "Files", body: "List, stat, read, write, create and remove paths inside the VM." },
+  { area: "Files", body: "List, stat, read, write, create and remove paths inside the sandbox." },
   { area: "Browser", body: "Open, navigate, focus and close tabs. Click, type, send keys, take screenshots." },
   { area: "Desktop", body: "Screenshot, move, click, scroll and type on a 1440×900 virtual display." },
+  { area: "Shared folders", body: "Share a host folder read-only or read-write, and read its access log." },
 ];
 
 export const humanSteps = [
   { title: "Paste the prompt into Claude Code or Codex", body: "Or use an Open button above; it fills in the prompt without sending it." },
   { title: "Your agent installs a signed release", body: "It verifies checksums and the release signature, then installs the CLI, the Localbox skill and a small host daemon. Nothing to drag into Applications." },
-  { title: "Ask for something that needs a computer", body: "The agent starts the VM and works in it. Updates install themselves and verify before replacing anything." },
+  { title: "Ask for something that needs a sandbox", body: "The agent creates one and works in it. Updates install themselves and verify before replacing anything." },
 ];
 
 export const faq = [
+  {
+    q: "Is it really free?",
+    a: "Yes. It runs on machines you already own, so there's nothing to rent. You sign in with your email so your machines and sandboxes belong to one account.",
+  },
+  {
+    q: "Can a sandbox see my files?",
+    a: "Not unless you share a folder with it. Shares are read-only by default, every access through them is logged, and your processes, credentials and screen are never shared.",
+  },
+  {
+    q: "How is this different from Docker?",
+    a: "A container shares a kernel and is built to be thrown away. A sandbox is a whole Linux computer with its own desktop and browser, durable until deleted, and your agent manages its whole lifecycle. Docker even runs inside one.",
+  },
   {
     q: "Do I need MCP?",
     a: "No. The CLI is the whole product and works on its own. Add MCP only when a client wants tool discovery; it exposes exactly the same operations.",
   },
   {
     q: "What can the relay see?",
-    a: "The relay only matters when your agent runs somewhere other than your Mac. It authenticates, bounds and forwards requests, and in this version it can observe their contents. The security model states that trust explicitly.",
+    a: "The relay only matters when your agent runs somewhere other than your Macs. It authenticates, bounds and forwards requests, and in this version it can observe their contents. The security model states that trust explicitly.",
   },
   {
-    q: "What happens to the VM when Localbox updates?",
-    a: "Nothing. Updates replace the app and CLI, never the VM's disk. Rollback and uninstall keep the VM's state too. Only an explicit, confirmed reset discards it.",
-  },
-  {
-    q: "Is it the same as a dev container?",
-    a: "No. It is a whole Linux computer with a desktop and a browser, built for an agent to live in rather than for one project's toolchain.",
-  },
-  {
-    q: "Can I use it today?",
-    a: "Localbox is pre-release. The install prompt works as soon as the first signed release is published on GitHub.",
+    q: "What works today?",
+    a: "Localbox is pre-release. Today one Mac runs one durable sandbox with shell, files, browser and desktop, the CLI and optional MCP, and the outbound relay. Creating sandboxes on demand, idle timeouts, multi-machine fleets, shared folders and email sign-in are in progress.",
   },
 ];
 
@@ -131,9 +144,9 @@ export const faq = [
 export function llmsText() {
   return `# Localbox
 
-> Localbox gives an AI agent a durable Linux VM on the user's Apple Silicon Mac: shell, filesystem, browser and desktop through one CLI. MCP is an optional adapter over the same operation catalog.
+> Localbox gives an AI agent durable sandboxes on the user's Apple Silicon Mac. A sandbox is a Linux VM with a shell, filesystem, browser and desktop, driven through one CLI. MCP is an optional adapter over the same operation catalog.
 
-Requirements: ${requirements.replaceAll(" · ", ", ")}. Localbox is pre-release; installation needs a published GitHub release.
+Requirements: ${requirements.replaceAll(" · ", ", ")}. Localbox is pre-release; installation needs a published GitHub release. This file describes only what the current release does: one durable sandbox per Mac, managed with the CLI's \`vm\` commands.
 
 ## Install
 
@@ -141,8 +154,8 @@ When the user asks you to install Localbox, follow the [agent installation proce
 
 ## Use
 
-- \`localbox vm start\`, \`localbox vm stop\` and \`localbox status\` manage the computer.
-- \`localbox shell exec -- <command>\` runs a bounded command in the VM.
+- \`localbox vm start\`, \`localbox vm stop\` and \`localbox status\` manage the sandbox.
+- \`localbox shell exec -- <command>\` runs a bounded command in the sandbox.
 - \`localbox help\` lists every operation; it is generated from the shared catalog.
 - \`localbox auth login\` authenticates remote relay use; it is independent of MCP.
 - \`localbox mcp install --json\` prints optional MCP configuration.
@@ -152,7 +165,7 @@ When the user asks you to install Localbox, follow the [agent installation proce
 
 - Never repeat a mutation blindly after an \`operation_uncertain\` result. Query status or replay the same mutation ID.
 - \`vm reset --discard-state\` deletes all guest state. Run it only after the user explicitly confirms.
-- The VM is the security boundary. The host's files are not available inside it.
+- The sandbox is the security boundary. The host's files are not available inside it.
 
 ## Links
 
