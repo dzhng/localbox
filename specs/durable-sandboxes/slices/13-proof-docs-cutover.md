@@ -12,8 +12,8 @@ exists for the user.
   `machines remove b` → B's connector exits; idle sleep with a short policy;
   hibernate/wake with a Node server surviving on the real A. Writes
   `evidence/13-scenario.json` including Convex calls per request.
-- Agent docs: `skills/localbox/SKILL.md` and its references (the only usage
-  reference) and the README's Agent setup describe only shipped commands.
+- Agent docs: the skill rewrite is slice 14's; here the README's Agent setup and
+  every command the skill names are checked against the shipped CLI.
   `llms.txt` stays a pitch plus install steps (see `apps/site/README.md`). `tests/skill-commands.test.ts` runs every command they name with
   `--help` and fails on unknown commands.
 - Requirements: installer refuses macOS below 14 (`scripts/install-release.sh`);

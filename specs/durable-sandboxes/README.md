@@ -27,7 +27,7 @@ picking up. Work on this Mac mini; the second machine is simulated (slice 03).
      save/restore fails for every channel option, stop and report; Q5b goes
      back to the user.
    - **Lane L (local stack):** 03, 04, 05 → 06 → 07 → 08, 09.
-   Then 10 → 11 → 12 → 13.
+   Then 10 → 11 → 12 → 14 → 13.
 3. After each slice run `npm run proof -- --through <NN> --tier u,l` and keep
    the evidence path in your report. Commit each slice separately.
 4. Before ending your pass, update this section: status, next slice, blockers,
@@ -53,6 +53,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 - [ ] [10 multi-sandbox daemon](slices/10-multi-sandbox-daemon.md)
 - [ ] [11 placement and capacity](slices/11-placement-capacity.md)
 - [ ] [12 sleep lifecycle](slices/12-sleep-lifecycle.md)
+- [ ] [14 agent setup: skill and CLI kept current](slices/14-agent-setup.md)
 - [ ] [13 proof, agent docs and cutover](slices/13-proof-docs-cutover.md)
 
 ## Slice graph
@@ -67,6 +68,7 @@ kernel and image pins for slice 01 (use the dev pins file).
                                     02 + 09 ─ 10 multi-sandbox-daemon
                                          09 + 10 ─ 11 placement-capacity
                                          10 + 11 ─ 12 sleep-lifecycle
+                                          09 + 12 ─ 14 agent-setup
                                       everything ─ 13 proof-docs-cutover
 ```
 
@@ -91,6 +93,7 @@ one Convex document) and 06 (machine credential).
 | 10 | two real sandboxes | distinct identity, internet, thin clones |
 | 11 | `--placement auto`, full machine | lands right; LRU slept and reported |
 | 12 | idle sleep, wake, power events | woke/cold-boot reported |
+| 14 | install, update, maintenance off, MCP parity | skill always matches the release |
 | 13 | `npm run proof -- all`; docs command check | everything green; runbook |
 
 ## Proof tiers
@@ -133,6 +136,7 @@ The end state must read as designed today. Each concept has exactly one owner:
 | Convex speaker on a Mac | `apps/connector` | daemon, CLI |
 | Guest dispatch, jobs, activity | `packages/guest-gateway` | guest service (framing only) |
 | Name generation and label rule | `packages/names` | — |
+| Keeping the skill and CLI link matched to the release | one reconcile function (slice 14) run at install, daemon start and on request | updater, ad-hoc scripts |
 | CLI rendering (text and `--json` from one result) | `apps/cli` `render()` | per-command printing |
 
 ## Transitional seams
@@ -173,6 +177,7 @@ editing it here and in its slice.
 | D13 | Per-account daily relay limits are 500 requests and 25 MB of results (knobs). **Answered by the agent on the user's behalf**, replacing L7's 10,000 / 5 GB. | L7 let one account spend the whole deployment's free monthly budget in a day. |
 | D14 | A process-fixture backend (the guest agent as a child process, `SIGSTOP` for sleep) simulates the second machine; it is refused without an explicit dev opt-in and in signed releases. | Two real daemons on one Mac double-count RAM. |
 | D15 | The release (`full`) image uses exactly the package set of Duet's VMs (`~/dev/duet/packages/vm-image/Dockerfile` at `8f3cb100e`), ported to ARM64 with recorded substitutions (Chromium for Chrome, ARM64 builds of x86_64 downloads, Duet-only services removed), and a parity check guards drift. | User requirement: Localbox sandboxes carry the same toolchain as Duet VMs. |
+| D16 | The release owns the global skill and CLI link while "agent setup" is on (default): reconcile at install and every daemon start (each update relaunches it); skill and CLI lifecycle are catalog operations; `llms.txt` sells and installs, the skill is the only usage reference. | User requirement, modelled on Yap's "Set up my agents". |
 
 ## Sharp edges (no decision needed; know them)
 
