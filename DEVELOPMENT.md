@@ -43,7 +43,7 @@ interpretation, and do not make any feature depend on MCP.
   as `operation_uncertain`; the caller resolves it with a status query or an
   exact replay of the same mutation ID.
 - Deployed functions refuse to start without Convex, the API origin, the owner
-  subject or private Blob configuration. Fixture transports and in-memory
+  subject configuration. Fixture transports and in-memory
   providers are opt-in for local tests only.
 - A missing native capability reports itself as unsupported rather than
   silently falling back to a fixture backend.
@@ -124,8 +124,7 @@ npm run dev:local
 ```
 
 The local server listens on `http://127.0.0.1:3000/api/{relay,mcp}` and reads the
-Convex URL written to `.env.local`. It enables the in-memory blob provider
-explicitly; deployed functions still fail closed without Convex and private Blob
+Convex URL written to `.env.local`. Deployed functions fail closed without Convex.
 configuration.
 
 On the Mac, the CLI uses the authenticated HostDaemon Unix socket. The daemon
@@ -145,8 +144,6 @@ The relay and MCP endpoint deploy from `apps/relay/api/[...path].ts` and
 | `CONVEX_URL` | Durable Convex deployment. Owner and VM IDs come from its records. |
 | `LOCALBOX_JWT_PRIVATE_KEY` | ES256 (P-256) private key, PEM. Vercel signs short-lived Convex tokens with it; deployed functions refuse to start without it. |
 | `LOCALBOX_OWNER_SUBJECT` | Selects the configured Localbox owner. |
-| `BLOB_READ_WRITE_TOKEN` | Private Vercel Blob storage for externalized results. |
-| `LOCALBOX_BLOB_THRESHOLD_BYTES`, `LOCALBOX_BLOB_TTL_MS`, `LOCALBOX_BLOB_MAX_BYTES` | Optional bounds on result externalization. |
 
 The OAuth route returns raw access and refresh tokens only at issuance or
 rotation; Convex stores hashes.

@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { networkInterfaces } from "node:os";
 import {
-  ContractError, failure, type Json, type OperationId, success, type RequestEnvelope,
+  ContractError, failure, capResult, OUTPUT_CAP_BYTES, type Json, type OperationId, success, type RequestEnvelope,
   type ResponseEnvelope, catalogById, operationCatalog, validateRequest,
 } from "../../contract/src/index.js";
 import { FixtureClock, type DispatchContext, type Handler, type HandlerRegistry } from "../../runtime/src/index.js";
@@ -18,6 +18,8 @@ export interface GuestGatewayOptions {
   maxCommandBytes?: number;
   journalPath?: string;
   now?: () => number;
+  jobLogDirectory?: string;
+  jobLogBytes?: number;
   desktopRuntime?: DesktopRuntime;
   /** Optional production handlers. Fixture handlers remain the default. */
   extraHandlers?: HandlerRegistry;
@@ -31,6 +33,9 @@ export type ShellResult = {
   truncated: boolean;
   duration_ms: number;
 }
+type JobStatus = "running" | "completed" | "failed" | "cancelled";
+/** `droppedBytes` counts output discarded from the front of the ring-buffered log, so offsets stay absolute. */
+interface JobRecord { job_id: string; child: ChildProcess; logPath: string; status: JobStatus; exit_code: number | null; signal: string | null; done: Promise<void>; resolveDone: () => void; droppedBytes: number; writes: Promise<void>; }
 export interface MutationJournalEntry { mutation_id: string; operation: string; response: ResponseEnvelope; recorded_at: number; key?: string; }
 
 /** Guest-side operation handlers. All filesystem paths are rooted below `root`. */
@@ -44,18 +49,25 @@ export class GuestGateway {
   private readonly now: () => number;
   private readonly desktopRuntime: DesktopRuntime;
   private readonly extraHandlers: HandlerRegistry;
+  private readonly jobLogDirectory: string;
+  private readonly jobLogBytes: number;
+  private readonly jobs = new Map<string, JobRecord>();
   private loaded = false;
 
   constructor(options: GuestGatewayOptions) {
     if (!isAbsolute(options.root)) throw new TypeError("guest root must be absolute");
     this.root = (() => { const root = resolve(options.root); try { return realpathSync(root); } catch { return root; } })();
     this.shell = options.shell ?? "/bin/sh";
-    this.maxOutputBytes = options.maxOutputBytes ?? 1024 * 1024;
+    // Payloads leave room for the envelope so a full page never has to be trimmed again by capResult.
+    this.maxOutputBytes = options.maxOutputBytes ?? OUTPUT_CAP_BYTES - 16 * 1024;
     this.maxCommandBytes = options.maxCommandBytes ?? 64 * 1024;
     this.journalFile = options.journalPath ?? resolve(this.root, ".localbox/mutation-journal.json");
     this.now = options.now ?? (() => Date.now());
     this.desktopRuntime = options.desktopRuntime ?? new DesktopRuntime();
     this.extraHandlers = options.extraHandlers ?? {};
+    this.jobLogDirectory = options.jobLogDirectory ?? resolve(this.root, ".localbox/jobs");
+    this.jobLogBytes = options.jobLogBytes ?? 64 * 1024 * 1024;
+    if (!Number.isSafeInteger(this.jobLogBytes) || this.jobLogBytes < 1) throw new TypeError("jobLogBytes must be a positive integer");
   }
 
   private async loadJournal(): Promise<void> {
@@ -95,12 +107,13 @@ export class GuestGateway {
     return resolve(parent, candidate.slice(dirname(candidate).length + 1));
   }
 
-  private async shellExec(input: { command: string; args?: string[]; cwd?: string; env?: Record<string, string> }, context: DispatchContext): Promise<Json> {
+  private async shellExec(input: { command: string; args?: string[]; cwd?: string; env?: Record<string, string>; background?: boolean }, context: DispatchContext): Promise<Json> {
     const command = input.command;
     const args = input.args ?? [];
     if (Buffer.byteLength(command) + args.reduce((n, x) => n + Buffer.byteLength(x), 0) > this.maxCommandBytes) throw new ContractError("resource_exhausted", "command exceeds input limit");
     const cwd = input.cwd ? await this.existingPath(this.path(input.cwd)) : this.root;
     const started = this.now();
+    if (input.background) return this.startJob(input, cwd);
     return new Promise<Json>((resolveResult, reject) => {
       const child = spawn(this.shell, ["-c", `${command}${args.length ? ` ${args.map(shellQuote).join(" ")}` : ""}`], { cwd, env: { ...process.env, ...(input.env ?? {}) }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
       let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), truncated = false, settled = false;
@@ -127,6 +140,47 @@ export class GuestGateway {
     });
   }
 
+  private async startJob(input: { command: string; args?: string[]; env?: Record<string, string> }, cwd: string): Promise<Json> {
+    await fs.mkdir(this.jobLogDirectory, { recursive: true });
+    const jobId = `job_${randomUUID()}`;
+    const logPath = resolve(this.jobLogDirectory, `${jobId}.log`);
+    await fs.writeFile(logPath, "", { mode: 0o600 });
+    const child = spawn(this.shell, ["-c", `${input.command}${(input.args ?? []).length ? ` ${(input.args ?? []).map(shellQuote).join(" ")}` : ""}`], { cwd, env: { ...process.env, ...(input.env ?? {}) }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    let resolveDone!: () => void;
+    const done = new Promise<void>((resolve) => { resolveDone = resolve; });
+    const record: JobRecord = { job_id: jobId, child, logPath, status: "running", exit_code: null, signal: null, done, resolveDone, droppedBytes: 0, writes: Promise.resolve() };
+    this.jobs.set(jobId, record);
+    // Appends are serialized so trimming never races a concurrent write.
+    const append = (chunk: Buffer) => { record.writes = record.writes.then(async () => {
+      await fs.appendFile(logPath, chunk);
+      const size = (await fs.stat(logPath)).size;
+      if (size <= this.jobLogBytes) return;
+      const keep = Buffer.alloc(this.jobLogBytes); const handle = await fs.open(logPath, "r");
+      try { await handle.read(keep, 0, keep.length, size - this.jobLogBytes); } finally { await handle.close(); }
+      await fs.writeFile(logPath, keep); record.droppedBytes += size - this.jobLogBytes;
+    }); };
+    child.stdout?.on("data", append);
+    child.stderr?.on("data", append);
+    child.once("error", () => { record.status = "failed"; record.resolveDone(); });
+    child.once("close", (code, signal) => { void record.writes.then(() => { record.exit_code = code; record.signal = signal; record.status = signal === "SIGKILL" || signal === "SIGTERM" ? "cancelled" : code === 0 ? "completed" : "failed"; record.resolveDone(); }); });
+    return { job_id: jobId };
+  }
+  private job(input: Json): JobRecord {
+    const id = (input as { job_id?: unknown }).job_id;
+    const record = typeof id === "string" ? this.jobs.get(id) : undefined;
+    if (!record) throw new ContractError("invalid_input", "unknown job");
+    return record;
+  }
+  private async jobOutput(input: { job_id: string; offset?: number; length?: number }): Promise<Json> {
+    const record = this.job(input); await record.writes;
+    const requested = input.offset ?? 0; const length = input.length ?? this.maxOutputBytes;
+    if (!Number.isSafeInteger(requested) || requested < 0 || !Number.isSafeInteger(length) || length < 1) throw new ContractError("invalid_input", "offset must be a non-negative integer and length a positive integer");
+    const offset = Math.max(requested, record.droppedBytes); const total = record.droppedBytes + (await fs.stat(record.logPath)).size;
+    const end = Math.min(total, offset + length); const data = Buffer.alloc(Math.max(0, end - offset)); const handle = await fs.open(record.logPath, "r");
+    try { await handle.read(data, 0, data.length, offset - record.droppedBytes); } finally { await handle.close(); }
+    return { job_id: record.job_id, data: data.toString("utf8"), offset, next_offset: end, eof: end >= total && record.status !== "running", ...(requested < record.droppedBytes ? { dropped_bytes: record.droppedBytes } : {}) };
+  }
+
   handlers(): Partial<Record<OperationId, Handler>> {
     const desktop = desktopHandlers(this.desktopRuntime) as unknown as Partial<Record<OperationId, Handler>>;
     return {
@@ -141,14 +195,15 @@ export class GuestGateway {
       "vm.logs": async () => ({ lines: [] }),
       "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
       "relay.status": async () => ({ connected: true, relay_url: PUBLIC_RELAY_URL }),
-      "job.status": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
-      "job.wait": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
-      "job.cancel": async (input) => ({ job_id: (input as { job_id: string }).job_id, cancelled: true }),
-      "job.output": async (input) => ({ job_id: (input as { job_id: string }).job_id, output: "" }),
-      "shell.exec": (input, context) => this.shellExec(input as { command: string; args?: string[]; cwd?: string; env?: Record<string, string> }, context),
+      "job.status": async (input) => { const j = this.job(input); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
+      "job.wait": async (input) => { const i = input as { job_id: string; timeout_ms: number }; const j = this.job(i); await Promise.race([j.done, new Promise<void>((resolve) => setTimeout(resolve, i.timeout_ms))]); return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
+      "job.cancel": async (input) => { const j = this.job(input); if (j.status === "running" && j.child.pid) killTree(j.child); return { job_id: j.job_id, cancelled: true }; },
+      "job.output": async (input) => this.jobOutput(input as { job_id: string; offset?: number; length?: number }),
+      "guest.activity": async () => ({ running_jobs: [...this.jobs.values()].filter((job) => job.status === "running").length }),
+      "shell.exec": (input, context) => this.shellExec(input as { command: string; args?: string[]; cwd?: string; env?: Record<string, string>; background?: boolean }, context),
       "fs.list": async (input) => { const path = await this.existingPath(this.path((input as { path: string }).path)); const entries = await fs.readdir(path, { withFileTypes: true }); return { path: guestPath(this.root, path), entries: entries.map((e) => ({ name: e.name, kind: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other" })) }; },
       "fs.stat": async (input) => { const path = this.path((input as { path: string }).path); try { await this.existingPath(path); const stat = await fs.stat(path); return { path: guestPath(this.root, path), exists: true, kind: stat.isDirectory() ? "directory" : stat.isFile() ? "file" : "other", size: stat.size, mode: stat.mode & 0o777, modified_ms: stat.mtimeMs }; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path: guestPath(this.root, path), exists: false } as Json; throw error; } },
-      "fs.read": async (input) => { const path = await this.existingPath(this.path((input as { path: string }).path)); const content = await fs.readFile(path, "utf8"); if (Buffer.byteLength(content) > this.maxOutputBytes) throw new ContractError("resource_exhausted", "file exceeds output limit"); return { path: guestPath(this.root, path), content }; },
+      "fs.read": async (input) => { const i = input as { path: string; offset?: number; length?: number }; const path = await this.existingPath(this.path(i.path)); const stat = await fs.stat(path); const offset = i.offset ?? 0; const length = i.length ?? this.maxOutputBytes; const end = Math.min(stat.size, offset + length); const handle = await fs.open(path, "r"); try { const data = Buffer.alloc(Math.max(0, end - offset)); await handle.read(data, 0, data.length, offset); return { path: guestPath(this.root, path), content: data.toString("utf8"), offset, next_offset: end, eof: end >= stat.size, ...(offset === 0 && end < stat.size ? { truncated: { original_bytes: stat.size, returned_bytes: data.byteLength } } : {}) }; } finally { await handle.close(); } },
       "fs.write": async (input) => { const i = input as { path: string; content: string; mode?: number }; const path = this.path(i.path); await fs.mkdir(dirname(path), { recursive: true }); await this.existingPath(dirname(path)); try { await this.existingPath(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; } await fs.writeFile(path, i.content, { mode: i.mode ?? 0o600 }); return { path: guestPath(this.root, path), bytes: Buffer.byteLength(i.content) }; },
       "fs.mkdir": async (input) => { const i = input as { path: string; parents?: boolean }; await fs.mkdir(this.path(i.path), { recursive: i.parents ?? false }); await this.existingPath(this.path(i.path)); return { path: i.path, created: true }; },
       "fs.remove": async (input) => { const i = input as { path: string; recursive?: boolean }; await this.existingPath(this.path(i.path)); await fs.rm(this.path(i.path), { recursive: i.recursive ?? false, force: false }); return { path: i.path, removed: true }; },
@@ -178,7 +233,8 @@ export class GuestGateway {
     }
     try {
       const result = await handler(request.input, context);
-      const response = success(request, result);
+      const capped = capResult(result);
+      const response = success(request, capped.truncated && capped.result && typeof capped.result === "object" && !Array.isArray(capped.result) ? ({ ...(capped.result as Record<string, Json>), truncated: capped.truncated } as unknown as Json) : capped.result);
       if (request.mutation_id) { this.journal.set(this.journalKey(request), { mutation_id: request.mutation_id, operation: request.operation, response, recorded_at: this.now(), key: this.journalKey(request) }); await this.saveJournal(); }
       return response;
     } catch (error) { return failure(request, error instanceof ContractError ? error : new ContractError("internal", error instanceof Error ? error.message : "guest operation failed")); }

@@ -1,6 +1,0 @@
-{
-  "name": "@localbox/blob",
-  "private": true,
-  "type": "module",
-  "exports": { ".": "./dist/index.js", "./vercel": "./dist/vercel.js" }
-}

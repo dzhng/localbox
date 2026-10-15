@@ -63,6 +63,11 @@ test("guest gateway implements every catalog operation", async () => {
     if (entry.id === "fs.write") input = { path: "/tmp/write", content: "fixture" };
     if (entry.id === "fs.mkdir") input = { path: "/tmp/new-dir" };
     if (entry.id === "fs.remove") input = { path: "/tmp/remove", recursive: true };
+    if (entry.id.startsWith("job.")) {
+      const started = await gateway.dispatch(request("shell.exec", { command: "true", background: true }, `start-${entry.id}`, `start-${entry.id}`));
+      assert.equal(started.ok, true, entry.id);
+      if (started.ok) input = { ...(input as Record<string, Json>), job_id: (started.result as { job_id: string }).job_id };
+    }
     if (entry.id.startsWith("browser.") && entry.id !== "browser.list_tabs" && entry.id !== "browser.open") {
       const opened = await gateway.dispatch(request("browser.open", { url: "https://example.test" }, `open-${entry.id}`, `open-${entry.id}`));
       assert.equal(opened.ok, true, entry.id);

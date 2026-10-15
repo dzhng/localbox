@@ -28,6 +28,9 @@ RAM, so only the real two-Mac test (tier x) is V-V.
 distinct guest roots; A's IPC token refused on B's socket; killing B's daemon
 leaves A working and B's CLI reports `guest_unreachable` naming the socket.
 
+Also extend the slice 04 probe with its tier l: a 2 MiB `fs.read` trimmed and paged,
+and a background job, both through fixture machine A's CLI.
+
 ## Gates
 
 `HostDaemonCoreTests.testProcessFixtureBackendRoundTrip`,

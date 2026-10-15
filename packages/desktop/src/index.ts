@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { ContractError, type Json, type OperationId } from "../../contract/src/index.js";
+import { ContractError, OUTPUT_CAP_BYTES, type Json, type OperationId } from "../../contract/src/index.js";
 import type { Handler, HandlerRegistry } from "../../runtime/src/index.js";
 
 export type DesktopPhase = "stopped" | "starting" | "ready" | "reaping";
@@ -176,13 +176,21 @@ class ProductionDesktopBackend {
   }
 
   async screenshot(): Promise<Json> {
-    let output: DesktopCommandResult;
-    try { output = await this.run("import", ["-window", "root", "png:-"]); }
+    const png = (await this.capture(["png:-"])).toString("base64");
+    if (fits("image/png", png)) return { mime_type: "image/png", data: dataUrl("image/png", png) };
+    for (const step of REENCODE_STEPS) {
+      const jpeg = (await this.capture(["-quality", String(step.quality), ...(step.scale < 1 ? ["-resize", `${step.scale * 100}%`] : []), "jpeg:-"])).toString("base64");
+      if (fits("image/jpeg", jpeg)) return { mime_type: "image/jpeg", data: dataUrl("image/jpeg", jpeg), reencoded: { from: "image/png", original_bytes: Buffer.byteLength(dataUrl("image/png", png)), quality: step.quality, scale: step.scale } };
+    }
+    throw new ContractError("resource_exhausted", "desktop screenshot does not fit the output cap even re-encoded");
+  }
+
+  private async capture(output: string[]): Promise<Buffer> {
+    try { return (await this.run("import", ["-window", "root", ...output])).stdout; }
     catch (error) {
       if (!(error instanceof ContractError) || error.code !== "unsupported") throw error;
-      output = await this.run("magick", ["import", "-window", "root", "png:-"]);
+      return (await this.run("magick", ["import", "-window", "root", ...output])).stdout;
     }
-    return { mime_type: "image/png", data: `data:image/png;base64,${output.stdout.toString("base64")}` };
   }
 
   async listTabs(): Promise<Json> {
@@ -225,12 +233,23 @@ class ProductionDesktopBackend {
 
   async browserScreenshot(tabId: string): Promise<Json> {
     const target = await this.target(tabId);
-    const result = await this.withCdp(target, async (client) => {
+    return await this.withCdp(target, async (client) => {
       await client.command("Page.enable");
-      return await client.command("Page.captureScreenshot", { format: "png" });
+      const shot = async (params: Record<string, unknown>) => {
+        const result = await client.command("Page.captureScreenshot", params);
+        if (!result?.data || typeof result.data !== "string") throw new ContractError("internal", "Chromium returned no screenshot");
+        return result.data as string;
+      };
+      const png = await shot({ format: "png" });
+      if (fits("image/png", png)) return { mime_type: "image/png", data: dataUrl("image/png", png) } as Json;
+      const metrics = await client.command("Page.getLayoutMetrics") as { cssLayoutViewport?: { clientWidth: number; clientHeight: number } };
+      const viewport = metrics?.cssLayoutViewport ?? { clientWidth: 1440, clientHeight: 900 };
+      for (const step of REENCODE_STEPS) {
+        const jpeg = await shot({ format: "jpeg", quality: step.quality, ...(step.scale < 1 ? { clip: { x: 0, y: 0, width: viewport.clientWidth, height: viewport.clientHeight, scale: step.scale } } : {}) });
+        if (fits("image/jpeg", jpeg)) return { mime_type: "image/jpeg", data: dataUrl("image/jpeg", jpeg), reencoded: { from: "image/png", original_bytes: Buffer.byteLength(dataUrl("image/png", png)), quality: step.quality, scale: step.scale } } as Json;
+      }
+      throw new ContractError("resource_exhausted", "browser screenshot does not fit the output cap even re-encoded");
     });
-    if (!result?.data || typeof result.data !== "string") throw new ContractError("internal", "Chromium returned no screenshot");
-    return { mime_type: "image/png", data: `data:image/png;base64,${result.data}` };
   }
 
   async click(tabId: string, x: number, y: number): Promise<Json> {
@@ -331,6 +350,12 @@ class ProductionDesktopBackend {
     }
   }
 }
+
+/** Screenshots must fit the output cap whole: trimming base64 corrupts the image, so oversize shots are re-encoded. */
+const SCREENSHOT_BUDGET = OUTPUT_CAP_BYTES - 16 * 1024;
+const REENCODE_STEPS = [{ quality: 80, scale: 1 }, { quality: 60, scale: 1 }, { quality: 60, scale: 0.75 }, { quality: 50, scale: 0.5 }] as const;
+const dataUrl = (mime: string, base64: string) => `data:${mime};base64,${base64}`;
+const fits = (mime: string, base64: string) => Buffer.byteLength(dataUrl(mime, base64)) <= SCREENSHOT_BUDGET;
 
 /** Build production handlers without changing the deterministic fixture backend. */
 export function productionDesktopHandlers(options: ProductionDesktopOptions = {}): HandlerRegistry {

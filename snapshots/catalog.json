@@ -16,7 +16,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "account"
   },
@@ -45,7 +45,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "account"
   },
@@ -66,7 +66,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "account"
   },
@@ -100,7 +100,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "account"
   },
@@ -129,7 +129,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "account"
   },
@@ -150,7 +150,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -171,7 +171,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -192,7 +192,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -213,7 +213,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -234,7 +234,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -255,7 +255,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -290,7 +290,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -318,7 +318,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -339,7 +339,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -360,7 +360,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "host"
   },
@@ -389,6 +389,9 @@
         "env": {
           "type": "object",
           "additionalProperties": true
+        },
+        "background": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -405,7 +408,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -434,7 +437,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -468,7 +471,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -497,7 +500,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -510,6 +513,13 @@
         "job_id": {
           "type": "string",
           "minLength": 1
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [
@@ -526,7 +536,28 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
+    },
+    "executor": "guest"
+  },
+  {
+    "id": "guest.activity",
+    "description": "Read guest activity.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -555,7 +586,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -584,7 +615,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -597,6 +628,13 @@
         "path": {
           "type": "string",
           "minLength": 1
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [
@@ -613,7 +651,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -651,7 +689,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -683,7 +721,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -715,7 +753,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -736,7 +774,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -765,7 +803,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -799,7 +837,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -828,7 +866,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -857,7 +895,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -886,7 +924,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -923,7 +961,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -956,7 +994,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -990,7 +1028,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1011,7 +1049,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1032,7 +1070,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1068,7 +1106,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1100,7 +1138,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1139,7 +1177,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1168,7 +1206,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   },
@@ -1196,7 +1234,7 @@
         "max": 120000
       },
       "max_input_bytes": 65536,
-      "max_output_bytes": 4194304
+      "max_output_bytes": 921600
     },
     "executor": "guest"
   }

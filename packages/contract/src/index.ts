@@ -5,7 +5,7 @@ export const RELEASE_ID = "agent-computer-contract-v1" as const;
 export const operationIds = [
   "account.status", "account.rename", "machine.list", "machine.rename", "machine.remove",
   "system.info", "vm.list", "vm.status", "vm.start", "vm.stop", "vm.pause", "vm.reset", "vm.logs",
-  "network.egress", "relay.status", "shell.exec", "job.status", "job.wait", "job.cancel", "job.output",
+  "network.egress", "relay.status", "shell.exec", "job.status", "job.wait", "job.cancel", "job.output", "guest.activity",
   "fs.list", "fs.stat", "fs.read", "fs.write", "fs.mkdir", "fs.remove",
   "browser.list_tabs", "browser.open", "browser.navigate", "browser.focus", "browser.close", "browser.screenshot",
   "browser.click", "browser.type", "browser.key", "desktop.status", "desktop.screenshot", "desktop.click",
@@ -60,7 +60,8 @@ const integer = (): JsonSchema => ({ type: "integer" });
 const bool = (): JsonSchema => ({ type: "boolean" });
 const number = (): JsonSchema => ({ type: "number" });
 const arrayOfStrings = (): JsonSchema => ({ type: "array", items: string(), maxItems: 128 });
-const defaultLimits: OperationLimits = { deadline_ms: { min: 1, max: 120_000 }, max_input_bytes: 64 * 1024, max_output_bytes: 4 * 1024 * 1024 };
+export const OUTPUT_CAP_BYTES = 900 * 1024;
+const defaultLimits: OperationLimits = { deadline_ms: { min: 1, max: 120_000 }, max_input_bytes: 64 * 1024, max_output_bytes: OUTPUT_CAP_BYTES };
 
 const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Idempotency]> = {
   "account.status": ["Show the signed-in account.", empty(), true, false, "none"],
@@ -78,14 +79,15 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "vm.logs": ["Read recent VM logs.", object({ limit: { type: "integer", minimum: 1, maximum: 1000 } }), true, false, "none"],
   "network.egress": ["Inspect guest egress identity.", empty(), true, false, "none"],
   "relay.status": ["Read relay connectivity status.", empty(), true, false, "none"],
-  "shell.exec": ["Execute a command in the guest shell.", object({ command: string(), args: arrayOfStrings(), cwd: string(), env: { type: "object", additionalProperties: true } }, ["command"]), false, true, "required"],
+  "shell.exec": ["Execute a command in the guest shell.", object({ command: string(), args: arrayOfStrings(), cwd: string(), env: { type: "object", additionalProperties: true }, background: bool() }, ["command"]), false, true, "required"],
   "job.status": ["Read an asynchronous job status.", object({ job_id: string() }, ["job_id"]), true, false, "none"],
   "job.wait": ["Wait for an asynchronous job.", object({ job_id: string(), timeout_ms: { type: "integer", minimum: 1, maximum: 120_000 } }, ["job_id"]), true, false, "none"],
   "job.cancel": ["Cancel an asynchronous job.", object({ job_id: string() }, ["job_id"]), false, true, "required"],
-  "job.output": ["Read asynchronous job output.", object({ job_id: string() }, ["job_id"]), true, false, "none"],
+  "job.output": ["Read asynchronous job output.", object({ job_id: string(), offset: integer(), length: { type: "integer", minimum: 1 } }, ["job_id"]), true, false, "none"],
+  "guest.activity": ["Read guest activity.", empty(), true, false, "none"],
   "fs.list": ["List guest directory entries.", object({ path: string() }, ["path"]), true, false, "none"],
   "fs.stat": ["Read guest file metadata.", object({ path: string() }, ["path"]), true, false, "none"],
-  "fs.read": ["Read guest file contents.", object({ path: string() }, ["path"]), true, false, "none"],
+  "fs.read": ["Read guest file contents.", object({ path: string(), offset: integer(), length: { type: "integer", minimum: 1 } }, ["path"]), true, false, "none"],
   "fs.write": ["Write guest file contents.", object({ path: string(), content: { type: "string" }, mode: { type: "integer", minimum: 0, maximum: 0o777 } }, ["path", "content"]), false, true, "required"],
   "fs.mkdir": ["Create a guest directory.", object({ path: string(), parents: bool() }, ["path"]), false, true, "required"],
   "fs.remove": ["Remove a guest path.", object({ path: string(), recursive: bool() }, ["path"]), false, true, "required"],
@@ -207,6 +209,42 @@ export function success<T extends Json>(request: RequestEnvelope, result: T): Su
 export function failure(request: RequestEnvelope, error: ContractError | ErrorBody): ErrorEnvelope {
   const body: ErrorBody = error instanceof ContractError ? { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) } : error;
   return { ...identityFromRequest(request), ok: false, error: body };
+}
+
+export interface ResultTruncation { original_bytes: number; returned_bytes: number }
+export interface CappedResult<T extends Json = Json> { result: T; truncated?: ResultTruncation }
+
+/** Bound a produced JSON result while keeping the value valid JSON and UTF-8. */
+export function capResult<T extends Json>(value: T, cap = OUTPUT_CAP_BYTES): CappedResult {
+  const encoded = Buffer.from(JSON.stringify(value) ?? "null", "utf8");
+  if (encoded.byteLength <= cap) return { result: value };
+  if (typeof value === "string") {
+    const bytes = utf8Prefix(encoded, cap);
+    const result = bytes.toString("utf8");
+    return { result, truncated: { original_bytes: encoded.byteLength, returned_bytes: Buffer.byteLength(result) } };
+  }
+  // Produced operation results are objects. Trim string fields until the JSON
+  // envelope fits; this preserves the operation's shape and metadata.
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const copy = { ...(value as Record<string, Json>) };
+    const strings = Object.entries(copy).filter(([, item]) => typeof item === "string").sort((a, b) => Buffer.byteLength(b[1] as string) - Buffer.byteLength(a[1] as string));
+    for (const [key, item] of strings) {
+      const current = Buffer.byteLength(JSON.stringify(copy));
+      const room = Math.max(0, cap - current + Buffer.byteLength(item as string));
+      copy[key] = utf8Prefix(Buffer.from(item as string), room).toString("utf8");
+      if (Buffer.byteLength(JSON.stringify(copy)) <= cap) break;
+    }
+    const result = copy as Json;
+    return { result, truncated: { original_bytes: encoded.byteLength, returned_bytes: Buffer.byteLength(JSON.stringify(result)) } };
+  }
+  const result = utf8Prefix(encoded, cap).toString("utf8") as Json;
+  return { result, truncated: { original_bytes: encoded.byteLength, returned_bytes: Buffer.byteLength(JSON.stringify(result)) } };
+}
+
+function utf8Prefix(value: Uint8Array, limit: number): Buffer {
+  let end = Math.min(value.byteLength, Math.max(0, limit));
+  while (end > 0 && (value[end] & 0xc0) === 0x80) end -= 1;
+  return Buffer.from(value.subarray(0, end));
 }
 
 export interface HelpSnapshotEntry { id: OperationId; description: string; retryable: boolean; mutation: boolean; idempotency: Idempotency; input_schema: JsonSchema; executor: "account" | "host" | "guest"; }

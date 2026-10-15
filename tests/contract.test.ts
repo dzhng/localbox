@@ -14,7 +14,7 @@ test("catalog has unique operation IDs and matching CLI/MCP identity", () => {
   assert.equal(new Set(operationCatalog.map((x) => x.id)).size, operationCatalog.length);
   assert.deepEqual(cliHelpSnapshot().map((x) => x.id), mcpToolsSnapshot().map((x) => x.id));
   assert.deepEqual(cliHelpSnapshot(), mcpToolsSnapshot());
-  assert.equal(operationCatalog.length, 42);
+  assert.equal(operationCatalog.length, 43);
 });
 
 test("committed snapshots are generated from the same catalog", async () => {

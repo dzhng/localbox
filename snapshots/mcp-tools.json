@@ -269,6 +269,9 @@
         "env": {
           "type": "object",
           "additionalProperties": true
+        },
+        "background": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -358,11 +361,31 @@
         "job_id": {
           "type": "string",
           "minLength": 1
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [
         "job_id"
       ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "guest"
+  },
+  {
+    "id": "guest.activity",
+    "description": "Read guest activity.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
       "additionalProperties": false
     },
     "retryable": true,
@@ -421,6 +444,13 @@
         "path": {
           "type": "string",
           "minLength": 1
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [

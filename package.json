@@ -32,12 +32,11 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "convex-test": "^0.0.54",
-    "turbo": "^2.11.8",
     "tsx": "^4.19.2",
+    "turbo": "^2.11.8",
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@vercel/blob": "^2.8.1",
     "convex": "^1.42.1",
     "skills": "1.7.0",
     "undici": "^6.29.0"
