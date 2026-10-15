@@ -4,12 +4,12 @@ import { ConvexRelayStateRepository, InMemoryRelayStateRepository, type RelaySta
 import { OAuthAuthorizationServer, OAuthError } from "../../relay/src/oauth.js";
 import { oauthErrorResponse, oauthRedirect, RepositoryOAuthServer } from "../../relay/src/repository-oauth.js";
 import { McpAdapter } from "../src/index.js";
+import { PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
 
-const resource = process.env.LOCALBOX_RESOURCE ?? "https://relay.example.test/mcp";
+const resource = PUBLIC_MCP_RESOURCE;
 const issuer = resource.replace(/\/$/, "");
-const relayUrl = defaultRelayUrl(resource);
+const relayUrl = PUBLIC_RELAY_URL;
 if (process.env.VERCEL && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed MCP endpoint");
-if (process.env.VERCEL && !process.env.LOCALBOX_RESOURCE) throw new Error("LOCALBOX_RESOURCE is required for the deployed MCP endpoint");
 if (process.env.VERCEL && !process.env.LOCALBOX_OWNER_SUBJECT) throw new Error("LOCALBOX_OWNER_SUBJECT is required for the deployed MCP endpoint");
 const repository: RelayStateRepository = process.env.CONVEX_URL
   ? new ConvexRelayStateRepository(new ConvexHttpClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true }))
@@ -34,12 +34,6 @@ export default async function handle(request: Request): Promise<Response> {
   try { parsed = body ? JSON.parse(body) : undefined; } catch { return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400, headers: { "content-type": "application/json" } }); }
   const result = await adapter.handle({ method: request.method, url: request.url, headers: requestHeaders(request.headers), body: parsed });
   return new Response(result.body === undefined ? undefined : JSON.stringify(result.body), { status: result.status, headers: result.headers });
-}
-
-function defaultRelayUrl(resourceUrl: string): string {
-  const url = new URL(resourceUrl);
-  url.pathname = url.pathname.replace(/\/mcp\/?$/, "/relay");
-  return url.toString().replace(/\/$/, "");
 }
 
 function requestHeaders(value: Headers | Record<string, string | string[]>): Record<string, string> {

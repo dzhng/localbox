@@ -45,15 +45,13 @@ are runnable locally. Apple Virtualization boot and deployed Convex/Vercel
 internet smoke still require the release environment.
 
 The deployable control-plane entrypoints are `apps/relay/api/[...path].ts` and
-`apps/mcp/api/[...path].ts`. The Vercel backend needs four production values:
-`CONVEX_URL` selects the durable Convex deployment, `LOCALBOX_RESOURCE` is the
-MCP OAuth audience and public resource URL, `LOCALBOX_OWNER_SUBJECT` selects
-the configured Localbox owner, and `BLOB_READ_WRITE_TOKEN` authorizes private
-Vercel Blob storage for oversized results. The MCP issuer and relay URL are
-derived from `LOCALBOX_RESOURCE`; the owner ID and VM ID come from Convex
-records. There is no second deployment-name setting: the URL is the Convex
-deployment identity.
-Deployed functions fail closed when Convex, the resource, owner subject, or
+`apps/mcp/api/[...path].ts`. The public API origin is one production setting, `LOCALBOX_API_ORIGIN` (normally
+`https://api.localbox.sh`). Code derives the MCP resource and relay URLs from
+that origin. The Vercel backend also needs `CONVEX_URL` for the durable Convex
+deployment, `LOCALBOX_OWNER_SUBJECT` to select the configured Localbox owner,
+and `BLOB_READ_WRITE_TOKEN` for private Vercel Blob storage. The owner ID and
+VM ID come from Convex records; there is no second deployment-name setting.
+Deployed functions fail closed when Convex, the API origin, owner subject, or
 private Blob configuration is missing. `LOCALBOX_BLOB_THRESHOLD_BYTES`,
 `LOCALBOX_BLOB_TTL_MS`, and `LOCALBOX_BLOB_MAX_BYTES` are optional knobs for
 bounded result externalization.

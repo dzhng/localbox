@@ -6,7 +6,7 @@ import { createPkcePair } from "../packages/client/src/auth.js";
 test("MCP Vercel handler exposes OAuth metadata, redirects authorization, and exchanges PKCE", async () => {
   const metadata = await handle(new Request("https://relay.test/.well-known/oauth-protected-resource"));
   assert.equal(metadata.status, 200);
-  assert.deepEqual((await metadata.json()).resource, "https://relay.example.test/mcp");
+  assert.deepEqual((await metadata.json()).resource, "https://api.localbox.sh/api/mcp");
   const pair = createPkcePair();
   const authorize = await handle(new Request(`https://relay.test/oauth/authorize?response_type=code&client_id=cli&redirect_uri=${encodeURIComponent("http://127.0.0.1:43123/oauth/callback")}&code_challenge=${pair.challenge}&code_challenge_method=S256&state=state`));
   assert.equal(authorize.status, 302);
