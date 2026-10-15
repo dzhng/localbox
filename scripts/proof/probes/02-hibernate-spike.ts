@@ -3,12 +3,13 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { checkHost } from "../../../apps/cli/src/host-check.js";
 
 export const id = "02";
 export const tiers = ["u", "v"];
 
 /** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked. */
-const screenLocked = () => /"CGSSessionScreenIsLocked"=Yes/.test(execFileSync("ioreg", ["-n", "Root", "-d1"], { encoding: "utf8" }));
+const screenLocked = () => { const host = checkHost(); return host.hibernate !== "available" && host.screen_locked_now; };
 
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "u") {
@@ -45,7 +46,8 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const verdict = await hibernate();
       assert.equal(verdict.ok, true, verdict.error ?? JSON.stringify(verdict).slice(0, 1500));
       assert.equal(verdict.process_survived, true); assert.equal(verdict.mac_matches, true); assert.equal(verdict.nat_ok, true);
-      assert.ok(verdict.phase2.counter_after > verdict.phase1.counter_before, "the counter keeps counting after restore");
+      const before = Number(([] as unknown[]).concat(verdict.phase1.counter_before).at(-1));
+      assert.ok(verdict.phase2.counter_after > before, `the counter keeps counting after restore (${before} -> ${verdict.phase2.counter_after})`);
       assert.equal(verdict.phase2.nat_http_code_after, "200");
       assert.ok(Math.abs(verdict.phase2.clock_skew_ms) < 2000, `clock skew ${verdict.phase2.clock_skew_ms} ms`);
     }),

@@ -43,7 +43,7 @@ kernel and image pins for slice 01 (use the dev pins file).
 
 - [x] [00 proof harness](slices/00-proof-harness.md)
 - [x] [01 boot artifacts](slices/01-boot-artifacts.md)
-- [ ] [02 hibernate spike](slices/02-hibernate-spike.md) — go/no-go
+- [x] [02 hibernate spike](slices/02-hibernate-spike.md) — go (needs an unlocked session)
 - [x] [03 fixture machine](slices/03-fixture-machine.md)
 - [x] [04 output cap and jobs](slices/04-output-cap-and-jobs.md)
 - [x] [05 Convex auth boundary](slices/05-convex-auth-boundary.md)

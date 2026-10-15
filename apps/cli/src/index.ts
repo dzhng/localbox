@@ -37,6 +37,7 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["agents reconcile [--reason install|daemon_start|explicit]", "Match the skill and the localbox link to this release (run by the installer and the daemon)"],
   ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
   ["connector run", "Run the relay connector (launchd job)"],
+  ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
 ];
 
@@ -308,6 +309,7 @@ async function main(): Promise<void> {
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }
   if (group === "update" && (subcommand === "check" || subcommand === "install")) { print(await (subcommand === "check" ? checkForUpdate() : installLatest({ automatic: rest.includes("--auto") })) as unknown as Json); return; }
+  if (group === "host" && subcommand === "check") { const { checkHost } = await import("./host-check.js"); print(checkHost() as unknown as Json); return; }
   if (group === "agents" && subcommand === "reconcile") {
     const reason = parse(head.slice(2)).flags.reason ?? "explicit";
     if (!REASONS.includes(reason as Reason)) throw new Error(`--reason takes ${REASONS.join(", ")}`);
@@ -331,7 +333,10 @@ async function main(): Promise<void> {
     const { flags } = parse(head.slice(1));
     try {
       const where = await target(typeof flags.sandbox === "string" ? flags.sandbox : undefined);
-      print(await new AgentClient({ transport: where.local ? await localTransport() : await accountTransport(), sandboxId: where.sandboxId }).status());
+      const status = await new AgentClient({ transport: where.local ? await localTransport() : await accountTransport(), sandboxId: where.sandboxId }).status();
+      // On this Mac, also say whether idle sandboxes can hibernate here (and which setting fixes it if not).
+      if (where.local && status.ok) { const { checkHost } = await import("./host-check.js"); print({ ...status, result: { ...(status.result as Record<string, Json>), host: checkHost() as unknown as Json } }); }
+      else print(status);
     } catch (error) { print(failure(requestFromInvocation({ operation: "sandbox.status", input: {} }), error instanceof ContractError ? error : new ContractError("internal", String(error)))); }
     return;
   }

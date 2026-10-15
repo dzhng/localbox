@@ -129,11 +129,15 @@ struct Lab {
         let pid = phase1["pid"] as? String ?? "0"
         let alive = try await shell(backend, "kill -0 \(pid) && echo alive || echo gone").stdout.contains("alive")
         let counter = Int(try await shell(backend, "curl -s --max-time 5 http://127.0.0.1:8080").stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
-        let nat = try await shell(backend, "curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://deb.debian.org/").stdout
+        // The restored guest keeps its DHCP lease, but the new process's NAT can take a moment to pass traffic;
+        // retry for up to 10 s and record how long it took.
+        let natStarted = Date()
+        let nat = try await shell(backend, "for i in 1 2 3 4 5 6 7 8 9 10; do c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://deb.debian.org/); [ \"$c\" = 200 ] && break; sleep 1; done; printf %s \"$c\"").stdout
+        let natMs = Int(Date().timeIntervalSince(natStarted) * 1000)
         let guestMs = Int64(try await shell(backend, "date +%s%3N").stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         let skew = guestMs - Int64(Date().timeIntervalSince1970 * 1000)
         try await backend.stop()
-        return ["restore_ms": restoreMs, "pid_alive": alive, "counter_after": counter, "nat_http_code_after": nat, "clock_skew_ms": skew, "identity_sweep": sweep]
+        return ["restore_ms": restoreMs, "nat_ready_ms": natMs, "pid_alive": alive, "counter_after": counter, "nat_http_code_after": nat, "clock_skew_ms": skew, "identity_sweep": sweep]
     }
 
     /// "restored" when restore accepted that change (and the VM is stopped again); otherwise the refusal.

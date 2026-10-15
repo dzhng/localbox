@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { checkHost } from "../../../apps/cli/src/host-check.js";
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -10,7 +11,8 @@ import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../pac
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked (slice 02). */
-export const screenLocked = () => /"CGSSessionScreenIsLocked"=Yes/.test(execFileSync("ioreg", ["-n", "Root", "-d1"], { encoding: "utf8" }));
+/** Hibernate is unavailable only when the lock needs a password and the screen is locked (see apps/cli/src/host-check.ts). */
+export const screenLocked = () => checkHost().hibernate !== "available" && checkHost().screen_locked_now;
 
 /** Builds what a real-VM tier needs: the JS build, the minimal image, the host daemon and its signature. Returns the bin path. */
 export async function buildRealVMs(ctx: ProofContext): Promise<string> {

@@ -151,9 +151,14 @@ Not yet:
 
 - The hosted service at `api.localbox.sh` moves to this version with the first
   release, and sign-in emails start once the mail domain is set up.
-- While a Mac's screen is locked, a sleeping sandbox is paused in memory and
-  keeps its RAM, and a sandbox put away to make room boots fresh at its next use.
-  Saving a sleeping sandbox to disk to free its RAM is not proven yet.
+- Hibernation (a sleeping sandbox's memory saved to disk, its RAM freed, its
+  processes resumed on the next request) needs a logged-in session whose screen
+  lock asks for no password: Apple encrypts the saved memory with a key from that
+  session. On a headless Mac, turn on automatic login and set the lock screen's
+  password requirement to Never (the display can still sleep); `localbox host
+  check` tells you what to change. Where the lock needs a password, a locked Mac
+  pauses sleeping sandboxes in memory (they keep their RAM), and a sandbox put
+  away to make room boots fresh at its next use.
 - An update restarts the Localbox service. Running sandboxes keep their disks;
   keeping their processes across it waits on the same save-to-disk step.
 - Shared folders.

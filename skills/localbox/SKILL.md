@@ -72,6 +72,11 @@ sandbox's browser and its 1440×900 desktop.
 - A sandbox idle for its sleep time (no request, no running job) sleeps. The next
   command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
   job never sleeps to make room.
+- Sleep frees RAM only on a Mac whose screen lock asks for no password (the
+  display may still sleep); where the lock needs a password, a locked screen
+  makes a sandbox pause in memory instead (the `slept` detail says so).
+  `localbox host check` says whether this Mac hibernates and which settings to
+  change; see [installation](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate).
 - Errors name the way out: `sandbox_ambiguous` and `sandbox_not_found` list the
   names, `machine_full` lists what holds the memory, `machine_offline` is
   retryable. Never blindly repeat a mutation after `operation_uncertain`: read

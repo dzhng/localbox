@@ -199,3 +199,10 @@ echo "installed Localbox $VERSION"
 echo "CLI: $BIN_DIR/localbox"
 echo "HostDaemon: $ACTIVE_APP/Contents/MacOS/localbox-hostd"
 echo "Skill: $SKILL_STATE"
+# Sleeping sandboxes free their RAM only in an unlocked session (Apple encrypts saved VM memory with a key
+# from the logged-in session). Say so now, with the settings to change, instead of failing quietly later.
+if HOST_CHECK=$("$BIN_DIR/localbox" host check --json 2>/dev/null) && ! printf '%s' "$HOST_CHECK" | grep -q '"hibernate": "available"'; then
+  echo "Sleep: idle sandboxes can only hibernate while this Mac is unlocked; otherwise they pause in memory and keep their RAM."
+  printf '%s' "$HOST_CHECK" | grep -oE '"System Settings[^"]*"' | tr -d '"' | sed 's/^/  Fix: /'
+  echo "  Check again with: localbox host check"
+fi

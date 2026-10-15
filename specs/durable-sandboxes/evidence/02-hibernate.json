@@ -1,0 +1,34 @@
+{
+  "mac_matches": true,
+  "nat_ok": true,
+  "ok": true,
+  "phase1": {
+    "counter_before": [
+      "0",
+      "1"
+    ],
+    "guest_mac": "aa:ea:31:58:e5:2d",
+    "nat_http_code": "200",
+    "persisted_mac": "aa:ea:31:58:e5:2d",
+    "pid": "308",
+    "save_ms": 450,
+    "state_file_bytes": 117444608,
+    "vm_memory_kb_after_save": 5161680,
+    "vm_memory_kb_running": 5772464
+  },
+  "phase2": {
+    "clock_skew_ms": -4,
+    "counter_after": 2,
+    "identity_sweep": {
+      "cpu_count": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”.",
+      "kernel_command_line": "restored",
+      "mac_address": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”.",
+      "machine_identifier": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”."
+    },
+    "nat_http_code_after": "200",
+    "nat_ready_ms": 7146,
+    "pid_alive": true,
+    "restore_ms": 280
+  },
+  "process_survived": true
+}

@@ -88,3 +88,30 @@ implementer's.
 - **Pending (needs an unlocked screen):** the save/restore run (PID survives,
   counter, NAT, clock within 2 s), save and restore times and file sizes, and the
   restore-identity sweep. The probe's unlocked check reports `blocked:` until then.
+
+## Decision (2026-10-15): go, with an unlocked session
+
+- **Result:** with the screen lock off (the user changed the setting on this Mac
+  mini), `npm run proof -- 02 --tier v` passes twice in a row: save about 450 ms,
+  a 117 MB state file, restore in a new process about 285 ms, the background Node
+  server keeps its PID and its counter keeps counting, the guest clock is within
+  4 ms of the host's. Evidence: `evidence/02-hibernate.json`.
+- **Requirement:** hibernation needs an unlocked, logged-in session; the saved
+  state's encryption is Apple's and cannot be turned off. Headless Macs are set
+  up with automatic login and no screen lock; `localbox host check`, `localbox
+  status` and the installer report whether a Mac hibernates and which settings
+  to change. Where it cannot, idle sleep pauses in memory (Q5b, kept).
+- **Guest agent:** the first unlocked run showed processes dying on restore. The
+  image ran the agent as `socat VSOCK-LISTEN … EXEC:node` without `fork`, so any
+  dropped host connection (a restore, a daemon restart) stopped the systemd unit
+  and killed every process it had started. The agent is now a persistent service
+  on `/run/localbox/agent.sock` (`KillMode=process`), and a separate unit runs
+  `socat VSOCK-LISTEN:1024,fork UNIX-CONNECT:…`; jobs, their processes and the
+  agent's mutation replay outlive host connections.
+- **Restore identity:** changing the CPU count, MAC address or machine
+  identifier makes restore fail ("invalid argument"); the kernel command line
+  does not matter. Slice 10's resize discards the save file; MAC and machine
+  identifier never change.
+- **Open:** the restored guest's internet took about 7 s to answer again
+  (`nat_ready_ms`); a follow-up should renew the guest's network on the
+  post-restore `hello`.

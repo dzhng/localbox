@@ -11,6 +11,30 @@ records that Localbox owns it, and keeps it matched to every later release.
 `uname -m` must print `arm64` and `sw_vers -productVersion` must be 14 or newer.
 Anything else (Intel, Linux, Docker) cannot run Localbox; say so and stop.
 
+## Prepare the Mac so sandboxes can hibernate
+
+A sleeping sandbox frees its RAM by saving its memory to disk. Apple's VM
+framework encrypts that file with a key from the logged-in user's session, and
+it refuses while the screen is locked. So:
+
+- **Hibernation needs a logged-in session that never locks with a password.**
+  A sleeping display or screen saver is fine as long as no password is
+  required (measured). Where the lock needs a password and the screen is locked,
+  an idle sandbox pauses in memory instead: its processes keep
+  their state, but its RAM is not freed, and a sandbox stopped to make room
+  boots fresh at its next use.
+- **A headless Mac (a Mac mini on a shelf) should be set up like a server:**
+  System Settings > Users & Groups > automatic login on (so it comes back
+  unlocked after a restart or power loss), and System Settings > Lock Screen >
+  "Require password after screen saver begins or display is turned off" set to
+  Never. The display may still sleep; only the lock matters.
+- These are the user's settings. Tell them what to change and why; do not change
+  them yourself (they need the user's password).
+
+After installing, `localbox host check` reports `hibernate: available`, or
+`only_while_unlocked` with the exact fixes; the installer prints the same as a
+`Sleep:` line when something needs changing.
+
 ## Download and verify one release
 
 Resolve the latest tag once and take every file from that tag. A network,
@@ -64,6 +88,7 @@ Node, npm or npx. Keep the download directory until the checks below pass.
 localbox skill status      # state: installed, managed: true, source_revision: the tag's version
 localbox cli status        # state: linked
 localbox agents setup status
+localbox host check        # hibernate: available, or the settings to change
 localbox help
 ```
 
@@ -71,4 +96,5 @@ If `localbox` is not on this shell's PATH yet, use `~/.local/bin/localbox`; the
 installer adds a marked PATH block for future login shells when needed. Then sign
 in (`localbox login --email`) and tell the user to start a fresh agent session so
 the installed skill is loaded. Report a short checklist: release version, skill
-state, CLI link, signed in or not.
+state, CLI link, signed in or not, and whether sandboxes can hibernate here
+(with the settings to change if not).

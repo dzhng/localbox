@@ -1,5 +1,8 @@
 import { stdin, stdout, stderr } from "node:process";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
+import { createServer } from "node:net";
 import { GuestGateway, runGuestService } from "../../../packages/guest-gateway/src/index.js";
 import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
@@ -14,8 +17,11 @@ const numberEnv = (name: string, fallback: number): number => {
 };
 
 /**
- * Linux image entrypoint. Production images connect stdin/stdout to virtio
- * serial; using standard streams also makes the guest protocol probeable in CI.
+ * Linux image entrypoint. In the image the agent is a long-lived service on the Unix socket
+ * `LOCALBOX_AGENT_SOCKET`, and socat forwards each vsock connection from the host to it: a dropped host
+ * connection (a daemon restart, a restore from hibernation) ends only that connection, never the agent, its job
+ * table or the processes it started. Without the variable it serves one connection on stdin/stdout (the
+ * process-fixture backend and CI).
  */
 export async function main(): Promise<void> {
   const root = process.env.LOCALBOX_ROOT ?? "/";
@@ -32,7 +38,16 @@ export async function main(): Promise<void> {
   const ownsSystem = root === "/" && process.platform === "linux";
   const setClock = ownsSystem ? (wallClockMs: number) => { spawnSync("date", ["-u", "-s", `@${(wallClockMs / 1000).toFixed(3)}`], { stdio: "ignore" }); } : undefined;
   const adoptIdentity = ownsSystem ? (sandboxId: string, hostname: string) => { adoptSandboxIdentity(sandboxId, hostname); } : undefined;
-  await runGuestService({ input: stdin, output: stdout, gateway, channelEpoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  const socketPath = process.env.LOCALBOX_AGENT_SOCKET;
+  if (!socketPath) { await serve(stdin, stdout, channelEpoch); return; }
+  // One connection at a time carries the host's frames; each starts at the epoch the last one ended on.
+  let epoch = channelEpoch;
+  mkdirSync(dirname(socketPath), { recursive: true }); rmSync(socketPath, { force: true });
+  createServer((socket) => {
+    socket.on("error", () => socket.destroy());
+    void serve(socket, socket, epoch).then((service) => { epoch = Math.max(epoch, service.epoch); }, (error) => stderr.write(`[localbox-guest] connection failed: ${error instanceof Error ? error.message : String(error)}\n`));
+  }).listen(socketPath);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

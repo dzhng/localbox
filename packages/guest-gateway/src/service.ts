@@ -89,6 +89,9 @@ export class GuestService {
     this.finished = new Promise<void>((resolve) => { this.finishResolve = resolve; });
   }
 
+  /** The epoch this connection ended on; a persistent agent starts its next connection here. */
+  get epoch(): number { return this.channelEpoch; }
+
   /** Write the readiness marker and frame, then begin consuming requests. */
   async start(): Promise<this> {
     if (this.started) return this;
