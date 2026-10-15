@@ -170,8 +170,9 @@ the features above.
 
 ## Build plan
 
-The launch scope is mapped in [specs/durable-sandboxes](specs/durable-sandboxes/map.md):
-every decision behind the use cases above, with what each needs before it ships.
+The launch scope is specified in [specs/durable-sandboxes](specs/durable-sandboxes/README.md):
+a slice ladder for every use case above, built on the decisions in its
+[unknowns map](specs/durable-sandboxes/map.md).
 
 ## Not yet
 

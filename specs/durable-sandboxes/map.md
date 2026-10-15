@@ -70,7 +70,7 @@ under the delegation below).
 | S1 | CLI `vm` commands become `sandbox`, no alias. | U |
 | S2 | Output: login shows machine count; create explains its chosen size; "made room" and "woke first" appear in the main output. | U |
 | S3 | Text output by default; `--json` returns the same facts as fields on every command. Preference: the agent is the reader, short text is cheapest, `--json` matches existing CLI convention. | A |
-| L7 | Per-account daily limits: 10,000 relayed requests and 5 GB relayed results; exceeding returns an error naming the limit and reset time. Preference: open free service needs a ceiling; values are knobs. | A |
+| L7 | ~~Per-account daily limits: 10,000 relayed requests and 5 GB relayed results.~~ Superseded by plan decision D13 (500 requests, 25 MB per day): the original values let one account spend the free plan's monthly budget in a day. | A |
 | L9 | A machine is full when running sandboxes would reserve more than 75% of its RAM; start or wake then sleeps least-recently-used sandboxes and reports them. Preference: P1 act-then-report, leave room for the host. | A |
 
 **Delegation.** Scope: agent-facing CLI ergonomics and operational defaults that
@@ -81,7 +81,11 @@ better placed to decide; product and architecture direction stays with the user.
 
 - **Resend account, API key and DNS for `mail.localbox.sh`.** Owner: user.
   Blocks only real email delivery, not the build.
-- **Hibernate compatibility (L5).** Unblocked by the first build spike.
+- **Hibernate compatibility (L5).** Unblocked by slice 02.
+
+Further decisions made while writing the spec (boot artifacts, Convex auth,
+real jobs, server-side waiting, MCP client registration, and others) live in the
+README's Plan decisions table.
 
 ## 3. Unknown knowns (extracted)
 
@@ -121,7 +125,10 @@ better placed to decide; product and architecture direction stays with the user.
   configuration on macOS 14+ (the L5 spike).
 - Resend's free tier limits against 5 sends/email/hour at expected signup volume.
 
-## Build plan (by likelihood of tweaking)
+## Build plan (superseded)
+
+> Superseded by the slice ladder in [README.md](README.md). Kept for history; do
+> not build from this list.
 
 Judgment calls first; mechanical work last.
 
@@ -145,8 +152,10 @@ Judgment calls first; mechanical work last.
 7. **Docs**: macOS 14 minimum, skill and llms.txt for the shipped CLI,
    `DEVELOPMENT.md` settings, SECURITY.md for accounts and the relay.
 
-## Implementation prompt
+## Implementation prompt (done)
 
+> Superseded: the spec is written. Start from the README's Next Agent Prompt.
+>
 > Write the spec for durable sandboxes from `specs/durable-sandboxes/map.md`
 > using write-spec: slice it into independently verifiable steps in the build
 > plan's order, starting with the hibernate spike, with each slice proven on
