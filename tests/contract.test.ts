@@ -105,7 +105,7 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   assert.equal(login.status, 0);
   assert.equal(JSON.parse(login.stdout).result.authenticated, true);
 
-  const mcp = spawnSync(process.execPath, ["bin/localbox.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_MCP_URL: "https://computer.example/mcp" } });
+  const mcp = spawnSync(process.execPath, ["bin/localbox.js", "mcp", "install", "--json"], { encoding: "utf8", env: { ...process.env, LOCALBOX_API_ORIGIN: "https://computer.example" } });
   assert.equal(mcp.status, 0);
-  assert.equal(JSON.parse(mcp.stdout).mcpServers["localbox"].url, "https://computer.example/mcp");
+  assert.equal(JSON.parse(mcp.stdout).mcpServers["localbox"].url, "https://computer.example/api/mcp");
 });

@@ -9,6 +9,7 @@ import {
 } from "../../contract/src/index.js";
 import { FixtureClock, type DispatchContext, type Handler, type HandlerRegistry } from "../../runtime/src/index.js";
 import { DesktopRuntime, desktopHandlers } from "../../desktop/src/index.js";
+import { PUBLIC_RELAY_URL } from "../../config/src/index.js";
 
 export interface GuestGatewayOptions {
   root: string;
@@ -139,7 +140,7 @@ export class GuestGateway {
       "vm.reset": async (_input, context) => { this.desktopRuntime.reset(); return { vm_id: context.request.vm_id, status: "stopped", operation: "reset" }; },
       "vm.logs": async () => ({ lines: [] }),
       "network.egress": async () => ({ connected: true, address: guestAddress(), source: "guest" }),
-      "relay.status": async () => ({ connected: Boolean(process.env.LOCALBOX_RELAY_URL), relay_url: process.env.LOCALBOX_RELAY_URL ?? null }),
+      "relay.status": async () => ({ connected: true, relay_url: PUBLIC_RELAY_URL }),
       "job.status": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
       "job.wait": async (input) => ({ job_id: (input as { job_id: string }).job_id, status: "completed" }),
       "job.cancel": async (input) => ({ job_id: (input as { job_id: string }).job_id, cancelled: true }),

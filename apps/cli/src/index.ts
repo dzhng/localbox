@@ -17,6 +17,7 @@ import { recoveryProbe } from "../../../packages/recovery/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { SkillManager } from "./skill-manager.js";
 import { checkForUpdate, installLatest } from "./updater.js";
+import { PUBLIC_MCP_RESOURCE, PUBLIC_RELAY_URL } from "../../../packages/config/src/index.js";
 
 const root = resolve(new URL("../../..", import.meta.url).pathname);
 const execFileAsync = promisify(execFile);
@@ -82,10 +83,9 @@ async function saveAuth(token: string, refreshToken?: string, expiresIn?: number
 }
 
 async function loginWithPkce(): Promise<{ access_token: string; refresh_token?: string }> {
-  const authorizeEndpoint = process.env.LOCALBOX_OAUTH_AUTHORIZE_URL;
-  const tokenEndpoint = process.env.LOCALBOX_OAUTH_TOKEN_URL;
-  const resource = process.env.LOCALBOX_RESOURCE;
-  if (!authorizeEndpoint || !tokenEndpoint || !resource) throw new Error("set LOCALBOX_OAUTH_AUTHORIZE_URL, LOCALBOX_OAUTH_TOKEN_URL, and LOCALBOX_RESOURCE for browser login");
+  const authorizeEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/authorize`;
+  const tokenEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/token`;
+  const resource = PUBLIC_MCP_RESOURCE;
   const clientId = process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli";
   const pair = createPkcePair(); const state = randomBytes(18).toString("base64url"); let redirectUri = "";
   const callback = createServer();
@@ -127,22 +127,21 @@ async function readAuth(): Promise<SavedAuth | undefined> {
 
 async function makeClient(): Promise<AgentClient> {
   const kind: TransportKind = process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local";
-  if (kind === "remote" && process.env.LOCALBOX_RELAY_URL) {
+  if (kind === "remote") {
     const initial = await readAuth();
     let credentials = initial;
     const accessTokenProvider = async () => {
       if (process.env.LOCALBOX_TOKEN) return process.env.LOCALBOX_TOKEN;
       if (credentials?.refresh_token && credentials.expires_at && credentials.expires_at <= Date.now() + 30_000) {
-        const tokenEndpoint = process.env.LOCALBOX_OAUTH_TOKEN_URL;
-        const resource = process.env.LOCALBOX_RESOURCE;
-        if (!tokenEndpoint || !resource) return credentials.token;
+        const tokenEndpoint = `${PUBLIC_MCP_RESOURCE}/oauth/token`;
+        const resource = PUBLIC_MCP_RESOURCE;
         const refreshed = await refreshAccessToken({ endpoint: tokenEndpoint, refreshToken: credentials.refresh_token, clientId: process.env.LOCALBOX_OAUTH_CLIENT_ID ?? "localbox-cli", resource });
         credentials = { token: refreshed.access_token, refresh_token: refreshed.refresh_token ?? credentials.refresh_token, expires_at: refreshed.expires_in ? Date.now() + refreshed.expires_in * 1000 : undefined, saved_at: new Date().toISOString() };
         await saveAuth(credentials.token, credentials.refresh_token, refreshed.expires_in);
       }
       return credentials?.token;
     };
-    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: process.env.LOCALBOX_RELAY_URL, accessTokenProvider }) });
+    return new AgentClient({ transport: new RelayHttpTransport({ baseUrl: PUBLIC_RELAY_URL, accessTokenProvider }) });
   }
   if (kind === "local" && process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") {
     return new AgentClient({ transport: new LocalIPCTransport() });
@@ -151,7 +150,6 @@ async function makeClient(): Promise<AgentClient> {
   await mkdir(guestRoot, { recursive: true });
   const guest = new GuestGateway({ root: guestRoot });
   const transport = fixtureTransport(kind, new FakeDispatcher({ handlers: guest.handlers() }));
-  if (kind === "remote" && !(await hasAuth())) transport.setUnauthorized();
   return new AgentClient({ transport });
 }
 
@@ -221,15 +219,15 @@ async function main(): Promise<void> {
   if ((group === "auth" && subcommand === "login") || group === "login") {
     let token = (group === "login" ? subcommand : rest[0]) ?? process.env.LOCALBOX_TOKEN;
     let refreshToken: string | undefined; let expiresIn: number | undefined;
-    if (!token && process.env.LOCALBOX_OAUTH_AUTHORIZE_URL) {
+    if (!token) {
       const credentials: OAuthTokenResponse = await loginWithPkce(); token = credentials.access_token; refreshToken = credentials.refresh_token; expiresIn = credentials.expires_in;
     }
-    if (!token) { process.stderr.write("login requires an OAuth access token or configured OAuth browser endpoints\n"); process.exitCode = 2; return; }
+    if (!token) { process.stderr.write("login requires an OAuth access token or a successful browser login\n"); process.exitCode = 2; return; }
     await saveAuth(token, refreshToken, expiresIn);
     printResponse(requestEnvelope("system.info", { authenticated: true, transport: process.env.LOCALBOX_TRANSPORT === "remote" ? "remote" : "local" })); return;
   }
   if (group === "mcp" && subcommand === "install") {
-    const endpoint = process.env.LOCALBOX_MCP_URL ?? process.env.LOCALBOX_RESOURCE ?? "https://relay.example.test/mcp";
+    const endpoint = PUBLIC_MCP_RESOURCE;
     const config = { mcpServers: { "localbox": { url: endpoint } }, oauth: { resource: endpoint } };
     process.stdout.write(`${JSON.stringify(config, null, 2)}\n`); return;
   }
