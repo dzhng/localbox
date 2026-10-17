@@ -17,13 +17,14 @@ Your agent is ready to do real work: install toolchains, run test suites, click
 through a staging site, leave a build running overnight. But it's stuck on the
 one machine it was started on, or in someone else's cloud, while the desktop with
 the RAM for the full build and the Mac mini on the shelf sit idle. Handing it SSH
-would get it there, along with your account, your files and your keys.
+would get it there, and hand it your whole computer: your files, your keys, your
+logged-in sessions.
 
 Localbox lets every agent you run, on your laptop, in the cloud or on a schedule,
 work on every Mac you own. Each one gets a **sandbox** there: a whole Linux
 computer with a shell, files, a browser and a desktop, that stays exactly as the
-agent left it. It never gets your account, and sees none of your files unless you
-share a folder. **Claude Code, Codex, or any agent harness** drives it through one
+agent left it. It never gets your whole computer, and sees none of your files
+unless you share a folder. **Claude Code, Codex, or any agent harness** drives it through one
 CLI, with an optional MCP endpoint.
 
 **Every computer you own, for every agent you run. Free.**
@@ -72,14 +73,14 @@ email and a code, gets a token for your account that you can revoke any time, an
 request that may have half-applied is reported as uncertain, never silently
 retried.
 
-## A sandbox, not your account
+## A sandbox, not your whole computer
 
 <p align="center">
   <img src=".github/readme/04-host-stays-outside.png" alt="The agent builds freely inside a glass jar while your files sit untouched outside it" width="85%">
 </p>
 
-SSH would hand your agent your account on every machine: your files, your keys,
-your logged-in sessions. Localbox hands it a sandbox instead. And the fastest
+SSH would hand your agent your whole computer, on every machine: your files, your
+keys, your logged-in sessions. Localbox hands it a sandbox instead. And the fastest
 agents run with permission prompts off, which is exactly what nobody wants on
 their own laptop. Inside a sandbox, let it. The sandbox is the boundary,
 so there's nothing inside worth prompting about: install anything, run untrusted

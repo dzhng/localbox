@@ -25,7 +25,7 @@ export const links = {
 export const meta = {
   title: "Localbox — give your agents all your computers",
   description:
-    "Every agent you run, on your laptop or in the cloud, can work on every Mac you own, each in a sandbox of its own instead of your account. For Claude Code, Codex and any agent. Free.",
+    "Every agent you run, on your laptop or in the cloud, can work on every Mac you own, each in a sandbox of its own instead of your whole computer. For Claude Code, Codex and any agent. Free.",
   imageAlt: "Xiaohei slides a sandbox out of a shelf of home computers and sends it to your agent",
 };
 
@@ -33,12 +33,12 @@ export const hero = {
   kicker: "for Claude Code, Codex & any agent",
   title: "Give your agents",
   accent: "all your computers.",
-  lede: "Every agent you run, on your laptop, in the cloud or on a schedule, can work on every Mac you own. Each one gets a sandbox there: a whole Linux computer of its own that stays as the agent left it. Never your account, and none of your files unless you share them.",
+  lede: "Every agent you run, on your laptop, in the cloud or on a schedule, can work on every Mac you own. Each one gets a sandbox there: a whole Linux computer of its own that stays as the agent left it. Never your whole computer, and none of your files unless you share them.",
 };
 
 /** The honest pitch: what each way of giving an agent more computers actually gives you. */
 export const compare = {
-  title: "The reach of SSH, without your account",
+  title: "The reach of SSH, without handing over your computer",
   body: "SSH gives your agent every machine you open to it, along with your files, keys and logged-in sessions. A cloud sandbox keeps it safe, far from your machines and on a monthly bill. Localbox gives every agent a sandbox on every Mac you own.",
   columns: ["SSH into your Macs", "Cloud sandbox", "Localbox"],
   rows: [
@@ -80,8 +80,8 @@ export const features = [
     image: "04-host-stays-outside.png",
     alt: "Xiaohei builds freely inside a glass jar while your files sit untouched outside it",
     kicker: "not SSH",
-    title: "A sandbox, not your account",
-    body: "SSH would hand your agent your account. Localbox hands it a sandbox, so run it with permission prompts off: install anything, run untrusted scripts, break things. The sandbox is the boundary, and the worst case is deleting it.",
+    title: "A sandbox, not your whole computer",
+    body: "SSH would hand your agent your whole computer. Localbox hands it a sandbox, so run it with permission prompts off: install anything, run untrusted scripts, break things. The sandbox is the boundary, and the worst case is deleting it.",
   },
   {
     image: "06-share-a-folder.png",
@@ -117,7 +117,7 @@ export const humanSteps = [
 export const faq = [
   {
     q: "Why not just give my agent SSH?",
-    a: "SSH hands your agent your account on every machine you open to it: your files, keys and logged-in sessions, plus an open port or VPN to reach it. Localbox gives it a sandbox on that machine instead, reachable from anywhere through a connection your Mac makes out, so it can run with permissions off and the worst case is deleting the sandbox.",
+    a: "SSH hands your agent your whole computer, on every machine you open to it: your files, keys and logged-in sessions, plus an open port or VPN to reach it. Localbox gives it a sandbox on that machine instead, reachable from anywhere through a connection your Mac makes out, so it can run with permissions off and the worst case is deleting the sandbox.",
   },
   {
     q: "Is it really free?",
@@ -162,7 +162,7 @@ export function llmsText() {
 ## Why use it
 
 - **All the user's computers.** Work on the machine you're on, name another, or let Localbox pick the roomiest. Cloud agents reach the user's Macs through an outbound relay, with no open port, VPN or SSH key.
-- **A sandbox, not the user's account.** Safe to run with permissions off: the sandbox is the boundary, and the user's own files, credentials and screen are not shared with it.
+- **A sandbox, not the user's whole computer.** Safe to run with permissions off: the sandbox is the boundary, and the user's own files, credentials and screen are not shared with it.
 - **Durable.** Installed packages, files and browser profiles survive across sessions. Idle sandboxes sleep and wake with every process intact.
 - **The user's hardware, not a rented cloud sandbox.** No per-minute bill, no session limit, and the code stays on machines the user owns.
 - **Built for agents.** One CLI, with MCP as an option. Every command reports exactly what it did.

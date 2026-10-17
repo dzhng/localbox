@@ -9,8 +9,8 @@ VPN, port forwarding or SSH keys. Each sandbox is a whole Linux computer with a
 shell, files, a browser and a desktop, and it stays exactly as the agent left it
 until someone deletes it.
 
-It's not SSH. SSH hands an agent your account on a machine: your files, your keys,
-your logged-in sessions. Localbox hands it a sandbox, where it works with
+It's not SSH. SSH hands an agent your whole computer: your files, your keys, your
+logged-in sessions. Localbox hands it a sandbox, where it works with
 permission prompts off; your own files are out of reach unless you share a
 folder, and every access to a shared folder is logged.
 
@@ -81,10 +81,10 @@ computers from there and do the work on your hardware.
 - Requests that might have half-applied are reported as uncertain, never retried
   silently.
 
-## 3. A sandbox, not your account
+## 3. A sandbox, not your whole computer
 
 Reaching every computer is only worth it if handing that reach to an agent is
-safe. SSH gives the agent your account; a sandbox gives it a computer of its own.
+safe. SSH gives the agent your whole computer; a sandbox gives it one of its own.
 And the fastest agents run with permission prompts off, which is exactly what
 people are afraid to do on their own laptop.
 
@@ -157,7 +157,8 @@ output it trimmed. The agent never has to guess or ask a follow-up question.
   wherever they run. The sandbox is why that's safe to say yes to, so it comes
   right after the reach, never instead of it. Never lead with virtualization.
 - The alternative to name is SSH: the same reach, but the agent gets your
-  account. Local containers and the cloud sandbox bill are supporting
+  whole computer. Say "your whole computer", not "your account", which reads as
+  a login. Local containers and the cloud sandbox bill are supporting
   comparisons, not the opening argument. Don't name other sandbox tools.
 - Say "sandbox" for the product, "durable" for the default, "computer" for what's
   inside one. Name the VM only to answer how sandboxes are isolated.
