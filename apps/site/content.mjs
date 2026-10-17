@@ -23,71 +23,65 @@ export const links = {
 };
 
 export const meta = {
-  title: "Localbox — durable sandboxes for your agent",
+  title: "Localbox — give your agents all your computers",
   description:
-    "Localbox turns your Mac, or a shelf of Mac minis, into durable sandboxes that Claude Code, Codex and any agent create, use and delete on their own. Free.",
+    "Every agent you run, on your laptop or in the cloud, can work on every Mac you own, each in a sandbox of its own instead of your account. For Claude Code, Codex and any agent. Free.",
   imageAlt: "Xiaohei slides a sandbox out of a shelf of home computers and sends it to your agent",
 };
 
 export const hero = {
   kicker: "for Claude Code, Codex & any agent",
-  title: "Durable sandboxes",
-  accent: "for your agent.",
-  lede: "On computers you already own. Localbox turns your Mac, or a shelf of Mac minis, into sandboxes your agent creates, uses and deletes on its own, each a whole Linux computer that stays exactly as the agent left it.",
+  title: "Give your agents",
+  accent: "all your computers.",
+  lede: "Every agent you run, on your laptop, in the cloud or on a schedule, can work on every Mac you own. Each one gets a sandbox there: a whole Linux computer of its own that stays as the agent left it. Never your account, and none of your files unless you share them.",
 };
 
-/** The honest pitch: what each place to run an agent actually gives you. */
+/** The honest pitch: what each way of giving an agent more computers actually gives you. */
 export const compare = {
-  title: "No container tax, no sandbox bill",
-  body: "Docker on a Mac claims gigabytes of RAM the moment it starts and leaves containers to prune. Cloud sandboxes bill monthly, cap sessions and hold your code. Localbox runs on the machines you already own.",
-  columns: ["Docker on your Mac", "Cloud sandbox", "Localbox"],
+  title: "The reach of SSH, without your account",
+  body: "SSH gives your agent every machine you open to it, along with your files, keys and logged-in sessions. A cloud sandbox keeps it safe, far from your machines and on a monthly bill. Localbox gives every agent a sandbox on every Mac you own.",
+  columns: ["SSH into your Macs", "Cloud sandbox", "Localbox"],
   rows: [
-    { label: "Its own kernel, isolated from your Mac", values: [false, true, true] },
+    { label: "Works on the computers you own", values: [true, false, true] },
+    { label: "Reachable from cloud agents, no open port or VPN", values: [false, true, true] },
+    { label: "Safe with permission prompts off", values: [false, true, true] },
+    { label: "Your files out of reach unless you share them", values: [false, true, true] },
     { label: "Keeps its state between sessions", values: [true, false, true] },
-    { label: "Reachable from cloud agents", values: [false, true, true] },
     { label: "No monthly bill or session limit", values: [true, false, true] },
-    { label: "Code stays on your machines", values: [true, false, true] },
   ],
 };
 
 export const asks = [
-  "Spin up a sandbox, clone this repo and get the tests passing.",
-  "Run this with permissions off, inside a sandbox, not on my laptop.",
-  "Give each of these three branches its own sandbox and dev server.",
   "Use the Mac mini in the closet for tonight's full build.",
+  "Run the integration tests on my desktop at home, then open the PR.",
+  "Give each of these three branches its own sandbox, on whichever Macs have room.",
+  "Run this with permissions off, inside a sandbox, not on my laptop.",
   "Pick up where we left off yesterday. The dev server should still be running.",
-  "That sandbox is too small for the full test suite. Give it 8 GB.",
+  "Spin up a sandbox, clone this repo and get the tests passing.",
 ];
 
 /** Illustrations live in .github/readme and are copied to /art at build time. */
 export const features = [
   {
-    image: "01-still-there-next-week.png",
-    alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
-    kicker: "durable",
-    title: "Still set up next week",
-    body: "A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Idle for 30 minutes, it goes to sleep; the next request wakes it with every process where it was, dev server included. Want one disposable? Give it an idle timeout.",
-  },
-  {
     image: "05-your-machines-are-the-fleet.png",
     alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out",
-    kicker: "your fleet",
+    kicker: "every Mac you own",
     title: "Your machines are the fleet",
-    body: "Sign in on each Mac you own with your email and it joins your fleet, even from another country. Sandboxes stay on your agent's machine unless it names another or asks Localbox to pick the roomiest. No per-minute billing, no session limit.",
+    body: "Sign in on each Mac you own with your email and it joins, even from another country. Your agent works on the machine it's on, names another, or asks Localbox for the roomiest. Start with the Mac you have; every Mac you add joins. No per-minute billing, no session limit.",
   },
   {
     image: "03-outbound-only.png",
     alt: "The house's front door stays padlocked while Xiaohei sits on the roof reeling a line up to the relay",
-    kicker: "outbound only",
+    kicker: "from anywhere",
     title: "Cloud agents, your computers",
-    body: "Codex cloud, Claude Code on the web and other background agents work in your sandboxes through a relay your Mac connects out to: no port forwarding, VPN or Tailscale. They sign in with your email and a code, and you can revoke them any time.",
+    body: "Codex cloud, Claude Code on the web and scheduled agents reach your Macs through a relay they connect out to: no port forwarding, VPN, Tailscale or SSH keys. They sign in with your email and a code, and you can revoke them any time.",
   },
   {
     image: "04-host-stays-outside.png",
     alt: "Xiaohei builds freely inside a glass jar while your files sit untouched outside it",
-    kicker: "off the leash",
-    title: "Permissions off, safely",
-    body: "Run your agent with permission prompts off inside a sandbox. Install anything, run untrusted scripts, break things. The sandbox is the boundary, and the worst case is deleting it.",
+    kicker: "not SSH",
+    title: "A sandbox, not your account",
+    body: "SSH would hand your agent your account. Localbox hands it a sandbox, so run it with permission prompts off: install anything, run untrusted scripts, break things. The sandbox is the boundary, and the worst case is deleting it.",
   },
   {
     image: "06-share-a-folder.png",
@@ -95,6 +89,13 @@ export const features = [
     kicker: "audited",
     title: "Share a folder, see every access",
     body: "A sandbox sees nothing on your Mac until you say so. Share exactly the folder your agent needs, read-only unless you say otherwise, and Localbox logs every file it reads or writes.",
+  },
+  {
+    image: "01-still-there-next-week.png",
+    alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
+    kicker: "durable",
+    title: "Still set up next week",
+    body: "Close your laptop and the work keeps going. A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Idle for 30 minutes, it goes to sleep; the next request wakes it with every process where it was, dev server included. Want one disposable? Give it an idle timeout.",
   },
 ];
 
@@ -114,6 +115,10 @@ export const humanSteps = [
 ];
 
 export const faq = [
+  {
+    q: "Why not just give my agent SSH?",
+    a: "SSH hands your agent your account on every machine you open to it: your files, keys and logged-in sessions, plus an open port or VPN to reach it. Localbox gives it a sandbox on that machine instead, reachable from anywhere through a connection your Mac makes out, so it can run with permissions off and the worst case is deleting the sandbox.",
+  },
   {
     q: "Is it really free?",
     a: "Yes. It runs on machines you already own, so there's nothing to rent. You sign in with your email so your machines and sandboxes belong to one account.",
@@ -152,13 +157,14 @@ export const faq = [
 export function llmsText() {
   return `# Localbox
 
-> Durable sandboxes for AI agents, on computers the user already owns. Localbox turns the user's Mac, or a shelf of Mac minis, into Linux sandboxes that you, the agent, create, use and delete on your own: a shell, files, a browser and a desktop, kept exactly as you left them.
+> Every computer the user owns, in reach of you, the agent. Wherever you run, on the user's laptop or in the cloud, Localbox lets you open a sandbox on any Mac the user has signed in: a whole Linux computer with a shell, files, a browser and a desktop, kept exactly as you left it.
 
 ## Why use it
 
+- **All the user's computers.** Work on the machine you're on, name another, or let Localbox pick the roomiest. Cloud agents reach the user's Macs through an outbound relay, with no open port, VPN or SSH key.
+- **A sandbox, not the user's account.** Safe to run with permissions off: the sandbox is the boundary, and the user's own files, credentials and screen are not shared with it.
 - **Durable.** Installed packages, files and browser profiles survive across sessions. Idle sandboxes sleep and wake with every process intact.
-- **Safe to run with permissions off.** The sandbox is the boundary; the user's own files, credentials and screen are not shared with it.
-- **The user's hardware, not a rented cloud sandbox.** No per-minute bill, no session limit, and the code stays on machines the user owns. Cloud agents reach those machines through an outbound relay.
+- **The user's hardware, not a rented cloud sandbox.** No per-minute bill, no session limit, and the code stays on machines the user owns.
 - **Built for agents.** One CLI, with MCP as an option. Every command reports exactly what it did.
 - **Free.**
 
