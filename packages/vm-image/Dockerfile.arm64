@@ -17,8 +17,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION}
 
 RUN test "$PROFILE" = minimal || test "$PROFILE" = full
-# The package names in the full branch are the Duet apt inventory. The only
-# package substitution is Chromium for Google's x86_64-only Chrome.
+# The package names in the full branch are the Duet apt inventory. Google
+# Chrome is x86_64-only, so Chromium comes from Playwright below, and xdotool
+# drives the display for the desktop tools.
 RUN apt-get update && \
   if [ "$PROFILE" = full ]; then \
     apt-get install -y --no-install-recommends \
@@ -30,7 +31,7 @@ RUN apt-get update && \
       ninja-build pandoc plank poppler-utils pulseaudio pulseaudio-utils \
       python-is-python3 qpdf ripgrep tesseract-ocr thunar unzip vim wget \
       x11-utils xclip xfce4-panel xfce4-session xfce4-settings xfce4-terminal \
-      xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip chromium \
+      xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip xdotool \
       systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
   else \
     apt-get install -y --no-install-recommends \
@@ -53,6 +54,18 @@ RUN if [ "$PROFILE" = full ]; then \
 
 # Duet's global npm inventory, retained verbatim for full images.
 RUN if [ "$PROFILE" = full ]; then npm install -g eslint firecrawl-cli prettier skills typescript; fi
+
+# Ubuntu's arm64 chromium package is a snap stub, which cannot install or run
+# here; Playwright publishes a pinned arm64 Chromium build and its apt deps.
+ARG PLAYWRIGHT_VERSION=1.64.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN if [ "$PROFILE" = full ]; then \
+      npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --no-shell chromium \
+      && chrome=$(find /opt/ms-playwright -type f -name chrome -perm -u+x | head -n 1) \
+      && test -n "$chrome" && ln -s "$chrome" /usr/local/bin/chromium \
+      && chromium --version \
+      && rm -rf /var/lib/apt/lists/* /root/.npm; \
+    fi
 
 # ARM64 substitutions for Duet's x86_64 release downloads. KasmVNC ships a
 # native noble arm64 package at the same version.
@@ -85,6 +98,15 @@ RUN if [ "$PROFILE" = full ]; then \
       cp /opt/localbox/duet-desktop/kasmvnc.yaml /home/exedev/.vnc/kasmvnc.yaml; \
       cp /opt/localbox/duet-desktop/duet-wallpaper.svg /usr/share/backgrounds/duet-wallpaper.svg; \
       chown -R exedev:exedev /home/exedev; \
+    fi
+
+# The desktop the guest agent's desktop tools drive: display :0, XFCE and
+# Chromium with CDP on loopback, as the exedev user.
+COPY packages/vm-image/desktop/ /opt/localbox/desktop/
+RUN if [ "$PROFILE" = full ]; then \
+      install -m 0644 /opt/localbox/desktop/*.service /etc/systemd/system/ \
+      && install -m 0644 /opt/localbox/desktop/60-localbox-userns.conf /etc/sysctl.d/ \
+      && systemctl enable localbox-display.service localbox-session.service localbox-browser.service; \
     fi
 
 # Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it, DHCP on the NAT interface

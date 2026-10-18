@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { artifactDigests, buildImageManifest, digestJson, type ImageBuildPins } from "../src/manifest.js";
@@ -16,7 +15,7 @@ const outputRoot = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 const output = join(outputRoot, profile);
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
 const substitutions = [
-  { from: "Google Chrome", to: "Chromium", reason: "Google publishes no Linux ARM64 Chrome build; Ubuntu's pinned ARM64 Chromium package is used." },
+  { from: "Google Chrome", to: "Chrome for Testing (Playwright)", reason: "Google publishes no Linux ARM64 Chrome package and Ubuntu's ARM64 chromium is a snap stub; Playwright's pinned ARM64 build is used." },
   { from: "x86_64 release downloads", to: "ARM64 release downloads", reason: "Bun, static-web-server, and KasmVNC are fetched from their native ARM64 release assets at the Duet versions." },
   { from: "boldsoftware/exeuntu", to: "ubuntu:24.04 ARM64", reason: "The Duet base is private and has no published ARM64 image available to this build; Ubuntu is pinned by digest." },
   { from: "Duet gateway, Syncthing, Duet runtime, systemd units, branding", to: "omitted", reason: "These services belong to Duet; Localbox owns the guest agent and boot unit." },
@@ -42,16 +41,11 @@ async function inputDigest(): Promise<string> {
   // Everything the Dockerfile COPYs is an input (a changed guest agent in dist/ must produce a new image), and so is
   // this script, which edits the root filesystem after the build.
   const copied = ["packages/vm-image/scripts/build-boot-artifacts.ts", "packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
-    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/"))];
+    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/"))];
   for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
   hash.update(baseImage);
   return `sha256:${hash.digest("hex")}`;
-}
-
-async function extractTar(tarPath: string, destination: string): Promise<void> {
-  await mkdir(destination, { recursive: true });
-  await run("tar", ["-xf", tarPath, "-C", destination]);
 }
 
 async function extractKernel(container: string, destination: string, prefix: string): Promise<void> {
@@ -71,6 +65,22 @@ async function extractKernel(container: string, destination: string, prefix: str
   await rm(copied, { force: true });
 }
 
+// Reads `docker export` on stdin and writes /out/template.img. Docker's pseudo-filesystem entries (/dev, /proc, /sys,
+// /run) are created by systemd at boot and cannot be represented by mke2fs -d; .dockerenv would make systemd treat the
+// VM as a container; firmware is for hardware a VM does not have. Docker owns /etc/resolv.conf during a build. In the
+// VM it lists the NAT's DHCP-provided DNS server directly (resolved's uplink file), not resolved's stub: after a
+// restore networkd reports no carrier for ~5 s, and the stub refuses every lookup until it clears, although the
+// network itself answers within ~250 ms.
+const TEMPLATE_SCRIPT = [
+  "set -euo pipefail",
+  "apt-get update >/dev/null </dev/null && apt-get install -y --no-install-recommends e2fsprogs >/dev/null </dev/null",
+  "mkdir /rootfs && tar -xpf - -C /rootfs --numeric-owner",
+  "rm -rf /rootfs/var/lib/snapd /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run /rootfs/.dockerenv /rootfs/usr/lib/firmware",
+  "mkdir -p /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run /rootfs/usr/lib/firmware",
+  "rm -f /rootfs/etc/resolv.conf && ln -s ../run/systemd/resolve/resolv.conf /rootfs/etc/resolv.conf",
+  "truncate -s 8G /out/template.img && mke2fs -q -t ext4 -L localbox -d /rootfs /out/template.img",
+].join("; ");
+
 const digest = await inputDigest();
 const existing = join(output, "manifest.json");
 try {
@@ -89,39 +99,24 @@ const staging = join(outputRoot, `.staging-${profile}-${process.pid}`);
 await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 try {
-  const rootfsTar = join(staging, "rootfs.tar");
-  await run("docker", ["export", "--output", rootfsTar, container]);
-  const rootfs = join(staging, "rootfs");
-  await extractTar(rootfsTar, rootfs);
-  // Docker's pseudo-filesystem entries (notably /dev/void and proc symlinks)
-  // are created by systemd at boot and cannot be represented by mke2fs -d.
-  for (const path of ["dev", "proc", "sys", "run"]) {
-    await rm(join(rootfs, path), { recursive: true, force: true });
-    await mkdir(join(rootfs, path), { recursive: true });
-  }
-  // Docker's marker makes systemd treat the VM as a container and skip hardware setup.
-  await rm(join(rootfs, ".dockerenv"), { force: true });
-  // Docker owns /etc/resolv.conf during a build. In the VM it lists the NAT's DHCP-provided DNS server directly
-  // (resolved's uplink file), not resolved's stub: after a restore networkd reports no carrier for ~5 s, and the
-  // stub refuses every lookup until it clears, although the network itself answers within ~250 ms.
-  await rm(join(rootfs, "etc/resolv.conf"), { force: true });
-  await symlink("../run/systemd/resolve/resolv.conf", join(rootfs, "etc/resolv.conf"));
   await mkdir(join(staging, "boot"), { recursive: true });
   await run("docker", ["cp", `${container}:/boot/.`, join(staging, "boot")]);
   await extractKernel(container, staging, "vmlinuz");
   await extractKernel(container, staging, "initrd.img");
   const template = join(staging, "template.img");
-  const helper = baseImage;
-  await run("docker", ["run", "--rm", "--platform", "linux/arm64", "-v", `${rootfs}:/rootfs`, "-v", `${staging}:/out`, helper, "bash", "-lc", "apt-get update >/dev/null && apt-get install -y --no-install-recommends e2fsprogs >/dev/null && rm -rf /rootfs/var/lib/snapd /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run && mkdir -p /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run && truncate -s 8G /out/template.img && mke2fs -q -t ext4 -L localbox -d /rootfs /out/template.img"]);
+  // The root filesystem is unpacked inside Linux, never on the Mac: a macOS checkout is case-insensitive and
+  // unprivileged, so it would merge case-distinct paths (kernel headers have them) and drop ownership and setuid bits.
+  await run("sh", ["-c", `docker export ${container} | docker run -i --rm --platform linux/arm64 -v ${JSON.stringify(`${staging}:/out`)} ${baseImage} bash -c ${JSON.stringify(TEMPLATE_SCRIPT)}`]);
   await mkdir(output, { recursive: true });
   await cp(join(staging, "vmlinuz"), join(output, "kernel"));
   await cp(join(staging, "initrd.img"), join(output, "initrd"));
-  await cp(template, join(output, "template.img"));
+  // A move, not a copy: copying would write out the sparse disk's unused 8 GiB.
+  await rename(template, join(output, "template.img"));
   const pins: ImageBuildPins = {
     schemaVersion: "agent-computer-image-build.v1", architecture: "arm64", baseImage,
     baseSnapshot: "ubuntu-24.04-pinned", packages: { nodejs: "24.x", bun: "1.3.14", staticWebServer: "2.43.0", kasmvnc: "1.5.0" },
     pythonRequirementsSha256: `sha256:${createHash("sha256").update(await readFile(join(root, "packages/vm-image/requirements-arm64.txt"))).digest("hex")}`,
-    buildVersion, display: { width: 1440, height: 900 }, loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:5900"], readinessMarker: "/run/localbox/ready",
+    buildVersion, display: { width: 1440, height: 900 }, loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:6901"], readinessMarker: "/run/localbox/ready",
   };
   const artifacts = await artifactDigests(output);
   const manifest = buildImageManifest({ pins, artifacts, profile, substitutions, tools: DUET_REQUIRED_TOOL_INVENTORY });

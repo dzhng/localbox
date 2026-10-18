@@ -256,10 +256,24 @@ the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
 
 ## Releasing
 
-On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
-app bundle, compiled CLI, VM artifacts, checksums and release manifest. Set
+Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
+hand; no CI publishes them. `scripts/release.sh` stages the signed HostDaemon
+app bundle, compiled CLI, VM template, checksums and release manifest. Set
 `LOCALBOX_KERNEL`, `LOCALBOX_INITRD` and `LOCALBOX_TEMPLATE_DISK` to the
-published VM inputs and `IMAGE_DIGEST` to their digest.
+`npm run image:build` outputs in `dist/vm-image/full/` and `IMAGE_DIGEST` to the
+`digest` in its `manifest.json`. It needs `zstd` (`brew install zstd`).
+
+The kernel and initrd ship inside the app. The template does not: GitHub caps a
+release asset at 2 GiB, so it is zstd-compressed and split into
+`localbox-template-VERSION.img.zst.000`, `.001`, … The signed manifest lists the
+parts and the expanded disk's SHA-256 and size; the installer expands them into
+`releases/VERSION/vm/template.img`, leaving unused blocks as holes, and keeps
+only that disk. Activation and rollback re-check it against the manifest.
+
+Upload every file in the output directory to a release named after the tag:
+`gh release create vVERSION dist/release/* --title "Localbox VERSION"`. Add
+`--prerelease` for a suffixed version (`1.2.0-rc.1`); the updater only follows
+the latest full release.
 
 Release credentials live in the checkout's git-ignored `.release-signing/`
 (override with `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
@@ -272,8 +286,7 @@ Release credentials live in the checkout's git-ignored `.release-signing/`
 | `public.json` | `sha1`, `certificateSha256` and `releasePublicKey` of the above |
 
 The script refuses a manifest key that does not match the pinned public key
-and, where `public.json` is present (local releases), an identity that does not
-match it; it imports the identity into a disposable keychain for headless
+and, where `public.json` is present, an identity that does not match it; it imports the identity into a disposable keychain for headless
 `codesign`, and deletes that keychain on exit.
 A missing credential fails rather than creating another identity: a new key is a
 different signer, and installed copies trust only the pinned one.
@@ -282,19 +295,11 @@ notarization; `RELEASE_PRIVATE_KEY` overrides the manifest key path.
 `ALLOW_UNSIGNED=1` is only for local packaging checks; it cannot satisfy the
 virtualization or distribution gates.
 
-Tagged releases run `.github/workflows/release.yml`. It expects repository
-variables for the pinned kernel, initrd and template disk (URL and bare-hex
-SHA-256 each) and the image digest, and secrets for the Ed25519 manifest key
-(`LOCALBOX_RELEASE_PRIVATE_KEY`) and the code-signing identity
-(`LOCALBOX_RELEASE_IDENTITY_P12_B64`, `LOCALBOX_RELEASE_IDENTITY_PASSWORD`). It
-publishes the app, CLI, manifest and checksums to GitHub Releases; a suffixed
-tag (`v1.2.0-rc.1`) publishes a prerelease, which the updater never selects.
-
 ### Installing, rolling back and uninstalling
 
 `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`
-verifies checksums and the Ed25519 manifest, keeps versioned app and CLI trees
-behind an atomic `releases/active` link, materializes the launchd plist, creates
+verifies checksums and the Ed25519 manifest, keeps versioned app, CLI and
+template trees behind an atomic `releases/active` link, materializes the launchd plist, creates
 the owner-only IPC token, and loads the daemon and the GitHub release updater.
 Automatic installs leave the running updater loaded while the active release is
 switched, so the updater cannot terminate its own install.

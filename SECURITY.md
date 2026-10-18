@@ -161,6 +161,9 @@ pinned in the Localbox skill. The manifest never supplies its own key.
   Localbox identity, not an Apple Developer ID, and are not notarized. The
   installer clears the download quarantine flag after the signature checks so
   Gatekeeper does not refuse them; macOS itself vouches for nothing here.
+- The VM template is outside the code signature. The manifest covers it instead:
+  each compressed part's checksum and the expanded disk's SHA-256 and size,
+  checked at install, activation and rollback.
 
 ## Non-security limits
 

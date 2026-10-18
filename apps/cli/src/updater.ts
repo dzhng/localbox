@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { layout } from "./layout.js";
 import { verifyManifestSignature, verifyRelease, type ReleaseManifest } from "../../../scripts/release.js";
@@ -45,11 +48,11 @@ async function publicKey(): Promise<string | undefined> {
   if (configured.includes("BEGIN PUBLIC KEY")) return configured;
   try { return await readFile(configured, "utf8"); } catch { return undefined; }
 }
+/** Streamed to disk: the template's parts are up to 2 GiB each. */
 async function download(url: string, path: string): Promise<void> {
   const response = await fetch(url, { headers: { accept: "application/octet-stream", "user-agent": "localbox-updater" } });
   if (!response.ok || !response.body) throw new Error(`Release download failed: HTTP ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  await writeFile(path, bytes, { flag: "wx" });
+  await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream), createWriteStream(path, { flags: "wx" }));
 }
 export async function installLatest(options: { automatic?: boolean } = {}): Promise<UpdateInstall> {
   const checked = await checkForUpdate();
