@@ -246,6 +246,15 @@ functions are in the [security model](SECURITY.md#convex-is-an-authenticated-bou
 package set, ported to ARM64; `npm run image:parity` fails if it drifts from the
 vendored copy of Duet's Dockerfile in `packages/vm-image/duet-reference/`. The
 recorded substitutions live in the manifest. `minimal` is for fast proofs.
+The template's root filesystem is unpacked and written inside Linux, never on
+this Mac, whose case-insensitive, unprivileged checkout would corrupt it.
+
+`full` also runs the desktop the desktop and browser tools drive, as the
+`exedev` user ([units](packages/vm-image/desktop/)): display `:0` from KasmVNC's
+`Xvnc` (its viewer on loopback port 6901 only), an XFCE session, and Chromium
+(Playwright's pinned arm64 Chrome for Testing; Ubuntu's arm64 `chromium` is a
+snap stub) with CDP on `127.0.0.1:9222`. Chromium's sandbox needs unprivileged
+user namespaces, so the image turns off Ubuntu's AppArmor restriction on them.
 
 The [guest agent](apps/guest-agent/README.md) is a persistent service on a Unix
 socket, with socat forwarding vsock port 1024 to it. Kernel and boot output go
