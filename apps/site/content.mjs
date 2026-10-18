@@ -38,9 +38,9 @@ export const hero = {
 
 /** The honest pitch: what each way of giving an agent more computers actually gives you. */
 export const compare = {
-  title: "The reach of SSH, without handing over your computer",
-  body: "SSH gives your agent every machine you open to it, along with your files, keys and logged-in sessions. A cloud sandbox keeps it safe, far from your machines and on a monthly bill. Localbox gives every agent a sandbox on every Mac you own.",
-  columns: ["SSH into your Macs", "Cloud sandbox", "Localbox"],
+  title: "Much safer, and much easier to set up, than SSH and Tailscale",
+  body: "SSH and Tailscale get your agent onto your machines once you've set up keys and a network on each one, and then it has your whole computer: your files, keys and logged-in sessions. A cloud sandbox keeps it safe, far from your machines and on a monthly bill. Localbox gives every agent a sandbox on every Mac you own, set up with your email and a code.",
+  columns: ["SSH and Tailscale", "Cloud sandbox", "Localbox"],
   rows: [
     { label: "Works on the computers you own", values: [true, false, true] },
     { label: "Reachable from cloud agents, no open port or VPN", values: [false, true, true] },

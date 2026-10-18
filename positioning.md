@@ -12,7 +12,9 @@ until someone deletes it.
 It's not SSH. SSH hands an agent your whole computer: your files, your keys, your
 logged-in sessions. Localbox hands it a sandbox, where it works with
 permission prompts off; your own files are out of reach unless you share a
-folder, and every access to a shared folder is logged.
+folder, and every access to a shared folder is logged. It's much safer, and much
+easier to set up, than SSH and Tailscale: no keys or network to configure on each
+Mac, just your email and a code.
 
 **Reach** is the headline: your agents get all your computers. **Sandbox** is the
 product word and the reason it's safe to say yes. Say "virtual machine" only
@@ -156,8 +158,8 @@ output it trimmed. The agent never has to guess or ask a follow-up question.
 - Lead with what it enables: your agents can use every computer you own, from
   wherever they run. The sandbox is why that's safe to say yes to, so it comes
   right after the reach, never instead of it. Never lead with virtualization.
-- The alternative to name is SSH: the same reach, but the agent gets your
-  whole computer. Say "your whole computer", not "your account", which reads as
+- The alternative to name is SSH (and Tailscale to reach it): the same reach,
+  but the agent gets your whole computer. Say "your whole computer", not "your account", which reads as
   a login. Local containers and the cloud sandbox bill are supporting
   comparisons, not the opening argument. Don't name other sandbox tools.
 - Say "sandbox" for the product, "durable" for the default, "computer" for what's

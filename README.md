@@ -27,7 +27,8 @@ agent left it. It never gets your whole computer, and sees none of your files
 unless you share a folder. **Claude Code, Codex, or any agent harness** drives it through one
 CLI, with an optional MCP endpoint.
 
-**Every computer you own, for every agent you run. Free.**
+**Every computer you own, for every agent you run. Free.** Much safer, and much
+easier to set up, than SSH and Tailscale.
 
 **[Get started →](#get-started)** Your agent installs it for you.
 
