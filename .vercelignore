@@ -10,14 +10,14 @@
 dist/
 release/
 **/.build/
-# Not part of the API: docs, specs, tests, other apps
+# Not part of the API: docs, specs, tests, other apps. Both Vercel projects read this
+# file, so keep what the site build reads (README.md, .github/readme/, apps/site/).
 specs/
 tests/
 snapshots/
 scripts/
 .agents/
 .claude/
-.github/
 apps/macos/
 apps/guest-agent/
 packages/vm-image/
