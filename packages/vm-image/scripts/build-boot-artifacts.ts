@@ -39,9 +39,10 @@ async function filesUnder(directory: string): Promise<string[]> {
 async function inputDigest(): Promise<string> {
   const hash = createHash("sha256");
   // Everything the Dockerfile COPYs is an input (a changed guest agent in dist/ must produce a new image), and so is
-  // this script, which edits the root filesystem after the build.
+  // this script, which edits the root filesystem after the build. dist/vm-image and dist/release are outputs, kept out
+  // of the image by .dockerignore.
   const copied = ["packages/vm-image/scripts/build-boot-artifacts.ts", "packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
-    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/"))];
+    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/") && !path.startsWith("dist/release/"))];
   for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
   hash.update(baseImage);
