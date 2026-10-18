@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -76,4 +76,23 @@ test("guest gateway implements every catalog operation", async () => {
     const response = await gateway.dispatch(request(entry.id, input, entry.idempotency === "required" ? `catalog-${entry.id}` : null, `catalog-${entry.id}`));
     assert.equal(response.ok, true, entry.id);
   }
+});
+
+test("a mutation replayed while it is still running joins the first run instead of running again", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-guest-"));
+  const gateway = new GuestGateway({ root });
+  const exec = () => gateway.dispatch({ ...request("shell.exec", { command: "echo run >> runs; sleep 0.2", cwd: "/" }, "exec-once"), deadline_ms: 10_000 });
+  const [first, second] = await Promise.all([exec(), exec()]);
+  assert.equal(first.ok && second.ok, true, JSON.stringify([first, second]));
+  assert.equal(await readFile(join(root, "runs"), "utf8"), "run\n", "the command ran once");
+  assert.deepEqual(first.ok && first.result, second.ok && second.result);
+  const replayed = await exec();
+  assert.deepEqual(replayed.ok && replayed.result, first.ok && first.result, "a later replay answers from the journal");
+});
+
+test("shell.exec reports the signal that killed its command", async () => {
+  const gateway = new GuestGateway({ root: await mkdtemp(join(tmpdir(), "agent-computer-guest-")) });
+  const response = await gateway.dispatch({ ...request("shell.exec", { command: "kill -TERM $$" }, "killed"), deadline_ms: 10_000 });
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(response.ok && (response.result as { signal: string | null }).signal, "SIGTERM");
 });

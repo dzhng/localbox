@@ -1,7 +1,7 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireIdentity } from "./lib/identity.js";
-import { base64Hash, byField, clean, familyRevoked, fail, id, jsonHash, persistFamilyRevocation, rateLimit } from "./lib/relay.js";
+import { base64Hash, byField, clean, familyRevoked, fail, id, ipKey, jsonHash, persistFamilyRevocation, rateLimit } from "./lib/relay.js";
 
 // Service-only OAuth state for MCP sign-in. Raw codes and tokens arrive once and only their SHA-256 is stored.
 // Failures that must still commit a revocation return `{error}` instead of throwing (a throw rolls it back).
@@ -16,7 +16,7 @@ const issued = { accessToken: v.string(), refreshToken: v.string(), accessExpire
 
 export const registerClient = mutationGeneric({ args: { clientName: v.string(), redirectUris: v.array(v.string()), ip: v.string() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
-  if (!await rateLimit(ctx, args.ip, "client_register", 20)) return { limited: true as const };
+  if (!await rateLimit(ctx, ipKey(args.ip), "client_register", 20)) return { limited: true as const };
   const row = { clientId: id("client"), clientName: args.clientName, redirectUris: args.redirectUris, createdAt: Date.now() };
   await ctx.db.insert("oauthClients", row); return row;
 } });
@@ -75,7 +75,7 @@ export const rotateRefresh = mutationGeneric({ args: { presentedRefreshToken: v.
 export const validateAccess = queryGeneric({ args: { accessToken: v.string() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
   const row = await byField(ctx, "oauthTokens", "by_access_hash", "accessTokenHash", await jsonHash(args.accessToken));
-  if (!row || row.accessExpiresAt <= Date.now() || await familyRevoked(ctx, row.familyId)) fail("access token invalid or expired");
+  if (!row || row.accessExpiresAt <= Date.now() || await familyRevoked(ctx, row.familyId)) fail("access token invalid or expired", "unauthorized");
   return { accountId: row.accountId as string, clientId: row.clientId as string, familyId: row.familyId as string, scopes: row.scopes as string[], accessExpiresAt: row.accessExpiresAt as number };
 } });
 

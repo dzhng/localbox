@@ -24,6 +24,10 @@ not create a browser download flow or a second installer.
    bundled Localbox skill consumes that tagged kit and invokes the installer;
    users do not download or drag an app from a browser.
 
-Keep release private keys outside the repository. The public key is the pinned
-trust root used by the initial installer and every later automatic update; a
-public key copied from the manifest being verified is never trusted.
+Release credentials live in the checkout's git-ignored `.release-signing/`
+(see DEVELOPMENT.md); restore it from the owner's Obsidian backup
+(`dev/localbox/release-signing/`), never regenerate it. A new manifest key would
+strand every installed copy, and `release.sh` refuses one that does not match
+`skills/localbox/release-public.pem`. That public key is the pinned trust root,
+printed in the installation procedure for first installs; a public key copied
+from the manifest being verified is never trusted.

@@ -43,8 +43,17 @@ test("the ring-buffered log keeps offsets absolute and reports dropped output", 
   const started = await result(gateway, "shell.exec", { command: "for i in $(seq 1 400); do printf '%010d\\n' $i; done", background: true }, "start", "start");
   await result(gateway, "job.wait", { job_id: started.job_id, timeout_ms: 30_000 }, "wait");
   const { text, first } = await readAll(gateway, started.job_id);
-  assert.equal(first.dropped_bytes, 4400 - 1024, "4,400 bytes written, 1 KiB kept");
-  assert.equal(first.offset, 4400 - 1024, "the first page starts at the oldest kept byte, as an absolute offset");
-  assert.equal(text.length, 1024);
-  assert.ok(text.endsWith("0000000400\n"));
+  const written = Array.from({ length: 400 }, (_, i) => `${String(i + 1).padStart(10, "0")}\n`).join("");
+  // Trimming keeps the newest output, between half the cap and the cap, depending on how chunks arrived.
+  assert.ok(text.length >= 512 && text.length <= 1024, `kept ${text.length} bytes of a 1 KiB log`);
+  assert.equal(first.dropped_bytes, 4400 - text.length, "every byte is either kept or reported dropped");
+  assert.equal(first.offset, first.dropped_bytes, "the first page starts at the oldest kept byte, as an absolute offset");
+  assert.equal(text, written.slice(-text.length));
+});
+
+test("job.wait without timeout_ms waits for the job rather than returning at once", async () => {
+  const gateway = new GuestGateway({ root: await mkdtemp(join(tmpdir(), "localbox-jobs-wait-")) });
+  const started = await result(gateway, "shell.exec", { command: "sleep 0.3", background: true }, "start", "start");
+  const waited = await result(gateway, "job.wait", { job_id: started.job_id }, "wait");
+  assert.equal(waited.status, "completed");
 });

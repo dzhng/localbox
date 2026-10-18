@@ -73,10 +73,20 @@ public struct SandboxDirectory: Sendable {
         return try decoder.decode(SandboxRecord.self, from: Data(contentsOf: recordFile))
     }
 
+    /// Writes into the directory `sandbox.create` laid down; never creates it, so a write after a delete fails.
     public func save(_ record: SandboxRecord) throws {
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(record).write(to: recordFile, options: .atomic)
+    }
+
+    /// Where a save is written before it replaces `savedState`, so a failed save never leaves a partial state there.
+    func temporarySave() -> URL { url.appendingPathComponent(".save-\(UUID().uuidString).vzvmsave") }
+
+    /// Removes saves a crash left half-written.
+    func removeTemporarySaves() {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? [] where name.hasPrefix(".save-") && name.hasSuffix(".vzvmsave") {
+            try? FileManager.default.removeItem(at: url.appendingPathComponent(name))
+        }
     }
 
     /// What deleting this directory removes, for the delete report.

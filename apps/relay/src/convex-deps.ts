@@ -1,5 +1,6 @@
 import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
 import { ConvexOAuthRepository, type ServiceCall } from "../../../packages/state/src/index.js";
 import { signAgentToken, signMachineToken, signServiceToken } from "../../../packages/tokens/src/index.js";
 import type { OpsDeps, Principal } from "./ops.js";
@@ -15,17 +16,17 @@ export const oauthRepository = new ConvexOAuthRepository(serviceCall);
 const tokenFor = (principal: Principal) => {
   if (principal.machineId) return signMachineToken(principal.machineId, principal.accountId);
   if (principal.familyId) return signAgentToken(principal.familyId, principal.accountId);
-  throw new Error("Forbidden: the caller has no machine or agent identity");
+  throw new ConvexError({ code: "unauthorized", message: "Forbidden: the caller has no machine or agent identity" });
 };
 
 export const opsDeps: OpsDeps = {
   accountCall: async (principal, kind, name, args) => await (convexAs(tokenFor(principal)) as any)[kind](makeFunctionReference(name) as any, args),
   serviceMutation: async (name, args) => await serviceCall("mutation", name, args),
-  watchResult: (requestId, onChange) => {
+  watchResult: (requestId, onChange, onError) => {
     if (!process.env.CONVEX_URL) throw new Error("CONVEX_URL is required");
     const client = new ConvexClient(process.env.CONVEX_URL, { skipConvexDeploymentUrlCheck: true });
     client.setAuth(async () => signServiceToken());
-    const unsubscribe = client.onUpdate(makeFunctionReference<"query">("relay:result") as any, { requestId }, (result: any) => onChange(result ?? null));
+    const unsubscribe = client.onUpdate(makeFunctionReference<"query">("relay:result") as any, { requestId }, (result: any) => onChange(result ?? null), onError);
     return () => { unsubscribe(); void client.close(); };
   },
 };

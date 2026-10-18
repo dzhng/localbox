@@ -72,8 +72,8 @@ automatic placement. Failures leave the prior state intact.
 
 Deleting a sandbox is the one way to discard its disk; `sandbox delete` takes an
 optional `--confirm NAME` that must match. Update, rollback and uninstall
-preserve every sandbox's disk. Unmanaged and project-local skills are never
-replaced.
+preserve every sandbox's disk. Project-local skills are never touched; a global
+skill copy Localbox did not write is backed up before agent setup replaces it.
 
 ## Releases are the only install path
 
@@ -122,12 +122,14 @@ functions use:
 
 ```sh
 CONVEX_AGENT_MODE=anonymous npx convex dev --typecheck disable --codegen disable
+npx convex env set LOCALBOX_API_ORIGIN http://127.0.0.1:3000   # the token issuer dev:local signs as
 npm run dev:local
 ```
 
 The local server listens on `http://127.0.0.1:3000/api/{relay,auth,v1,mcp}` and
 reads the Convex URL written to `.env.local`. Deployed functions fail closed
-without Convex configuration.
+without Convex configuration or `LOCALBOX_API_ORIGIN`; both Convex and the token
+issuer otherwise default to `https://api.localbox.sh`.
 
 `npm run proof -- 03 --tier l` and later proofs start all of this for you,
 plus one fixture HostDaemon per simulated machine
@@ -257,22 +259,36 @@ the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
 On an ARM64 release machine, `scripts/release.sh` stages the signed HostDaemon
 app bundle, compiled CLI, VM artifacts, checksums and release manifest. Set
 `LOCALBOX_KERNEL`, `LOCALBOX_INITRD` and `LOCALBOX_TEMPLATE_DISK` to the
-published VM inputs, then provide `APPLE_SIGNING_IDENTITY`, `NOTARY_PROFILE`
-and `RELEASE_PRIVATE_KEY` (a path to the Ed25519 private key).
+published VM inputs and `IMAGE_DIGEST` to their digest.
 
-When `APPLE_SIGNING_IDENTITY` is omitted, the script imports the local
-screen-recorder PKCS#12 from `~/dev/screen-recorder/.release-signing` (or
-`LOCALBOX_SIGNING_DIR`) into a disposable keychain, authorizes headless
-`codesign`, and deletes that keychain on exit. Without those files it creates a
-throwaway self-signed identity. `RELEASE_PRIVATE_KEY` is always required.
+Release credentials live in the checkout's git-ignored `.release-signing/`
+(override with `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
+
+| File | Contents |
+| --- | --- |
+| `release-private.pem` | Ed25519 manifest key; its public half is `skills/localbox/release-public.pem` |
+| `release-identity.p12` | Base64 self-signed code-signing identity ("Localbox Release") |
+| `release-identity-password.txt` | Password for that identity |
+| `public.json` | `sha1`, `certificateSha256` and `releasePublicKey` of the above |
+
+The script refuses a manifest key that does not match the pinned public key
+and, where `public.json` is present (local releases), an identity that does not
+match it; it imports the identity into a disposable keychain for headless
+`codesign`, and deletes that keychain on exit.
+A missing credential fails rather than creating another identity: a new key is a
+different signer, and installed copies trust only the pinned one.
+`APPLE_SIGNING_IDENTITY` and `NOTARY_PROFILE` switch to a keychain identity and
+notarization; `RELEASE_PRIVATE_KEY` overrides the manifest key path.
 `ALLOW_UNSIGNED=1` is only for local packaging checks; it cannot satisfy the
 virtualization or distribution gates.
 
 Tagged releases run `.github/workflows/release.yml`. It expects repository
-variables for the pinned kernel, initrd, template disk and image digest, the
-public key in `skills/localbox/release-public.pem`, and secrets for the Ed25519
-release key and Apple signing identity. It publishes the app, CLI, manifest and
-checksums to GitHub Releases.
+variables for the pinned kernel, initrd and template disk (URL and bare-hex
+SHA-256 each) and the image digest, and secrets for the Ed25519 manifest key
+(`LOCALBOX_RELEASE_PRIVATE_KEY`) and the code-signing identity
+(`LOCALBOX_RELEASE_IDENTITY_P12_B64`, `LOCALBOX_RELEASE_IDENTITY_PASSWORD`). It
+publishes the app, CLI, manifest and checksums to GitHub Releases; a suffixed
+tag (`v1.2.0-rc.1`) publishes a prerelease, which the updater never selects.
 
 ### Installing, rolling back and uninstalling
 

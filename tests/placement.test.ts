@@ -70,7 +70,7 @@ test("auto placement moves on when the roomiest machine does not answer, and say
   const removed: string[] = [];
   const accountCall = deps.accountCall;
   deps.accountCall = async (principal, kind, name, args) => {
-    if (name === "sandboxes:create") return { sandbox_id: `sandbox_${args.machineId}`, name: "brisk-otter", machine_id: args.machineId };
+    if (name === "sandboxes:create") return { sandbox_id: `sandbox_${args.machineId}`, name: "brisk-otter", machine_id: args.machineId, sleep_after_ms: 1_800_000, delete_after_ms: null };
     if (name === "sandboxes:remove") { removed.push(String(args.sandboxId)); return null; }
     return accountCall(principal, kind, name, args);
   };

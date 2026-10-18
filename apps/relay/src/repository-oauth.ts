@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { AccessGrant, OAuthClientRecord, OAuthRepository } from "../../../packages/state/src/index.js";
 import type { Mailer } from "../../../packages/mail/src/index.js";
-import { clientIp, json } from "./http.js";
+import { validEmail } from "../../../packages/state/convex/lib/relay.js";
+import { clientIp, convexCode, json } from "./http.js";
 import { renderCodePage, renderEmailPage, renderErrorPage, type AuthorizeParams } from "./oauth-pages.js";
 
 export class OAuthError extends Error { constructor(public readonly code: string, message: string, public readonly status = 400) { super(message); this.name = "OAuthError"; } }
@@ -135,7 +136,7 @@ export class RepositoryOAuthServer {
     const base = { action: this.authorizeAction(), clientName: checked.client.clientName, redirectHost: checked.redirectHost, params: checked.carried };
     const email = (fields.email ?? "").trim().toLowerCase();
     if (fields.step === "email") {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return html(renderEmailPage({ ...base, email, error: "Enter a valid email address." }), 400);
+      if (!validEmail(email)) return html(renderEmailPage({ ...base, email, error: "Enter a valid email address." }), 400);
       const started = await this.repository.startSignIn(email, ip);
       if (started.issued && started.code) {
         try { await this.mailer().sendCode({ to: email, code: started.code, idempotencyKey: `${email}:${started.code}` }); }
@@ -150,7 +151,7 @@ export class RepositoryOAuthServer {
       if (!/^\d{6}$/.test(code)) return html(renderCodePage({ ...base, email, error: "Enter the 6-digit code from the email." }), 400);
       let verified;
       try { verified = await this.repository.verifyForAgent({ email, code, ip }); }
-      catch (error) { if (/rate limit/i.test(error instanceof Error ? error.message : "")) return html(renderCodePage({ ...base, email, error: "Too many attempts from this network. Try again in an hour." }), 429); throw error; }
+      catch (error) { if (convexCode(error) === "rate_limited") return html(renderCodePage({ ...base, email, error: "Too many attempts. Try again later." }), 429); throw error; }
       if (!verified.valid) return html(renderCodePage({ ...base, email, error: "That code is wrong or has expired." }), 400);
       const authorizationCode = opaque(32);
       await this.repository.createCode({ code: authorizationCode, accountId: verified.accountId, clientId: checked.client.clientId, redirectUri: fields.redirect_uri, resource: this.resource, codeChallenge: fields.code_challenge, expiresAt: Date.now() + this.codeTtl * 1000 });

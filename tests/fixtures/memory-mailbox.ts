@@ -40,6 +40,8 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "relay:enqueue") {
         if (!options.machines.some((machine) => machine.machineId === args.machineId)) throw new ConvexError({ code: "machine_not_found", message: `machine ${args.machineId} is not on this account (removed or never signed in)` });
         const mutationKey = args.mutationId ? `${args.machineId}:${args.sandboxId ?? ""}:${args.operation}:${args.mutationId}` : undefined; // Convex scopes dedupe to the machine
+        // As in Convex, an abandoned row never reached its machine, so a replay of it queues afresh.
+        for (const row of [...rows.values()]) if (row.status === "abandoned" && (row.requestId === args.requestId || (mutationKey && row.mutationKey === mutationKey))) rows.delete(row.requestId);
         const existing = [...rows.values()].find((row) => row.requestId === args.requestId || (mutationKey && row.mutationKey === mutationKey));
         if (existing) return { requestId: existing.requestId };
         const row: Row = { requestId: args.requestId, accountId: args.accountId, machineId: args.machineId, mutationKey, payload: args.payload, status: "queued" };

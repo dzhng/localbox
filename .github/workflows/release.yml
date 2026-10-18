@@ -32,7 +32,10 @@ jobs:
       LOCALBOX_INITRD_SHA256: ${{ vars.LOCALBOX_INITRD_SHA256 }}
       LOCALBOX_TEMPLATE_DISK_SHA256: ${{ vars.LOCALBOX_TEMPLATE_DISK_SHA256 }}
     steps:
+      # A manual run builds the tag it publishes, never the branch it was started from.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
@@ -40,12 +43,10 @@ jobs:
       - name: Validate release inputs
         env:
           RELEASE_PRIVATE_KEY: ${{ secrets.LOCALBOX_RELEASE_PRIVATE_KEY }}
-          RELEASE_PUBLIC_KEY: ${{ vars.LOCALBOX_RELEASE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           test "$RELEASE_TAG" = "v${RELEASE_TAG#v}"
           test -n "$RELEASE_PRIVATE_KEY"
-          test -n "$RELEASE_PUBLIC_KEY"
           for value in LOCALBOX_KERNEL_URL LOCALBOX_INITRD_URL LOCALBOX_TEMPLATE_DISK_URL LOCALBOX_KERNEL_SHA256 LOCALBOX_INITRD_SHA256 LOCALBOX_TEMPLATE_DISK_SHA256; do
             test -n "${!value}" || { echo "$value is required" >&2; exit 1; }
           done
@@ -57,12 +58,14 @@ jobs:
           fetch "$LOCALBOX_INITRD_URL" initrd "$LOCALBOX_INITRD_SHA256"
           fetch "$LOCALBOX_TEMPLATE_DISK_URL" template.img "$LOCALBOX_TEMPLATE_DISK_SHA256"
       - name: Build signed release
+        # Secrets reach the shell only through the environment, never pasted into the script.
+        # release.sh refuses a manifest key that does not match skills/localbox/release-public.pem.
         env:
-          RELEASE_PRIVATE_KEY: ${{ secrets.LOCALBOX_RELEASE_PRIVATE_KEY }}
-          RELEASE_PUBLIC_KEY: ${{ vars.LOCALBOX_RELEASE_PUBLIC_KEY }}
+          RELEASE_PRIVATE_KEY_PEM: ${{ secrets.LOCALBOX_RELEASE_PRIVATE_KEY }}
+          RELEASE_IDENTITY_P12_B64: ${{ secrets.LOCALBOX_RELEASE_IDENTITY_P12_B64 }}
+          RELEASE_IDENTITY_PASSWORD: ${{ secrets.LOCALBOX_RELEASE_IDENTITY_PASSWORD }}
           RELEASE_KEY_ID: ${{ vars.LOCALBOX_RELEASE_KEY_ID || 'github' }}
           LOCALBOX_SIGNING_P12: ${{ runner.temp }}/localbox-release.p12
-          LOCALBOX_SIGNING_P12_PASSWORD_FILE: ${{ runner.temp }}/localbox-release-password.txt
           LOCALBOX_KERNEL: ${{ github.workspace }}/kernel
           LOCALBOX_INITRD: ${{ github.workspace }}/initrd
           LOCALBOX_TEMPLATE_DISK: ${{ github.workspace }}/template.img
@@ -70,12 +73,13 @@ jobs:
           IMAGE_DIGEST: ${{ vars.LOCALBOX_IMAGE_DIGEST }}
         run: |
           set -euo pipefail
-          printf '%s' "$RELEASE_PRIVATE_KEY" > "$RUNNER_TEMP/release-private.pem"
+          umask 077
+          printf '%s' "$RELEASE_PRIVATE_KEY_PEM" > "$RUNNER_TEMP/release-private.pem"
           export RELEASE_PRIVATE_KEY="$RUNNER_TEMP/release-private.pem"
-          DERIVED_PUBLIC_KEY=$(node --input-type=module -e 'import { readFileSync, createPublicKey } from "node:crypto"; process.stdout.write(createPublicKey(readFileSync(process.env.RELEASE_PRIVATE_KEY)).export({ type: "spki", format: "pem" }).toString())')
-          test "$DERIVED_PUBLIC_KEY" = "$RELEASE_PUBLIC_KEY" || { echo 'LOCALBOX_RELEASE_PUBLIC_KEY does not match LOCALBOX_RELEASE_PRIVATE_KEY' >&2; exit 1; }
-          printf '%s' '${{ secrets.LOCALBOX_RELEASE_IDENTITY_P12_B64 }}' | base64 --decode > "$LOCALBOX_SIGNING_P12"
-          printf '%s' '${{ secrets.LOCALBOX_RELEASE_IDENTITY_PASSWORD }}' > "$LOCALBOX_SIGNING_P12_PASSWORD_FILE"
+          printf '%s' "$RELEASE_IDENTITY_P12_B64" | base64 --decode > "$LOCALBOX_SIGNING_P12"
+          printf '%s' "$RELEASE_IDENTITY_PASSWORD" > "$RUNNER_TEMP/localbox-release-password.txt"
+          export LOCALBOX_SIGNING_P12_PASSWORD_FILE="$RUNNER_TEMP/localbox-release-password.txt"
+          unset RELEASE_IDENTITY_PASSWORD RELEASE_PRIVATE_KEY_PEM RELEASE_IDENTITY_P12_B64
           test -n "${IMAGE_DIGEST:-}" || { echo 'LOCALBOX_IMAGE_DIGEST is required' >&2; exit 1; }
           VERSION="${VERSION#v}" scripts/release.sh dist/release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -97,4 +101,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release/Localbox-*.zip release/localbox-cli-*.tar.gz release/release.json release/SHA256SUMS --verify-tag --generate-notes --title "Localbox ${RELEASE_TAG#v}"
+          # A suffixed tag (v1.2.0-rc.1) is a prerelease, which the updater's releases/latest never selects.
+          prerelease=; case "$RELEASE_TAG" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$RELEASE_TAG" release/Localbox-*.zip release/localbox-cli-*.tar.gz release/release.json release/SHA256SUMS --verify-tag --generate-notes $prerelease --title "Localbox ${RELEASE_TAG#v}"

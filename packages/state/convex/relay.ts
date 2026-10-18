@@ -12,6 +12,8 @@ const limit = (name: string, fallback: number) => Number(process.env[name] ?? fa
 const overLimit = (what: "requests" | "result_bytes", value: number, at: number): never => refuse("rate_limited", `the account's daily relay ${what === "requests" ? "request" : "result bytes"} limit (${value}; reset ${nextMidnight(at)})`, { limit: what });
 /** A failure envelope this small always completes (and still counts), so a connector can report a refused result instead of leaving the row claimed. */
 const SMALL_FAILURE_BYTES = 4 * 1024;
+/** Rows one mutation id can have: at most one live row, plus abandoned ones from before replays replaced them. */
+const REPLAY_ROWS = 16;
 
 async function machineFor(ctx: any, accountId: string, machineId: string) {
   const machine = await byField(ctx, "machines", "by_machine", "machineId", machineId);
@@ -24,16 +26,21 @@ export const enqueue = mutationGeneric({ args: { accountId: v.string(), machineI
   const at = Date.now(); await machineFor(ctx, args.accountId, args.machineId);
   // The envelope's sandbox is the one routed on, and it must live on this account's chosen machine.
   if ((args.payload?.sandbox_id ?? undefined) !== args.sandboxId) fail("sandbox id does not match the request");
-  if (args.sandboxId !== undefined) { const sandbox = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId); if (!sandbox || sandbox.accountId !== args.accountId || sandbox.machineId !== args.machineId) fail("sandbox not found"); }
+  if (args.sandboxId !== undefined) { const sandbox = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId); if (!sandbox || sandbox.accountId !== args.accountId || sandbox.machineId !== args.machineId) fail("sandbox not found", "sandbox_not_found"); }
   // The payload is a whole request envelope; a replay carries a new request id and deadline, so only what would
   // run (operation and input) decides whether two requests are the same.
   const payloadHash = await jsonHash({ operation: args.operation, input: args.payload?.input ?? args.payload });
+  // An abandoned row never reached the machine, so a replay of it is a new request: the row goes and a fresh one queues.
   const existing = await byField(ctx, "requests", "by_request_id", "requestId", args.requestId);
   // Request and mutation ids are caller-chosen, so a match only counts inside the caller's own account and machine.
-  if (existing) { if (existing.accountId !== args.accountId || existing.machineId !== args.machineId || existing.payloadHash !== payloadHash) fail("request id conflicts with payload"); return clean(existing); }
+  if (existing && (existing.accountId !== args.accountId || existing.machineId !== args.machineId)) fail("request id conflicts with payload", "conflict");
+  if (existing?.status === "abandoned") await ctx.db.delete(existing._id);
+  else if (existing) { if (existing.payloadHash !== payloadHash) fail("request id conflicts with payload", "conflict"); return clean(existing); }
   if (args.mutationId) {
-    const duplicate = await ctx.db.query("requests").withIndex("by_dedupe", (q: any) => q.eq("machineId", args.machineId).eq("sandboxId", args.sandboxId).eq("operation", args.operation).eq("mutationId", args.mutationId)).first();
-    if (duplicate) { if (duplicate.payloadHash !== payloadHash) fail("mutation id conflicts with payload"); return clean(duplicate); }
+    const replays = await ctx.db.query("requests").withIndex("by_dedupe", (q: any) => q.eq("machineId", args.machineId).eq("sandboxId", args.sandboxId).eq("operation", args.operation).eq("mutationId", args.mutationId)).take(REPLAY_ROWS);
+    for (const row of replays) if (row.status === "abandoned" && row._id !== existing?._id) await ctx.db.delete(row._id);
+    const duplicate = replays.find((row: any) => row.status !== "abandoned");
+    if (duplicate) { if (duplicate.payloadHash !== payloadHash) fail("mutation id conflicts with payload", "conflict"); return clean(duplicate); }
   }
   const day = dayOf(at); const usage = await ctx.db.query("relayUsage").withIndex("by_account_day", (q: any) => q.eq("accountId", args.accountId).eq("day", day)).first();
   const requestLimit = limit("LOCALBOX_RELAY_DAILY_REQUESTS", 500);
@@ -72,8 +79,8 @@ export const complete = mutationGeneric({ args: { requestId: v.string(), respons
   const encoded = JSON.stringify(args.response); const bytes = new TextEncoder().encode(encoded).byteLength;
   if (bytes > OUTPUT_CAP_BYTES) refuse("resource_exhausted", `response is ${bytes} bytes, over the ${OUTPUT_CAP_BYTES}-byte relay cap`, { bytes });
   const existing = await byField(ctx, "responses", "by_request_id", "requestId", args.requestId);
-  if (existing) { if (await jsonHash(existing.response) !== await jsonHash(args.response)) fail("response conflicts with recorded response"); return clean(existing); }
-  if (row.status !== "claimed") return fail(`request is ${row.status}`);
+  if (existing) { if (await jsonHash(existing.response) !== await jsonHash(args.response)) fail("response conflicts with recorded response", "conflict"); return clean(existing); }
+  if (row.status !== "claimed") return fail(`request is ${row.status}`, "conflict");
   const at = Date.now(); const usage = await ctx.db.query("relayUsage").withIndex("by_account_day", (q: any) => q.eq("accountId", row.accountId).eq("day", dayOf(at))).first();
   const resultLimit = limit("LOCALBOX_RELAY_DAILY_RESULT_BYTES", 25_000_000);
   const smallFailure = args.response?.ok === false && bytes <= SMALL_FAILURE_BYTES;
@@ -89,17 +96,49 @@ export const abandonIfUnclaimed = mutationGeneric({ args: { requestId: v.string(
   await ctx.db.patch(row._id, { status: "abandoned" }); const machine = await byField(ctx, "machines", "by_machine", "machineId", row.machineId); return { abandoned: true, lastSeenAt: machine?.lastSeenAt };
 } });
 
+/** A request's status and answer; null for an unknown (or expired) request id, so a waiter ends instead of erroring. */
 export const result = queryGeneric({ args: { requestId: v.string() }, handler: async (ctx, args) => {
-  await requireIdentity(ctx, "service"); const row = await byField(ctx, "requests", "by_request_id", "requestId", args.requestId); if (!row) fail("request not found"); const response = await byField(ctx, "responses", "by_request_id", "requestId", args.requestId); return response ? { accountId: row.accountId, status: row.status, response: response.response } : { accountId: row.accountId, status: row.status };
+  await requireIdentity(ctx, "service"); const row = await byField(ctx, "requests", "by_request_id", "requestId", args.requestId); if (!row) return null; const response = await byField(ctx, "responses", "by_request_id", "requestId", args.requestId); return response ? { accountId: row.accountId, status: row.status, response: response.response } : { accountId: row.accountId, status: row.status };
 } });
 
 export const reportCapacity = mutationGeneric({ args: { capacity: v.any() }, handler: async (ctx, args) => { const identity = await requireIdentity(ctx, "machine"); const row = await machineFor(ctx, identity.accountId!, identity.machineId!); await ctx.db.patch(row._id, { capacity: args.capacity, capacityAt: Date.now() }); return null; } });
 
+/**
+ * The daily cleanup: relay rows and usage past retention, and sign-in and OAuth state nothing can use any more
+ * (expired email codes and rate-limit windows, authorization codes, expired or revoked token families, removed
+ * machines). Each table is swept a bounded batch at a time; a sweep that fills its batch continues in a scheduled run.
+ */
 export const cleanupExpired = internalMutationGeneric({ args: { cutoff: v.optional(v.number()), batch: v.optional(v.number()) }, handler: async (ctx, args) => {
-  const cutoff = args.cutoff ?? Date.now() - 86_400_000; const batch = args.batch ?? 200;
+  const now = Date.now(); const cutoff = args.cutoff ?? now - 86_400_000; const batch = args.batch ?? 200;
+  const sweeps: number[] = [];
   const requests = await ctx.db.query("requests").withIndex("by_created", (q: any) => q.lt("createdAt", cutoff)).take(batch); for (const row of requests) { const response = await byField(ctx, "responses", "by_request_id", "requestId", row.requestId); if (response) await ctx.db.delete(response._id); await ctx.db.delete(row._id); }
+  sweeps.push(requests.length);
   const responses = requests.length < batch ? await ctx.db.query("responses").withIndex("by_recorded", (q: any) => q.lt("recordedAt", cutoff)).take(batch) : [];
-  for (const row of responses) await ctx.db.delete(row._id);
-  const usages = await ctx.db.query("relayUsage").withIndex("by_day", (q: any) => q.lt("day", dayOf(Date.now() - 2 * 86_400_000))).take(batch); for (const row of usages) await ctx.db.delete(row._id);
-  if (requests.length === batch) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("relay:cleanupExpired") as any, { cutoff, batch }); return { deleted: requests.length + responses.length };
+  for (const row of responses) await ctx.db.delete(row._id); sweeps.push(responses.length);
+  const usages = await ctx.db.query("relayUsage").withIndex("by_day", (q: any) => q.lt("day", dayOf(now - 2 * 86_400_000))).take(batch); for (const row of usages) await ctx.db.delete(row._id); sweeps.push(usages.length);
+  const sweep = async (table: string, index: string, field: string, before: number) => {
+    // `gte(0)` leaves out rows without the field: an index sorts a missing value before every number.
+    const rows = await ctx.db.query(table).withIndex(index, (q: any) => q.gte(field, 0).lt(field, before)).take(batch);
+    for (const row of rows) await ctx.db.delete(row._id); sweeps.push(rows.length); return rows;
+  };
+  await sweep("emailCodes", "by_expires", "expiresAt", now);
+  await sweep("rateLimits", "by_reset", "resetAt", now);
+  // A used code past its expiry can no longer be exchanged; a replay a day later is refused as unknown instead of revoking.
+  await sweep("authCodes", "by_expires", "expiresAt", cutoff);
+  await sweep("oauthTokens", "by_refresh_expires", "refreshExpiresAt", now);
+  // A revoked family's tokens go once no five-minute agent JWT it issued can still be live; its revocation row goes
+  // with its last token, since an unknown family is refused just the same.
+  const revocations = await ctx.db.query("oauthRevocations").withIndex("by_revoked", (q: any) => q.lt("revokedAt", now - 60 * 60 * 1000)).take(batch);
+  let tokens = 0; let families = 0;
+  for (const revocation of revocations) {
+    const rows = await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", revocation.familyId)).take(batch - tokens);
+    for (const row of rows) await ctx.db.delete(row._id); tokens += rows.length;
+    if (!await ctx.db.query("oauthTokens").withIndex("by_family", (q: any) => q.eq("familyId", revocation.familyId)).first()) { await ctx.db.delete(revocation._id); families++; }
+    if (tokens >= batch) break;
+  }
+  sweeps.push(families, tokens);
+  // A removed machine is refused whether its row is revoked or gone; its sandboxes' rows went when it was removed.
+  await sweep("machines", "by_revoked", "revokedAt", cutoff);
+  if (sweeps.some((count) => count >= batch)) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("relay:cleanupExpired") as any, { cutoff, batch });
+  return { deleted: sweeps.reduce((sum, count) => sum + count, 0) };
 } });

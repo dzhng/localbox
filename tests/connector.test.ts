@@ -175,11 +175,13 @@ test("a revoked machine credential stops the connector and closes Convex", async
 test("a subscription refused because the machine was removed ends the connector once the token route refuses too", async () => {
   let removed = false; const forced: boolean[] = [];
   const { convex, connector } = harness({ fetchToken: async (force) => { forced.push(force); if (removed) throw new RevokedError(); return "jwt"; } });
-  convex.fail("relay:pendingForMachine", new Error("[CONVEX Q(relay:pendingForMachine)] Server Error: Forbidden: machine revoked or unknown"));
+  // Production Convex sends a refusal as a ConvexError whose data carries the code; the message text is not to be relied on.
+  const refused = () => new ConvexError({ code: "unauthorized", message: "Forbidden: machine revoked or unknown" });
+  convex.fail("relay:pendingForMachine", refused());
   await settle();
   assert.equal(connector.state().state, "connecting", "while the token route still answers, the connector keeps going");
   removed = true;
-  convex.fail("relay:pendingForMachine", new Error("Server Error: Forbidden: machine revoked or unknown"));
+  convex.fail("relay:pendingForMachine", refused());
   assert.equal(await connector.finished, "revoked");
   assert.deepEqual(forced, [true, true]);
   assert.equal(convex.closed, true);
@@ -188,7 +190,8 @@ test("a subscription refused because the machine was removed ends the connector 
 test("a subscription error that is not about the machine identity does not touch the token", async () => {
   const forced: boolean[] = [];
   const { convex, connector } = harness({ fetchToken: async (force) => { forced.push(force); return "jwt"; } });
-  convex.fail("sandboxes:forMachine", new Error("Server Error: something else"));
+  // A thrown non-ConvexError reaches the client redacted to "Server Error", whatever it said.
+  convex.fail("sandboxes:forMachine", new Error("[CONVEX Q(sandboxes:forMachine)] [Request ID: 1] Server Error"));
   await settle();
   assert.deepEqual(forced, []);
   await connector.stop();

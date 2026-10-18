@@ -1,0 +1,24 @@
+# The API project deploys the functions in api/ and the source they import; nothing else is uploaded.
+# Secrets and local state
+.release-signing/
+.env*
+.localbox/
+*.pem
+*.p12
+!skills/localbox/release-public.pem
+# Build and release output
+dist/
+release/
+**/.build/
+# Not part of the API: docs, specs, tests, other apps (the site is its own Vercel project)
+specs/
+tests/
+snapshots/
+scripts/
+.agents/
+.claude/
+.github/
+apps/macos/
+apps/site/
+apps/guest-agent/
+packages/vm-image/

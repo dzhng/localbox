@@ -1,6 +1,7 @@
 import type { AuthConfig } from "convex/server";
 
-const issuer = process.env.LOCALBOX_API_ORIGIN ?? "http://127.0.0.1:3000";
+// The same default as `DEFAULT_API_ORIGIN` in packages/config (Convex bundles this file alone, so it is not imported).
+const issuer = process.env.LOCALBOX_API_ORIGIN ?? "https://api.localbox.sh";
 const jwks = process.env.LOCALBOX_JWKS ?? "{}";
 
 export default {

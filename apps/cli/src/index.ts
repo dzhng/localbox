@@ -7,7 +7,7 @@ import {
   type Json, type JsonSchema, type OperationCatalogEntry, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
-import { AgentApiTransport, AgentClient, fixtureTransport, LocalIPCTransport, type ClientTransport } from "../../../packages/client/src/index.js";
+import { AgentApiTransport, AgentClient, fixtureTransport, LocalIPCTransport, TransportError, type ClientTransport } from "../../../packages/client/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { AgentSetup, isAgentSetupOperation, REASONS, type Reason } from "./agent-setup.js";
 import { checkForUpdate, installLatest } from "./updater.js";
@@ -180,7 +180,10 @@ async function run(request: RequestEnvelope, wanted: string | undefined): Promis
     const local = entry.executor === "account" ? entry.id === "sandbox.list" && !(await readCredentials(machinePaths().credentials)) : true;
     return await (local ? await localTransport() : entry.id === "sandbox.create" ? await createTransport() : await accountTransport()).dispatch(request);
   } catch (error) {
-    return failure(request, error instanceof ContractError ? error : new ContractError("internal", error instanceof Error ? error.message : String(error)));
+    if (error instanceof ContractError) return failure(request, error);
+    // A lost response keeps its own code; the mutation id is what a replay needs to learn what happened.
+    if (error instanceof TransportError) return failure(request, new ContractError(error.code, error.message, request.mutation_id ? { mutation_id: request.mutation_id } : undefined, error.retryable));
+    return failure(request, new ContractError("internal", error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -203,15 +206,22 @@ function coerce(value: string | true, schema: JsonSchema | undefined, flag: stri
   return value;
 }
 
+function inputJson(value: string): Record<string, Json> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new ContractError("invalid_input", "--input-json takes a JSON object"); }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new ContractError("invalid_input", "--input-json takes a JSON object");
+  return parsed as Record<string, Json>;
+}
+
 /** `localbox <group> <verb> [positional...] [--flag value...]` for any catalog operation. */
 async function catalogCommand(entry: OperationCatalogEntry, words: string[], implied: Record<string, Json> = {}): Promise<void> {
   const schema = entry.input_schema; const properties = schema.properties ?? {};
   const { flags, positional } = parse(words, schema);
-  const input: Record<string, Json> = { ...(typeof flags["input-json"] === "string" ? JSON.parse(flags["input-json"]) : {}), ...implied };
+  const input: Record<string, Json> = { ...(typeof flags["input-json"] === "string" ? inputJson(flags["input-json"]) : {}), ...implied };
   for (const [flag, value] of Object.entries(flags)) {
     if (CONTROL_FLAGS.has(flag)) continue;
     const key = flag.replaceAll("-", "_");
-    if (!properties[key]) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
+    if (!Object.hasOwn(properties, key)) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
     input[key] = coerce(value, properties[key], flag);
   }
   if (typeof flags.memory === "string") input.memory_bytes = bytes(flags.memory);

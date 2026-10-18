@@ -278,7 +278,7 @@ class ProductionDesktopBackend {
     return { tab_id: tabId, key };
   }
 
-  async desktopClick(x: number, y: number, button: string): Promise<Json> {
+  async desktopClick(x: number, y: number, button = "left"): Promise<Json> {
     await this.run("xdotool", ["mousemove", "--sync", String(x), String(y)]);
     await this.run("xdotool", ["click", desktopButton(button)]);
     return { x, y, button, clicked: true };

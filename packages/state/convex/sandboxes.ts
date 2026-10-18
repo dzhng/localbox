@@ -1,7 +1,7 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
-import { boundedRows, byField, id, refuse } from "./lib/relay.js";
+import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 
 /** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it. */
@@ -61,7 +61,7 @@ export const byCreateMutation = queryGeneric({ args: { mutationId: v.string() },
 
 export const list = queryGeneric({ args: {}, handler: async (ctx) => {
   const { accountId } = await requireAccount(ctx);
-  const machines = new Map((await boundedRows(ctx.db.query("machines").withIndex("by_account", (q: any) => q.eq("accountId", accountId)), "machine list")).map((row: any) => [row.machineId, row.name]));
+  const machines = new Map((await liveMachines(ctx, accountId)).map((row: any) => [row.machineId, row.name]));
   return (await accountRows(ctx, accountId)).sort((a: any, b: any) => a.createdAt - b.createdAt).map((row: any) => view(row, machines.get(row.machineId)));
 } });
 

@@ -2,7 +2,7 @@ import { internalMutationGeneric, makeFunctionReference, mutationGeneric, queryG
 import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { byField, clean } from "./lib/relay.js";
 import { v } from "convex/values";
-import { boundedRows, refuse } from "./lib/relay.js";
+import { liveMachines, refuse } from "./lib/relay.js";
 import { validateLabel } from "../../names/src/index.js";
 
 /** The calling machine's own record; the only data a machine identity can read here. */
@@ -12,7 +12,7 @@ export const self = queryGeneric({ args: {}, handler: async (ctx) => {
   return machine;
 } });
 
-export const list = queryGeneric({ args: {}, handler: async (ctx) => { const identity = await requireAccount(ctx); const rows = await boundedRows(ctx.db.query("machines").withIndex("by_account", (q: any) => q.eq("accountId", identity.accountId)), "machine list"); return rows.filter((row: any) => row.revokedAt === undefined).map(({ credentialHash: _hash, ...row }: any) => clean(row)); } });
+export const list = queryGeneric({ args: {}, handler: async (ctx) => { const identity = await requireAccount(ctx); return (await liveMachines(ctx, identity.accountId)).map(({ credentialHash: _hash, ...row }: any) => clean(row)); } });
 export const rename = mutationGeneric({ args: { machineId: v.string(), name: v.string() }, handler: async (ctx, args) => { const identity = await requireAccount(ctx); const row = await byField(ctx, "machines", "by_machine", "machineId", args.machineId); if (!row || row.accountId !== identity.accountId || row.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`); const name = validateLabel(args.name); await ctx.db.patch(row._id, { name }); return { machine_id: row.machineId, machine_name: name }; } });
 
 const SANDBOX_BATCH = 200;

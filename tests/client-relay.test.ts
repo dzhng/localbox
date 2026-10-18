@@ -58,3 +58,37 @@ test("a mutation replayed while its first run is still going runs once and both 
   assert.deepEqual((await first).ok && (await first as any).result, { stdout: "once" });
   assert.deepEqual((await second as any).result, { stdout: "once" }); assert.equal(runs, 1);
 });
+
+test("a mutation replayed after machine_offline is queued afresh and runs, since the abandoned row never reached the machine", async () => {
+  const connectors: Record<string, (envelope: RequestEnvelope) => Promise<ResponseEnvelope>> = {};
+  const { deps } = memoryMailbox({ machines, sandboxes, connectors });
+  const mutation = { operation: "shell.exec", mutation_id: "offline-then-back", input: { command: "true" } };
+  const first = await transportFor(deps).dispatch(request(mutation));
+  assert.equal(!first.ok && first.error.code, "machine_offline");
+  connectors.m_b = async (envelope) => answer(envelope);
+  assert.equal((await transportFor(deps).dispatch(request(mutation))).ok, true);
+});
+
+test("a wait ends as not found when the request is unknown, and as operation_uncertain when the subscription fails", async () => {
+  const { deps } = memoryMailbox({ machines, sandboxes, connectors: {} });
+  const missing = await runOps({ accountId: "acct" }, { continue: "req_never_queued" }, deps);
+  assert.equal(missing.status, 404);
+  const failing = { ...deps, watchResult: (_id: string, _onChange: unknown, onError: (error: Error) => void) => { queueMicrotask(() => onError(new Error("[CONVEX Q(relay:result)] Server Error"))); return () => {}; } };
+  const lost = await runOps({ accountId: "acct" }, { continue: "req_any" }, failing);
+  assert.equal(lost.status, 200); assert.equal((lost.body as any).response.error.code, "operation_uncertain");
+});
+
+test("a relayed request is checked against the contract before it is queued", async () => {
+  const { deps, rows } = memoryMailbox({ machines, sandboxes, connectors: {} });
+  const result = await runOps({ accountId: "acct" }, { operation: "system.info", sandbox: "quiet-otter", deadline_ms: 10 * 60_000, input: {} }, deps);
+  assert.equal((result.body as any).response.error.code, "invalid_input"); assert.match((result.body as any).response.error.message, /deadline_ms/);
+  assert.equal(rows.size, 0);
+});
+
+test("a caller Convex refuses as unauthorized is answered 401, whatever the error's message says", async () => {
+  const { ConvexError } = await import("convex/values");
+  const { deps } = memoryMailbox({ machines, sandboxes, connectors: {} });
+  const refusing = { ...deps, accountCall: async () => { throw new ConvexError({ code: "unauthorized", message: "redacted" }); } };
+  assert.equal((await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "machine.list", input: {} }, refusing)).status, 401);
+  assert.equal((await runOps({ accountId: "acct", familyId: "f" }, { operation: "system.info", sandbox: "quiet-otter", input: {} }, refusing)).status, 401);
+});

@@ -67,7 +67,8 @@ export class AgentApiTransport implements ClientTransport {
       try {
         response = await this.fetchImpl(this.endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: options.signal });
       } catch (error) {
-        throw new TransportError("operation_uncertain", error instanceof Error ? error.message : "relay request failed", true);
+        // Only a mutation can have half-applied; a failed read is just unreachable.
+        throw new TransportError(request.mutation_id !== null ? "operation_uncertain" : "guest_unreachable", error instanceof Error ? error.message : "relay request failed", true);
       }
       if (response.status === 401 || response.status === 403) return failure(request, { code: "unauthorized", message: "this machine was removed or is signed out; run localbox login", retryable: false });
       if (response.status === 202) {
@@ -124,14 +125,27 @@ export class LocalIPCTransport implements ClientTransport {
     const body = Buffer.from(JSON.stringify({ token, envelope: Buffer.from(JSON.stringify(request)).toString("base64") }));
     if (body.byteLength > this.maxFrameBytes) return failure(request, { code: "resource_exhausted", message: "local IPC request exceeds the frame limit", retryable: false });
     try {
-      const response = await readIPCFrame(this.socketPath, body, this.maxFrameBytes, this.timeoutMs, options.signal);
+      // The daemon may legitimately work until the request's own deadline, so never give up before it.
+      const timeoutMs = Math.max(this.timeoutMs, request.deadline_ms + IPC_DEADLINE_MARGIN_MS);
+      const response = await readIPCFrame(this.socketPath, body, this.maxFrameBytes, timeoutMs, options.signal);
       if (response.error) return failure(request, localIPCError(response.error));
       if (!response.envelope) return failure(request, { code: "guest_unreachable", message: "local HostDaemon returned no envelope", retryable: true });
       return JSON.parse(Buffer.from(response.envelope, "base64").toString("utf8")) as ResponseEnvelope;
     } catch (error) {
-      return failure(request, { code: "guest_unreachable", message: error instanceof Error ? error.message : "local IPC request failed", retryable: true });
+      const message = error instanceof Error ? error.message : "local IPC request failed";
+      // Once a mutation's frame is sent it may have applied; only a replay with the same mutation id can tell.
+      if (error instanceof IPCFrameError && error.sent && request.mutation_id !== null)
+        return failure(request, { code: "operation_uncertain", message: `${message}; replay with the same mutation id (${request.mutation_id}) to get its result`, retryable: true });
+      return failure(request, { code: "guest_unreachable", message, retryable: true });
     }
   }
+}
+
+const IPC_DEADLINE_MARGIN_MS = 15_000;
+
+/** A local IPC failure, recording whether the request frame had already been written. */
+class IPCFrameError extends Error {
+  constructor(message: string, readonly sent: boolean) { super(message); }
 }
 
 interface LocalIPCWireResponse { envelope?: string; error?: string }
@@ -159,7 +173,7 @@ async function readIPCFrame(socketPath: string, body: Buffer, maxFrameBytes: num
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
       socket?.destroy();
-      error ? reject(error) : resolve(value!);
+      error ? reject(new IPCFrameError(error.message, wrote)) : resolve(value!);
     };
     signal?.addEventListener("abort", abort, { once: true });
     socket = createConnection(socketPath);
@@ -180,7 +194,9 @@ async function readIPCFrame(socketPath: string, body: Buffer, maxFrameBytes: num
       const frame = Buffer.allocUnsafe(4 + body.length);
       frame.writeUInt32BE(body.length, 0);
       body.copy(frame, 4);
-      socket!.write(frame, () => { wrote = true; });
+      // Counted as sent from the moment it is handed to the socket: the daemon may read it before the callback.
+      wrote = true;
+      socket!.write(frame);
     });
   });
 }

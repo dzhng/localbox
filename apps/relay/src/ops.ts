@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import {
-  catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateJson,
+  catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateJson, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place } from "../../../packages/placement/src/index.js";
@@ -16,8 +16,8 @@ export interface OpsDeps {
   accountCall(principal: Principal, kind: "mutation" | "query", name: string, args: Record<string, unknown>): Promise<any>;
   /** Service-identity mutation (`relay:enqueue`, `relay:abandonIfUnclaimed`). */
   serviceMutation(name: string, args: Record<string, unknown>): Promise<any>;
-  /** Subscribe to `relay:result`; returns the unsubscribe function. */
-  watchResult(requestId: string, onChange: (result: RelayResult | null) => void): () => void;
+  /** Subscribe to `relay:result` (null: no such request); `onError` hears a failed subscription. Returns the unsubscribe function. */
+  watchResult(requestId: string, onChange: (result: RelayResult | null) => void, onError: (error: Error) => void): () => void;
   /** Lazy offline window: a request still unclaimed after this long is abandoned. */
   claimWindowMs?: number;
   /** Longest a single HTTP call waits before handing back a continuation. */
@@ -58,6 +58,8 @@ export function contractError(error: unknown): ContractError {
   if (error instanceof ConvexError) return new ContractError("internal", typeof error.data?.message === "string" ? error.data.message : String(error.message), undefined, true);
   throw error;
 }
+/** Convex refused the caller's own credential (`unauthorized`: a removed machine, a revoked agent). */
+export const callerRefused = (error: unknown): boolean => error instanceof ConvexError && error.data?.code === "unauthorized";
 const answer = (response: ResponseEnvelope): OpsResponse => ({ status: 200, body: { response } });
 
 /**
@@ -67,9 +69,8 @@ const answer = (response: ResponseEnvelope): OpsResponse => ({ status: 200, body
 export async function runOps(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<OpsResponse> {
   try { return await handleOps(principal, input, deps); }
   catch (error) {
-    const message = error instanceof Error ? error.message : "operation failed";
-    if (!/revoked|Forbidden/i.test(message)) return { status: 400, body: { error: message } };
-    return { status: 401, body: { error: principal.machineId ? "this machine was removed; run localbox login" : "this agent's sign-in was revoked; sign in again" } };
+    if (callerRefused(error)) return { status: 401, body: { error: principal.machineId ? "this machine was removed; run localbox login" : "this agent's sign-in was revoked; sign in again" } };
+    return { status: 400, body: { error: error instanceof ConvexError && typeof error.data?.message === "string" ? error.data.message : error instanceof Error ? error.message : "operation failed" } };
   }
 }
 
@@ -108,6 +109,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     if (entry.id === "sandbox.delete") return await deleteSandbox(principal, request, target, deps);
     return await relay(principal, target.machine_id, request, deps);
   } catch (error) {
+    if (callerRefused(error)) throw error;
     return answer(failure(base, contractError(error)));
   }
 }
@@ -283,10 +285,15 @@ async function relayedResponse(principal: Principal, machineId: string, request:
   return ((await relay(principal, machineId, { ...request, mutation_id: mutationId }, deps)).body as { response?: ResponseEnvelope }).response;
 }
 
-/** Enqueues `request` for `machineId` and waits for its answer; a refused enqueue (machine removed, daily limit) answers as a failure. */
+/**
+ * Enqueues `request` for `machineId` and waits for its answer; a malformed envelope or a refused enqueue (machine
+ * removed, daily limit) answers as a failure. A create carries the sandbox id it reserved although its operation takes
+ * no sandbox, so that one field is checked as the catalog defines it.
+ */
 async function relay(principal: Principal, machineId: string, request: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
   let queued: { requestId: string };
   try {
+    validateRequest(catalogById.get(request.operation as OperationId)?.sandbox_scoped ? request : { ...request, sandbox_id: null });
     queued = await deps.serviceMutation("relay:enqueue", { accountId: principal.accountId, machineId, ...(request.sandbox_id ? { sandboxId: request.sandbox_id } : {}), requestId: request.request_id, operation: request.operation, ...(request.mutation_id ? { mutationId: request.mutation_id } : {}), payload: request });
   } catch (error) { return answer(failure(request, contractError(error))); }
   return await waitFor(principal, queued.requestId, Date.now() + request.deadline_ms, deps, request);
@@ -297,21 +304,27 @@ async function waitFor(principal: Principal, requestId: string, deadlineAt: numb
   const envelope = request ?? requestFromInvocation({ operation: "system.info", request_id: requestId, input: {} });
   const started = Date.now(); const waitUntil = Math.min(deadlineAt || started + maxWaitMs, started + maxWaitMs);
   let latest: RelayResult | null = null; let abandonCall: Promise<{ abandoned?: boolean; lastSeenAt?: number } | undefined> | undefined;
-  const outcome = await new Promise<"done" | "offline" | "timeout" | "foreign">((resolve) => {
-    let settled = false; const timers: NodeJS.Timeout[] = [];
-    const finish = (value: "done" | "offline" | "timeout" | "foreign") => { if (settled) return; settled = true; for (const timer of timers) clearTimeout(timer); unsubscribe(); resolve(value); };
-    const unsubscribe = deps.watchResult(requestId, (result) => {
+  type Outcome = "done" | "offline" | "timeout" | "missing" | "lost";
+  const outcome = await new Promise<Outcome>((resolve) => {
+    let settled = false; const timers: NodeJS.Timeout[] = []; let unsubscribe: (() => void) | undefined;
+    const finish = (value: Outcome) => { if (settled) return; settled = true; for (const timer of timers) clearTimeout(timer); unsubscribe?.(); resolve(value); };
+    unsubscribe = deps.watchResult(requestId, (result) => {
       latest = result;
-      if (result?.accountId !== undefined && result.accountId !== principal.accountId) finish("foreign");
-      else if (result?.status === "completed") finish("done");
-      else if (result?.status === "abandoned") finish("offline");
-    });
+      // Another account's request is reported exactly like one that does not exist.
+      if (result === null || (result.accountId !== undefined && result.accountId !== principal.accountId)) finish("missing");
+      else if (result.status === "completed") finish("done");
+      else if (result.status === "abandoned") finish("offline");
+    }, () => finish("lost"));
+    // The first result can arrive synchronously and end the wait before there is anything to unsubscribe or time.
+    if (settled) { unsubscribe(); return; }
     timers.push(setTimeout(() => {
       abandonCall = deps.serviceMutation("relay:abandonIfUnclaimed", { requestId }).then((abandoned: { abandoned?: boolean; lastSeenAt?: number }) => { if (abandoned?.abandoned) finish("offline"); return abandoned; }, () => undefined);
     }, Math.max(0, claimWindowMs - (Date.now() - started))));
     timers.push(setTimeout(() => finish("timeout"), Math.max(0, waitUntil - Date.now())));
   });
-  if (outcome === "foreign") return { status: 404, body: { error: "request not found" } };
+  if (outcome === "missing") return { status: 404, body: { error: "request not found" } };
+  // The request is queued and may still run, so a subscription that failed is a lost answer, never a guess.
+  if (outcome === "lost") return answer(failure(envelope, { code: "operation_uncertain", message: "the relay lost track of the request's answer; replay with the same mutation id to get its result", retryable: true }));
   if (outcome === "done") return { status: 200, body: { response: (latest as RelayResult | null)?.response } };
   if (outcome === "offline") {
     // The subscription can report `abandoned` before our own abandon call returns the machine's last-seen time.
