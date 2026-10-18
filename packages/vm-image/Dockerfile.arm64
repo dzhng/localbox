@@ -106,6 +106,7 @@ COPY packages/vm-image/desktop/ /opt/localbox/desktop/
 RUN if [ "$PROFILE" = full ]; then \
       install -m 0644 /opt/localbox/desktop/*.service /etc/systemd/system/ \
       && install -m 0644 /opt/localbox/desktop/60-localbox-userns.conf /etc/sysctl.d/ \
+      && install -D -m 0644 /opt/localbox/desktop/localbox-guest-desktop.conf /etc/systemd/system/localbox-guest.service.d/desktop.conf \
       && systemctl enable localbox-display.service localbox-session.service localbox-browser.service; \
     fi
 
