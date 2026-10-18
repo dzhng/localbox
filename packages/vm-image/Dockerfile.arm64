@@ -109,7 +109,8 @@ RUN if [ "$PROFILE" = full ]; then \
       && systemctl enable localbox-display.service localbox-session.service localbox-browser.service; \
     fi
 
-# Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it, DHCP on the NAT interface
+# Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it (retrying
+# for up to a minute: the host connects as soon as socat listens, often before the agent does), DHCP on the NAT interface
 # (systemd-networkd and -resolved); machine-id is intentionally empty so the
 # guest agent establishes each sandbox's identity from the host's hello.
 # IgnoreCarrierLoss: a restore drops the NIC's carrier for ~50 ms; without it
@@ -118,7 +119,7 @@ COPY dist/ /opt/localbox/dist/
 RUN install -d -m 0755 /run/localbox /var/lib/localbox \
   && install -d -m 0755 /etc/systemd/system \
   && printf '[Unit]\nDescription=Localbox guest agent (persistent; outlives host connections)\n\n[Service]\nType=simple\nExecStart=/usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nKillMode=process\nRuntimeDirectory=localbox\nRuntimeDirectoryPreserve=yes\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\nEnvironment=LOCALBOX_AGENT_SOCKET=/run/localbox/agent.sock\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
-  && printf '[Unit]\nDescription=Forward vsock port 1024 to the Localbox guest agent\nAfter=localbox-guest.service\nWants=localbox-guest.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock\nRestart=always\nRestartSec=0\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-vsock.service \
+  && printf '[Unit]\nDescription=Forward vsock port 1024 to the Localbox guest agent\nAfter=localbox-guest.service\nWants=localbox-guest.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock,retry=600,interval=0.1\nRestart=always\nRestartSec=0\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-vsock.service \
   && systemctl enable localbox-guest.service localbox-vsock.service \
   && printf '[Match]\nName=en*\n\n[Network]\nDHCP=yes\nIgnoreCarrierLoss=yes\n' > /etc/systemd/network/20-nat.network \
   && systemctl enable systemd-networkd.service systemd-resolved.service \
