@@ -134,7 +134,10 @@ public actor SandboxRuntime {
         bootCount += 1
         if let reporting = next as? any GuestStopReporting {
             let boot = bootCount
-            await reporting.onGuestStop { [weak self] reason in Task { await self?.guestLost(reason, boot: boot) } }
+            await reporting.onGuestStop { [weak self] reason in
+                guard let self else { return }
+                Task { await self.guestLost(reason, boot: boot) }
+            }
         }
         do {
             try await run(next)

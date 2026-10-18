@@ -10,7 +10,7 @@
 dist/
 release/
 **/.build/
-# Not part of the API: docs, specs, tests, other apps (the site is its own Vercel project)
+# Not part of the API: docs, specs, tests, other apps
 specs/
 tests/
 snapshots/
@@ -19,6 +19,5 @@ scripts/
 .claude/
 .github/
 apps/macos/
-apps/site/
 apps/guest-agent/
 packages/vm-image/

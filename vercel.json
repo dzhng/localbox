@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "buildCommand": "mkdir -p static",
+  "buildCommand": "mkdir -p static && printf 'User-agent: *\\nDisallow: /\\n' > static/robots.txt",
   "outputDirectory": "static",
   "functions": {
     "api/relay.ts": {
