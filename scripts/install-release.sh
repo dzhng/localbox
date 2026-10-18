@@ -119,6 +119,17 @@ if [ ! -e "$TARGET" ]; then
   # A download through a quarantining app carries the flag into the unpacked tree, and Gatekeeper would refuse the
   # self-signed, unnotarized binaries. The release is already authenticated by its pinned manifest signature.
   xattr -dr com.apple.quarantine "$INSTALL_STAGE" 2>/dev/null || true
+  # The signed manifest names the template's parts and the expanded disk's digest; expansion refuses a mismatch.
+  mkdir "$INSTALL_STAGE/vm"
+  (cd "$CLI_STAGE" && SOURCE_DIR="$SOURCE_DIR" TEMPLATE="$INSTALL_STAGE/vm/template.img" "$VERIFY_NODE" --input-type=module <<'NODE'
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { expandTemplate } from "./dist/scripts/release.js";
+const manifest = JSON.parse(readFileSync(join(process.env.SOURCE_DIR, "release.json"), "utf8"));
+if (!manifest.template) throw new Error("release has no VM template");
+await expandTemplate(process.env.SOURCE_DIR, manifest.template, process.env.TEMPLATE);
+NODE
+  )
   cp "$SOURCE_DIR/release.json" "$INSTALL_STAGE/release.json"
   cp "$SOURCE_DIR/SHA256SUMS" "$INSTALL_STAGE/SHA256SUMS"
   cp "$APP_ZIP" "$INSTALL_STAGE/$(basename "$APP_ZIP")"
@@ -155,7 +166,7 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$
 plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOXES' -string "$SANDBOXES_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_APP/Contents/Resources/vm/template.img" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$RELEASE_ROOT/active/vm/template.img" "$PLIST"
 # The daemon runs the active release's CLI for agent setup: once at every start, and for remote callers.
 plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$ACTIVE_CLI" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"

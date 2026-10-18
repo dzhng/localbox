@@ -4,8 +4,10 @@ import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
-import { activateRelease, activeRelease, makeManifest, rollbackRelease, signManifest, verifyManifestSignature, writeRelease, verifyRelease } from "../scripts/release.js";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { stat } from "node:fs/promises";
+import { zstdCompressSync } from "node:zlib";
+import { activateRelease, activeRelease, expandTemplate, makeManifest, rollbackRelease, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, TEMPLATE_PATH } from "../scripts/release.js";
 
 test("release manifest and checksums verify artifacts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-")); await writeFile(join(dir, "agent-computer-arm64"), "fixture");
@@ -59,6 +61,36 @@ test("rollback selects an older verified release", async () => {
   await rollbackRelease(root, "0.1.0", first);
   assert.equal(await activeRelease(root), "0.1.0");
   assert.equal(await readFile(join(root, "active", "agent-computer-arm64"), "utf8"), "first");
+});
+
+test("a template split into parts expands to the signed disk, leaves zeros as holes, and an install verifies it without the parts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-release-template-"));
+  const download = join(root, "download");
+  await mkdir(download);
+  // 64 MiB of disk with two small extents of data: the rest must stay unallocated.
+  const disk = Buffer.alloc(64 * 1024 * 1024);
+  disk.write("superblock", 1024); disk.write("tail", disk.length - 4);
+  const compressed = zstdCompressSync(disk);
+  const half = Math.floor(compressed.length / 2);
+  await writeFile(join(download, "t.zst.000"), compressed.subarray(0, half));
+  await writeFile(join(download, "t.zst.001"), compressed.subarray(half));
+  await writeFile(join(download, "agent-computer-arm64"), "app");
+  const template = { sha256: createHash("sha256").update(disk).digest("hex"), size: disk.length, parts: ["t.zst.000", "t.zst.001"] };
+  const manifest = await makeManifest(download, "0.1.0", "sha256:image", undefined, template);
+  await verifyRelease(download, manifest);
+  const installed = join(root, "releases", "0.1.0");
+  await mkdir(join(installed, "vm"), { recursive: true });
+  await writeFile(join(installed, "agent-computer-arm64"), "app");
+  await expandTemplate(download, template, join(installed, TEMPLATE_PATH));
+  const expanded = join(installed, TEMPLATE_PATH);
+  assert.equal(await sha256(expanded), template.sha256);
+  assert.ok((await stat(expanded)).blocks * 512 < disk.length / 8, "zero blocks are holes");
+  await activateRelease(join(root, "releases"), "0.1.0", manifest);
+  await writeFile(expanded, "tampered");
+  await assert.rejects(() => activateRelease(join(root, "releases"), "0.1.0", manifest), /checksum mismatch: VM template/);
+  await assert.rejects(() => expandTemplate(download, { ...template, sha256: "0".repeat(64) }, join(root, "refused.img")), /does not match the signed manifest/);
+  await assert.rejects(() => stat(join(root, "refused.img")));
+  await assert.rejects(() => verifyRelease(download, { ...manifest, template: { ...template, parts: ["unlisted"] } }), /invalid VM template entry/);
 });
 
 test("release activation rejects path traversal versions before touching the tree", async () => {

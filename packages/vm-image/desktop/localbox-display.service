@@ -1,0 +1,13 @@
+[Unit]
+Description=Localbox desktop display :0 (KasmVNC viewer on loopback only)
+
+[Service]
+User=exedev
+Environment=HOME=/home/exedev
+# -ac: the guest agent (root) drives this display with xdotool and screenshots it; nothing listens off loopback.
+ExecStart=/usr/bin/Xvnc :0 -geometry 1440x900 -depth 24 -ac -interface 127.0.0.1 -websocketPort 6901 -DisableBasicAuth -sslOnly 0 -SecurityTypes None
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

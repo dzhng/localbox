@@ -17,8 +17,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION}
 
 RUN test "$PROFILE" = minimal || test "$PROFILE" = full
-# The package names in the full branch are the Duet apt inventory. The only
-# package substitution is Chromium for Google's x86_64-only Chrome.
+# The package names in the full branch are the Duet apt inventory. Google
+# Chrome is x86_64-only, so Chromium comes from Playwright below, and xdotool
+# drives the display for the desktop tools.
 RUN apt-get update && \
   if [ "$PROFILE" = full ]; then \
     apt-get install -y --no-install-recommends \
@@ -30,7 +31,7 @@ RUN apt-get update && \
       ninja-build pandoc plank poppler-utils pulseaudio pulseaudio-utils \
       python-is-python3 qpdf ripgrep tesseract-ocr thunar unzip vim wget \
       x11-utils xclip xfce4-panel xfce4-session xfce4-settings xfce4-terminal \
-      xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip chromium \
+      xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip xdotool \
       systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
   else \
     apt-get install -y --no-install-recommends \
@@ -53,6 +54,18 @@ RUN if [ "$PROFILE" = full ]; then \
 
 # Duet's global npm inventory, retained verbatim for full images.
 RUN if [ "$PROFILE" = full ]; then npm install -g eslint firecrawl-cli prettier skills typescript; fi
+
+# Ubuntu's arm64 chromium package is a snap stub, which cannot install or run
+# here; Playwright publishes a pinned arm64 Chromium build and its apt deps.
+ARG PLAYWRIGHT_VERSION=1.64.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN if [ "$PROFILE" = full ]; then \
+      npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --no-shell chromium \
+      && chrome=$(find /opt/ms-playwright -type f -name chrome -perm -u+x | head -n 1) \
+      && test -n "$chrome" && ln -s "$chrome" /usr/local/bin/chromium \
+      && chromium --version \
+      && rm -rf /var/lib/apt/lists/* /root/.npm; \
+    fi
 
 # ARM64 substitutions for Duet's x86_64 release downloads. KasmVNC ships a
 # native noble arm64 package at the same version.
@@ -87,7 +100,18 @@ RUN if [ "$PROFILE" = full ]; then \
       chown -R exedev:exedev /home/exedev; \
     fi
 
-# Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it, DHCP on the NAT interface
+# The desktop the guest agent's desktop tools drive: display :0, XFCE and
+# Chromium with CDP on loopback, as the exedev user.
+COPY packages/vm-image/desktop/ /opt/localbox/desktop/
+RUN if [ "$PROFILE" = full ]; then \
+      install -m 0644 /opt/localbox/desktop/*.service /etc/systemd/system/ \
+      && install -m 0644 /opt/localbox/desktop/60-localbox-userns.conf /etc/sysctl.d/ \
+      && install -D -m 0644 /opt/localbox/desktop/localbox-guest-desktop.conf /etc/systemd/system/localbox-guest.service.d/desktop.conf \
+      && systemctl enable localbox-display.service localbox-session.service localbox-browser.service; \
+    fi
+
+# Boot layer: the persistent guest agent on a Unix socket with socat forwarding vsock port 1024 to it (retrying
+# for up to a minute: the host connects as soon as socat listens, often before the agent does), DHCP on the NAT interface
 # (systemd-networkd and -resolved); machine-id is intentionally empty so the
 # guest agent establishes each sandbox's identity from the host's hello.
 # IgnoreCarrierLoss: a restore drops the NIC's carrier for ~50 ms; without it
@@ -96,7 +120,7 @@ COPY dist/ /opt/localbox/dist/
 RUN install -d -m 0755 /run/localbox /var/lib/localbox \
   && install -d -m 0755 /etc/systemd/system \
   && printf '[Unit]\nDescription=Localbox guest agent (persistent; outlives host connections)\n\n[Service]\nType=simple\nExecStart=/usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nKillMode=process\nRuntimeDirectory=localbox\nRuntimeDirectoryPreserve=yes\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\nEnvironment=LOCALBOX_AGENT_SOCKET=/run/localbox/agent.sock\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
-  && printf '[Unit]\nDescription=Forward vsock port 1024 to the Localbox guest agent\nAfter=localbox-guest.service\nWants=localbox-guest.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock\nRestart=always\nRestartSec=0\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-vsock.service \
+  && printf '[Unit]\nDescription=Forward vsock port 1024 to the Localbox guest agent\nAfter=localbox-guest.service\nWants=localbox-guest.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock,retry=600,interval=0.1\nRestart=always\nRestartSec=0\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-vsock.service \
   && systemctl enable localbox-guest.service localbox-vsock.service \
   && printf '[Match]\nName=en*\n\n[Network]\nDHCP=yes\nIgnoreCarrierLoss=yes\n' > /etc/systemd/network/20-nat.network \
   && systemctl enable systemd-networkd.service systemd-resolved.service \

@@ -21,6 +21,10 @@ if [ "$(uname -m)" != "arm64" ]; then
   echo "localbox releases require arm64" >&2
   exit 1
 fi
+if ! command -v zstd >/dev/null 2>&1; then
+  echo "zstd is required to compress the VM template (brew install zstd)" >&2
+  exit 1
+fi
 for required in LOCALBOX_KERNEL LOCALBOX_INITRD LOCALBOX_TEMPLATE_DISK; do
   value=$(eval "printf '%s' \"\${$required-}\"")
   if [ -z "$value" ] || [ ! -f "$value" ]; then
@@ -156,7 +160,6 @@ cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.connector.plist" "$APP/Co
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
 cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
 cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"
-cp "$LOCALBOX_TEMPLATE_DISK" "$APP/Contents/Resources/vm/template.img"
 
 CLI="$STAGE/localbox-cli"
 mkdir -p "$CLI/dist" "$CLI/bin"
@@ -219,6 +222,11 @@ ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
 CLI_TAR="$OUT_DIR/localbox-cli-$VERSION.tar.gz"
 tar -czf "$CLI_TAR" -C "$STAGE" localbox-cli
 
+# The template ships beside the app as zstd parts under GitHub's 2 GiB asset cap; the installer expands them. A
+# 128 MiB window (--long=27) is the most Node's zstd decoder accepts by default.
+TEMPLATE_PREFIX="localbox-template-$VERSION.img.zst."
+zstd -q -T0 -19 --long=27 -c "$LOCALBOX_TEMPLATE_DISK" | (cd "$OUT_DIR" && split -d -a 3 -b 2000m - "$TEMPLATE_PREFIX")
+
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$APP"
@@ -226,13 +234,16 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
 fi
 
 cd "$ROOT"
-RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
-import { readFileSync } from "node:fs";
-import { makeManifest, signManifest, writeRelease } from "./dist/scripts/release.js";
+RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_TEMPLATE="$LOCALBOX_TEMPLATE_DISK" RELEASE_TEMPLATE_PREFIX="$TEMPLATE_PREFIX" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { makeManifest, sha256, signManifest, writeRelease } from "./dist/scripts/release.js";
 const dir = process.env.RELEASE_DIR;
 const version = process.env.RELEASE_VERSION;
 const imageDigest = process.env.RELEASE_IMAGE_DIGEST;
-let manifest = await makeManifest(dir, version, imageDigest);
+const source = process.env.RELEASE_TEMPLATE;
+const parts = readdirSync(dir).filter((name) => name.startsWith(process.env.RELEASE_TEMPLATE_PREFIX)).sort();
+const template = { sha256: await sha256(source), size: statSync(source).size, parts };
+let manifest = await makeManifest(dir, version, imageDigest, undefined, template);
 if (process.env.RELEASE_PRIVATE_KEY) {
   // The manifest carries no public key: verifiers trust only the pinned one.
   manifest = signManifest(manifest, readFileSync(process.env.RELEASE_PRIVATE_KEY), process.env.RELEASE_KEY_ID || "release");

@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 export const DUET_COMMIT = "8f3cb100e016e2627618718675b2617d8b98f2aa";
 export const declaredSubstitutions = [
-  { from: "google-chrome-stable", to: "chromium", reason: "Google Chrome has no Linux ARM64 build." },
+  { from: "google-chrome-stable", to: "Playwright Chrome for Testing", reason: "Google Chrome has no Linux ARM64 package and Ubuntu's ARM64 chromium is a snap stub." },
   { from: "x86_64 downloads", to: "ARM64 downloads", reason: "Bun, static-web-server, and KasmVNC use native ARM64 release assets." },
   { from: "boldsoftware/exeuntu", to: "ubuntu:24.04 ARM64", reason: "Duet's private base has no available ARM64 image." },
   { from: "Duet-only services", to: "omitted", reason: "Localbox owns the guest agent and boot unit." },
@@ -46,8 +46,7 @@ export function compareParity(duet: PackageInventory, local: PackageInventory, r
   const expectedApt = new Set(duet.apt);
   const actualApt = new Set(local.apt);
   for (const name of expectedApt) if (!actualApt.has(name)) differences.push(`apt missing: ${name}`);
-  for (const name of actualApt) if (!expectedApt.has(name) && !["chromium", "systemd", "systemd-sysv", "systemd-resolved", "linux-image-generic", "initramfs-tools", "socat"].includes(name)) differences.push(`apt extra: ${name}`);
-  if (actualApt.has("chromium") && !expectedApt.has("chromium") && !declaredSubstitutions.some((item) => item.to === "chromium")) differences.push("apt substitution chromium is undeclared");
+  for (const name of actualApt) if (!expectedApt.has(name) && !["xdotool", "systemd", "systemd-sysv", "systemd-resolved", "linux-image-generic", "initramfs-tools", "socat"].includes(name)) differences.push(`apt extra: ${name}`);
   const expectedPip = new Set(duet.pip); const actualPip = new Set(parseRequirements(requirements));
   for (const name of expectedPip) if (!actualPip.has(name)) differences.push(`pip missing: ${name}`);
   for (const name of actualPip) if (!expectedPip.has(name)) differences.push(`pip extra: ${name}`);

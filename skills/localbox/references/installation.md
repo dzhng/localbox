@@ -53,12 +53,14 @@ tag=$(/usr/bin/plutil -extract tag_name raw -o - latest.json)
 release="https://github.com/$repo/releases/download/$tag"
 curl --fail --location "$release/release.json" -o release.json
 curl --fail --location "$release/SHA256SUMS" -o SHA256SUMS
-archive=$(awk '/localbox-cli-.*\.tar\.gz$/ { print $2 }' SHA256SUMS)
-app=$(awk '/Localbox-.*\.zip$/ { print $2 }' SHA256SUMS)
-test -n "$archive" && test -n "$app"
-curl --fail --location "$release/$archive" -o "$archive"
-curl --fail --location "$release/$app" -o "$app"
+# Every listed file: the app, the CLI, and the VM template's parts (about 2 GB).
+for name in $(awk '{ print $2 }' SHA256SUMS); do
+  case "$name" in */*|.*) echo "unexpected release file: $name" >&2; exit 1 ;; esac
+  curl --fail --location "$release/$name" -o "$name"
+done
 shasum -a 256 -c SHA256SUMS
+archive=$(awk '/localbox-cli-.*\.tar\.gz$/ { print $2 }' SHA256SUMS)
+test -n "$archive"
 tar -xzf "$archive" -C "$download"
 ```
 
