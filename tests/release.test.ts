@@ -104,3 +104,10 @@ test("uninstall removes every launch agent it installed, the connector's include
   assert.equal(result.status, 0, result.stderr);
   for (const plist of plists) await assert.rejects(() => readFile(join(agents, plist)), /ENOENT/);
 });
+
+test("the installation procedure pins exactly the release public key the skill ships", async () => {
+  const pinned = await readFile("skills/localbox/release-public.pem", "utf8");
+  const procedure = await readFile("skills/localbox/references/installation.md", "utf8");
+  const written = /cat > "\$download\/release-public\.pem" <<'EOF'\n([\s\S]*?)EOF\n/.exec(procedure)?.[1];
+  assert.equal(written, pinned, "a first install trusts only the key printed in the procedure");
+});

@@ -1,7 +1,7 @@
 {
   "framework": null,
-  "buildCommand": "echo no-build",
-  "outputDirectory": ".",
+  "buildCommand": "mkdir -p static && printf 'User-agent: *\\nDisallow: /\\n' > static/robots.txt",
+  "outputDirectory": "static",
   "functions": {
     "api/relay.ts": {
       "maxDuration": 60

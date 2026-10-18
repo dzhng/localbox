@@ -70,6 +70,12 @@ public protocol GuestReadinessProvider: Sendable {
     func waitUntilReady() async throws
 }
 
+/// Backends that notice their guest stopping on its own (an in-guest poweroff, a kernel panic) say why through
+/// `handler`, so the runtime stops reporting a dead sandbox as running.
+public protocol GuestStopReporting: Sendable {
+    func onGuestStop(_ handler: @escaping @Sendable (String) -> Void) async
+}
+
 /// One line for a report: our own errors say what they mean; Virtualization's NSErrors carry a localized sentence.
 func explain(_ error: Error) -> String { (error as? HostDaemonError)?.description ?? error.localizedDescription }
 
@@ -277,8 +283,8 @@ public actor SandboxHost {
 
     /// Stops a sandbox, forgets it and removes its directory (disk included). Returns what could not be removed.
     private func discard(_ id: String, _ runtime: SandboxRuntime) async -> String? {
-        try? await runtime.stop()
         runtimes[id] = nil
+        await runtime.discard()
         defer { bumpStateVersion() }
         do { try FileManager.default.removeItem(at: runtime.directory.url); return nil } catch { return "could not remove \(runtime.directory.url.path): \(explain(error))" }
     }
@@ -435,7 +441,7 @@ public actor SandboxHost {
     /// lists that this machine's catalog listed before (deleted while this Mac was offline): stopped, its directory and
     /// disk removed, reported in `deleted`. A sandbox this machine's catalog never listed (created and not yet listed,
     /// or hidden by a sign-out and so listed by an earlier sign-in) only stops answering and is reported in `unknown`,
-    /// as are directories without a record. A push never creates a directory.
+    /// as are directories without a record. An empty `catalog` push deletes nothing. A push never creates a directory.
     private func mirror(_ object: [String: Any], rows: [[String: Any]], source: MirrorSource) async -> Data {
         var names: [String: String] = [:], policies: [String: (sleep: Int, delete: Int?)] = [:]
         for row in rows {

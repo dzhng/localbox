@@ -147,6 +147,9 @@ final class HostDaemonCoreTests: XCTestCase {
         let stopped = try await hostCall(host, "sandbox.resize", #"{"memory_bytes":4294967296}"#, sandboxID: "sandbox_1")
         XCTAssertEqual((stopped["actions"] as? [[String: Any]])?.count, 0, "a stopped sandbox only records the size")
         XCTAssertEqual(try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load().memoryBytes, 4 * gib)
+        let invalid = try await call(host, envelope("sandbox.resize", #"{"cpus":0}"#))
+        XCTAssertEqual((invalid["error"] as? [String: Any])?["code"] as? String, "conflict")
+        XCTAssertEqual(try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load().cpus, 3, "a refused size is not recorded")
     }
 
     func testSigtermHibernates() async throws {
@@ -367,6 +370,71 @@ final class HostDaemonCoreTests: XCTestCase {
         let woke = try await hostCall(host, "sandbox.start", "{}", sandboxID: "sandbox_1")
         XCTAssertEqual(kinds(woke), ["woke"])
         XCTAssertEqual((woke["produced"] as? [String: Any])?["state"] as? String, "running")
+    }
+
+    /// Two guest operations that reach a sleeping sandbox at once share one wake: one restore, not two onto one disk.
+    func testConcurrentWakesRestoreOnce() async throws {
+        let factory = FakeBackendFactory(bootDelay: 300_000_000, guest: JobsGuest().answer)
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await hostCall(host, "sandbox.sleep", "{}", sandboxID: "sandbox_1")
+        async let first = call(host, envelope("fs.stat", #"{"path":"/"}"#))
+        async let second = call(host, envelope("fs.stat", #"{"path":"/"}"#))
+        async let started = call(host, envelope("sandbox.start", "{}"))
+        let answers = try await [first, second, started]
+        XCTAssertEqual(answers.map { $0["ok"] as? Bool }, [true, true, true], "\(answers)")
+        XCTAssertEqual(factory.boots, 2, "the create's boot and one restore")
+        let status = try await hostCall(host, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(status["state"] as? String, "running")
+    }
+
+    /// A delete while the sandbox boots stops the boot: the directory stays gone and no VM is left running.
+    func testDeleteDuringBootLeavesNothing() async throws {
+        let root = try scratch()
+        let factory = FakeBackendFactory(bootDelay: 300_000_000)
+        let host = SandboxHost(sandboxesDirectory: root, factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        let creating = Task { try await call(host, envelope("sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#)) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        _ = try await hostCall(host, "sandbox.delete", "{}", sandboxID: "sandbox_1")
+        let created = try await creating.value
+        XCTAssertEqual((created["error"] as? [String: Any])?["code"] as? String, "sandbox_not_ready", "\(created)")
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sandbox_1").path), "nothing writes the record back")
+        let listed = try await hostCall(host, "sandbox.list", "{}")["sandboxes"] as? [[String: Any]]
+        XCTAssertEqual(listed?.count, 0)
+        for backend in factory.made { let running = await backend.running; XCTAssertFalse(running, "the VM the boot made is down") }
+    }
+
+    /// A stop the backend refuses ends in error, not stuck stopping, and says why.
+    func testAFailedStopEndsInError() async throws {
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(stopError: .unsupported("the VM refused to stop")), hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        let stopped = try await call(host, envelope("sandbox.stop", "{}"))
+        XCTAssertEqual((stopped["error"] as? [String: Any])?["code"] as? String, "conflict")
+        let status = try await hostCall(host, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(status["lifecycle"] as? String, "error"); XCTAssertEqual(status["detail"] as? String, "could not stop: the VM refused to stop")
+    }
+
+    /// A guest that powers itself off, or whose agent closes the channel, is reported down, and a start boots it again.
+    func testAGuestThatGoesAwayIsNotReportedRunning() async throws {
+        let factory = FakeBackendFactory(guest: JobsGuest().answer)
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        await factory.made.last?.die("guest shut down")
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let died = try await hostCall(host, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(died["lifecycle"] as? String, "error"); XCTAssertEqual(died["detail"] as? String, "guest shut down")
+        let restarted = try await hostCall(host, "sandbox.start", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(kinds(restarted), ["cold_booted"])
+
+        let closing = FakeBackendFactory { _ in throw HostDaemonError.guestUnavailable }
+        let closed = SandboxHost(sandboxesDirectory: try scratch(), factory: closing, hostCPUs: 4, hostMemoryBytes: 8 * gib)
+        _ = try await hostCall(closed, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        do { _ = try await closed.request(envelope("fs.stat", #"{"path":"/"}"#)); XCTFail("a closed channel fails the request") } catch {}
+        let status = try await hostCall(closed, "sandbox.status", "{}", sandboxID: "sandbox_1")
+        XCTAssertEqual(status["lifecycle"] as? String, "error"); XCTAssertEqual(status["detail"] as? String, "the guest agent closed its channel")
+        let running = await closing.made.last?.running
+        XCTAssertEqual(running, false, "the VM under a dead agent is stopped")
     }
 
     func testAuthenticatedLocalIPCRejectsWrongTokenAndForwardsEnvelope() async throws {

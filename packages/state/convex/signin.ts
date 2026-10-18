@@ -1,20 +1,30 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireIdentity } from "./lib/identity.js";
-import { byField, clean, id, jsonHash, fail, rateLimit } from "./lib/relay.js";
+import { byField, clean, HOUR, id, ipKey, jsonHash, fail, limitReached, liveMachines, rateLimit, validEmail } from "./lib/relay.js";
 import { accountName, machineName, validateLabel } from "../../names/src/index.js";
 
 const normalize = (email: string) => email.trim().toLowerCase();
 const accountByEmail = async (ctx: any, email: string) => await byField(ctx, "accounts", "by_email", "email", email);
 
-/** Checks and consumes a code under the shared limits; five wrong guesses delete it. */
+/** Wrong codes an email may take across every code it is sent: asking for a new code buys no more guesses. */
+const WRONG_CODES_PER_HOUR = 10;
+const WRONG_CODES_PER_DAY = 20;
+const DAY = 24 * HOUR;
+
+/**
+ * Checks and consumes a code under the shared limits. Five wrong guesses delete a code; past the per-email limit
+ * of wrong guesses every code for that email is refused until the window resets.
+ */
 async function checkCode(ctx: any, args: { email: string; code: string; ip: string }): Promise<{ valid: boolean; email: string }> {
   const email = normalize(args.email); if (!/^\d{6}$/.test(args.code)) fail("code must be six digits");
-  if (!await rateLimit(ctx, args.ip, "ip_verify", 50)) fail("verification rate limit exceeded");
+  if (!await rateLimit(ctx, ipKey(args.ip), "ip_verify", 50)) fail("verification rate limit exceeded", "rate_limited");
+  if (await limitReached(ctx, email, "email_wrong_code", WRONG_CODES_PER_HOUR) || await limitReached(ctx, email, "email_wrong_code_day", WRONG_CODES_PER_DAY)) fail("too many wrong codes for this email", "rate_limited");
   const row = await byField(ctx, "emailCodes", "by_email", "email", email);
   if (!row || row.expiresAt <= Date.now()) return { valid: false, email };
   if (row.codeHash !== await jsonHash(args.code)) {
     const attempts = row.attempts + 1; if (attempts >= 5) await ctx.db.delete(row._id); else await ctx.db.patch(row._id, { attempts });
+    await rateLimit(ctx, email, "email_wrong_code", WRONG_CODES_PER_HOUR); await rateLimit(ctx, email, "email_wrong_code_day", WRONG_CODES_PER_DAY, DAY);
     return { valid: false, email };
   }
   await ctx.db.delete(row._id);
@@ -29,14 +39,15 @@ async function accountFor(ctx: any, email: string) {
 
 export const start = mutationGeneric({ args: { email: v.string(), ip: v.string() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
-  const email = normalize(args.email); if (!/^.+@.+\..+$/.test(email)) fail("email is invalid");
-  const emailAllowed = await rateLimit(ctx, email, "email_send", 5); const ipAllowed = await rateLimit(ctx, args.ip, "ip_send", 20);
+  const email = normalize(args.email); if (!validEmail(email)) fail("email is invalid");
+  const emailAllowed = await rateLimit(ctx, email, "email_send", 5); const ipAllowed = await rateLimit(ctx, ipKey(args.ip), "ip_send", 20);
   if (!emailAllowed || !ipAllowed) return { sent: true as const, issued: false as const };
+  // The new code inherits the old one's wrong guesses, so replacing a code does not reset its five.
   const old = await byField(ctx, "emailCodes", "by_email", "email", email); if (old) await ctx.db.delete(old._id);
   // Rejection sampling keeps the six digits uniform; codes must come from a cryptographic source.
   const draw = new Uint32Array(1); do crypto.getRandomValues(draw); while (draw[0] >= 4_294_000_000);
   const code = String(draw[0] % 1_000_000).padStart(6, "0");
-  await ctx.db.insert("emailCodes", { email, codeHash: await jsonHash(code), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0, createdAt: Date.now() });
+  await ctx.db.insert("emailCodes", { email, codeHash: await jsonHash(code), expiresAt: Date.now() + 10 * 60 * 1000, attempts: old?.attempts ?? 0, createdAt: Date.now() });
   // Nothing about the email's account is returned before its code is verified: the page names no account.
   return { sent: true as const, issued: true as const, code };
 } });
@@ -49,7 +60,7 @@ export const verify = mutationGeneric({ args: { email: v.string(), code: v.strin
   const machineId = id("machine"); const secret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
   const label = validateLabel(args.machineName || machineName("machine"));
   await ctx.db.insert("machines", { machineId, accountId: account.accountId, name: label, credentialHash: await jsonHash(secret), createdAt: Date.now(), lastSeenAt: Date.now() });
-  const machineCount = (await ctx.db.query("machines").withIndex("by_account", (q: any) => q.eq("accountId", account.accountId)).take(1_000)).filter((m: any) => m.revokedAt === undefined).length;
+  const machineCount = (await liveMachines(ctx, account.accountId)).length;
   return { valid: true as const, account_id: account.accountId, account_name: account.name, machine_id: machineId, machine_name: label, secret, machine_count: machineCount };
 } });
 
@@ -65,6 +76,6 @@ export const verifyForAgent = mutationGeneric({ args: { email: v.string(), code:
 export const authenticate = queryGeneric({ args: { secret: v.string() }, handler: async (ctx, args) => {
   await requireIdentity(ctx, "service");
   const machine = await byField(ctx, "machines", "by_credential_hash", "credentialHash", await jsonHash(args.secret));
-  if (!machine || machine.revokedAt !== undefined) fail("machine credential is invalid or revoked");
+  if (!machine || machine.revokedAt !== undefined) fail("machine credential is invalid or revoked", "unauthorized");
   return clean(machine);
 } });

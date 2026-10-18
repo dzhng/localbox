@@ -164,7 +164,7 @@ public actor UnixDomainSocketServer {
     private static func handleConnection(_ fd: Int32, ipc: AuthenticatedLocalIPC, maxFrameBytes: UInt32) async {
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         do {
-            let body = try readFrame(from: handle, maxFrameBytes: maxFrameBytes)
+            let body = try await blocking { try readFrame(from: handle, maxFrameBytes: maxFrameBytes) }
             let request: LocalIPCRequest
             do {
                 request = try JSONDecoder().decode(LocalIPCRequest.self, from: body)
@@ -173,7 +173,8 @@ public actor UnixDomainSocketServer {
             }
             do {
                 let envelope = try await ipc.handle(request)
-                try writeFrame(try JSONEncoder().encode(LocalIPCResponse.success(envelope)), to: handle)
+                let response = try JSONEncoder().encode(LocalIPCResponse.success(envelope))
+                try await blocking { try writeFrame(response, to: handle) }
             } catch let error as LocalIPCError {
                 let code: String
                 switch error {
@@ -197,6 +198,12 @@ public actor UnixDomainSocketServer {
         }
         try? handle.close()
     }
+
+    /// Socket reads and writes block on a client's pace, so they run on `blockingQueue`, never the cooperative pool.
+    private static func blocking<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in blockingQueue.async { continuation.resume(with: Result(catching: body)) } }
+    }
+    private static let blockingQueue = DispatchQueue(label: "com.localbox.host-daemon.ipc.connection", qos: .userInitiated, attributes: .concurrent)
 
     private static func readFrame(from handle: FileHandle, maxFrameBytes: UInt32) throws -> Data {
         let header = try readExactly(4, from: handle)

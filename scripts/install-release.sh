@@ -98,26 +98,34 @@ fi
 mkdir -p "$RELEASE_ROOT" "$BIN_DIR" "$LAUNCH_AGENTS_DIR" "$(dirname "$TOKEN_FILE")" "$SANDBOXES_DIR"
 if [ -n "${RELEASE_PUBLIC_KEY:-}" ] && [ -f "$RELEASE_PUBLIC_KEY" ]; then cp "$RELEASE_PUBLIC_KEY" "$PUBLIC_KEY_FILE"; chmod 600 "$PUBLIC_KEY_FILE"; fi
 TARGET="$RELEASE_ROOT/$VERSION"
-if [ -e "$TARGET" ]; then
-  echo "release $VERSION is already installed" >&2
+# The same signed release already in place (an earlier install that failed after unpacking) is finished, not
+# refused; activation re-verifies its checksums. A different release under the same version never is.
+if [ -e "$TARGET" ] && ! cmp -s "$SOURCE_DIR/release.json" "$TARGET/release.json"; then
+  echo "a different release $VERSION is already installed" >&2
   exit 1
 fi
-INSTALL_STAGE=$(mktemp -d "$RELEASE_ROOT/.stage.XXXXXX")
-ditto -x -k "$APP_ZIP" "$INSTALL_STAGE"
-tar -xzf "$CLI_TAR" -C "$INSTALL_STAGE"
-if [ ! -d "$INSTALL_STAGE/Localbox.app" ] || [ ! -x "$INSTALL_STAGE/localbox-cli/bin/localbox" ]; then
-  echo "release archive did not extract the expected app and CLI" >&2
-  rm -rf "$INSTALL_STAGE"
-  exit 1
+if [ ! -e "$TARGET" ]; then
+  INSTALL_STAGE=$(mktemp -d "$RELEASE_ROOT/.stage.XXXXXX")
+  ditto -x -k "$APP_ZIP" "$INSTALL_STAGE"
+  tar -xzf "$CLI_TAR" -C "$INSTALL_STAGE"
+  if [ ! -d "$INSTALL_STAGE/Localbox.app" ] || [ ! -x "$INSTALL_STAGE/localbox-cli/bin/localbox" ]; then
+    echo "release archive did not extract the expected app and CLI" >&2
+    rm -rf "$INSTALL_STAGE"
+    exit 1
+  fi
+  if [ "$ALLOW_UNSIGNED" != "1" ]; then
+    codesign --verify --deep --strict --verbose=2 "$INSTALL_STAGE/Localbox.app"
+  fi
+  # A download through a quarantining app carries the flag into the unpacked tree, and Gatekeeper would refuse the
+  # self-signed, unnotarized binaries. The release is already authenticated by its pinned manifest signature.
+  xattr -dr com.apple.quarantine "$INSTALL_STAGE" 2>/dev/null || true
+  cp "$SOURCE_DIR/release.json" "$INSTALL_STAGE/release.json"
+  cp "$SOURCE_DIR/SHA256SUMS" "$INSTALL_STAGE/SHA256SUMS"
+  cp "$APP_ZIP" "$INSTALL_STAGE/$(basename "$APP_ZIP")"
+  cp "$CLI_TAR" "$INSTALL_STAGE/$(basename "$CLI_TAR")"
+  mv "$INSTALL_STAGE" "$TARGET"
+  INSTALL_STAGE=
 fi
-if [ "$ALLOW_UNSIGNED" != "1" ]; then
-  codesign --verify --deep --strict --verbose=2 "$INSTALL_STAGE/Localbox.app"
-fi
-cp "$SOURCE_DIR/release.json" "$INSTALL_STAGE/release.json"
-cp "$SOURCE_DIR/SHA256SUMS" "$INSTALL_STAGE/SHA256SUMS"
-cp "$APP_ZIP" "$INSTALL_STAGE/$(basename "$APP_ZIP")"
-cp "$CLI_TAR" "$INSTALL_STAGE/$(basename "$CLI_TAR")"
-mv "$INSTALL_STAGE" "$TARGET"
 
 (cd "$CLI_STAGE" && TARGET="$TARGET" RELEASE_ROOT="$RELEASE_ROOT" "$VERIFY_NODE" --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
@@ -135,6 +143,9 @@ ACTIVE_CLI="$RELEASE_ROOT/active/localbox-cli/bin/localbox"
 PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
 UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
 CONNECTOR_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.connector.plist"
+# launchd does not expand ~ in log paths, and a job whose log path it cannot open never starts.
+LOG_DIR="$HOME/Library/Logs/Localbox"
+mkdir -p "$LOG_DIR"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.connector.plist" "$CONNECTOR_PLIST"
@@ -149,15 +160,21 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_A
 plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$ACTIVE_CLI" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"
 if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$PLIST"; fi
+plutil -replace StandardOutPath -string "$LOG_DIR/hostd.log" "$PLIST"
+plutil -replace StandardErrorPath -string "$LOG_DIR/hostd.error.log" "$PLIST"
 chmod 600 "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/localbox" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INSTALL_ROOT' -string "$INSTALL_ROOT" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_REPOSITORY' -string "$RELEASE_REPOSITORY" "$UPDATER_PLIST"
 if [ -f "$PUBLIC_KEY_FILE" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_PUBLIC_KEY' -string "$PUBLIC_KEY_FILE" "$UPDATER_PLIST"; fi
+plutil -replace StandardOutPath -string "$LOG_DIR/updater.log" "$UPDATER_PLIST"
+plutil -replace StandardErrorPath -string "$LOG_DIR/updater.error.log" "$UPDATER_PLIST"
 chmod 600 "$UPDATER_PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/localbox" "$CONNECTOR_PLIST"
 if [ -n "${LOCALBOX_API_ORIGIN:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_API_ORIGIN' -string "$LOCALBOX_API_ORIGIN" "$CONNECTOR_PLIST"; fi
 if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$CONNECTOR_PLIST"; fi
+plutil -replace StandardOutPath -string "$LOG_DIR/connector.log" "$CONNECTOR_PLIST"
+plutil -replace StandardErrorPath -string "$LOG_DIR/connector.error.log" "$CONNECTOR_PLIST"
 chmod 600 "$CONNECTOR_PLIST"
 
 if [ ! -s "$TOKEN_FILE" ]; then

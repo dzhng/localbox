@@ -31,6 +31,13 @@ public actor SandboxRuntime {
     private(set) var watchingJobs = false
     /// Boots and wakes no request asked for (at daemon start, when the Mac wakes), reported with the next result.
     private var unreported: [SandboxAction] = []
+    /// The bring-up or restart in flight: later bring-ups wait for it instead of booting the same disk again, and a
+    /// stop cancels it.
+    private var booting: Task<SandboxAction?, Error>?
+    /// Counts boots, so a stop notice from an earlier boot's backend is ignored.
+    private var bootCount = 0
+    /// Deleted: nothing boots it again and its record is never written, so its directory stays gone.
+    private var discarded = false
     private let onChange: @Sendable () -> Void
     private let now: @Sendable () -> Date
 
@@ -39,6 +46,7 @@ public actor SandboxRuntime {
         // Asleep in memory when the daemon ended: the processes are gone, so the next use cold-boots it.
         if record.lifecycle == .sleeping { self.record.lifecycle = .asleep; self.record.coldBootPending = "the daemon exited while it slept in memory" }
         if self.record.lifecycle == .asleep { statusValue = RuntimeStatus(lifecycle: .asleep) }
+        directory.removeTemporarySaves()
     }
 
     public func status() -> RuntimeStatus { statusValue }
@@ -46,8 +54,27 @@ public actor SandboxRuntime {
         RuntimeSnapshot(record: record, status: statusValue, lastBoot: lastBoot, pauseKeepsMemory: backend is any HibernateBackend)
     }
 
-    /// Runs the sandbox and says what that took: nothing, a wake, a restore from saved state, or a cold boot.
+    /// Runs the sandbox and says what that took: nothing, a wake, a restore from saved state, or a cold boot. One
+    /// bring-up runs at a time; a caller that finds one in flight (or a sleep or stop settling) waits for it.
     public func bringUp() async throws -> SandboxAction? {
+        while true {
+            if let booting { _ = try await booting.value; return nil }
+            guard statusValue.lifecycle == .stopping else { break }
+            guard await settled() != .stopping else { throw HostDaemonError.invalidState("\(record.name) is still stopping") }
+        }
+        return try await flight { try await $0.wake() }
+    }
+
+    /// Runs `body` as the one bring-up in flight.
+    private func flight(_ body: @escaping @Sendable (SandboxRuntime) async throws -> SandboxAction?) async throws -> SandboxAction? {
+        while let booting { _ = try? await booting.value }
+        guard !discarded else { throw HostDaemonError.invalidState("\(record.name) was deleted") }
+        let task = Task { try await body(self) }
+        booting = task; defer { booting = nil }
+        return try await task.value
+    }
+
+    private func wake() async throws -> SandboxAction? {
         switch statusValue.lifecycle {
         case .ready: return nil
         case .paused: try await resume(); return ["kind": "woke", "detail": "woke \(record.name) from sleep"]
@@ -85,6 +112,8 @@ public actor SandboxRuntime {
 
     private func coldBoot() async throws {
         guard [.stopped, .error, .asleep].contains(statusValue.lifecycle) else { throw HostDaemonError.invalidState("\(record.name) cannot start from \(statusValue.lifecycle.rawValue)") }
+        // A VM whose stop failed may still run on this disk; it goes first.
+        if let stale = backend { try await stale.stop(); backend = nil }
         // A cold boot changes the disk under any saved state, so that state could never be restored safely again.
         try? FileManager.default.removeItem(at: directory.savedState)
         try await boot { try await $0.start() }
@@ -102,6 +131,14 @@ public actor SandboxRuntime {
         setStatus(.starting)
         let next: any SandboxBackend
         do { next = try factory.backend(for: record, in: directory) } catch { setStatus(.error, detail: explain(error)); throw error }
+        bootCount += 1
+        if let reporting = next as? any GuestStopReporting {
+            let boot = bootCount
+            await reporting.onGuestStop { [weak self] reason in
+                guard let self else { return }
+                Task { await self.guestLost(reason, boot: boot) }
+            }
+        }
         do {
             try await run(next)
             backend = next
@@ -110,13 +147,26 @@ public actor SandboxRuntime {
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
             }
+            // A stop (a delete) during the boot cancels it; the VM it made goes down with it.
+            try Task.checkCancellation()
             // A boot counts as activity, so a sandbox that was just started is not the first slept to make room.
             record.coldBootPending = nil; record.lifecycle = .running; record.lastActivityAt = now(); persist()
             setStatus(.ready, epoch: statusValue.channelEpoch + 1)
         } catch {
             await channel?.close(); channel = nil; backend = nil; try? await next.stop()
-            setStatus(.error, detail: explain(error)); throw error
+            let failure = Task.isCancelled ? HostDaemonError.invalidState("\(record.name) was stopped while it started") : error
+            setStatus(.error, detail: explain(failure)); throw failure
         }
+    }
+
+    /// The guest went away on its own (powered off, panicked, or its agent closed the channel): the sandbox is down,
+    /// not running, until it is started again.
+    private func guestLost(_ reason: String, boot: Int) async {
+        guard boot == bootCount, let lost = backend, [.ready, .paused].contains(statusValue.lifecycle) else { return }
+        backend = nil; setStatus(.stopping)
+        await channel?.close(); channel = nil
+        try? await lost.stop()
+        setStatus(.error, epoch: statusValue.channelEpoch + 1, detail: reason)
     }
 
     public func pause() async throws {
@@ -129,11 +179,28 @@ public actor SandboxRuntime {
         try await backend.resume(); record.lastActivityAt = now(); setStatus(.ready, epoch: statusValue.channelEpoch + 1)
     }
 
+    /// Stops it, cancelling a boot in flight, and ends stopped; where the backend cannot stop it, it ends in error
+    /// and keeps the backend, so the next stop or start tries again.
     public func stop() async throws {
+        if let booting { booting.cancel(); _ = try? await booting.value }
+        if statusValue.lifecycle == .stopping { _ = await settled() }
         guard statusValue.lifecycle != .stopped else { return }
+        try await halt()
+    }
+
+    /// Deleting: stops it and keeps it down, and its record is never written again.
+    func discard() async { discarded = true; try? await stop() }
+
+    private func halt() async throws {
         setStatus(.stopping)
         await channel?.close(); channel = nil
-        try await backend?.stop(); backend = nil
+        if let running = backend {
+            backend = nil
+            do { try await running.stop() } catch {
+                backend = running
+                setStatus(.error, epoch: statusValue.channelEpoch + 1, detail: "could not stop: \(explain(error))"); throw error
+            }
+        }
         try? FileManager.default.removeItem(at: directory.savedState)
         // Stopped on purpose: nothing is owed at the next start.
         record.coldBootPending = nil
@@ -156,6 +223,9 @@ public actor SandboxRuntime {
         let failure: String, reason: String
         if let saver = backend as? any HibernateBackend {
             do {
+                if statusValue.lifecycle == .paused { try await saver.resume() }
+                // Stopping, as a sleep is, so a request that loses its channel to the save is not taken for the guest dying.
+                setStatus(.stopping)
                 try await save(saver)
                 setStatus(.asleep, epoch: statusValue.channelEpoch + 1)
                 record.lifecycle = .hibernated; persist()
@@ -164,7 +234,8 @@ public actor SandboxRuntime {
         } else {
             failure = "the process fixture cannot save its state"; reason = "fixture: \(failure)"
         }
-        try? await stop()
+        // Not stop(): no boot is in flight here, and stop() would wait out this hibernate's own stopping status.
+        try? await halt()
         record.coldBootPending = reason; persist()
         return failure
     }
@@ -249,7 +320,7 @@ public actor SandboxRuntime {
         guard statusValue.lifecycle == .ready, inFlight == 0, let channel else { return nil }
         let id = "admission-\(UUID().uuidString)"
         guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
-              let response = try? await channel.send(request),
+              let response = try? await send(request, on: channel),
               let object = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
               let jobs = (object["result"] as? [String: Any])?["running_jobs"] as? NSNumber else { return nil }
         return jobs.intValue
@@ -259,7 +330,16 @@ public actor SandboxRuntime {
         guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
         record.lastActivityAt = now()
         inFlight += 1; defer { inFlight -= 1 }
-        return try await channel.send(envelope)
+        return try await send(envelope, on: channel)
+    }
+
+    /// A channel that closes under a ready sandbox (not one this runtime closed) means the guest agent is gone.
+    private func send(_ envelope: Data, on channel: any GuestChannel) async throws -> Data {
+        let boot = bootCount, epoch = statusValue.channelEpoch
+        do { return try await channel.send(envelope) } catch HostDaemonError.guestUnavailable {
+            if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch { await guestLost("the guest agent closed its channel", boot: boot) }
+            throw HostDaemonError.guestUnavailable
+        }
     }
 
     /// A running guest takes the new name as its hostname at once, through a new hello.
@@ -284,6 +364,7 @@ public actor SandboxRuntime {
     func resize(cpus: Int?, memoryBytes: UInt64?) async throws -> SandboxAction? {
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes
         guard cpus != record.cpus || memory != record.memoryBytes else { return nil }
+        guard cpus > 0, memory > 0 else { throw HostDaemonError.invalidState("a sandbox needs at least one CPU and some memory") }
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused else {
             record.cpus = cpus; record.memoryBytes = memory
             // A saved state only restores at the size it was saved with, so an asleep sandbox wakes with a cold boot.
@@ -295,11 +376,23 @@ public actor SandboxRuntime {
             }
             persist(); onChange(); return nil
         }
+        return try await flight { try await $0.restart(cpus: cpus, memoryBytes: memory) }
+    }
+
+    /// Resize's restart, as the bring-up in flight. A size the backend cannot boot rolls back, and the sandbox comes
+    /// back at the size it had.
+    private func restart(cpus: Int, memoryBytes memory: UInt64) async throws -> SandboxAction? {
         if statusValue.lifecycle == .paused { try await resume() }
         let ended = (try? await guestProcesses()) ?? []
-        try await stop()
+        try await halt()
+        let previous = (cpus: record.cpus, memory: record.memoryBytes)
         record.cpus = cpus; record.memoryBytes = memory; persist()
-        try await coldBoot()
+        do { try await coldBoot() } catch {
+            record.cpus = previous.cpus; record.memoryBytes = previous.memory; persist()
+            // A stop that cancelled the resize wants the sandbox down, not booted again at its old size.
+            if !Task.isCancelled { try? await coldBoot() }
+            throw error
+        }
         let commands = Array(Set(ended)).sorted()
         let listed = commands.isEmpty ? "" : ": \(commands.prefix(20).joined(separator: ", "))\(commands.count > 20 ? ", …" : "")"
         return ["kind": "restarted", "detail": "restarted \(record.name) at \(cpus) CPUs and \(gibibytes(memory)); \(ended.count) process\(ended.count == 1 ? "" : "es") ended\(listed)"]
@@ -333,6 +426,7 @@ public actor SandboxRuntime {
 
     /// The record is the only state that outlives the daemon; a failed write surfaces in the next status read.
     private func persist() {
+        guard !discarded else { return }
         do { try directory.save(record) } catch { statusValue = RuntimeStatus(lifecycle: statusValue.lifecycle, channelEpoch: statusValue.channelEpoch, detail: "could not write \(directory.recordFile.path): \(explain(error))") }
     }
 }

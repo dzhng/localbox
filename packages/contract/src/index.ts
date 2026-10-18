@@ -222,9 +222,9 @@ export function validateJson(value: unknown, schema: JsonSchema, path = "input")
   } else if (schema.type === "object") {
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ContractError("invalid_input", `${path} must be an object`);
     const record = value as Record<string, unknown>;
-    for (const key of schema.required ?? []) if (!(key in record)) throw new ContractError("invalid_input", `${pathFor(path, key)} is required`);
-    if (schema.additionalProperties === false) for (const key of Object.keys(record)) if (!schema.properties?.[key]) throw new ContractError("invalid_input", `${pathFor(path, key)} is not allowed`);
-    for (const [key, child] of Object.entries(schema.properties ?? {})) if (key in record) validateJson(record[key], child, pathFor(path, key));
+    for (const key of schema.required ?? []) if (!Object.hasOwn(record, key)) throw new ContractError("invalid_input", `${pathFor(path, key)} is required`);
+    if (schema.additionalProperties === false) for (const key of Object.keys(record)) if (!Object.hasOwn(schema.properties ?? {}, key)) throw new ContractError("invalid_input", `${pathFor(path, key)} is not allowed`);
+    for (const [key, child] of Object.entries(schema.properties ?? {})) if (Object.hasOwn(record, key)) validateJson(record[key], child, pathFor(path, key));
   }
 }
 

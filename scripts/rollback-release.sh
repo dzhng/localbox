@@ -50,6 +50,9 @@ NODE
 ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
 PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
 UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
+# launchd does not expand ~ in log paths, and a job whose log path it cannot open never starts.
+LOG_DIR="$HOME/Library/Logs/Localbox"
+mkdir -p "$LOG_DIR"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
 cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
@@ -62,11 +65,15 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$ACTIVE_A
 plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"
 if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$PLIST"; fi
+plutil -replace StandardOutPath -string "$LOG_DIR/hostd.log" "$PLIST"
+plutil -replace StandardErrorPath -string "$LOG_DIR/hostd.error.log" "$PLIST"
 chmod 600 "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/localbox" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INSTALL_ROOT' -string "$INSTALL_ROOT" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_REPOSITORY' -string "$RELEASE_REPOSITORY" "$UPDATER_PLIST"
 if [ -f "$PUBLIC_KEY_FILE" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_RELEASE_PUBLIC_KEY' -string "$PUBLIC_KEY_FILE" "$UPDATER_PLIST"; fi
+plutil -replace StandardOutPath -string "$LOG_DIR/updater.log" "$UPDATER_PLIST"
+plutil -replace StandardErrorPath -string "$LOG_DIR/updater.error.log" "$UPDATER_PLIST"
 chmod 600 "$UPDATER_PLIST"
 localbox_add_path
 # Agent setup matches the skill and the localbox link to the release rolled back to.

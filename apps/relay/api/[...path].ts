@@ -1,18 +1,29 @@
 import { makeFunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
+import { apiOrigin } from "../../../packages/config/src/index.js";
 import { signMachineToken } from "../../../packages/tokens/src/index.js";
 import { selectMailer } from "../../../packages/mail/src/index.js";
 import { runOps } from "../src/ops.js";
 import { convexAs, machineFor, opsDeps, principalFor, serviceCall } from "../src/convex-deps.js";
-import { bearer, clientIp, json } from "../src/http.js";
+import { bearer, clientIp, convexCode, json } from "../src/http.js";
 
 if (process.env.VERCEL && !process.env.CONVEX_URL) throw new Error("CONVEX_URL is required for the deployed relay");
 if (process.env.VERCEL && !process.env.LOCALBOX_JWT_PRIVATE_KEY) throw new Error("LOCALBOX_JWT_PRIVATE_KEY is required for the deployed relay");
-const bodyOf = async (request: Request) => await request.json() as Record<string, unknown>;
+
+/** A body that is not a JSON object. */
+class BadBody extends Error {}
+const bodyOf = async (request: Request): Promise<Record<string, unknown>> => {
+  const body = await request.json().catch(() => { throw new BadBody("the request body must be JSON"); });
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadBody("the request body must be a JSON object");
+  return body as Record<string, unknown>;
+};
 async function handleIdentity(request: Request): Promise<Response | undefined> {
   const path = new URL(request.url).pathname.replace(/\/$/, "");
   if (request.method === "POST" && path === "/auth/email/start") {
     const input = await bodyOf(request); const email = String(input.email ?? "");
-    const result = await serviceCall("mutation", "signin:start", { email, ip: clientIp(request) });
+    let result: any;
+    try { result = await serviceCall("mutation", "signin:start", { email, ip: clientIp(request) }); }
+    catch (error) { if (convexCode(error) === "invalid_input") return json({ error: "email is invalid" }, 400); throw error; }
     // The mailer is chosen per send, so a deployment without email still serves everything else.
     if (result.issued) {
       let mailer: ReturnType<typeof selectMailer>;
@@ -24,9 +35,14 @@ async function handleIdentity(request: Request): Promise<Response | undefined> {
   if (request.method === "POST" && path === "/auth/email/verify") {
     const input = await bodyOf(request); let result: any;
     try { result = await serviceCall("mutation", "signin:verify", { email: String(input.email ?? ""), code: String(input.code ?? ""), machineName: String(input.machine_name ?? "machine"), ip: clientIp(request) }); }
-    catch (error) { if (/rate limit/i.test(error instanceof Error ? error.message : "")) return json({ error: "too many verification attempts; try again later" }, 429); throw error; }
+    catch (error) {
+      const code = convexCode(error);
+      if (code === "rate_limited") return json({ error: "too many verification attempts; try again later" }, 429);
+      if (code === "invalid_input") return json({ error: error instanceof ConvexError && typeof error.data?.message === "string" ? error.data.message : "invalid sign-in input" }, 400);
+      throw error;
+    }
     if (!result.valid) return json({ error: "verification code is invalid or expired" }, 400);
-    return json({ ...result, api_origin: process.env.LOCALBOX_API_ORIGIN ?? "http://127.0.0.1:3000", convex_url: process.env.CONVEX_URL });
+    return json({ ...result, api_origin: apiOrigin(), convex_url: process.env.CONVEX_URL });
   }
   if (request.method === "POST" && path === "/auth/logout") {
     const secret = bearer(request); if (!secret) return json({ error: "unauthorized" }, 401);
@@ -52,5 +68,10 @@ async function handleIdentity(request: Request): Promise<Response | undefined> {
 
 export default async function handle(request: Request): Promise<Response> {
   try { return await handleIdentity(request) ?? json({ error: "not_found" }, 404); }
-  catch (error) { return json({ error: "internal_error", error_description: error instanceof Error ? error.message : String(error) }, 500); }
+  catch (error) {
+    if (error instanceof BadBody) return json({ error: "invalid_request", error_description: error.message }, 400);
+    // The cause stays in the function log; the caller learns only that it was ours.
+    console.error(error);
+    return json({ error: "internal_error", error_description: "the request failed on our side; try again" }, 500);
+  }
 }

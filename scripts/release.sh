@@ -28,12 +28,34 @@ for required in LOCALBOX_KERNEL LOCALBOX_INITRD LOCALBOX_TEMPLATE_DISK; do
     exit 1
   fi
 done
-if [ -z "${RELEASE_PRIVATE_KEY:-}" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
-  echo "RELEASE_PRIVATE_KEY is required; set ALLOW_UNSIGNED=1 only for local packaging checks" >&2
-  exit 1
+# Release credentials live in the checkout's git-ignored .release-signing/
+# (backed up outside the repository): the Ed25519 manifest key whose public half
+# is pinned in the skill, and the self-signed code-signing identity.
+SIGNING_DIR=${LOCALBOX_SIGNING_DIR:-$ROOT/.release-signing}
+if [ -z "${RELEASE_PRIVATE_KEY:-}" ] && [ -f "$SIGNING_DIR/release-private.pem" ]; then
+  RELEASE_PRIVATE_KEY="$SIGNING_DIR/release-private.pem"
+fi
+if [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
+  if [ -z "${RELEASE_PRIVATE_KEY:-}" ]; then
+    echo "RELEASE_PRIVATE_KEY is required (or $SIGNING_DIR/release-private.pem); set ALLOW_UNSIGNED=1 only for local packaging checks" >&2
+    exit 1
+  fi
+  # Installers trust only the pinned key, so a manifest signed by any other key
+  # would publish a release nobody can install.
+  if ! node -e 'const c=require("node:crypto"),f=require("node:fs");process.exit(c.createPublicKey(f.readFileSync(process.argv[1])).export({type:"spki",format:"pem"}).toString()===f.readFileSync(process.argv[2],"utf8")?0:1)' \
+    "$RELEASE_PRIVATE_KEY" "$ROOT/skills/localbox/release-public.pem"; then
+    echo "RELEASE_PRIVATE_KEY does not match skills/localbox/release-public.pem" >&2
+    exit 1
+  fi
 fi
 
+# The manifest lists every file in OUT_DIR, so a leftover from an earlier run would be signed into this one.
 mkdir -p "$OUT_DIR"
+OUT_DIR=$(CDPATH= cd -- "$OUT_DIR" && pwd)
+if [ -n "$(ls -A "$OUT_DIR")" ]; then
+  echo "$OUT_DIR must be empty" >&2
+  exit 1
+fi
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/localbox-release.XXXXXX")
 cleanup() {
   if [ -n "$SIGNING_KEYCHAIN" ] && [ -n "$SIGNING_WORK" ] && [ -e "$SIGNING_KEYCHAIN" ]; then
@@ -50,29 +72,22 @@ PY
 }
 trap cleanup EXIT INT TERM
 
-# Local packaging uses a disposable keychain. When the screen-recorder local
-# credentials are present, they are imported for this run; otherwise a
-# throwaway self-signed identity is generated. Both paths follow the same
-# PKCS#12 -> owned keychain -> partition-list pattern. The key never enters the
-# login keychain and the keychain is removed by cleanup.
+# Without APPLE_SIGNING_IDENTITY, the release identity's PKCS#12 is imported into
+# a disposable keychain with a partition list for headless codesign. The key
+# never enters the login keychain and cleanup deletes the keychain. A missing
+# identity fails: a freshly generated one would be a different signer.
 if [ -z "$IDENTITY" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
   SIGNING_WORK=$(mktemp -d "${TMPDIR:-/tmp}/localbox-signing.XXXXXX")
   SIGNING_KEYCHAIN="$SIGNING_WORK/signing.keychain-db"
   SIGNING_PASSWORD=$(openssl rand -hex 24)
-  LOCAL_SIGNING_DIR=${LOCALBOX_SIGNING_DIR:-${HOME:-}/dev/screen-recorder/.release-signing}
-  LOCAL_P12=${LOCALBOX_SIGNING_P12:-$LOCAL_SIGNING_DIR/release-identity.p12}
-  LOCAL_PASSWORD=${LOCALBOX_SIGNING_P12_PASSWORD_FILE:-$LOCAL_SIGNING_DIR/release-identity-password.txt}
-  if [ -n "${LOCALBOX_SIGNING_P12_PASSWORD:-}" ]; then
-    printf '%s\n' "$LOCALBOX_SIGNING_P12_PASSWORD" > "$SIGNING_WORK/p12-password.txt"
-    LOCAL_PASSWORD="$SIGNING_WORK/p12-password.txt"
-  fi
-  if [ -n "${LOCALBOX_SIGNING_P12:-}" ] && [ ! -f "$LOCAL_PASSWORD" ]; then
-    echo "LOCALBOX_SIGNING_P12_PASSWORD or LOCALBOX_SIGNING_P12_PASSWORD_FILE is required" >&2
+  LOCAL_P12=${LOCALBOX_SIGNING_P12:-$SIGNING_DIR/release-identity.p12}
+  LOCAL_PASSWORD=${LOCALBOX_SIGNING_P12_PASSWORD_FILE:-$SIGNING_DIR/release-identity-password.txt}
+  if [ ! -f "$LOCAL_P12" ] || [ ! -f "$LOCAL_PASSWORD" ]; then
+    echo "the release signing identity is missing: expected $LOCAL_P12 and $LOCAL_PASSWORD (or set APPLE_SIGNING_IDENTITY)" >&2
     exit 1
   fi
-  if [ -f "$LOCAL_P12" ] && [ -f "$LOCAL_PASSWORD" ]; then
-    SIGNING_P12_PASSWORD=$(cat "$LOCAL_PASSWORD")
-    python3 - "$LOCAL_P12" "$SIGNING_WORK/identity.p12" <<'PY'
+  SIGNING_P12_PASSWORD=$(cat "$LOCAL_PASSWORD")
+  python3 - "$LOCAL_P12" "$SIGNING_WORK/identity.p12" <<'PY'
 import base64
 import pathlib
 import sys
@@ -85,37 +100,18 @@ except Exception:
     pass
 target.write_bytes(value)
 PY
-    SIGNING_P12="$SIGNING_WORK/identity.p12"
-    SIGNING_CERT="$SIGNING_WORK/identity.crt"
-    printf '%s\n' "$SIGNING_P12_PASSWORD" | openssl pkcs12 -in "$SIGNING_P12" \
-      -clcerts -nokeys -passin stdin -out "$SIGNING_CERT" >/dev/null 2>&1
-    IDENTITY=$(openssl x509 -in "$SIGNING_CERT" -noout -fingerprint -sha1 \
-      | sed 's/.*=//; s/://g')
-  else
-    SIGNING_P12_PASSWORD=$(openssl rand -hex 24)
-    SIGNING_CONFIG="$SIGNING_WORK/openssl.cnf"
-    SIGNING_KEY="$SIGNING_WORK/identity.key"
-    SIGNING_CERT="$SIGNING_WORK/identity.crt"
-    SIGNING_P12="$SIGNING_WORK/identity.p12"
-    cat > "$SIGNING_CONFIG" <<'EOF'
-[req]
-distinguished_name = name
-x509_extensions = signing
-prompt = no
-[name]
-CN = Localbox Local
-[signing]
-basicConstraints = critical,CA:false
-keyUsage = critical,digitalSignature
-extendedKeyUsage = critical,codeSigning
-EOF
-    openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes \
-      -keyout "$SIGNING_KEY" -out "$SIGNING_CERT" -config "$SIGNING_CONFIG" >/dev/null 2>&1
-    openssl pkcs12 -export -inkey "$SIGNING_KEY" -in "$SIGNING_CERT" \
-      -out "$SIGNING_P12" -name "Localbox Local" \
-      -macalg sha1 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES \
-      -passout "pass:$SIGNING_P12_PASSWORD" >/dev/null 2>&1
-    IDENTITY="Localbox Local"
+  SIGNING_P12="$SIGNING_WORK/identity.p12"
+  SIGNING_CERT="$SIGNING_WORK/identity.crt"
+  printf '%s\n' "$SIGNING_P12_PASSWORD" | openssl pkcs12 -in "$SIGNING_P12" \
+    -clcerts -nokeys -passin stdin -out "$SIGNING_CERT" >/dev/null 2>&1
+  IDENTITY=$(openssl x509 -in "$SIGNING_CERT" -noout -fingerprint -sha1 \
+    | sed 's/.*=//; s/://g')
+  if [ -f "$SIGNING_DIR/public.json" ]; then
+    PINNED_SHA1=$(node -p 'require(process.argv[1]).sha1' "$SIGNING_DIR/public.json")
+    if [ "$(printf '%s' "$IDENTITY" | tr 'A-F' 'a-f')" != "$PINNED_SHA1" ]; then
+      echo "the signing identity does not match $SIGNING_DIR/public.json" >&2
+      exit 1
+    fi
   fi
   security create-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
   security unlock-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN"
@@ -229,18 +225,17 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
   ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
 fi
 
+cd "$ROOT"
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
-import { createPublicKey } from "node:crypto";
 import { makeManifest, signManifest, writeRelease } from "./dist/scripts/release.js";
 const dir = process.env.RELEASE_DIR;
 const version = process.env.RELEASE_VERSION;
 const imageDigest = process.env.RELEASE_IMAGE_DIGEST;
 let manifest = await makeManifest(dir, version, imageDigest);
 if (process.env.RELEASE_PRIVATE_KEY) {
-  const privateKey = readFileSync(process.env.RELEASE_PRIVATE_KEY);
-  const publicKey = createPublicKey(privateKey).export({ type: "spki", format: "pem" }).toString();
-  manifest = signManifest({ ...manifest, public_key: publicKey }, privateKey, process.env.RELEASE_KEY_ID || "release");
+  // The manifest carries no public key: verifiers trust only the pinned one.
+  manifest = signManifest(manifest, readFileSync(process.env.RELEASE_PRIVATE_KEY), process.env.RELEASE_KEY_ID || "release");
 }
 await writeRelease(dir, manifest);
 NODE

@@ -82,16 +82,18 @@ func consoleScreenIsLocked() -> Bool {
     return users?.contains { $0["CGSSessionScreenIsLocked"] as? Bool == true } ?? false
 }
 
-/// Records why the guest stopped, so a dead guest is reported instead of surfacing as a closed channel.
+/// Records why the guest stopped and tells the runtime, so a dead guest is reported instead of surfacing as a closed channel.
 final class GuestStopObserver: NSObject, VZVirtualMachineDelegate, @unchecked Sendable {
-    private let lock = NSLock(); private var reason: String?
+    private let lock = NSLock(); private var reason: String?; private var handler: (@Sendable (String) -> Void)?
     var stopReason: String? { lock.lock(); defer { lock.unlock() }; return reason }
-    func guestDidStop(_ virtualMachine: VZVirtualMachine) { lock.lock(); reason = "guest shut down"; lock.unlock() }
-    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) { lock.lock(); reason = "VM stopped: \(error.localizedDescription)"; lock.unlock() }
+    func onStop(_ handler: @escaping @Sendable (String) -> Void) { lock.lock(); self.handler = handler; lock.unlock() }
+    func guestDidStop(_ virtualMachine: VZVirtualMachine) { stopped("guest shut down") }
+    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) { stopped("VM stopped: \(error.localizedDescription)") }
+    private func stopped(_ why: String) { lock.lock(); reason = why; let handler = handler; lock.unlock(); handler?(why) }
 }
 
 /// One sandbox's VM for one boot. A vsock connection carries GuestService frames.
-public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider {
+public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider, GuestStopReporting {
     private let record: SandboxRecord
     private let directory: SandboxDirectory
     private let artifacts: SandboxArtifacts
@@ -105,6 +107,7 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider 
     private let stopObserver = GuestStopObserver()
     /// Why the guest stopped, if it has.
     public func stopReason() -> String? { stopObserver.stopReason }
+    public func onGuestStop(_ handler: @escaping @Sendable (String) -> Void) { stopObserver.onStop(handler) }
     public init(record: SandboxRecord, directory: SandboxDirectory, artifacts: SandboxArtifacts) {
         self.record = record; self.directory = directory; self.artifacts = artifacts
         queue = DispatchQueue(label: "org.localbox.vm.\(record.sandboxID)")
@@ -134,20 +137,22 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider 
         guestChannel = channel
     }
     public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
-    public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); try await stopMachine(machine); guestConnection?.close(); self.guestConnection = nil; self.guestChannel = nil; self.machine = nil }
+    /// A guest that already stopped itself is stopped: that is success, not an error.
+    public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); if stopObserver.stopReason == nil { try await stopMachine(machine) }; guestConnection?.close(); self.guestConnection = nil; self.guestChannel = nil; self.machine = nil }
     public func pause() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await pauseMachine(machine) }
     public func resume() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await resumeMachine(machine) }
 
     public func save(to url: URL) async throws {
         guard let machine else { throw HostDaemonError.invalidState("VM is not running") }
         try await pauseMachine(machine)
+        let temporary = SandboxDirectory(url.deletingLastPathComponent()).temporarySave()
         do {
-            let temporary = url.deletingLastPathComponent().appendingPathComponent(".save-\(UUID().uuidString).vzvmsave")
             try await saveMachineState(machine, to: temporary)
             try atomicReplace(temporary, at: url)
             try await stopMachine(machine)
             await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil; self.machine = nil
         } catch {
+            try? FileManager.default.removeItem(at: temporary)
             try? await resumeMachine(machine)
             throw consoleScreenIsLocked() ? HostDaemonError.screenLocked : error
         }

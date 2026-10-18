@@ -65,12 +65,17 @@ tar -xzf "$archive" -C "$download"
 ## Run the installer
 
 The installer verifies the Ed25519 signature on `release.json` against the
-pinned release public key before it writes anything. When an older copy of this
-skill is already installed it finds the key there; otherwise pass the key that
-ships next to this file's skill (`release-public.pem`):
+pinned release public key before it writes anything. The key is pinned here,
+in this procedure, and nowhere else you can trust yet: never take it from the
+download you are verifying, and never set `ALLOW_UNSIGNED`. Write it exactly:
 
 ```sh
-RELEASE_PUBLIC_KEY="$HOME/.agents/skills/localbox/release-public.pem" \
+cat > "$download/release-public.pem" <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAMh6Vd0tBiVA5V/maXs8t3SPh6xPNjuPhJqeD3OeFAq8=
+-----END PUBLIC KEY-----
+EOF
+RELEASE_PUBLIC_KEY="$download/release-public.pem" \
   "$download/localbox-cli/scripts/install-release.sh" "$download"
 ```
 

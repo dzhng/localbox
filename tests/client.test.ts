@@ -66,3 +66,22 @@ test("remote authentication expiry is recoverable and visible", async () => {
   const recovered = await new AgentClient({ transport, sandboxId: "sandbox_fixture" }).invoke("sandbox.status");
   assert.equal(recovered.ok, true);
 });
+
+test("a local IPC mutation whose daemon closes without answering is uncertain, and its wait follows the request deadline", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-computer-ipc-"));
+  const socketPath = join(directory, "agent.sock");
+  let read = false;
+  // Takes the frame, then hangs up 1.2s later without a response: past the transport's 1s floor, inside the request's deadline.
+  const server = createServer((socket) => socket.once("data", () => { read = true; setTimeout(() => socket.destroy(), 1_200); }));
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(socketPath, resolve); });
+  try {
+    const response = await new AgentClient({ transport: new LocalIPCTransport({ socketPath, token: "socket-secret", timeoutMs: 1_000 }) })
+      .invoke("sandbox.start", {}, { sandboxId: "sandbox_1", mutationId: "start-1", deadlineMs: 5_000 });
+    assert.equal(read, true);
+    assert.equal(response.ok, false);
+    if (!response.ok) { assert.equal(response.error.code, "operation_uncertain"); assert.match(response.error.message, /start-1/); }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});

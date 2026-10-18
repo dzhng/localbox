@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { makeFunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
 import { ContractError, failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 import { contractError } from "../../relay/src/ops.js";
 import { RevokedError } from "./token.js";
@@ -90,7 +91,8 @@ export class Connector {
     this.unsubscribe = this.deps.convex.onUpdate(relay.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
       (error) => { if (!this.ended) { this.setState(this.status.state, `subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // The daemon's identity mirror follows the catalog, so a rename or delete made while this Mac was offline lands on reconnect.
-    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[]) => { this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows ?? [])); },
+    // A missing result is a failed read, not an empty catalog: mirroring it would delete every sandbox this Mac listed.
+    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
   }
@@ -123,11 +125,11 @@ export class Connector {
   }
 
   /**
-   * Convex checks revocation on every call, so a removed machine's subscriptions fail with a Forbidden error while
-   * its JWT is still valid. The token route is the authority: a forced refresh it refuses ends the connector as revoked.
+   * Convex checks revocation on every call, so a removed machine's subscriptions fail with an `unauthorized`
+   * ConvexError while its JWT is still valid (production Convex redacts any other error's message, so only the code counts). The token route is the authority: a forced refresh it refuses ends the connector as revoked.
    */
   private recheckIdentity(error: unknown): void {
-    if (/Forbidden: machine/.test(message(error))) void this.token(true);
+    if (error instanceof ConvexError && error.data?.code === "unauthorized") void this.token(true);
   }
 
   private async run(row: PendingRow): Promise<void> {

@@ -47,9 +47,15 @@ passwords. Signing in sends a 6-digit code to the email:
 - Codes come from a cryptographic random source, are stored only as a SHA-256
   hash, expire after 10 minutes, and are deleted once used. Sending a new code
   replaces the old one.
-- Five wrong guesses delete the code.
+- Five wrong guesses delete the code, and a replacement code inherits the
+  count. Wrong guesses also count per email across codes: past 10 in an hour or
+  20 in a day, verification is refused, even for the right code. Asking for
+  fresh codes therefore buys an attacker no extra guesses; the cost is that
+  someone guessing at an email can hold its owner out for up to a day.
 - Sends are limited to 5 an hour per email and 20 an hour per client IP;
-  verifications to 50 an hour per client IP. A send over the limit still answers
+  verifications to 50 an hour per client IP. An IPv6 client counts by its /64
+  prefix, so rotating addresses inside one allocation does not reset the
+  limit. A send over the limit still answers
   "code sent", so the response never reveals whether a code went out. The client
   IP comes from Vercel's own headers, not a caller-supplied `x-forwarded-for`.
 - Codes are delivered by Resend from `login@mail.localbox.sh`.
@@ -137,6 +143,24 @@ Limits and retention:
 - A request no Mac claims within 3 seconds is answered `machine_offline` and is
   never run later. A mutation whose result was lost is reported as
   `operation_uncertain` and never retried silently.
+
+## Releases and updates
+
+A release is trusted through its manifest: `release.json` lists every artifact's
+SHA-256 and carries an Ed25519 signature checked against the release public key
+pinned in the Localbox skill. The manifest never supplies its own key.
+
+- **Updates** are verified by the release already installed: its code and its
+  pinned key check the new manifest and checksums before anything from the new
+  release runs.
+- **A first install** has nothing installed to verify with. Its trust rests on
+  GitHub's TLS and on the public key printed in the installation procedure; the
+  bundled verifier then runs from the archive being installed. Anyone who can
+  change both the procedure and the release can change what is installed.
+- The app, CLI launcher and bundled Node are code-signed with a self-signed
+  Localbox identity, not an Apple Developer ID, and are not notarized. The
+  installer clears the download quarantine flag after the signature checks so
+  Gatekeeper does not refuse them; macOS itself vouches for nothing here.
 
 ## Non-security limits
 

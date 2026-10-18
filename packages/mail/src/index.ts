@@ -6,7 +6,7 @@ export class ResendMailer implements Mailer {
     if (!apiKey) throw new Error("RESEND_API_KEY is required");
   }
   async sendCode(message: CodeMessage): Promise<void> {
-    const response = await this.fetchImpl("https://api.resend.com/emails", { method: "POST", headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json", "Idempotency-Key": message.idempotencyKey }, body: JSON.stringify({ from: "Localbox <login@mail.localbox.sh>", to: [message.to], subject: "Your Localbox sign-in code", text: `Your Localbox sign-in code is ${message.code}. It expires in 10 minutes.` }) });
+    const response = await this.fetchImpl("https://api.resend.com/emails", { method: "POST", headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json", "Idempotency-Key": message.idempotencyKey }, body: JSON.stringify({ from: "Localbox <login@mail.localbox.sh>", to: [message.to], subject: "Your Localbox sign-in code", text: `Your Localbox sign-in code is ${message.code}. It expires in 10 minutes.\n\nNever share this code with anyone. Localbox will never ask you for it; enter it only where you started signing in. If you did not ask to sign in, ignore this email.` }) });
     if (!response.ok) throw new Error(`Resend rejected email (${response.status})`);
   }
 }
