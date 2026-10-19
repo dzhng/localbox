@@ -8,7 +8,7 @@ export const declaredSubstitutions = [
   { from: "Duet-only services", to: "omitted", reason: "Localbox owns the guest agent and boot unit." },
 ];
 
-export interface PackageInventory { apt: string[]; pip: string[]; npm: string[]; chrome?: string }
+export interface PackageInventory { apt: string[]; pip: string[]; npm: string[]; chrome: string | undefined }
 const clean = (value: string) => value.replace(/["'`,\\]/g, "").trim();
 const chromeVersion = (text: string) => text.match(/^ARG GOOGLE_CHROME_VERSION=(\S+)$/m)?.[1];
 const packageName = (value: string) => clean(value).replace(/\[.*$/, "").split(/[<>=!~]/, 1)[0].toLowerCase().replace(/_/g, "-");

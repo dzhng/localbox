@@ -14,8 +14,8 @@ test("ARM64 full profile matches the vendored Duet apt, pip, and npm inventories
 });
 
 test("parity reports an unapproved full-profile package drift", () => {
-  const duet = { apt: ["curl"], pip: ["requests"], npm: ["typescript"] };
-  const local = { apt: ["curl", "unapproved"], pip: ["requests"], npm: ["typescript"] };
+  const duet = { apt: ["curl"], pip: ["requests"], npm: ["typescript"], chrome: "1" };
+  const local = { apt: ["curl", "unapproved"], pip: ["requests"], npm: ["typescript"], chrome: "1" };
   assert.deepEqual(compareParity(duet, local, "requests==1\n"), { ok: false, differences: ["apt extra: unapproved"] });
 });
 

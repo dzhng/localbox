@@ -55,8 +55,9 @@ RUN if [ "$PROFILE" = full ]; then \
 RUN if [ "$PROFILE" = full ]; then npm install -g eslint firecrawl-cli prettier skills typescript; fi
 
 # Google Chrome at Duet's exact version (the parity check enforces it), from
-# Google's arm64 package, SHA pinned. Its maintainer script adds Google's apt source and a daily repair
-# job; both go, so no background apt run replaces the running browser.
+# Google's arm64 package, SHA pinned. Its maintainer script adds Google's apt
+# source and a daily repair job; both go, so no background apt run replaces
+# the running browser.
 ARG GOOGLE_CHROME_VERSION=151.0.7922.137-1
 ARG GOOGLE_CHROME_SHA256=d0e9a7e245db306f343d6630e4d4acd7825c532b0df75c06d2258c8321680fa1
 RUN if [ "$PROFILE" = full ]; then \
