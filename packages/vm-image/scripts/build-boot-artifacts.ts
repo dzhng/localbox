@@ -15,8 +15,7 @@ const outputRoot = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 const output = join(outputRoot, profile);
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
 const substitutions = [
-  { from: "Google Chrome", to: "Chrome for Testing (Playwright)", reason: "Google publishes no Linux ARM64 Chrome package and Ubuntu's ARM64 chromium is a snap stub; Playwright's pinned ARM64 build is used." },
-  { from: "x86_64 release downloads", to: "ARM64 release downloads", reason: "Bun, static-web-server, and KasmVNC are fetched from their native ARM64 release assets at the Duet versions." },
+  { from: "x86_64 release downloads", to: "ARM64 release downloads", reason: "Bun, static-web-server, KasmVNC, and Google Chrome are fetched from their native ARM64 release assets at the Duet versions." },
   { from: "boldsoftware/exeuntu", to: "ubuntu:24.04 ARM64", reason: "The Duet base is private and has no published ARM64 image available to this build; Ubuntu is pinned by digest." },
   { from: "Duet gateway, Syncthing, Duet runtime, systemd units, branding", to: "omitted", reason: "These services belong to Duet; Localbox owns the guest agent and boot unit." },
 ];

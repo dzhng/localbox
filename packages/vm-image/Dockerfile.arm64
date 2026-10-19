@@ -17,9 +17,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LOCALBOX_IMAGE_VERSION=${IMAGE_BUILD_VERSION}
 
 RUN test "$PROFILE" = minimal || test "$PROFILE" = full
-# The package names in the full branch are the Duet apt inventory. Google
-# Chrome is x86_64-only, so Chromium comes from Playwright below, and xdotool
-# drives the display for the desktop tools.
+# The package names in the full branch are the Duet apt inventory, plus
+# xdotool, which drives the display for the desktop tools.
 RUN apt-get update && \
   if [ "$PROFILE" = full ]; then \
     apt-get install -y --no-install-recommends \
@@ -55,16 +54,25 @@ RUN if [ "$PROFILE" = full ]; then \
 # Duet's global npm inventory, retained verbatim for full images.
 RUN if [ "$PROFILE" = full ]; then npm install -g eslint firecrawl-cli prettier skills typescript; fi
 
-# Ubuntu's arm64 chromium package is a snap stub, which cannot install or run
-# here; Playwright publishes a pinned arm64 Chromium build and its apt deps.
-ARG PLAYWRIGHT_VERSION=1.64.1
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+# Google Chrome at Duet's exact version (the parity check enforces it), from
+# Google's arm64 package, SHA pinned. Its maintainer script adds Google's apt source and a daily repair
+# job; both go, so no background apt run replaces the running browser.
+ARG GOOGLE_CHROME_VERSION=151.0.7922.137-1
+ARG GOOGLE_CHROME_SHA256=d0e9a7e245db306f343d6630e4d4acd7825c532b0df75c06d2258c8321680fa1
 RUN if [ "$PROFILE" = full ]; then \
-      npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --no-shell chromium \
-      && chrome=$(find /opt/ms-playwright -type f -name chrome -perm -u+x | head -n 1) \
-      && test -n "$chrome" && ln -s "$chrome" /usr/local/bin/chromium \
-      && chromium --version \
-      && rm -rf /var/lib/apt/lists/* /root/.npm; \
+      curl -fsSL -o /tmp/google-chrome-stable.deb \
+        "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${GOOGLE_CHROME_VERSION}_arm64.deb" \
+      && echo "${GOOGLE_CHROME_SHA256}  /tmp/google-chrome-stable.deb" | sha256sum -c - \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends /tmp/google-chrome-stable.deb \
+      && apt-mark hold google-chrome-stable \
+      && rm -f /tmp/google-chrome-stable.deb \
+        /etc/apt/sources.list.d/google-chrome.list \
+        /etc/apt/sources.list.d/google-chrome.sources \
+        /etc/cron.daily/google-chrome \
+        /opt/google/chrome/cron/google-chrome \
+      && google-chrome-stable --version \
+      && rm -rf /var/lib/apt/lists/*; \
     fi
 
 # ARM64 substitutions for Duet's x86_64 release downloads. KasmVNC ships a
@@ -101,7 +109,7 @@ RUN if [ "$PROFILE" = full ]; then \
     fi
 
 # The desktop the guest agent's desktop tools drive: display :0, XFCE and
-# Chromium with CDP on loopback, as the exedev user.
+# Google Chrome with CDP on loopback, as the exedev user.
 COPY packages/vm-image/desktop/ /opt/localbox/desktop/
 RUN if [ "$PROFILE" = full ]; then \
       install -m 0644 /opt/localbox/desktop/*.service /etc/systemd/system/ \

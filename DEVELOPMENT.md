@@ -251,9 +251,9 @@ this Mac, whose case-insensitive, unprivileged checkout would corrupt it.
 
 `full` also runs the desktop the desktop and browser tools drive, as the
 `exedev` user ([units](packages/vm-image/desktop/)): display `:0` from KasmVNC's
-`Xvnc` (its viewer on loopback port 6901 only), an XFCE session, and Chromium
-(Playwright's pinned arm64 Chrome for Testing; Ubuntu's arm64 `chromium` is a
-snap stub) with CDP on `127.0.0.1:9222`. Chromium's sandbox needs unprivileged
+`Xvnc` (its viewer on loopback port 6901 only), an XFCE session, and Google
+Chrome (Google's arm64 package, at Duet's version) with CDP on
+`127.0.0.1:9222`. Chrome's sandbox needs unprivileged
 user namespaces, so the image turns off Ubuntu's AppArmor restriction on them.
 
 The [guest agent](apps/guest-agent/README.md) is a persistent service on a Unix
@@ -267,7 +267,8 @@ the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
 
 Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
 hand; no CI publishes them. `scripts/release.sh` stages the signed HostDaemon
-app bundle, compiled CLI, VM template, checksums and release manifest. Set
+app bundle, compiled CLI, VM template, checksums and release manifest for the
+`version` in `package.json` (override with `VERSION`). Set
 `LOCALBOX_KERNEL`, `LOCALBOX_INITRD` and `LOCALBOX_TEMPLATE_DISK` to the
 `npm run image:build` outputs in `dist/vm-image/full/` and `IMAGE_DIGEST` to the
 `digest` in its `manifest.json`. It needs `zstd` (`brew install zstd`).

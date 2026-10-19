@@ -1,7 +1,7 @@
 {
   "name": "localbox",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "npm@11.19.0",
   "workspaces": [
     "apps/*",
