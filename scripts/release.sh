@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 OUT_DIR=${1:-$ROOT/dist/release}
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-$(node -p "require(process.argv[1]).version" "$ROOT/package.json")}
 IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:unrecorded}
 IDENTITY=${APPLE_SIGNING_IDENTITY:-}
 SIGNING_KEYCHAIN=

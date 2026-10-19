@@ -11,7 +11,8 @@
     "staticWebServerSha256": "6aeca9e23580a187c043daef9c6bf8c12b80bb8d75ed84a23beead2cd193a20d",
     "kasmvnc": "1.5.0",
     "kasmvncSha256": "c9199cf4753208bfb69fd016a9780242bebfc43370cc38c97d61e90a3c783e04",
-    "chromium": "Playwright 1.64.1 Chrome for Testing (ARM64)"
+    "googleChrome": "151.0.7922.137-1",
+    "googleChromeSha256": "d0e9a7e245db306f343d6630e4d4acd7825c532b0df75c06d2258c8321680fa1"
   },
   "pythonRequirementsSha256": "sha256:0c0947d9cc158f58ac2900eebfd4173147fdd7cdf38db75ff8df065c987cc82a",
   "buildVersion": "dev",

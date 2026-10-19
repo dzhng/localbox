@@ -3,14 +3,14 @@ import { dirname, join, resolve } from "node:path";
 
 export const DUET_COMMIT = "8f3cb100e016e2627618718675b2617d8b98f2aa";
 export const declaredSubstitutions = [
-  { from: "google-chrome-stable", to: "Playwright Chrome for Testing", reason: "Google Chrome has no Linux ARM64 package and Ubuntu's ARM64 chromium is a snap stub." },
-  { from: "x86_64 downloads", to: "ARM64 downloads", reason: "Bun, static-web-server, and KasmVNC use native ARM64 release assets." },
+  { from: "x86_64 downloads", to: "ARM64 downloads", reason: "Bun, static-web-server, KasmVNC, and Google Chrome use native ARM64 release assets." },
   { from: "boldsoftware/exeuntu", to: "ubuntu:24.04 ARM64", reason: "Duet's private base has no available ARM64 image." },
   { from: "Duet-only services", to: "omitted", reason: "Localbox owns the guest agent and boot unit." },
 ];
 
-export interface PackageInventory { apt: string[]; pip: string[]; npm: string[] }
+export interface PackageInventory { apt: string[]; pip: string[]; npm: string[]; chrome: string | undefined }
 const clean = (value: string) => value.replace(/["'`,\\]/g, "").trim();
+const chromeVersion = (text: string) => text.match(/^ARG GOOGLE_CHROME_VERSION=(\S+)$/m)?.[1];
 const packageName = (value: string) => clean(value).replace(/\[.*$/, "").split(/[<>=!~]/, 1)[0].toLowerCase().replace(/_/g, "-");
 
 function words(block: string): string[] {
@@ -25,6 +25,7 @@ export function parseDuetDockerfile(text: string): PackageInventory {
     apt: words(aptBlock).map(packageName),
     pip: words(pipBlock).map(packageName),
     npm: words(npmBlock).map(packageName),
+    chrome: chromeVersion(text),
   };
 }
 
@@ -34,7 +35,7 @@ export function parseLocalboxFullDockerfile(text: string): PackageInventory {
   const branch = start >= 0 && end > start ? text.slice(start, end) : "";
   const aptBlock = branch.match(/apt-get install -y --no-install-recommends([\s\S]*?);/)?.[1] ?? "";
   const npmBlock = text.match(/npm install -g([\s\S]*?); fi/)?.[1] ?? "";
-  return { apt: words(aptBlock).map(packageName), pip: [], npm: words(npmBlock).map(packageName) };
+  return { apt: words(aptBlock).map(packageName), pip: [], npm: words(npmBlock).map(packageName), chrome: chromeVersion(text) };
 }
 
 export function parseRequirements(text: string): string[] {
@@ -52,6 +53,7 @@ export function compareParity(duet: PackageInventory, local: PackageInventory, r
   for (const name of actualPip) if (!expectedPip.has(name)) differences.push(`pip extra: ${name}`);
   for (const name of new Set(local.npm)) if (!new Set(duet.npm).has(name)) differences.push(`npm extra: ${name}`);
   for (const name of new Set(duet.npm)) if (!new Set(local.npm).has(name)) differences.push(`npm missing: ${name}`);
+  if (duet.chrome !== local.chrome) differences.push(`google-chrome-stable: Duet ${duet.chrome ?? "none"}, Localbox ${local.chrome ?? "none"}`);
   return { ok: differences.length === 0, differences };
 }
 
