@@ -50,12 +50,17 @@ extension MacLab {
         let agentPlist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict><key>Label</key><string>sh.localbox.desktop</string><key>ProgramArguments</key><array><string>\(Self.agentPath)</string><string>/tmp/tccprobe.json</string></array></dict></plist>"
         _ = try ssh.run("printf '%s' '\(agentPlist)' > /Library/LaunchAgents/sh.localbox.desktop.plist && chown root:wheel /Library/LaunchAgents/sh.localbox.desktop.plist", elevated: true)
         // Run the desktop role once in the user's GUI session, as launchd would, and read what it found.
+        // The host's own view of the screen, to see the click's effect independently of the guest's capture.
+        let vnc = try RecoveryVNC(virtualMachine: vm.vm, queue: vm.queue)
+        let screen = try await connect(vnc)
+        defer { screen.close(); vnc.stop() }
         func runDesktopRole() async throws -> [String: Any] {
             _ = try ssh.run("rm -f /tmp/tccprobe.json; launchctl bootout gui/\(uid)/sh.localbox.desktop 2>/dev/null; launchctl bootstrap gui/\(uid) /Library/LaunchAgents/sh.localbox.desktop.plist; launchctl kickstart -k gui/\(uid)/sh.localbox.desktop", elevated: true)
+            let menuSeen = (try? await screen.waitForText(timeout: 12, "the Apple menu open") { $0.contains("About This Mac") }) != nil
             for _ in 0..<30 {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
                 let read = try ssh.run("cat /tmp/tccprobe.json 2>/dev/null")
-                if let data = read.stdout.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { return object }
+                if let data = read.stdout.data(using: .utf8), var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { object["menu_opened"] = menuSeen; return object }
             }
             throw LabError("the desktop role never wrote its result")
         }
@@ -72,7 +77,9 @@ extension MacLab {
             }
         }
         try grant()
-        let granted = try await runDesktopRole()
+        // A fresh grant can take a moment to reach event posting; one retry if the host didn't see the menu open.
+        var granted = try await runDesktopRole()
+        if granted["menu_opened"] as? Bool != true { granted = try await runDesktopRole(); granted["retried"] = true }
         try? ssh.copyBack("/tmp/tccprobe-after.png", to: evidence.appendingPathComponent("18-menu-opened.png"))
         // Replace the binary with different bytes (a new ad-hoc signature) at the same path.
         let replacement = FileManager.default.temporaryDirectory.appendingPathComponent("localbox-tccprobe")
@@ -86,7 +93,9 @@ extension MacLab {
         try grant()
         let rewritten = try await runDesktopRole()
         try await vm.stop()
-        func allGranted(_ result: [String: Any]) -> Bool { ["screen_capture", "accessibility", "post_event", "menu_opened"].allSatisfy { result[$0] as? Bool == true } }
+        // Granted means: all three preflights true, a capture succeeded, and the host saw the click open the menu.
+        // A capture while the menu is open is recorded, not required (ScreenCaptureKit answers nil then; slice 33).
+        func allGranted(_ result: [String: Any]) -> Bool { ["screen_capture", "accessibility", "post_event", "menu_opened", "capture_after_close"].allSatisfy { result[$0] as? Bool == true } }
         let survives = allGranted(replaced)
         return ["ok": allGranted(granted) && (survives || allGranted(rewritten)), "survives_replace": survives, "rewrite_restores": allGranted(rewritten), "user_database": userDatabase, "before_grant": before, "after_grant": granted, "after_replace": replaced, "after_rewrite": rewritten]
     }

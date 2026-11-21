@@ -21,17 +21,17 @@
       "ok": true
     }
   ],
-  "machine_root": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-32-5klVcI",
+  "machine_root": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-32-9J9vjw",
   "image_agent": "0.1.1+d31193c53e85",
   "next_agent": "0.0.0-probe32+d31193c53e85",
-  "landed_after_job_ms": 3025,
+  "landed_after_job_ms": 1765,
   "before": {
-    "bootId": "368fe8f2-cb30-4a4c-890c-bdbedb4cf97e",
-    "uptime": 0.88
+    "bootId": "24166b9a-b48c-4542-bb51-6c83ed69a38c",
+    "uptime": 2.03
   },
   "after": {
-    "bootId": "368fe8f2-cb30-4a4c-890c-bdbedb4cf97e",
-    "uptime": 18.9
+    "bootId": "24166b9a-b48c-4542-bb51-6c83ed69a38c",
+    "uptime": 18.8
   },
   "connect_update_ms": 0,
   "second_created": [

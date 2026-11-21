@@ -18,7 +18,17 @@ var result: [String: Any] = [
     "post_event": CGPreflightPostEventAccess(),
 ]
 
+/// ScreenCaptureKit sometimes answers a capture with neither an image nor an error (Swift's `nilError`) right after
+/// input events, so a capture is retried.
 func capture() async throws -> CGImage {
+    var failure: Error?
+    for _ in 0..<5 {
+        do { return try await captureOnce() } catch { failure = error; try await Task.sleep(nanoseconds: 700_000_000) }
+    }
+    throw failure!
+}
+
+func captureOnce() async throws -> CGImage {
     let content = try await SCShareableContent.current
     guard let display = content.displays.first else { throw NSError(domain: "tccprobe", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"]) }
     let configuration = SCStreamConfiguration(); configuration.width = display.width; configuration.height = display.height
@@ -51,13 +61,18 @@ Task {
         result["captured_pixels"] = before.width * before.height
         click(CGPoint(x: 18, y: 10)) // the Apple menu
         try await Task.sleep(nanoseconds: 1_500_000_000)
-        let after = try await capture()
-        save(after, "/tmp/tccprobe-after.png")
-        let seen = try text(in: after)
-        result["menu_opened"] = seen.contains("About This Mac") || seen.contains("System Settings")
-        result["after_text"] = String(seen.prefix(400))
+        // With the menu open: does a capture work? The host also reads the open menu over VNC meanwhile.
+        do {
+            let open = try await captureOnce()
+            save(open, "/tmp/tccprobe-after.png")
+            result["capture_with_menu_open"] = true
+            result["after_text"] = String(try text(in: open).prefix(400))
+        } catch { result["capture_with_menu_open"] = false; result["capture_with_menu_open_error"] = String(describing: error) }
+        try await Task.sleep(nanoseconds: 6_000_000_000)
         CGEvent(keyboardEventSource: nil, virtualKey: 0x35, keyDown: true)?.post(tap: .cghidEventTap) // Escape closes it
         CGEvent(keyboardEventSource: nil, virtualKey: 0x35, keyDown: false)?.post(tap: .cghidEventTap)
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        result["capture_after_close"] = (try? await capture()) != nil
     } catch { result["error"] = String(describing: error) }
     done.signal()
 }

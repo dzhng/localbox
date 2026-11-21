@@ -26,6 +26,13 @@ Linux one does, in the two roles of P4.
 - The display is whatever the Mac graphics device presents; `desktop.screenshot`
   reports its real size rather than assuming 1440×900.
 
+- **Inherited from spike 18:** `SCScreenshotManager` answers nil while a menu is
+  open, so `desktop.screenshot` must not fail then: capture from a running
+  `SCStream` (one frame), and prove it in slice 35 with a menu open. After every
+  agent swap the root role rewrites the three TCC rows (P6; the screen-capture
+  grant does not survive a replaced binary), through slice 32's
+  `rewriteDarwinTccGrantsAfterSwap` hook.
+
 ## See it
 
 Tier `u` only here; the real run is slice 35.

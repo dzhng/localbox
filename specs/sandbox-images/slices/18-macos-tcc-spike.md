@@ -1,5 +1,24 @@
 # 18 macOS TCC and desktop helper spike (go/no-go)
 
+**Outcome 2026-11-21: go, with P6's fallback.** Evidence:
+[18-macos-tcc.json](../evidence/18-macos-tcc.json).
+
+- Before any grant the LaunchAgent in the auto-login session had none of the
+  three services. After writing `kTCCServiceScreenCapture`,
+  `kTCCServiceAccessibility` and `kTCCServicePostEvent` rows naming
+  `/usr/local/localbox/localbox-agent` into the system database and the live user
+  database (macOS 27's per-user container, found from `tccd`'s open files), all
+  three preflights were true, ScreenCaptureKit captured the 1440×900 screen, and a
+  posted click opened the Apple menu (read back by the host over VNC). A fresh
+  grant can take a moment to reach event posting; the first run sometimes needs
+  one retry.
+- **A replaced binary loses the screen-capture grant** (accessibility and event
+  posting survived). Rewriting the rows after the swap restores it, so P6's
+  fallback is the design: slice 32's `rewriteDarwinTccGrantsAfterSwap` hook must
+  rewrite all three rows as root after every swap.
+- **ScreenCaptureKit returns nothing (`nilError`) while a menu is open**, every
+  time; captures work again once it closes. Slice 33 inherits this.
+
 **Unlocks:** Q12 on macOS. With SIP off, writing the TCC databases lets a process
 in the auto-login session capture the screen and post input with no prompt, and
 the grant survives replacing the binary (P4, P6). Confirm item 4.

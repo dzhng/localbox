@@ -1,0 +1,47 @@
+{
+  "checks": [
+    {
+      "name": "TCC rows grant screen capture, accessibility and event posting to the desktop role",
+      "ok": true
+    }
+  ],
+  "after_grant": {
+    "accessibility": true,
+    "capture_after_close": true,
+    "capture_with_menu_open": false,
+    "capture_with_menu_open_error": "nilError",
+    "captured_pixels": 1296000,
+    "menu_opened": true,
+    "post_event": true,
+    "retried": true,
+    "screen_capture": true
+  },
+  "after_replace": {
+    "accessibility": true,
+    "error": "Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3801 \"The user declined TCCs for application, window, display capture\" UserInfo={NSLocalizedDescription=The user declined TCCs for application, window, display capture}",
+    "menu_opened": false,
+    "post_event": true,
+    "screen_capture": false
+  },
+  "after_rewrite": {
+    "accessibility": true,
+    "capture_after_close": true,
+    "capture_with_menu_open": false,
+    "capture_with_menu_open_error": "nilError",
+    "captured_pixels": 1296000,
+    "menu_opened": true,
+    "post_event": true,
+    "screen_capture": true
+  },
+  "before_grant": {
+    "accessibility": false,
+    "error": "Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3801 \"The user declined TCCs for application, window, display capture\" UserInfo={NSLocalizedDescription=The user declined TCCs for application, window, display capture}",
+    "menu_opened": false,
+    "post_event": false,
+    "screen_capture": false
+  },
+  "ok": true,
+  "rewrite_restores": true,
+  "survives_replace": false,
+  "user_database": "/private/var/containers/Data/ProtectedSystem/AC9A4FCE-1832-4C82-9239-32EE9F8FF9C2/Data/Library/Application Support/com.apple.TCC/TCC.db"
+}
