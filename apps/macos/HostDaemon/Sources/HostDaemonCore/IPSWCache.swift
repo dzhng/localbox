@@ -38,6 +38,19 @@ public struct IPSWCache: Sendable {
     public func file(for release: IPSWRelease) -> URL { directory.appendingPathComponent(release.fileName) }
     private func partial(for release: IPSWRelease) -> URL { directory.appendingPathComponent(release.fileName + ".partial") }
 
+    /// Records what `release` is beside its file (`<name>.json`), so a build can use it when Apple can't be asked.
+    public func remember(_ release: IPSWRelease) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(release).write(to: directory.appendingPathComponent(release.fileName + ".json"), options: .atomic)
+    }
+
+    /// The newest remembered release that is cached whole, by version.
+    public func newestCached() -> IPSWRelease? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let releases = names.filter { $0.hasSuffix(".ipsw.json") }.compactMap { try? JSONDecoder().decode(IPSWRelease.self, from: Data(contentsOf: directory.appendingPathComponent($0))) }.filter(has)
+        return releases.max { $0.version.split(separator: ".").compactMap { Int($0) }.lexicographicallyPrecedes($1.version.split(separator: ".").compactMap { Int($0) }) }
+    }
+
     /// Whether `release` is cached whole.
     public func has(_ release: IPSWRelease) -> Bool { fileLength(file(for: release)) == release.sizeBytes }
 

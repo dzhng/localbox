@@ -137,8 +137,14 @@ public actor MacBaseBuilder {
         guard let guestAgent, FileManager.default.fileExists(atPath: guestAgent.appendingPathComponent("darwin").path) else {
             throw HostOperationFailure(code: "unsupported", message: "this Mac's Localbox has no darwin guest agent build to install in a macOS image", nextStep: "reinstall Localbox, then build again")
         }
+        // Apple's catalog names the release; when it can't answer (offline, or its service failing, as it does inside a
+        // daemon that already ran an install), the newest release cached whole is built instead.
         let release: IPSWRelease
-        do { release = try await catalog.latest() } catch { throw HostOperationFailure(code: "internal", message: "could not ask Apple for the latest macOS restore image: \(explain(error))", nextStep: "check this Mac's internet connection, then build again") }
+        do { release = try await catalog.latest(); try? cache.remember(release) }
+        catch {
+            guard let cached = cache.newestCached() else { throw HostOperationFailure(code: "internal", message: "could not ask Apple for the latest macOS restore image: \(explain(error))", nextStep: "check this Mac's internet connection, then build again") }
+            release = cached
+        }
         let needed = cache.missingBytes(release) + Self.diskBytes
         let free: UInt64
         do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }

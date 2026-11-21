@@ -107,6 +107,23 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(Self.release), "the next build reuses the IPSW")
     }
 
+    func testWithoutApplesCatalogABuildUsesTheNewestCachedRelease() async throws {
+        let rig = try await Rig(test: self)
+        _ = try await rig.build("m-1", image: "image_mac")
+        _ = try await rig.finished("m-1")
+        rig.catalog.fails = true
+        let rebuilt = try await rig.build("m-2", image: "image_mac2")
+        let finished = try await rig.finished("m-2")
+        XCTAssertEqual(finished.state, .succeeded, "\(rebuilt) \(String(describing: finished.error))")
+        XCTAssertEqual(rig.http.offsets, [0], "nothing was downloaded the second time")
+        XCTAssertEqual(try rig.store.manifest("image_mac2").minMacOS, "27.0")
+
+        let empty = try await Rig(test: self)
+        empty.catalog.fails = true
+        let refused = try await empty.request(["macos": true, "image": "image_mac"], key: "m-1")
+        XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "internal", "with nothing cached there is no release to build")
+    }
+
     func testRefusalsComeBeforeAnythingIsJournaled() async throws {
         let old = try await Rig(test: self, hostVersion: "26.4")
         let incompatible = try await old.request(["macos": true, "image": "image_mac"], key: "m-1")
@@ -164,7 +181,7 @@ final class MacBaseBuilderTests: XCTestCase {
 
     /// A daemon's image side with a fake driver: store, journal, builder and `ImageHost`, under one scratch root.
     private struct Rig {
-        let root: URL, store: ImageStore, operations: HostOperationStore, images: ImageHost, driver: FakeDriver, http: FakeHTTP
+        let root: URL, store: ImageStore, operations: HostOperationStore, images: ImageHost, driver: FakeDriver, http: FakeHTTP, catalog = FakeCatalog()
 
         /// `leftAt` restarts a build the last run left just before that phase: its journal and files exist before the store loads.
         init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64 = .max, leftAt: MacBaseBuilder.Phase? = nil) async throws {
@@ -180,7 +197,7 @@ final class MacBaseBuilderTests: XCTestCase {
             try Data("agent".utf8).write(to: agent.appendingPathComponent("localbox-agent-darwin-arm64"))
             try Data(#"{"version":"0.1.1+abc"}"#.utf8).write(to: agent.appendingPathComponent("agent-version.json"))
             for name in ["install.sh", "localbox-desktop", "localbox-vsock", "sh.localbox.agent.plist", "sh.localbox.desktop.plist", "sh.localbox.vsock.plist"] { try Data(name.utf8).write(to: agent.appendingPathComponent("darwin/\(name)")) }
-            let builder = MacBaseBuilder(store: store, operations: operations, driver: driver, catalog: FakeCatalog(), http: http, guestAgent: agent, hostVersion: { hostVersion }, freeBytes: { freeBytes })
+            let builder = MacBaseBuilder(store: store, operations: operations, driver: driver, catalog: catalog, http: http, guestAgent: agent, hostVersion: { hostVersion }, freeBytes: { freeBytes })
             await builder.register()
             images = ImageHost(operations: operations, macBuilder: builder)
             await operations.start()
@@ -225,8 +242,14 @@ final class MacBaseBuilderTests: XCTestCase {
 
 private struct Timeout: Error {}
 
-private struct FakeCatalog: IPSWCatalog {
-    func latest() async throws -> IPSWRelease { MacBaseBuilderTests.release }
+/// Apple's catalog; `fails` makes it answer as its service does when it errors.
+private final class FakeCatalog: IPSWCatalog, @unchecked Sendable {
+    private let lock = NSLock(); private var _fails = false
+    var fails: Bool { get { lock.withLock { _fails } } set { lock.withLock { _fails = newValue } } }
+    func latest() async throws -> IPSWRelease {
+        if fails { throw HostDaemonError.unsupported("The restore image catalog failed to load.") }
+        return MacBaseBuilderTests.release
+    }
 }
 
 /// Serves `body` by range; `failAfter` drops the connection once that many bytes of the file exist.
