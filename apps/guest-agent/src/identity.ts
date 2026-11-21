@@ -19,7 +19,7 @@ export function realSystem(platform: GuestPlatform): IdentitySystem {
 /** What differs per OS: where the marker lives, what a clone must make its own, how the name and clock are set. */
 interface PlatformIdentity {
   marker: string;
-  /** Replaces the template's machine identity (SSH host keys are common to both and handled apart). */
+  /** Replaces the machine identity every clone of the image shares (SSH host keys are common to both and handled apart). */
   regenerate(system: IdentitySystem): void;
   setHostname(system: IdentitySystem, hostname: string): void;
   setClock(system: IdentitySystem, wallClockMs: number): void;
@@ -29,7 +29,7 @@ const platforms: Record<GuestPlatform, PlatformIdentity> = {
   linux: {
     marker: "var/lib/localbox/sandbox-id",
     regenerate: (system) => {
-      // systemd-machine-id-setup would copy D-Bus's id, which the template also carries.
+      // systemd-machine-id-setup would copy D-Bus's id, which the image also carries.
       for (const path of ["etc/machine-id", "var/lib/dbus/machine-id"]) rmSync(join(system.root, path), { force: true });
       system.run("systemd-machine-id-setup", []);
     },

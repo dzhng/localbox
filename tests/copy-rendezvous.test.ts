@@ -127,6 +127,19 @@ test("refusals: linux, a copy to itself, a source not holding it ready, a target
   assert.equal(listed.find((holder: any) => holder.machine_id === "m2").error, null, "a fresh start cleared the old failure");
 });
 
+test("a late outcome of an earlier copy to the same Mac leaves the running copy's holding alone", async () => {
+  const { t, m2, start, holders } = await setup();
+  await start();
+  // The first copy's row outlives its holding: a second copy took the target over (its rendezvous died meanwhile).
+  await t.run(async (ctx) => { const row = await ctx.db.query("copies").first() as any; await ctx.db.patch(row._id, { state: "failed" }); });
+  await m2.mutation(ref("images:endCopy"), { operationId: "copy-1", state: "failed", error: { code: "copy_unreachable", message: "no path", nextStep: "same network" } });
+  await start({ createMutationId: "copy-2" });
+  assert.deepEqual(await holders(), [["attic", "copying", "copy-2"], ["studio", "ready", "capture-1"]]);
+  await m2.mutation(ref("images:endCopy"), { operationId: "copy-1", state: "failed", error: { code: "copy_unreachable", message: "late", nextStep: "same network" } });
+  await m2.mutation(ref("images:endCopy"), { operationId: "copy-1", state: "succeeded" });
+  assert.deepEqual(await holders(), [["attic", "copying", "copy-2"], ["studio", "ready", "capture-1"]], "copy-2 still owns attic's holding");
+});
+
 test("a copy neither Mac started is cancelled: failed with why, and the target's holding goes; deleting the image deletes its copies", async () => {
   const { t, agent, start, holders } = await setup();
   const copy = await start();

@@ -93,7 +93,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal((await b.query("images:get", { image: imageId })).size_bytes, STEPS * 1_048_576);
       const asked = (await rows()).filter((row) => row.operation === "image.wait").length;
       const state = await wait(1_000);
-      assert.deepEqual(state.result, { image: imageId, name, os: "linux", state: "ready" });
+      assert.deepEqual(state.result, { image: imageId, name, os: "linux", state: "ready", report: [`image ${name} is ready on ${holder.machine_name}`, `start a sandbox from it: localbox sandbox create --image ${name}`] });
       assert.equal((await rows()).filter((row) => row.operation === "image.wait").length, asked, "no request went to B");
       assert.equal(journal().state, "succeeded"); assert.equal(typeof journal().reported_at, "number", "the daemon recorded the report");
     }));

@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeFunctionReference } from "convex/server";
-import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { runOps, type Principal } from "../apps/relay/src/ops.js";
+import type { Principal } from "../apps/relay/src/relay-wait.js";
 import { render } from "../apps/cli/src/render.js";
-import { failure, success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { HOST_OPERATION_KINDS, failure, success, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
+import { GIB, hostRecord, ref, relayOverConvex, STUDIO } from "./fixtures/relay-over-convex.js";
 
-const ref = (name: string) => makeFunctionReference(name) as any;
-const GIB = 1024 ** 3; const MIB = 1024 ** 2;
+const MIB = 1024 ** 2;
 const capacity = { cpus: 8, total_bytes: 16 * GIB, reserved_bytes: 0, room_bytes: 12 * GIB, running: 0, revision: 1, free_disk_bytes: 100 * GIB, macos_version: "27.0.1" };
 
 /**
@@ -21,7 +18,7 @@ function mac() {
   const answer = async (request: RequestEnvelope): Promise<ResponseEnvelope | undefined> => {
     seen.push(request);
     const input = request.input as Record<string, Json>;
-    if (request.operation === "image.copy") return success(request, { key: request.mutation_id, kind: "image.copy", subject: input.image, state: "running", progress: { phase: "waiting_for_peer" }, started_at: 1, updated_at: 1 });
+    if (request.operation === "image.copy") return hostRecord(request, { kind: HOST_OPERATION_KINDS.copy, state: "running", progress: { phase: "waiting_for_peer" } });
     if (request.operation === "image.wait") return state.journal ? success(request, state.journal) : failure(request, { code: "image_not_found", message: "no operation", retryable: false });
     if (request.operation === "sandbox.create") return success(request, { requested: input, produced: { sandbox_id: request.sandbox_id, name: input.name, state: input.after_copy ? "copying" : "running" }, actions: input.after_copy ? [] : [{ kind: "created", detail: `created ${input.name}` }] });
     if (request.operation === "sandbox.delete") return failure(request, { code: "sandbox_not_found", message: `no sandbox ${request.sandbox_id} on this machine`, retryable: false });
@@ -35,26 +32,12 @@ function mac() {
  * Convex functions; each Mac's relayed requests reach its fake (`macs`), and a Mac taken out of `connectors` is offline.
  */
 async function setup() {
-  const t = createConvexTestHarness();
   const machines = [{ machineId: "m1", name: "studio", capacity }, { machineId: "m2", name: "attic", capacity }];
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "a1", createdAt: now });
-    for (const machine of machines) await ctx.db.insert("machines", { ...machine, accountId: "a1", credentialHash: `h-${machine.machineId}`, createdAt: now, lastSeenAt: now, capacityAt: now });
-  });
-  const studio = t.withIdentity({ subject: "machine:m1", account: "a1" }); const attic = t.withIdentity({ subject: "machine:m2", account: "a1" });
-  const image = await studio.mutation(ref("images:reserve"), { machineId: "m1", name: "rails-dev", os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: "capture-1" }) as any;
-  await studio.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", sizeBytes: 3 * GIB });
   const macs = { m1: mac(), m2: mac() };
-  const connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>> = { m1: macs.m1.answer, m2: macs.m2.answer };
-  const { deps } = memoryMailbox({ machines, connectors });
-  const clients: Record<string, any> = { m1: studio, m2: attic };
-  deps.accountCall = async (principal, kind, name, args) => await clients[principal.machineId ?? "m1"][kind](ref(name), args);
-  let calls = 0;
-  const op = async (operation: string, body: Record<string, unknown> = {}, principal: Principal = { accountId: "a1", machineId: "m1" }): Promise<any> => {
-    const result = await runOps(principal, { operation, request_id: `req-${++calls}`, input: {}, ...body }, deps);
-    return (result.body as { response: ResponseEnvelope }).response;
-  };
+  const { t, op: run, as, readyImage, connectors } = await relayOverConvex({ machines, connectors: { m1: macs.m1.answer, m2: macs.m2.answer } });
+  const studio = as(STUDIO); const attic = as({ accountId: "a1", machineId: "m2" });
+  const image = await readyImage("rails-dev", ["m1"], 3 * GIB);
+  const op = async (operation: OperationId, body: Record<string, unknown> = {}, principal: Principal = STUDIO): Promise<any> => await run(operation, body, principal);
   const sandbox = async (name: string) => (await studio.query(ref("sandboxes:list"), {}) as any[]).find((row) => row.name === name);
   const copies = async () => await t.run(async (ctx) => await ctx.db.query("copies").collect());
   return { op, image, macs, connectors, studio, attic, sandbox, copies };
@@ -91,14 +74,14 @@ test("on a Mac without the image the create starts a copy, reserves the sandbox 
 test("while copying, every operation on the sandbox is sandbox_not_ready with the copy's progress, answered without reaching it; sandbox status shows it", async () => {
   const { op, macs, connectors, sandbox } = await setup();
   await createOnAttic(op, "rails-box", "cli-create-2");
-  macs.m2.state.journal = { key: "cli-create-2", kind: "sandbox.create_after_copy", subject: "image_x", state: "running", progress: { phase: "receiving", completed: 12 * MIB, total: 64 * MIB }, started_at: 2, updated_at: 3 };
+  macs.m2.state.journal = { key: "cli-create-2", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: "image_x", state: "running", progress: { phase: "receiving", completed: 12 * MIB, total: 64 * MIB }, started_at: 2, updated_at: 3 };
 
   const exec = await op("shell.exec", { sandbox: "rails-box", mutation_id: `exec-${Math.random()}`, input: { command: "echo", args: ["hi"] } });
   assert.equal(exec.ok, false);
   assert.deepEqual([exec.error.code, exec.error.retryable], ["sandbox_not_ready", true]);
   assert.equal(exec.error.message, "rails-box on attic is waiting for image rails-dev to copy (12 MiB of 64 MiB); follow it with: localbox image wait rails-dev");
   assert.deepEqual(exec.error.details.progress, { phase: "receiving", done_bytes: 12 * MIB, total_bytes: 64 * MIB });
-  for (const operation of ["sandbox.delete", "sandbox.rename", "sandbox.start"]) {
+  for (const operation of ["sandbox.delete", "sandbox.rename", "sandbox.start"] as const) {
     const refused = await op(operation, { sandbox: "rails-box", input: operation === "sandbox.rename" ? { name: "other" } : {} });
     assert.equal(refused.error?.code, "sandbox_not_ready", `${operation}: ${JSON.stringify(refused)}`);
   }
@@ -120,12 +103,12 @@ test("while copying, every operation on the sandbox is sandbox_not_ready with th
 test("image wait follows the chained create: copying with progress, then the copy and the created sandbox; after that the sandbox works", async () => {
   const { op, image, macs, attic, sandbox } = await setup();
   await createOnAttic(op, "rails-box", "cli-create-3");
-  macs.m2.state.journal = { key: "cli-create-3", kind: "sandbox.create_after_copy", subject: image.image_id, state: "running", progress: { phase: "receiving", completed: GIB, total: 3 * GIB }, started_at: 2, updated_at: 3 };
+  macs.m2.state.journal = { key: "cli-create-3", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: image.image_id, state: "running", progress: { phase: "receiving", completed: GIB, total: 3 * GIB }, started_at: 2, updated_at: 3 };
   const copying = await op("image.wait", { input: { image: "rails-dev", timeout_ms: 1000 } });
   assert.deepEqual([copying.result.state, copying.result.progress], ["copying", { phase: "receiving", done_bytes: GIB, total_bytes: 3 * GIB }]);
   assert.equal(macs.m2.ops("image.wait").at(-1)?.input && (macs.m2.ops("image.wait").at(-1)!.input as any).timeout_ms, 1000, "attic, where the copy goes, answers the wait");
 
-  macs.m2.state.journal = { key: "cli-create-3", kind: "sandbox.create_after_copy", subject: image.image_id, state: "succeeded", progress: { phase: "creating" }, result: { sandbox_id: "s", name: "rails-box", cpus: 4, memory_bytes: 4 * GIB, state: "running", copy_operation_id: "cli-create-3-copy", copy: { role: "receiver", bytes: 3 * GIB, duration_ms: 42_000, path: "local_network", size_bytes: 3 * GIB } }, started_at: 2, updated_at: 4 };
+  macs.m2.state.journal = { key: "cli-create-3", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: image.image_id, state: "succeeded", progress: { phase: "creating" }, result: { sandbox_id: "s", name: "rails-box", cpus: 4, memory_bytes: 4 * GIB, state: "running", copy_operation_id: "cli-create-3-copy", copy: { role: "receiver", bytes: 3 * GIB, duration_ms: 42_000, path: "local_network", size_bytes: 3 * GIB } }, started_at: 2, updated_at: 4 };
   // attic's connector reports the copy before the create, as it finishes first: the holding turns ready.
   await attic.mutation(ref("images:endCopy"), { operationId: "cli-create-3-copy", state: "succeeded", sizeBytes: 3 * GIB, result: { bytes: 3 * GIB, durationMs: 42_000, path: "local_network" } });
   const done = await op("image.wait", { input: { image: "rails-dev" } });
@@ -170,7 +153,7 @@ test("a failed copy leaves the sandbox failed with the reason and next step unti
   assert.equal(macs.m2.ops("sandbox.delete").length, 1, "its Mac was told and had nothing to remove");
 });
 
-test("no flag puts the sandbox on the caller's own Mac, copying there (P7); a second create there follows the same copy", async () => {
+test("no flag puts the sandbox on the caller's own Mac, copying there; a second create there follows the same copy", async () => {
   const { op, sandbox, copies } = await setup();
   const fromAttic = { accountId: "a1", machineId: "m2" };
   const own = await op("sandbox.create", { caller_machine_id: "m2", mutation_id: "cli-own-1", input: { name: "own-box", image: "rails-dev" } }, fromAttic);

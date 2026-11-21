@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { HOST_OPERATION_KINDS } from "../../../packages/contract/src/index.js";
 import type { Check, ProofContext } from "../run.js";
 import { buildRealVMs, realDaemon } from "../lib/real-daemon.js";
 import { machineAccess } from "../lib/machine-access.js";
@@ -68,7 +69,7 @@ async function fixtureDaemon(ctx: ProofContext): Promise<Check[]> {
       assert.deepEqual(replay.envelope.result.report, lines);
       imageId = replay.envelope.result.image;
       const journal = JSON.parse(readFileSync(join(paths.operations, `${mutation}.json`), "utf8"));
-      assert.deepEqual([journal.kind, journal.subject, journal.state], ["image.capture", imageId, "succeeded"]);
+      assert.deepEqual([journal.kind, journal.subject, journal.state], [HOST_OPERATION_KINDS.capture, imageId, "succeeded"]);
       assert.equal(readdirSync(paths.operations).filter((name) => name.endsWith(".json")).length, 1);
       assert.ok(existsSync(join(paths.images, imageId, "image.json")) && existsSync(join(paths.images, imageId, "boot", "efi-vars")));
     }));
@@ -90,8 +91,8 @@ async function fixtureDaemon(ctx: ProofContext): Promise<Check[]> {
 
 /**
  * A real daemon and a real sandbox: a file written a second before the capture is in a sandbox made from the image,
- * which has its own machine-id, and the source stalled under 2 s. Sandbox create from an image is slice 29's, so the
- * new sandbox is provisioned from the image by vmlab, through the daemon's own `AppleSandboxFactory`.
+ * which has its own machine-id, and the source stalled under 2 s. The new sandbox is provisioned from the image by
+ * vmlab, through the daemon's own `AppleSandboxFactory`, which `sandbox create --image` uses too.
  */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {
   const { machine, start, call, ok, sh, cleanup } = realDaemon(ctx, { probe: "28" });

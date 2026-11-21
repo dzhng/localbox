@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createMcpHandler } from "../apps/mcp/api/[...path].js";
-import type { Principal } from "../apps/relay/src/ops.js";
+import type { Principal } from "../apps/relay/src/relay-wait.js";
 import { success } from "../packages/contract/src/index.js";
 import { oauthFixture, RESOURCE } from "./fixtures/oauth-server.js";
 

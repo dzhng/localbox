@@ -11,7 +11,7 @@ import { API_ORIGIN, machineRoot } from "./login.js";
 
 /**
  * A signed-in proof machine as its own processes see it: Convex as that machine (what its connector may call, signed
- * with the stack's dev key) and its daemon's socket. For proofs that stand in for a later slice's caller.
+ * with the stack's dev key) and its daemon's socket, for proofs that act as its connector to set up a state directly.
  */
 export async function machineAccess(root: string, machine: string) {
   const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: machineRoot(root, machine) });

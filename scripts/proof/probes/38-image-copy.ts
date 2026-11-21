@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { sha256 } from "../../release.js";
+import { seedReadyImage } from "../lib/images.js";
 import { machineAccess } from "../lib/machine-access.js";
 import { stopConnector } from "../lib/login.js";
 import { cli, signedInWithSandboxes } from "../lib/sandboxes.js";
@@ -15,15 +16,6 @@ const MiB = 1024 ** 2;
 /** Big enough that the real transfer (gigabits a second over this Mac's LAN address) can be stopped midway. */
 const SIZE = 1024 * MiB;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-function sha(path: string): string {
-  const hash = createHash("sha256"); const buffer = Buffer.alloc(16 * MiB); const fd = openSync(path, "r");
-  try { for (let read; (read = readSync(fd, buffer, 0, buffer.length, null)) > 0;) hash.update(buffer.subarray(0, read)); } finally { closeSync(fd); }
-  return hash.digest("hex");
-}
-function randomFile(path: string, bytes: number): void {
-  const fd = openSync(path, "w");
-  try { for (let written = 0; written < bytes; written += 64 * MiB) writeSync(fd, randomBytes(Math.min(64 * MiB, bytes - written))); } finally { closeSync(fd); }
-}
 
 /**
  * `image copy NAME --to M`: the copy's Convex row is the rendezvous, both Macs journal their side, the receiver
@@ -57,21 +49,16 @@ async function loopback(ctx: ProofContext): Promise<Check[]> {
     let imageId = ""; let digest = ""; let first: any;
     const journal = (machine: typeof a) => { const path = join(machine.paths.operations, `${mutation}.json`); return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : undefined; };
     const plant = async (imageName: string, capture: string) => {
-      const image = await b.mutation("images:reserve", { machineId: b.machineId, name: imageName, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: capture });
-      const files = join(b.paths.images, image.image_id);
-      planted.push(files, join(a.paths.images, image.image_id));
-      mkdirSync(join(files, "boot"), { recursive: true });
-      randomFile(join(files, "disk.img"), SIZE); writeFileSync(join(files, "boot", "efi-vars"), "efi");
-      writeFileSync(join(files, "image.json"), JSON.stringify({ image_id: image.image_id, os: "linux", size_bytes: SIZE, agent_version: "probe" }));
-      await b.mutation("images:setHolder", { imageId: image.image_id, state: "ready", sizeBytes: SIZE });
-      return image.image_id as string;
+      const { imageId: id, files } = await seedReadyImage(b, { name: imageName, createMutationId: capture, disk: { bytes: SIZE, random: true } });
+      planted.push(files, join(a.paths.images, id));
+      return id;
     };
     checks.push(await ctx.check("A and B sign in; B holds a 1 GiB image (its files in B's image store, its holding ready)", async () => {
       const setup = await signedInWithSandboxes(ctx.root, ["a", "b"], `proof-38-${run}@example.com`, { create: false });
       Object.assign(connectors, setup.connectors);
       a = await machineAccess(ctx.root, "a"); b = await machineAccess(ctx.root, "b");
       imageId = await plant(name, `p38-capture-${run}`);
-      digest = sha(join(b.paths.images, imageId, "disk.img"));
+      digest = await sha256(join(b.paths.images, imageId, "disk.img"));
     }));
     checks.push(await ctx.check("from A, image copy NAME --to A answers at once: copying, both Macs journal their side under the copy's mutation id", async () => {
       const started = await cli(ctx.root, "a", ["image", "copy", name, "--to", a.machineName, "--mutation-id", mutation, "--json"]);
@@ -106,7 +93,7 @@ async function loopback(ctx: ProofContext): Promise<Check[]> {
         assert.equal(waited.envelope.result.state, "copying", JSON.stringify(waited.envelope.result));
         if (attempt > 6) throw new Error(`still copying after ${attempt} waits: ${JSON.stringify(waited.envelope.result)}`);
       }
-      assert.equal(sha(join(a.paths.images, imageId, "disk.img")), digest);
+      assert.equal(await sha256(join(a.paths.images, imageId, "disk.img")), digest);
       const received = journal(a); const sent = journal(b);
       assert.deepEqual([received.state, received.result.role, received.result.path, sent.state, sent.result.role], ["succeeded", "receiver", "local_network", "succeeded", "sender"], JSON.stringify({ received, sent }));
       assert.ok(received.result.bytes < SIZE, `the resumed side moved ${received.result.bytes} bytes, less than the whole image`);
@@ -146,7 +133,7 @@ async function loopback(ctx: ProofContext): Promise<Check[]> {
       const wall = Date.now() - started;
       const done = JSON.parse(readFileSync(join(a.paths.operations, `${mutation}-b.json`), "utf8"));
       assert.equal(done.result.path, "local_network");
-      assert.equal(sha(join(a.paths.images, secondId, "disk.img")), sha(join(b.paths.images, secondId, "disk.img")));
+      assert.equal(await sha256(join(a.paths.images, secondId, "disk.img")), await sha256(join(b.paths.images, secondId, "disk.img")));
       const gbps = (bytes: number, ms: number) => (bytes * 8 / (ms / 1000) / 1e9).toFixed(2);
       evidence.push(`uninterrupted copy: ${SIZE} bytes; receiver side ${done.result.duration_ms} ms (${gbps(SIZE, done.result.duration_ms)} Gbps), request to ready ${wall} ms (${gbps(SIZE, wall)} Gbps)`);
     }));

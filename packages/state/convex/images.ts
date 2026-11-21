@@ -5,6 +5,7 @@ import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
 import { copyCandidate, copyResult, holderFailure, holderState, imageOs, imageSource } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
+import { byNameOrId } from "../../placement/src/index.js";
 
 // The account's images, the machines holding each, and the account default. The built-in `linux` is never a row:
 // every Mac has the build its release shipped, so `list` synthesizes it with every live machine as a ready holder,
@@ -40,17 +41,18 @@ async function freeName(ctx: any, accountId: string, name: string): Promise<stri
 }
 
 /**
- * The image `wanted` names (a name or id) on the account: `linux` is the built-in (`undefined`), `macos` the most
- * recent IPSW-built image. Anything else not found names the images there are.
+ * The image `wanted` names on the account: its id exactly, else its name in any case, as machines and sandboxes
+ * resolve. `linux` is the built-in (`undefined`), `macos` the most recent IPSW-built image. Anything else not found
+ * names the images there are.
  */
 async function resolve(ctx: any, accountId: string, wanted: string): Promise<any | undefined> {
-  if (wanted === BUILT_IN_IMAGE) return undefined;
+  if (wanted.toLowerCase() === BUILT_IN_IMAGE) return undefined;
   const rows = await accountImages(ctx, accountId);
-  if (wanted === MACOS_IMAGE) {
+  if (wanted.toLowerCase() === MACOS_IMAGE) {
     const base = rows.filter((row: any) => row.source.kind === "ipsw").sort((a: any, b: any) => b.createdAt - a.createdAt)[0];
     return base ?? refuse("image_not_found", "no macOS image yet; build one with: localbox image create --macos");
   }
-  const row = rows.find((candidate: any) => candidate.imageId === wanted) ?? rows.find((candidate: any) => candidate.name === wanted);
+  const row = byNameOrId(rows, wanted, (candidate: any) => candidate.imageId);
   if (row) return row;
   const names = [BUILT_IN_IMAGE, ...rows.map((candidate: any) => candidate.name).sort()];
   return refuse("image_not_found", `no image ${wanted} on this account; images: ${names.join(", ")}`, { names });
@@ -66,20 +68,19 @@ const view = (row: any, holders: any[], machines: Map<string, string>, defaultIm
 });
 
 /** The built-in `linux`, synthesized: every live machine holds it, ready. */
-const linuxView = (live: any[], defaultImageId: string | undefined) => ({
+const linuxView = (machines: Map<string, string>, defaultImageId: string | undefined) => ({
   image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
-  default: defaultImageId === undefined, holders: live.map((row: any) => ({ machine_id: row.machineId, machine_name: row.name, state: "ready", operation_id: null, error: null, updated_at: null })),
+  default: defaultImageId === undefined, holders: [...machines].map(([machineId, name]) => ({ machine_id: machineId, machine_name: name, state: "ready", operation_id: null, error: null, updated_at: null })),
 });
 
 /** Every image on the account, `linux` first; an image whose holders are all gone stays listed with `holders: []`. */
 export const list = queryGeneric({ args: {}, handler: async (ctx) => {
   const { accountId } = await requireAccount(ctx);
-  const live = await liveMachines(ctx, accountId);
-  const machines = new Map<string, string>(live.map((row: any) => [row.machineId, row.name]));
+  const machines = await machineNames(ctx, accountId);
   const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
   const holders = await accountHolders(ctx, accountId);
   const images = (await accountImages(ctx, accountId)).sort((a: any, b: any) => a.createdAt - b.createdAt);
-  return [linuxView(live, defaultImageId), ...images.map((row: any) => view(row, holders.filter((holder: any) => holder.imageId === row.imageId), machines, defaultImageId))];
+  return [linuxView(machines, defaultImageId), ...images.map((row: any) => view(row, holders.filter((holder: any) => holder.imageId === row.imageId), machines, defaultImageId))];
 } });
 
 /**
@@ -88,11 +89,11 @@ export const list = queryGeneric({ args: {}, handler: async (ctx) => {
  */
 export const get = queryGeneric({ args: { image: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
-  const live = await liveMachines(ctx, accountId);
+  const machines = await machineNames(ctx, accountId);
   const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
   const row = await resolve(ctx, accountId, args.image ?? defaultImageId ?? BUILT_IN_IMAGE);
-  if (!row) return linuxView(live, defaultImageId);
-  return view(row, await imageHolders(ctx, row.imageId), new Map<string, string>(live.map((machine: any) => [machine.machineId, machine.name])), defaultImageId);
+  if (!row) return linuxView(machines, defaultImageId);
+  return view(row, await imageHolders(ctx, row.imageId), machines, defaultImageId);
 } });
 
 /**
@@ -188,7 +189,8 @@ export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: h
  */
 export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
   const { machineId } = await requireIdentity(ctx, "machine");
-  const rows = await ctx.db.query("imageHolders").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)).take(HOLDER_BATCH);
+  // A partial list would read as deletions to the daemon's mirror, so a list too long to read whole fails instead.
+  const rows = await boundedRows(ctx.db.query("imageHolders").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)), "machine image holdings");
   return rows.map((row: any) => ({ image_id: row.imageId, state: row.state })).sort((a: any, b: any) => a.image_id.localeCompare(b.image_id));
 } });
 
@@ -214,7 +216,7 @@ export async function dropMachineHolders(ctx: any, machineId: string): Promise<n
 }
 export const dropRevokedHolders = internalMutationGeneric({ args: { machineId: v.string() }, handler: async (ctx, args) => ({ deleted: await dropMachineHolders(ctx, args.machineId) }) });
 
-// Copies. A copy moves an image's files directly from a Mac holding it to another (Q4, Q5): the relay starts it
+// Copies. A copy moves an image's files directly from a Mac holding it to another: the relay starts it
 // (`startCopy`), each Mac's connector meets the other at the row (`copiesForMachine`, `offerCandidates`) and reports
 // how its side ended (`endCopy`), and the target's holder row follows. The transfer key is in the row, readable only
 // by the copy's two machines; agents and every other machine see the copy without it.
@@ -341,16 +343,19 @@ export const endCopy = mutationGeneric({ args: { operationId: v.string(), state:
     if (args.state === "failed" && copy.state !== "copied" && copy.state !== "failed") await ctx.db.patch(copy._id, { state: "failed", error: args.error });
     return { operation_id: args.operationId, reported: true, state: args.state === "failed" ? "failed" : copy.state };
   }
+  // A later copy to the same Mac owns the holding now; this one's outcome must not overwrite it.
+  const holder = await holderRow(ctx, copy.imageId, copy.toMachineId);
+  const ownsHolding = !holder || holder.operationId === copy.createMutationId;
   if (args.state === "succeeded") {
     await ctx.db.patch(copy._id, { state: "copied", error: undefined, ...(args.result ? { result: args.result } : {}) });
-    await setTargetHolder(ctx, copy, { state: "ready" });
+    if (ownsHolding) await setTargetHolder(ctx, copy, { state: "ready" });
     const image = await byField(ctx, "images", "by_image", "imageId", copy.imageId);
     if (image && args.sizeBytes !== undefined && image.sizeBytes === undefined) await ctx.db.patch(image._id, { sizeBytes: args.sizeBytes });
     return { operation_id: args.operationId, reported: true, state: "copied" };
   }
   // The first failure names the copy's cause (a sender that gave up, say); the receiver's holding carries its own.
   if (copy.state !== "failed") await ctx.db.patch(copy._id, { state: "failed", error: args.error });
-  await setTargetHolder(ctx, copy, { state: "failed", error: args.error });
+  if (ownsHolding) await setTargetHolder(ctx, copy, { state: "failed", error: args.error });
   return { operation_id: args.operationId, reported: true, state: "failed" };
 } });
 

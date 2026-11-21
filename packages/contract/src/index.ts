@@ -86,11 +86,11 @@ const defaultLimits: OperationLimits = { deadline_ms: { min: 1, max: 120_000 }, 
 
 /** Every route an operation can take; each definition names one, so no operation inherits a default. */
 const ACCOUNT: Route = { executor: "account", sandbox_scoped: false, routing: "account" };
-/** The catalog changes first, then one machine is told (a create, a capture, a copy's destination). */
+/** The catalog changes or answers first, then one machine is told or asked (a create, a capture, a copy, the Mac an image wait follows). */
 const ACCOUNT_THEN_MACHINE: Route = { executor: "account", sandbox_scoped: false, routing: "machine" };
 /** The catalog changes first, then the named sandbox's machine is told. */
 const ACCOUNT_THEN_SANDBOX: Route = { executor: "account", sandbox_scoped: true, routing: "machine" };
-/** The catalog changes or answers first, then every machine holding the image is told or asked. */
+/** The catalog changes first, then every machine holding the image is told. */
 const ACCOUNT_THEN_HOLDERS: Route = { executor: "account", sandbox_scoped: false, routing: "holders" };
 const HOST_SANDBOX: Route = { executor: "host", sandbox_scoped: true, routing: "machine" };
 /** Machine-level host operations: the relay, the skill and the `localbox` link on one Mac. */
@@ -113,7 +113,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "image.copy": ["Copy an image directly to machine `to` (a name or id): over the local network, else a direct connection between the two Macs. Answers at once with the copy's operation state; the finished copy reports size, duration and the path taken.", object({ image: string(), to: string() }, ["image", "to"]), false, true, "required", ACCOUNT_THEN_MACHINE],
   "image.default": ["Make an image the account default, the one sandbox.create uses when it names none.", object({ image: string() }, ["image"]), false, true, "required", ACCOUNT],
   "image.delete": ["Delete an image from every machine holding it, or only from the request's machine when it names one. Sandboxes made from it are unaffected. `confirm`, when given, must be its name. `linux` can't be deleted; deleting the default resets it to `linux`.", object({ image: string(), confirm: string() }, ["image"]), false, true, "required", ACCOUNT_THEN_HOLDERS],
-  "image.wait": ["Wait up to `timeout_ms` (at most 120 s) for an image that is building or copying, and return its operation state; call again while it is neither ready nor failed.", object({ image: string(), timeout_ms: { type: "integer", minimum: 1, maximum: 120_000 } }, ["image"]), true, false, "none", ACCOUNT_THEN_HOLDERS],
+  "image.wait": ["Wait up to `timeout_ms` (at most 120 s) for an image that is building or copying, and return its operation state; call again while it is neither ready nor failed.", object({ image: string(), timeout_ms: { type: "integer", minimum: 1, maximum: 120_000 } }, ["image"]), true, false, "none", ACCOUNT_THEN_MACHINE],
   "system.info": ["Describe the contract and runtime.", empty(), false, false, "none", HOST_SANDBOX],
   "sandbox.status": ["Read a sandbox's state and size.", empty(), true, false, "none", HOST_SANDBOX],
   "sandbox.resize": ["Change a sandbox's CPUs or memory.", object({ cpus: { type: "integer", minimum: 1, maximum: 64 }, memory_bytes: { type: "integer", minimum: 1024 * 1024 * 1024 } }), false, true, "required", HOST_SANDBOX],
@@ -282,9 +282,10 @@ export function validateRequest(request: unknown): asserts request is RequestEnv
 
 export function identityFromRequest(request: RequestEnvelope): EnvelopeIdentity { return { protocol_version: PROTOCOL_VERSION, request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id ?? null, release_id: RELEASE_ID }; }
 export function success<T extends Json>(request: RequestEnvelope, result: T): SuccessEnvelope<T> { return { ...identityFromRequest(request), ok: true, result }; }
+/** A contract error as the body every envelope and frame carries. */
+export const errorBody = (error: ContractError): ErrorBody => ({ code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) });
 export function failure(request: RequestEnvelope, error: ContractError | ErrorBody): ErrorEnvelope {
-  const body: ErrorBody = error instanceof ContractError ? { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) } : error;
-  return { ...identityFromRequest(request), ok: false, error: body };
+  return { ...identityFromRequest(request), ok: false, error: error instanceof ContractError ? errorBody(error) : error };
 }
 
 export interface ResultTruncation { original_bytes: number; returned_bytes: number }
@@ -345,6 +346,20 @@ export interface ImageOperationState {
   report?: string[];
 }
 
+/** The kinds of long host work the daemon journals; each record's `subject` is the image it produces on that Mac. */
+export const HOST_OPERATION_KINDS = { capture: "image.capture", macosBuild: "macos.build", copy: "image.copy", createAfterCopy: "sandbox.create_after_copy" } as const;
+/**
+ * One journaled host operation, as the daemon answers `image.wait` (and `image.create`, `image.copy`) with it and hands
+ * finished ones to its connector through `host.operations`. `progress` counts bytes when the kind has any; `result` is
+ * the kind's own and `error` says why it failed and, when the kind knows, what to try next.
+ */
+export interface HostOperationRecord {
+  key: string; kind: string; subject: string; state: "running" | "succeeded" | "failed";
+  progress?: { phase: string; completed?: number; total?: number };
+  result?: Json | null;
+  error?: { code: string; message: string; next_step?: string } | null;
+}
+
 /** What a request did: what was asked, what resulted, and every side effect taken on the way. */
 export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "waiting" | "deleted" | "renamed"
   | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "made_default" | "failed";
@@ -354,8 +369,8 @@ export interface ActionReport { requested: Json; produced: Json; actions: Array<
  * What a machine can still take, as its daemon reports it through `host.watch` and its connector stores on the
  * machine row. `room_bytes` is reservation-based: the daemon's admission budget minus what running sandboxes reserve,
  * not live free memory. `revision` changes only when the reservation does, so the connector writes it only then.
+ * Free disk (null: unread) and the macOS version are what placement checks for an image.
  */
-/** A machine's capacity as its daemon reports it; free disk (null: unread) and the macOS version are what placement checks for an image. */
 export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number; free_disk_bytes?: number | null; macos_version?: string }
 
 const GIB = 1024 ** 3;

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { runOps } from "../apps/relay/src/ops.js";
 import { AgentApiTransport } from "../packages/client/src/index.js";
 import { success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import type { ImageRow } from "../apps/relay/src/ops.js";
+import type { ImageRow } from "../apps/relay/src/image-state.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
 const request = (overrides: Partial<RequestEnvelope> = {}): RequestEnvelope => ({ protocol_version: "v1", request_id: `req_${Math.random()}`, operation: "system.info", sandbox_id: "sandbox_b", deadline_ms: 5_000, mutation_id: null, input: {}, ...overrides });

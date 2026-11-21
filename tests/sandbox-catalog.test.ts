@@ -4,7 +4,7 @@ import { makeFunctionReference } from "convex/server";
 import { createConvexTestHarness } from "../packages/state/src/index.js";
 import { runOps } from "../apps/relay/src/ops.js";
 import { success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import type { ImageRow } from "../apps/relay/src/ops.js";
+import type { ImageRow } from "../apps/relay/src/image-state.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
 const ref = (name: string) => makeFunctionReference(name) as any;
@@ -205,7 +205,7 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
   assert.equal((await ops(deps, { operation: "sandbox.status", input: {} })).ok, true, "the only sandbox is used");
   assert.equal(b.seen.at(-1)!.sandbox_id, "sandbox_1");
-  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", image_id: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
+  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", image_id: "linux", os: "linux", min_macos: null, cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
   const ambiguous = await ops(deps, { operation: "sandbox.status", input: {} });
   assert.equal(!ambiguous.ok && ambiguous.error.code, "sandbox_ambiguous"); assert.deepEqual(!ambiguous.ok && ambiguous.error.details, { names: ["quiet-otter", "brave-fox"] });
   const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "brave-fox", input: { name: "calm-heron" } });
@@ -240,6 +240,15 @@ test("a create's mutation id finds its reservation, with the input it relayed", 
   assert.deepEqual((await agent.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-1" })).create_input, input, "the relayed input, not the renamed row");
   const { m3 } = await setup();
   assert.equal(await m3.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-1" }), null);
+});
+
+test("an operation that requires a mutation id is refused without one, before anything is reserved or relayed", async () => {
+  const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
+  for (const body of [{ operation: "sandbox.create", machine: "attic", input: { cpus: 2, memory_bytes: 2 * GIB } }, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} }, { operation: "shell.exec", sandbox: "quiet-otter", input: { command: "true" } }]) {
+    const refused = await ops(deps, { ...body, mutation_id: null });
+    assert.deepEqual(!refused.ok && [refused.error.code, refused.error.message], ["invalid_input", `${body.operation} requires mutation_id`]);
+  }
+  assert.deepEqual(sandboxes.map((row) => row.name), ["quiet-otter"]); assert.equal(b.seen.length, 0);
 });
 
 test("a replayed create relays the first create again and makes no second sandbox", async () => {

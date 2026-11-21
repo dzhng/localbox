@@ -37,7 +37,7 @@ const DESKTOP_USER = () => process.env.LOCALBOX_DESKTOP_USER ?? "localbox";
  *   control lane (freeze, thaw, agent update) on vsock port 1025; a built agent (with an embedded version) can replace
  *   its own executable there, one run from source cannot.
  * - `--desktop` (darwin) runs as a LaunchAgent in the auto-login session, where ScreenCaptureKit and CGEvent work, and
- *   answers the desktop and browser calls the system role forwards over `LOCALBOX_DESKTOP_SOCKET` (P4).
+ *   answers the desktop and browser calls the system role forwards over `LOCALBOX_DESKTOP_SOCKET`.
  *
  * `--grant-tcc` (darwin, as root) writes this binary's TCC rows and exits; an image build runs it once.
  */
@@ -125,7 +125,7 @@ function desktopRole(): void {
 }
 
 /**
- * P6: TCC rows name the agent by its install path, and a replaced binary loses its screen-capture grant (spike 18), so
+ * TCC rows name the agent by its install path, and a replaced binary loses its screen-capture grant, so
  * after every swap the system role rewrites the rows as root (SIP is off) before answering `updated`. A failure is
  * logged, not raised: the new binary is already in place, and failing the update would leave the old agent running
  * from a replaced file; the desktop role's next capture then reports the missing grant.

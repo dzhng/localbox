@@ -4,10 +4,10 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { seedReadyImage } from "../lib/images.js";
 import { machineAccess } from "../lib/machine-access.js";
-import { machineRoot, stopConnector } from "../lib/login.js";
+import { stopConnector } from "../lib/login.js";
 import { buildRealVMs, realDaemon } from "../lib/real-daemon.js";
-import { machinePaths } from "../../../packages/config/src/machine-paths.js";
 import { cli, createSandbox, sandboxRecords, signedInWithSandboxes } from "../lib/sandboxes.js";
 
 export const id = "29";
@@ -46,11 +46,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
         const renamed = await cli(ctx.root, machine, ["machine", "rename", id, wanted]);
         assert.equal(renamed.code, 0, renamed.stdout + renamed.stderr);
       }
-      image = await b.mutation("images:reserve", { machineId: b.machineId, name, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: `p29-${run}` });
-      const files = join(machinePaths({ LOCALBOX_MACHINE_ROOT: machineRoot(ctx.root, "b") }).images, image.image_id);
-      mkdirSync(join(files, "boot"), { recursive: true }); writeFileSync(join(files, "disk.img"), Buffer.alloc(1024 * 1024)); writeFileSync(join(files, "boot", "efi-vars"), "");
-      writeFileSync(join(files, "image.json"), JSON.stringify({ image_id: image.image_id, os: "linux", size_bytes: 1024 * 1024, agent_version: "probe" }));
-      await b.mutation("images:setHolder", { imageId: image.image_id, state: "ready", sizeBytes: GIB });
+      image = { image_id: (await seedReadyImage(b, { name, createMutationId: `p29-${run}`, disk: { bytes: 1024 * 1024 }, reportedBytes: GIB })).imageId };
       const made = await a(["image", "default", name, "--json"]);
       assert.equal(made.envelope.result?.actions?.[0]?.kind, "made_default", made.stdout + made.stderr);
     }));
@@ -68,7 +64,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
       assert.match(text.stdout, new RegExp(`created \\S+ with \\d+ CPUs and \\d+ GiB; image ${name} \\(as asked\\)`));
       writeFileSync(join(ctx.evidence, "29-create-default.txt"), `${JSON.stringify(report, null, 2)}\n\n${text.stdout}`);
     }));
-    checks.push(await ctx.check("on A, which does not hold it, the create no longer refuses: it waits for the image's copy from B (slice 39 follows it)", async () => {
+    checks.push(await ctx.check("on A, which does not hold it, the create no longer refuses: it waits for the image's copy from B (probe 39 follows the copy)", async () => {
       const waiting = await a(["sandbox", "create", "--machine", aName, "--image", name, "--json"]);
       assert.equal(waiting.envelope.ok, true, waiting.stdout + waiting.stderr);
       assert.deepEqual([waiting.envelope.result.produced.state, waiting.envelope.result.produced.copying_from], ["copying", bName]);
@@ -92,7 +88,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
 
 /**
  * One real daemon: a sandbox from `linux` writes a marker and stops; its disk and boot store become an image (what
- * `image create --from` does to a stopped sandbox, slice 28), and two sandboxes boot from it with the marker and
+ * `image create --from` does to a stopped sandbox), and two sandboxes boot from it with the marker and
  * their own identity.
  */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {

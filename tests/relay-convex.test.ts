@@ -11,7 +11,7 @@ async function setup() {
     const now = Date.now();
     await ctx.db.insert("machines", { machineId: "m1", accountId: "a1", credentialHash: "h1", name: "one", createdAt: now, lastSeenAt: now });
     await ctx.db.insert("machines", { machineId: "m2", accountId: "a1", credentialHash: "h2", name: "two", createdAt: now, lastSeenAt: now });
-    await ctx.db.insert("sandboxes", { sandboxId: "s", accountId: "a1", machineId: "m1", name: "quiet-otter", imageId: "linux", cpus: 2, memoryBytes: 2 * 1024 ** 3, sleepAfterMs: 1_800_000, createdAt: now });
+    await ctx.db.insert("sandboxes", { sandboxId: "s", accountId: "a1", machineId: "m1", name: "quiet-otter", imageId: "linux", os: "linux", cpus: 2, memoryBytes: 2 * 1024 ** 3, sleepAfterMs: 1_800_000, createdAt: now });
   });
   return t;
 }
@@ -54,7 +54,7 @@ test("past the daily result bytes, a result is refused but a small failure still
     await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "big", response: { ok: true, result: "x".repeat(200) } }), (error: any) => error.data?.code === "rate_limited" && error.data.details.limit === "result_bytes" && /\(100; reset/.test(error.data.message));
     const refused = { ok: false, error: { code: "rate_limited", message: "the account's daily relay result bytes limit (100)", retryable: true, details: { limit: "result_bytes" } } };
     await machine.mutation(ref("relay:complete"), { requestId: "big", response: refused });
-    assert.deepEqual(await service.query(ref("relay:result"), { requestId: "big" }), { accountId: "a1", status: "completed", response: refused });
+    assert.deepEqual(await service.query(ref("relay:result"), { requestId: "big" }), { accountId: "a1", status: "completed", request: {}, response: refused });
     await service.mutation(ref("relay:enqueue"), { accountId: "a1", machineId: "m1", requestId: "huge-failure", operation: "x", payload: {} }); await machine.mutation(ref("relay:claim"), { requestId: "huge-failure" });
     await assert.rejects(() => machine.mutation(ref("relay:complete"), { requestId: "huge-failure", response: { ok: false, error: { message: "x".repeat(5_000) } } }), (error: any) => error.data?.code === "rate_limited", "only a small failure is exempt");
   } finally { if (old === undefined) delete process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES; else process.env.LOCALBOX_RELAY_DAILY_RESULT_BYTES = old; }

@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { makeFunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
-import { ContractError, failure, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
-import { contractError } from "../../relay/src/ops.js";
+import { ContractError, failure, HOST_OPERATION_KINDS, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, type CapacityReport, type HostOperationRecord, type Json, type RequestEnvelope, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { contractError } from "../../../packages/contract/src/convex-errors.js";
 import { RevokedError } from "./token.js";
 
 export type ConnectorState = "connecting" | "connected" | "revoked" | "stopped";
@@ -37,17 +37,15 @@ export interface ConnectorDeps {
 export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[]; deleted?: IdleDeletion[] }
 export interface IdleDeletion { sandbox_id: string; name: string; reason: string }
 export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
-/** A finished host operation, as the daemon's `host.operations` hands it over to be reported. `subject` is the image. */
-export interface OperationOutcome {
-  key: string; kind?: string; subject: string; state: "succeeded" | "failed";
-  result?: { size_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" } | null; error?: { code: string; message: string; next_step?: string } | null;
-}
+/** What a finished record's `result` may carry that Convex keeps: the image's size and, for a macOS build or a copy, what only it knows. */
+interface ReportedResult { size_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" }
 /** One of this machine's copies as `images:copiesForMachine` lists it: what its daemon's side needs, key included. */
 export interface CopyRendezvous { copy_id: string; operation_id: string; image_id: string; role: "sender" | "receiver"; key: string; size_bytes: number | null; state: string; candidates: Json[] | null; peer_candidates: Json[] | null; error: Json }
 /** Where this Mac's side of a copy can be reached, as its daemon hands it over to publish; `generation` acknowledges it. */
 interface CandidateOffer { copy_id: string; candidates: Json[]; generation: number }
 
-export const relay = {
+/** The Convex functions a machine's connector calls. */
+export const machineFunctions = {
   pendingForMachine: makeFunctionReference<"query">("relay:pendingForMachine"),
   claim: makeFunctionReference<"mutation">("relay:claim"),
   complete: makeFunctionReference<"mutation">("relay:complete"),
@@ -66,7 +64,8 @@ export const relay = {
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
 const WATCH_RETRY_MAX_MS = 30_000;
 const REPORT_HEARTBEAT_MS = 60_000;
-const OUTCOMES_TIMEOUT_MS = 25_000;
+/** How long one long poll on the daemon's socket waits for something to hand over. */
+const LONG_POLL_MS = 25_000;
 const RECENT_LIMIT = 512;
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -89,11 +88,11 @@ export class Connector {
   private copies: CopyRendezvous[] = [];
   private copySeq = 0;
   private mirrorSeq = 0;
+  private pollSeq = 0;
   /** Mirror pushes go to the daemon one at a time, in the order Convex sent them, so an older list never lands last. */
   private mirrorQueue: Promise<void> = Promise.resolve();
   private lastReportAt = 0;
   private reportSeq = 0;
-  private outcomesSeq = 0;
   private settle!: { resolve(state: ConnectorState): void; reject(error: Error): void };
   /** Resolves with "revoked" or "stopped" when the connector ends; rejects on a fatal error. */
   readonly finished = new Promise<ConnectorState>((resolve, reject) => { this.settle = { resolve, reject }; });
@@ -110,17 +109,17 @@ export class Connector {
       if (this.ended) return;
       this.setState(authenticated ? "connected" : "connecting", authenticated ? undefined : "Convex rejected the machine token");
     });
-    this.unsubscribe = this.deps.convex.onUpdate(relay.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
+    this.unsubscribe = this.deps.convex.onUpdate(machineFunctions.pendingForMachine, {}, (rows: PendingRow[]) => { for (const row of rows ?? []) void this.run(row); },
       (error) => { if (!this.ended) { this.setState(this.status.state, `subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // The daemon's identity mirror follows the catalog, so a rename or delete made while this Mac was offline lands on reconnect.
     // A missing result is a failed read, not an empty catalog: mirroring it would delete every sandbox this Mac listed.
-    this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
+    this.unsubscribeMirror = this.deps.convex.onUpdate(machineFunctions.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // Image files follow the catalog the same way: an image deleted while this Mac was offline goes when it reconnects.
-    this.unsubscribeImageMirror = this.deps.convex.onUpdate(relay.imagesForMachine, {}, (rows: Array<{ image_id: string }> | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map((row) => row.image_id))); },
+    this.unsubscribeImageMirror = this.deps.convex.onUpdate(machineFunctions.imagesForMachine, {}, (rows: Array<{ image_id: string }> | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map((row) => row.image_id))); },
       (error) => { if (!this.ended) { this.deps.log(`image mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // A copy's rendezvous (its key, the peer's candidates, its state) reaches the daemon whenever the row changes.
-    this.unsubscribeCopies = this.deps.convex.onUpdate(relay.copiesForMachine, {}, (rows: CopyRendezvous[] | null | undefined) => { if (!Array.isArray(rows)) return; this.copies = rows; this.mirrorQueue = this.mirrorQueue.then(() => this.pushCopies()); },
+    this.unsubscribeCopies = this.deps.convex.onUpdate(machineFunctions.copiesForMachine, {}, (rows: CopyRendezvous[] | null | undefined) => { if (!Array.isArray(rows)) return; this.copies = rows; this.mirrorQueue = this.mirrorQueue.then(() => this.pushCopies()); },
       (error) => { if (!this.ended) { this.deps.log(`copy subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
     void this.reportOutcomes();
@@ -167,7 +166,7 @@ export class Connector {
     if (this.ended || this.inFlight.has(id) || this.recent.has(id)) return;
     this.inFlight.add(id);
     try {
-      const claim = await this.deps.convex.mutation(relay.claim, { requestId: id }) as { claimed: boolean; status?: string };
+      const claim = await this.deps.convex.mutation(machineFunctions.claim, { requestId: id }) as { claimed: boolean; status?: string };
       if (!claim?.claimed) { this.remember(id); return; }
       let response: ResponseEnvelope;
       try { response = await this.deps.daemon.dispatch(row.payload); }
@@ -176,12 +175,12 @@ export class Connector {
       if (bytes > OUTPUT_CAP_BYTES) response = tooLarge(row.payload, bytes);
       // A result Convex refuses (too large, over the daily result bytes) is replaced by a small failure naming why,
       // so the row completes instead of staying claimed and running again on the next delivery.
-      try { await this.deps.convex.mutation(relay.complete, { requestId: id, response }); }
+      try { await this.deps.convex.mutation(machineFunctions.complete, { requestId: id, response }); }
       catch (error) {
         const refused = contractError(error);
         if (refused.code !== "resource_exhausted" && refused.code !== "rate_limited") throw refused;
         const dropped = new ContractError(refused.code, `the operation ran, but its result was dropped: ${refused.message}`, refused.details, refused.retryable);
-        await this.deps.convex.mutation(relay.complete, { requestId: id, response: failure(row.payload, dropped) });
+        await this.deps.convex.mutation(machineFunctions.complete, { requestId: id, response: failure(row.payload, dropped) });
       }
       this.remember(id);
     } catch (error) {
@@ -232,32 +231,42 @@ export class Connector {
   }
 
   /**
-   * The other half of a copy's rendezvous: a long poll on the daemon (the local socket, never Convex) for where this
-   * Mac's side of a copy can be reached, published to the copy's row and acknowledged on the next poll. The daemon also
-   * names copies whose work has no rendezvous yet (it restarted), and gets the last listing again.
+   * Long-polls the daemon (the local socket, never Convex) for `operation`. `handle` pushes into `acked` what it handed
+   * on, and the next poll acknowledges it as input `field`; a failure part-way keeps what was handed on so far.
    */
-  private async exchangeCandidates(): Promise<void> {
-    let published: Array<{ copy_id: string; generation: number }> = []; let backoff = 1_000;
+  private async longPoll<T extends Json>(operation: string, label: string, field: string, handle: (result: Json, acked: T[]) => Promise<void>): Promise<void> {
+    let acked: T[] = []; let backoff = 1_000;
     while (!this.ended) {
       try {
-        const response = await this.deps.daemon.dispatch(hostRequest("image.copy_outbox", { published, timeout_ms: OUTCOMES_TIMEOUT_MS }, `copy-outbox-${++this.copySeq}`, OUTCOMES_TIMEOUT_MS + 10_000));
+        const response = await this.deps.daemon.dispatch(hostRequest(operation, { [field]: acked, timeout_ms: LONG_POLL_MS }, `${operation}-${++this.pollSeq}`, LONG_POLL_MS + 10_000));
         if (this.ended) return;
         if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
-        published = [];
-        const { offers = [], missing = [] } = response.result as { offers?: CandidateOffer[]; missing?: string[] };
-        for (const offer of offers) {
-          try { await this.deps.convex.mutation(relay.offerCandidates, { copyId: offer.copy_id, candidates: offer.candidates }); }
-          catch (error) { if (contractError(error).code !== "image_not_found") throw error; this.deps.log(`copy ${offer.copy_id} is no longer on the account; its candidates have nowhere to go`); }
-          published.push({ copy_id: offer.copy_id, generation: offer.generation });
-        }
-        if (this.copies.some((row) => missing.includes(row.operation_id))) this.mirrorQueue = this.mirrorQueue.then(() => this.pushCopies());
+        acked = [];
+        await handle(response.result, acked);
         backoff = 1_000;
       } catch (error) {
         if (this.ended) return;
-        this.deps.log(`copy candidates failed: ${message(error)}`);
+        this.deps.log(`${label} failed: ${message(error)}`);
         await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
       }
     }
+  }
+
+  /**
+   * The other half of a copy's rendezvous: where this Mac's side of a copy can be reached, as the daemon hands it over,
+   * published to the copy's row and acknowledged on the next poll. The daemon also names copies whose work has no
+   * rendezvous yet (it restarted), and gets the last listing again.
+   */
+  private exchangeCandidates(): Promise<void> {
+    return this.longPoll<{ copy_id: string; generation: number }>("image.copy_outbox", "copy candidates", "published", async (result, published) => {
+      const { offers = [], missing = [] } = result as { offers?: CandidateOffer[]; missing?: string[] };
+      for (const offer of offers) {
+        try { await this.deps.convex.mutation(machineFunctions.offerCandidates, { copyId: offer.copy_id, candidates: offer.candidates }); }
+        catch (error) { if (contractError(error).code !== "image_not_found") throw error; this.deps.log(`copy ${offer.copy_id} is no longer on the account; its candidates have nowhere to go`); }
+        published.push({ copy_id: offer.copy_id, generation: offer.generation });
+      }
+      if (this.copies.some((row) => missing.includes(row.operation_id))) this.mirrorQueue = this.mirrorQueue.then(() => this.pushCopies());
+    });
   }
 
   private async watch(): Promise<void> {
@@ -271,17 +280,17 @@ export class Connector {
         // revisions from the start again, so the whole report is compared as well.
         const report = change.capacity;
         if (report && (!capacity || report.revision !== capacity.revision || !isDeepStrictEqual(report, capacity))) {
-          await this.deps.convex.mutation(relay.reportCapacity, { capacity: report });
+          await this.deps.convex.mutation(machineFunctions.reportCapacity, { capacity: report });
           capacity = report;
         }
         const changed = (change.sandboxes ?? []).filter((sandbox) => !isDeepStrictEqual(states.get(sandbox.sandbox_id), sandbox));
         if (changed.length) {
-          await this.deps.convex.mutation(relay.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}) })) });
+          await this.deps.convex.mutation(machineFunctions.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}) })) });
           for (const sandbox of changed) states.set(sandbox.sandbox_id, sandbox);
         }
         // The daemon deleted these after their delete-after idle time; their catalog rows go too.
         for (const gone of (change.deleted ?? []).filter((item) => !removed.has(item.sandbox_id))) {
-          try { await this.deps.convex.mutation(relay.removeIdle, { sandboxId: gone.sandbox_id, reason: gone.reason }); }
+          try { await this.deps.convex.mutation(machineFunctions.removeIdle, { sandboxId: gone.sandbox_id, reason: gone.reason }); }
           catch (error) { if (contractError(error).code !== "sandbox_not_found") throw error; }
           removed.add(gone.sandbox_id); states.delete(gone.sandbox_id);
           this.deps.log(`removed ${gone.name} (${gone.sandbox_id}) from the catalog: ${gone.reason}`);
@@ -303,55 +312,43 @@ export class Connector {
    * each outcome until a later poll says it was reported, so an outcome lands once the account is reachable, across
    * restarts of either process. An image the account deleted meanwhile has nothing left to report.
    */
-  private async reportOutcomes(): Promise<void> {
-    let reported: string[] = []; let backoff = 1_000;
-    while (!this.ended) {
-      try {
-        const response = await this.deps.daemon.dispatch(hostRequest("host.operations", { reported, timeout_ms: OUTCOMES_TIMEOUT_MS }, `host-operations-${++this.outcomesSeq}`, OUTCOMES_TIMEOUT_MS + 10_000));
-        if (this.ended) return;
-        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
-        reported = [];
-        for (const outcome of (response.result as { operations?: OperationOutcome[] }).operations ?? []) { await this.reportOutcome(outcome); reported.push(outcome.key); }
-        backoff = 1_000;
-      } catch (error) {
-        if (this.ended) return;
-        this.deps.log(`operation reports failed: ${message(error)}`);
-        await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
-      }
-    }
+  private reportOutcomes(): Promise<void> {
+    return this.longPoll<string>("host.operations", "operation reports", "reported", async (result, reported) => {
+      for (const record of (result as { operations?: HostOperationRecord[] }).operations ?? []) { await this.reportOutcome(record); reported.push(record.key); }
+    });
   }
 
-  private async reportOutcome(outcome: OperationOutcome): Promise<void> {
-    if (outcome.kind === "image.copy") return await this.reportCopy(outcome);
-    if (outcome.kind === "sandbox.create_after_copy") return await this.reportCreate(outcome);
-    const { size_bytes: size, min_macos: minMacOS, ipsw_version: ipswVersion } = outcome.result ?? {};
-    const args = outcome.state === "succeeded"
-      ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}), ...(typeof minMacOS === "string" ? { minMacOS } : {}), ...(typeof ipswVersion === "string" ? { ipswVersion } : {}) }
-      : { imageId: outcome.subject, operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the operation failed", nextStep: outcome.error?.next_step ?? "try it again; if it fails the same way, check this Mac's disk space and logs" } };
-    try { await this.deps.convex.mutation(relay.setHolder, args); this.deps.log(`image ${outcome.subject}: operation ${outcome.key} ${args.state}`); }
+  private async reportOutcome(record: HostOperationRecord): Promise<void> {
+    if (record.kind === HOST_OPERATION_KINDS.copy) return await this.reportCopy(record);
+    if (record.kind === HOST_OPERATION_KINDS.createAfterCopy) return await this.reportCreate(record);
+    const { size_bytes: size, min_macos: minMacOS, ipsw_version: ipswVersion } = (record.result ?? {}) as ReportedResult;
+    const args = record.state === "succeeded"
+      ? { imageId: record.subject, operationId: record.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}), ...(typeof minMacOS === "string" ? { minMacOS } : {}), ...(typeof ipswVersion === "string" ? { ipswVersion } : {}) }
+      : { imageId: record.subject, operationId: record.key, state: "failed", error: failureOf(record, "the operation failed", "try it again; if it fails the same way, check this Mac's disk space and logs") };
+    try { await this.deps.convex.mutation(machineFunctions.setHolder, args); this.deps.log(`image ${record.subject}: operation ${record.key} ${args.state}`); }
     catch (error) {
       if (contractError(error).code !== "image_not_found") throw error;
-      this.deps.log(`image ${outcome.subject} is no longer on the account; operation ${outcome.key} has nothing to report`);
+      this.deps.log(`image ${record.subject} is no longer on the account; operation ${record.key} has nothing to report`);
     }
   }
 
   /** How this Mac's side of a copy ended; Convex decides what that means for the copy and the target's holding. */
-  private async reportCopy(outcome: OperationOutcome): Promise<void> {
-    const done = outcome.result;
-    const args = outcome.state === "succeeded"
-      ? { operationId: outcome.key, state: "succeeded", ...(typeof done?.size_bytes === "number" ? { sizeBytes: done.size_bytes } : {}), ...(typeof done?.bytes === "number" && typeof done.duration_ms === "number" && done.path ? { result: { bytes: done.bytes, durationMs: done.duration_ms, path: done.path } } : {}) }
-      : { operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the copy failed", nextStep: outcome.error?.next_step ?? "copy it again; if it fails the same way, check both Macs' logs" } };
-    const reported = await this.deps.convex.mutation(relay.endCopy, args) as { reported?: boolean } | null;
-    this.deps.log(reported?.reported === false ? `copy ${outcome.key} is no longer on the account; nothing to report` : `image ${outcome.subject}: copy ${outcome.key} ${outcome.state}`);
+  private async reportCopy(record: HostOperationRecord): Promise<void> {
+    const done = (record.result ?? {}) as ReportedResult;
+    const args = record.state === "succeeded"
+      ? { operationId: record.key, state: "succeeded", ...(typeof done.size_bytes === "number" ? { sizeBytes: done.size_bytes } : {}), ...(typeof done.bytes === "number" && typeof done.duration_ms === "number" && done.path ? { result: { bytes: done.bytes, durationMs: done.duration_ms, path: done.path } } : {}) }
+      : { operationId: record.key, state: "failed", error: failureOf(record, "the copy failed", "copy it again; if it fails the same way, check both Macs' logs") };
+    const reported = await this.deps.convex.mutation(machineFunctions.endCopy, args) as { reported?: boolean } | null;
+    this.deps.log(reported?.reported === false ? `copy ${record.key} is no longer on the account; nothing to report` : `image ${record.subject}: copy ${record.key} ${record.state}`);
   }
 
   /** How a sandbox create that waited for its image's copy ended; its catalog row stops reading `copying`. */
-  private async reportCreate(outcome: OperationOutcome): Promise<void> {
-    const args = outcome.state === "succeeded"
-      ? { operationId: outcome.key, state: "succeeded" }
-      : { operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the create failed", nextStep: outcome.error?.next_step ?? "delete the sandbox and create it again" } };
-    const reported = await this.deps.convex.mutation(relay.endCreate, args) as { reported?: boolean; sandbox_id?: string } | null;
-    this.deps.log(reported?.reported === false ? `sandbox create ${outcome.key} is no longer on the account; nothing to report` : `sandbox ${reported?.sandbox_id ?? outcome.key}: create after copy ${outcome.state}`);
+  private async reportCreate(record: HostOperationRecord): Promise<void> {
+    const args = record.state === "succeeded"
+      ? { operationId: record.key, state: "succeeded" }
+      : { operationId: record.key, state: "failed", error: failureOf(record, "the create failed", "delete the sandbox and create it again") };
+    const reported = await this.deps.convex.mutation(machineFunctions.endCreate, args) as { reported?: boolean; sandbox_id?: string } | null;
+    this.deps.log(reported?.reported === false ? `sandbox create ${record.key} is no longer on the account; nothing to report` : `sandbox ${reported?.sandbox_id ?? record.key}: create after copy ${record.state}`);
   }
 
   private setState(state: ConnectorState, lastError = state === "connected" ? undefined : this.status.lastError): void {
@@ -368,6 +365,9 @@ export class Connector {
     catch (error) { this.deps.log(`state report failed: ${message(error)}`); }
   }
 }
+
+/** A failed record's error as Convex stores it, with a message and next step when the kind gave none. */
+const failureOf = (record: HostOperationRecord, message: string, nextStep: string) => ({ code: record.error?.code ?? "internal", message: record.error?.message ?? message, nextStep: record.error?.next_step ?? nextStep });
 
 function tooLarge(request: RequestEnvelope, bytes: number): ResponseEnvelope {
   return failure(request, { code: "resource_exhausted", message: `response is ${bytes} bytes, over the ${OUTPUT_CAP_BYTES}-byte relay cap`, retryable: false });

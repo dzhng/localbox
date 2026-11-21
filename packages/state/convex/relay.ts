@@ -97,9 +97,12 @@ export const abandonIfUnclaimed = mutationGeneric({ args: { requestId: v.string(
   await ctx.db.patch(row._id, { status: "abandoned" }); const machine = await byField(ctx, "machines", "by_machine", "machineId", row.machineId); return { abandoned: true, lastSeenAt: machine?.lastSeenAt };
 } });
 
-/** A request's status and answer; null for an unknown (or expired) request id, so a waiter ends instead of erroring. */
+/**
+ * A request's status, the request itself (a continuation finishes its answer as the first call would have) and its
+ * answer; null for an unknown (or expired) request id, so a waiter ends instead of erroring.
+ */
 export const result = queryGeneric({ args: { requestId: v.string() }, handler: async (ctx, args) => {
-  await requireIdentity(ctx, "service"); const row = await byField(ctx, "requests", "by_request_id", "requestId", args.requestId); if (!row) return null; const response = await byField(ctx, "responses", "by_request_id", "requestId", args.requestId); return response ? { accountId: row.accountId, status: row.status, response: response.response } : { accountId: row.accountId, status: row.status };
+  await requireIdentity(ctx, "service"); const row = await byField(ctx, "requests", "by_request_id", "requestId", args.requestId); if (!row) return null; const response = await byField(ctx, "responses", "by_request_id", "requestId", args.requestId); return { accountId: row.accountId, status: row.status, request: row.payload, ...(response ? { response: response.response } : {}) };
 } });
 
 export const reportCapacity = mutationGeneric({ args: { capacity: v.any() }, handler: async (ctx, args) => { const identity = await requireIdentity(ctx, "machine"); const row = await machineFor(ctx, identity.accountId!, identity.machineId!); await ctx.db.patch(row._id, { capacity: args.capacity, capacityAt: Date.now() }); return null; } });

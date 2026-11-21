@@ -1,5 +1,5 @@
 import { catalogById, helpSnapshot, PROTOCOL_VERSION, type JsonSchema, type OperationCatalogEntry, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
-import type { OpsResponse, Principal } from "../../relay/src/ops.js";
+import type { OpsResponse, Principal } from "../../relay/src/relay-wait.js";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export interface McpHttpRequest { method: string; url: string; headers?: Record<string, string | undefined>; body?: unknown; signal?: AbortSignal }

@@ -1,14 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeFunctionReference } from "convex/server";
-import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { runOps } from "../apps/relay/src/ops.js";
-import { failure, success, type CapacityReport, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { HOST_OPERATION_KINDS, failure, type CapacityReport, type Json, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { GIB, hostRecord, relayOverConvex, STUDIO, type Machine } from "./fixtures/relay-over-convex.js";
 
-const ref = (name: string) => makeFunctionReference(name) as any;
-const GIB = 1024 ** 3;
-type Machine = (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>;
 const capacity = (macos_version: string): CapacityReport => ({ cpus: 10, total_bytes: 32 * GIB, reserved_bytes: 0, room_bytes: 24 * GIB, running: 0, revision: 1, free_disk_bytes: 200 * GIB, macos_version });
 
 /**
@@ -17,34 +11,16 @@ const capacity = (macos_version: string): CapacityReport => ({ cpus: 10, total_b
  */
 async function setup(connectors: Record<string, Machine> = {}) {
   const machines = [{ machineId: "m1", name: "studio", capacity: capacity("27.0.1") }, { machineId: "m2", name: "attic", capacity: capacity("27.1") }, { machineId: "m3", name: "old-mini", capacity: capacity("26.4") }];
-  const t = createConvexTestHarness();
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "brave-walrus-100", createdAt: now });
-    for (const { machineId, name, capacity } of machines) await ctx.db.insert("machines", { machineId, accountId: "a1", credentialHash: `h-${machineId}`, name, createdAt: now, lastSeenAt: now, capacity, capacityAt: now });
-    await ctx.db.insert("oauthTokens", { accountId: "a1", clientId: "c1", scopes: ["account"], constraints: null, familyId: "f1", accessTokenHash: "a", refreshTokenHash: "r", accessExpiresAt: now + 60_000, refreshExpiresAt: now + 60_000 });
-  });
-  const studio = t.withIdentity({ subject: "machine:m1", account: "a1" });
-  const agent = t.withIdentity({ subject: "agent:f1", account: "a1" });
-  const { deps } = memoryMailbox({ machines, connectors });
-  let calls = 0;
-  const op = async (input: Record<string, unknown>, options: { machine?: string; caller?: "studio" | "agent"; mutationId?: string } = {}): Promise<any> => {
-    const caller = options.caller ?? "studio";
-    deps.accountCall = async (_principal, kind, name, args) => await ((caller === "studio" ? studio : agent) as any)[kind](ref(name), args);
-    const principal = caller === "studio" ? { accountId: "a1", machineId: "m1" } : { accountId: "a1", familyId: "f1" };
-    const result = await runOps(principal, { operation: "image.create", input, request_id: `req-${++calls}`, mutation_id: options.mutationId ?? `mut-${calls}`, ...(options.machine ? { machine: options.machine } : {}) }, deps);
-    return (result.body as { response: ResponseEnvelope }).response;
-  };
-  const images = async () => (await studio.query(ref("images:list"), {}) as any[]).filter((row) => row.image_id !== "linux");
-  return { op, images, studio };
+  const { op: run, images } = await relayOverConvex({ machines, connectors, agent: true });
+  const op = async (input: Record<string, unknown>, options: { machine?: string; caller?: "studio" | "agent"; mutationId?: string; deadlineMs?: number } = {}): Promise<any> =>
+    await run("image.create", { input, ...(options.mutationId ? { mutation_id: options.mutationId } : {}), ...(options.machine ? { machine: options.machine } : {}), ...(options.deadlineMs ? { deadline_ms: options.deadlineMs } : {}) }, options.caller === "agent" ? { accountId: "a1", familyId: "f1" } : STUDIO);
+  return { op, images };
 }
 
 /** A Mac whose build stands as `record` says, recording each request it was told. */
 const building = (told: RequestEnvelope[], record: { state?: "running" | "succeeded"; phase?: string; result?: Json } = {}): Machine => async (request) => {
   told.push(request);
-  const input = request.input as { image: string };
-  const state = record.state ?? "running";
-  return success(request, { key: request.mutation_id, kind: "macos.build", subject: input.image, state, progress: { phase: record.phase ?? "install", completed: 0, total: 0 }, ...(record.result ? { result: record.result } : {}), started_at: 1, updated_at: 2 });
+  return hostRecord(request, { kind: HOST_OPERATION_KINDS.macosBuild, state: record.state ?? "running", progress: { phase: record.phase ?? "install", completed: 0, total: 0 }, ...(record.result ? { result: record.result } : {}) });
 };
 
 test("image create --macos reserves an IPSW image on the caller's own Mac and answers with the build's phase", async () => {
@@ -80,7 +56,7 @@ test("a Mac older than macOS 27 is refused before anything is reserved; a Mac's 
   const { op, images } = await setup({ m3: building(told), m1: async (request) => failure(request, { code: "disk_full", message: "building a macOS image on this Mac needs 46.6 GiB free for its disk, and 41 GiB is free", retryable: false }) });
   const old = await op({ macos: true }, { machine: "old-mini" });
   assert.equal(old.error.code, "image_incompatible");
-  assert.equal(old.error.message, "old-mini runs macOS 26.4; building a macOS image needs macOS 27 or later on that Mac");
+  assert.equal(old.error.message, "old-mini runs macOS 26.4; building a macOS image needs macOS 27 or later");
   assert.equal(told.length, 0, "old-mini was never told");
   const full = await op({ macos: true });
   assert.equal(full.error.code, "disk_full");
@@ -91,9 +67,9 @@ test("a Mac older than macOS 27 is refused before anything is reserved; a Mac's 
   assert.equal((await images()).length, 0);
 });
 
-test("a build the Mac may still be running keeps its reservation and says how to follow it", async () => {
-  const { op, images } = await setup({ m1: async (request) => failure(request, { code: "internal", message: "the daemon lost track", retryable: false }) });
-  const kept = await op({ macos: true, name: "maybe-mac" });
+test("a build whose answer was lost keeps its reservation and says how to follow it", async () => {
+  const { op, images } = await setup({ m1: async () => undefined });
+  const kept = await op({ macos: true, name: "maybe-mac" }, { deadlineMs: 100 });
   assert.match(kept.error.message, /the build may still be running on studio: image maybe-mac stays reserved \(follow it with localbox image wait maybe-mac\)$/);
   assert.equal((await images()).length, 1);
 });

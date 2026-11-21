@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { McpAdapter, mcpTools } from "../apps/mcp/src/index.js";
-import { runOps, type Principal } from "../apps/relay/src/ops.js";
+import { runOps } from "../apps/relay/src/ops.js";
+import type { Principal } from "../apps/relay/src/relay-wait.js";
 import { catalogById, success, type RequestEnvelope } from "../packages/contract/src/index.js";
 import { FakeDispatcher } from "../packages/runtime/src/index.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";

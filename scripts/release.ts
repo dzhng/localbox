@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { createZstdDecompress } from "node:zlib";
+import { BUILT_IN_IMAGE } from "../packages/contract/src/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -19,12 +20,10 @@ export interface ReleaseArtifact { name: string; sha256: string; size: number; a
  */
 export interface ReleaseImage { sha256: string; size: number; parts: string[]; bootStore: string; manifest: string }
 export interface ReleaseManifest { schema: "agent-computer.release.v1"; version: string; imageDigest: string; artifacts: ReleaseArtifact[]; image?: ReleaseImage; minimumMacOS: string; signature?: { algorithm: "ed25519"; keyId: string; value: string } }
-/** The built-in image's id: every Mac has it, from the release it runs (P1). */
-export const LINUX_IMAGE_ID = "linux";
 /** The installed image directory, relative to a release directory. */
-export const IMAGE_PATH = `images/${LINUX_IMAGE_ID}`;
+export const IMAGE_PATH = `images/${BUILT_IN_IMAGE}`;
 /** The image directory's files, as the host daemon's `ImageStore` reads them. */
-const IMAGE_FILES = { manifest: "image.json", disk: "disk.img", bootStore: "boot/efi-vars" } as const;
+export const IMAGE_FILES = { manifest: "image.json", disk: "disk.img", bootStore: "boot/efi-vars" } as const;
 /** Streamed, because the VM disk is multi-GiB and no single buffer can hold it. */
 export async function sha256(path: string): Promise<string> { const hash = createHash("sha256"); for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer); return hash.digest("hex"); }
 export async function makeManifest(dir: string, version: string, imageDigest: string, minimumMacOS = "14.0", image?: ReleaseImage): Promise<ReleaseManifest> { const names = (await readdir(dir)).filter((n) => n !== "release.json" && n !== "SHA256SUMS"); const artifacts: ReleaseArtifact[] = []; for (const name of names) { const path = join(dir, name); artifacts.push({ name, sha256: await sha256(path), size: (await stat(path)).size, arch: "arm64" }); } return { schema: "agent-computer.release.v1", version, imageDigest, artifacts, ...(image ? { image } : {}), minimumMacOS }; }
@@ -75,7 +74,7 @@ export const IMAGE_PART_BYTES = 2000 * 1024 * 1024;
  */
 export async function packImage(imageDir: string, outDir: string, prefix: string, options: { level?: number; partBytes?: number } = {}): Promise<ReleaseImage> {
   const image = JSON.parse(await readFile(join(imageDir, IMAGE_FILES.manifest), "utf8")) as { image_id?: string; os?: string };
-  if (image.image_id !== LINUX_IMAGE_ID || image.os !== "linux") throw new Error(`${imageDir} is not the linux image (image.json names ${image.image_id}, ${image.os})`);
+  if (image.image_id !== BUILT_IN_IMAGE || image.os !== "linux") throw new Error(`${imageDir} is not the linux image (image.json names ${image.image_id}, ${image.os})`);
   const disk = join(imageDir, IMAGE_FILES.disk);
   const partBytes = options.partBytes ?? IMAGE_PART_BYTES;
   const zstd = spawn("zstd", ["-q", "-T0", `-${options.level ?? 19}`, "--long=27", "-c", disk], { stdio: ["ignore", "pipe", "inherit"] });
@@ -148,9 +147,9 @@ export async function expandImage(dir: string, manifest: ReleaseManifest, destin
  */
 export async function installLinuxImage(releaseDir: string, imagesDir: string): Promise<void> {
   const source = join(releaseDir, IMAGE_PATH);
-  const destination = join(imagesDir, LINUX_IMAGE_ID);
-  const temporary = join(imagesDir, `.${LINUX_IMAGE_ID}.installing-${process.pid}`);
-  const replaced = join(imagesDir, `.${LINUX_IMAGE_ID}.replaced-${process.pid}`);
+  const destination = join(imagesDir, BUILT_IN_IMAGE);
+  const temporary = join(imagesDir, `.${BUILT_IN_IMAGE}.installing-${process.pid}`);
+  const replaced = join(imagesDir, `.${BUILT_IN_IMAGE}.replaced-${process.pid}`);
   await rm(temporary, { recursive: true, force: true });
   await mkdir(join(temporary, dirname(IMAGE_FILES.bootStore)), { recursive: true });
   // `cp -c` is clonefile(2); Node's COPYFILE_FICLONE has no clone on macOS and its fallback writes out every hole. A

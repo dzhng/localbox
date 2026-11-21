@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { closeSync, createReadStream, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { sha256 } from "../../release.js";
 
 export const id = "20";
 export const tiers = ["s", "l", "x"];
@@ -174,13 +175,6 @@ async function assertSameFile(source: Source, output: string) {
   assert.equal(await sha256(output), source.sha256, "sha256 differs");
   const allocated = statSync(output).blocks * 512;
   assert.ok(allocated <= source.allocated * 1.1 + MiB, `holes not preserved: ${allocated} bytes allocated vs ${source.allocated} in the source`);
-}
-
-function sha256(path: string): Promise<string> {
-  return new Promise((done, fail) => {
-    const hash = createHash("sha256");
-    createReadStream(path, { highWaterMark: 4 * MiB }).on("data", (chunk) => hash.update(chunk)).on("error", fail).on("end", () => done(hash.digest("hex")));
-  });
 }
 
 /** One punchlab process, its stdout parsed as JSON event lines. */
