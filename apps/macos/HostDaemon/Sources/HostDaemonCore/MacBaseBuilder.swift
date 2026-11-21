@@ -324,7 +324,16 @@ public actor MacBaseBuilder {
         \(waitForSession(user: user, seconds: 90))
         /usr/local/localbox/localbox-agent --grant-tcc
         launchctl kickstart -k gui/$(id -u \(user))/sh.localbox.desktop
+        \(waitForCaptureApproval(user: user, seconds: 25))
         """
+    }
+
+    /// The restarted desktop role's first capture brings up macOS's window-picker prompt and presses Allow
+    /// (`settle-capture-prompt`); macOS records that approval for 30 days (`kScreenCapturePrivacyHintPolicy`). Waiting for
+    /// the record before `finish` shuts the guest down puts it in the image, so a sandbox's first capture isn't asked
+    /// again. Not fatal: without it each sandbox's desktop role answers the prompt itself at start.
+    static func waitForCaptureApproval(user: String, seconds: Int) -> String {
+        "approvals='/Users/\(user)/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist'; n=0; until plutil -p \"$approvals\" 2>/dev/null | grep -q localbox-agent; do n=$((n+1)); [ $n -lt \(seconds) ] || { echo 'no screen capture approval recorded; each sandbox answers the prompt at start' >&2; break; }; sleep 1; done"
     }
 
     /// Through the agent's root shell, last: Remote Login off for good, no sandbox identity left behind, and the Chrome

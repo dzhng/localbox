@@ -19,10 +19,10 @@ sandboxes. You already own them."
 
 ## Next Agent Prompt
 
-*Status 2026-11-21: every slice is built (spike 20 with its throughput gate
-restated, choice 20); 35 waits only on its real-macOS run. The whole-spec
-review's docs findings are applied. Slice numbers start at 15 because
-`scripts/proof/run.ts` keys probes on a two-digit prefix.*
+*Status 2026-11-21: every slice is built and proven (spike 20 with its throughput gate
+restated, choice 20). The whole-spec review's docs and TypeScript findings are
+applied. Slice numbers start at 15 because `scripts/proof/run.ts` keys probes on a
+two-digit prefix.*
 
 You are picking up the sandbox-images plan. Where things stand:
 
@@ -31,11 +31,12 @@ You are picking up the sandbox-images plan. Where things stand:
   Recovery screen disable SIP with no human (spike 17). Recovery's `halt` leaves
   the VM on, so builds stop it after csrutil. The darwin forwarder works (19).
 - **Next pickup, in priority order:**
-  1. **35's real-macOS run** (tier `m`, in flight): tick 35 when it is green.
-  2. **The whole-spec review's Swift fixes**, including admission counting a
+  1. **The whole-spec review's Swift fixes**, including admission counting a
      running macOS base build against the two-macOS-VM limit (the skill already
-     tells agents a build takes a slot).
-  3. **Ledger consolidation**, then
+     tells agents a build takes a slot), and tidying the macOS base image's desktop
+     (background-activity and Chrome notification banners, the stray `about:blank`
+     tab and Chrome's first-run sign-in; slice 35's review).
+  2. **Ledger consolidation**, then
      [close-spec](../../.agents/skills/close-spec/SKILL.md). The durable
      single-owner rules already live in the
      [host daemon README](../../apps/macos/HostDaemon/README.md) and
@@ -43,7 +44,8 @@ You are picking up the sandbox-images plan. Where things stand:
 - **Warnings:** how to run the tiers, the tier `m` cache and disk needs, and why
   sweeps run from a short worktree under `$HOME` are in
   [DEVELOPMENT.md's Proofs](../../DEVELOPMENT.md#proofs). The private VNC server
-  listens on every interface; `RecoveryVNC` always uses a one-time VNC password.
+  listens on every interface; `RecoveryVNC` always uses a one-time VNC password. A
+  change to the darwin desktop helper needs a new macOS image (choice 33).
 
 Keep green on every pass: `npm run build`, `npm test`,
 `swift test --package-path apps/macos/HostDaemon`, `npm run generate:snapshots`
@@ -74,7 +76,7 @@ any blocker, and tick the TODO list.
 - [x] [32 guest agent self-update](slices/32-agent-self-update.md)
 - [x] [33 darwin guest agent](slices/33-darwin-agent.md)
 - [x] [34 macOS base build](slices/34-macos-base-build.md)
-- [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
+- [x] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
 - [x] [36 placement with images](slices/36-placement-images.md)
 - [x] [37 transfer library](slices/37-transfer-library.md)
 - [x] [38 image copy](slices/38-image-copy.md) (tier x waits on the user's second Mac)

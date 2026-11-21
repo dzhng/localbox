@@ -218,12 +218,39 @@ extension MacLab {
 /// One host-to-guest vsock stream, retried while the guest's listener comes up. The descriptor is duplicated so the
 /// handle outlives Virtualization's connection object.
 /// Whether a screenshot shows macOS's "… is requesting to bypass the system private window picker" prompt (Vision OCR).
-func showsPickerPrompt(_ image: Data) -> Bool {
-    guard let source = CGImageSourceCreateWithData(image as CFData, nil), let frame = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+func showsPickerPrompt(_ image: Data) -> Bool { pickerPrompt(in: recognizedText(image) ?? "") }
+
+func pickerPrompt(in text: String) -> Bool { text.lowercased().contains("window picker") || text.lowercased().contains("bypass") }
+
+/// The text Vision reads in an image, lines joined by spaces; nil if it is not an image.
+func recognizedText(_ image: Data) -> String? {
+    guard let source = CGImageSourceCreateWithData(image as CFData, nil), let frame = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
     let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
     try? VNImageRequestHandler(cgImage: frame, options: [:]).perform([request])
-    let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
-    return text.contains("window picker") || text.contains("bypass")
+    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+}
+
+/// `vmlab shot-inspect --file <image> --json`: what a probe needs to tell a real frame from a blank one, without an
+/// image decoder of its own: the size, the luminance spread, how many distinct colours (4 bits a channel), the text
+/// Vision reads, and whether that text is the window-picker prompt.
+func inspectShot(_ file: URL) throws -> [String: Any] {
+    let bytes = try Data(contentsOf: file)
+    guard let source = CGImageSourceCreateWithData(bytes as CFData, nil), let frame = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw LabError("\(file.path) is not an image") }
+    let width = frame.width, height = frame.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw LabError("could not draw \(file.path)") }
+    context.draw(frame, in: CGRect(x: 0, y: 0, width: width, height: height))
+    var sum = 0.0, squares = 0.0, colours = Set<Int>()
+    for index in stride(from: 0, to: pixels.count, by: 4) {
+        let (r, g, b) = (Int(pixels[index]), Int(pixels[index + 1]), Int(pixels[index + 2]))
+        let luminance = 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b)
+        sum += luminance; squares += luminance * luminance
+        colours.insert((r >> 4) << 8 | (g >> 4) << 4 | b >> 4)
+    }
+    let count = Double(width * height), mean = sum / count
+    let text = recognizedText(bytes) ?? ""
+    return ["ok": true, "width": width, "height": height, "luminance_mean": mean.rounded(), "luminance_stddev": (sqrt(max(squares / count - mean * mean, 0)) * 10).rounded() / 10,
+            "distinct_colours": colours.count, "text": text, "picker_prompt": pickerPrompt(in: text)]
 }
 
 func dial(_ vm: MacVirtualMachine, port: UInt32) async throws -> FileHandle { try await vm.connect(port: port, within: 30) }

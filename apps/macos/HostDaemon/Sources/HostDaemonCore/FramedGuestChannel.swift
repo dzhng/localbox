@@ -150,3 +150,15 @@ enum GuestFrameCodec {
 
 /// The guest did not answer before the deadline.
 struct GuestFrameTimeout: Error {}
+
+/// Opening a guest lane: `attempt` dials it and waits for the agent's ready frame. A guest restored from saved state can
+/// accept a connection and close it before its ready frame (a macOS guest does on every restore; a dial a second later
+/// attaches), so a lane that closes before ready is dialled again until `deadline`. Any other failure ends it at once.
+enum GuestLane {
+    static func open<Lane>(until deadline: Date, retryAfter: TimeInterval = 0.5, _ attempt: () async throws -> Lane) async throws -> Lane {
+        while true {
+            do { return try await attempt() }
+            catch HostDaemonError.guestUnavailable where Date() < deadline { try await Task.sleep(nanoseconds: UInt64(retryAfter * 1_000_000_000)) }
+        }
+    }
+}

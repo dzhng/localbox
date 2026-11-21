@@ -11,6 +11,7 @@ import Virtualization
 ///   vmlab efi-kernel --image <dir> --json  apt-install another kernel in the guest, reboot, compare `uname -r`
 ///   vmlab efi-clones --image <dir> --json  two sandboxes, each with a copy of the image's variable store, booted at once
 ///   vmlab freeze --image <dir> --json     freezeAndClone under a guest writer, then a freeze whose host never thaws
+///   vmlab shot-inspect --file <image> --json   size, luminance spread, colours and OCR text of a screenshot
 @main
 struct VMLabMain {
     static func main() async {
@@ -21,6 +22,9 @@ struct VMLabMain {
                 let screen = VNCClient(port: port, password: option("--password", in: arguments)); try await screen.connect()
                 try screen.savePNG(try await screen.capture(), to: URL(fileURLWithPath: out))
                 emit(["ok": true, "text": try await screen.screenText()]); screen.close(); return
+            }
+            if arguments.first == "shot-inspect", let file = option("--file", in: arguments) {
+                emit(try inspectShot(URL(fileURLWithPath: expanded(file)))); return
             }
             if let command = arguments.first, command.hasPrefix("macos-") {
                 guard arguments.contains("--json") else { throw LabError("usage: localbox-vmlab macos-install --ipsw <path>|macos-clones|macos-hibernate --json") }

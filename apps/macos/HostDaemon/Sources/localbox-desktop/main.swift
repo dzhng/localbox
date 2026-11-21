@@ -20,6 +20,7 @@ import UniformTypeIdentifiers
 ///   localbox-desktop type <text>
 ///   localbox-desktop guard-capture-prompt              runs until killed; presses Allow on macOS's window-picker
 ///                                                      bypass prompt whenever it appears, printing one line per press
+///   localbox-desktop settle-capture-prompt             brings the prompt up with a throwaway capture, presses Allow
 
 struct Failure: Error, CustomStringConvertible { let description: String; init(_ description: String) { self.description = description } }
 
@@ -181,6 +182,22 @@ enum CapturePrompt {
         return pressed
     }
 
+    /// macOS shows the prompt on a session's first capture, over the captured frame. This makes that first capture a
+    /// throwaway one (retried for 15 s while the session comes up), then waits up to 5 s for the prompt and presses its
+    /// Allow, returning half a second later so it has left the screen. The guard may press it first; then this waits out
+    /// the 5 s.
+    static func settle() async {
+        let started = Date()
+        while (try? await capture(scale: 0.05)) == nil, Date().timeIntervalSince(started) < 15 { try? await Task.sleep(nanoseconds: 500_000_000) }
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            let pressed = allowShown()
+            for owner in pressed { print("allowed the window-picker bypass prompt shown by \(owner) before the first capture"); fflush(stdout) }
+            if !pressed.isEmpty { try? await Task.sleep(nanoseconds: 500_000_000); return }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
     static func guardForever() -> Never {
         guard AXIsProcessTrusted() else { FileHandle.standardError.write(Data("localbox-desktop: no Accessibility grant; the capture prompt can't be answered\n".utf8)); exit(1) }
         while true {
@@ -226,8 +243,11 @@ do {
         guard arguments.count == 2 else { throw Failure("type <text>") }
         try type(arguments[1])
     case "guard-capture-prompt": CapturePrompt.guardForever()
+    case "settle-capture-prompt":
+        guard AXIsProcessTrusted() else { throw Failure("no Accessibility grant; the capture prompt can't be answered") }
+        await CapturePrompt.settle()
     default:
-        throw Failure("usage: localbox-desktop geometry | capture png | capture jpeg <q> <scale> | move | click | scroll | key | type | guard-capture-prompt")
+        throw Failure("usage: localbox-desktop geometry | capture png | capture jpeg <q> <scale> | move | click | scroll | key | type | guard-capture-prompt | settle-capture-prompt")
     }
 } catch {
     FileHandle.standardError.write(Data("localbox-desktop: \(error)\n".utf8))
