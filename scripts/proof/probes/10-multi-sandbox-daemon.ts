@@ -48,7 +48,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check("two sandboxes boot from APFS clones that allocate under 50 MB at creation", async () => {
       for (const sandboxId of [ids.alpha, ids.beta]) {
         const started = Date.now();
-        const created = await ok("sandbox.create", sandboxId, { name: names[sandboxId], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
+        const created = await ok("sandbox.create", sandboxId, { name: names[sandboxId], image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
         evidence[`${sandboxId}_create_ms`] = Date.now() - started; evidence[`${sandboxId}_create`] = created;
         assert.equal(created.produced.disk, "cloned");
         assert.ok(created.produced.disk_allocated_bytes >= 0 && created.produced.disk_allocated_bytes < 50 * 1024 * 1024, `clone allocated ${created.produced.disk_allocated_bytes} bytes`);

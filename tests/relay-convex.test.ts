@@ -11,7 +11,7 @@ async function setup() {
     const now = Date.now();
     await ctx.db.insert("machines", { machineId: "m1", accountId: "a1", credentialHash: "h1", name: "one", createdAt: now, lastSeenAt: now });
     await ctx.db.insert("machines", { machineId: "m2", accountId: "a1", credentialHash: "h2", name: "two", createdAt: now, lastSeenAt: now });
-    await ctx.db.insert("sandboxes", { sandboxId: "s", accountId: "a1", machineId: "m1", name: "quiet-otter", cpus: 2, memoryBytes: 2 * 1024 ** 3, sleepAfterMs: 1_800_000, createdAt: now });
+    await ctx.db.insert("sandboxes", { sandboxId: "s", accountId: "a1", machineId: "m1", name: "quiet-otter", imageId: "linux", cpus: 2, memoryBytes: 2 * 1024 ** 3, sleepAfterMs: 1_800_000, createdAt: now });
   });
   return t;
 }

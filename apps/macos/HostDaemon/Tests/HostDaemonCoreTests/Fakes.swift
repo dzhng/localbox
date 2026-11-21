@@ -49,14 +49,19 @@ final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
     private let stopError: HostDaemonError?
     private let bootDelay: UInt64
     private let guest: @Sendable (Data) async throws -> Data
+    private let images: Set<String>
     /// `saveError`: every save fails with it, e.g. `.screenLocked` or `.unsupported("permission denied")`; `stopError`
-    /// likewise for every stop. `bootDelay` (nanoseconds) is how long each start or restore takes.
-    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, bootDelay: UInt64 = 0, guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
-        self.saveError = saveError; self.stopError = stopError; self.bootDelay = bootDelay; self.guest = guest
+    /// likewise for every stop. `bootDelay` (nanoseconds) is how long each start or restore takes. `images` are the
+    /// images this Mac holds; provisioning from any other fails as `ImageStore` does.
+    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage], guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
+        self.saveError = saveError; self.stopError = stopError; self.bootDelay = bootDelay; self.images = images; self.guest = guest
     }
     public var boots: Int { made.count }
     public var made: [FakeSandboxBackend] { lock.lock(); defer { lock.unlock() }; return backends }
-    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] { record.mac = randomLocalMAC(); return [:] }
+    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
+        guard images.contains(record.imageID) else { throw ImageNotHere(imageID: record.imageID) }
+        record.mac = randomLocalMAC(); return [:]
+    }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         let backend = FakeSandboxBackend(saveError: saveError, stopError: stopError, bootDelay: bootDelay, guest: guest)
         lock.lock(); backends.append(backend); lock.unlock()

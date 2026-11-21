@@ -95,7 +95,7 @@ test("a caller Convex refuses as unauthorized is answered 401, whatever the erro
 });
 
 const imageRow = (holders: Array<Partial<ImageRow["holders"][number]> & { machine_id: string; state: ImageRow["holders"][number]["state"] }>): ImageRow => ({
-  image_id: "image_1", name: "rails-dev", os: "linux", size_bytes: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
+  image_id: "image_1", name: "rails-dev", os: "linux", size_bytes: null, min_macos: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
   holders: holders.map((holder) => ({ machine_name: holder.machine_id === "m_b" ? "attic" : "studio", operation_id: null, error: null, updated_at: 1, ...holder })),
 });
 

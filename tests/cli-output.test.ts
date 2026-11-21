@@ -10,7 +10,7 @@ const failed = (operation: string, code: "name_conflict" | "sandbox_ambiguous", 
 
 /** One sample result per CLI command, shaped like what the agent API and HostDaemon answer. */
 const samples: Array<[string, ResponseEnvelope | Json]> = [
-  ["sandbox create", envelope("sandbox.create", { requested: { name: "build-box" }, produced: { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB" }, actions: [{ kind: "created", detail: "created build-box with 6 CPUs and 6 GiB" }, { kind: "cold_booted", detail: "cold-booted the runtime" }] })],
+  ["sandbox create", envelope("sandbox.create", { requested: { name: "build-box" }, produced: { sandbox_id: "sandbox_1", name: "build-box", image: "bold-image", image_reason: "the account default", machine: "attic", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB" }, actions: [{ kind: "created", detail: "created build-box with 6 CPUs and 6 GiB; disk cloned; image bold-image (the account default)" }, { kind: "cold_booted", detail: "cold-booted the runtime" }] })],
   ["sandbox create --name taken", failed("sandbox.create", "name_conflict", "build-box is taken on this account; sandboxes: build-box, quiet-otter")],
   ["sandbox list", envelope("sandbox.list", { sandboxes: [{ sandbox_id: "sandbox_1", name: "build-box", machine_id: "machine_1", machine_name: "attic", cpus: 6, memory_bytes: 6 * GIB, state: "running", reported_at: 1_760_000_000_000 }, { sandbox_id: "sandbox_2", name: "quiet-otter", machine_id: "machine_2", machine_name: null, cpus: 2, memory_bytes: 2 * GIB, state: "unknown", reported_at: null }] })],
   ["sandbox rename", envelope("sandbox.rename", { requested: { name: "calm-heron" }, produced: { sandbox_id: "sandbox_1", name: "calm-heron", previous_name: "build-box", machine: "attic" }, actions: [{ kind: "renamed", detail: "renamed build-box to calm-heron on attic" }] })],
@@ -55,7 +55,7 @@ test("text output carries every fact for every catalog operation's result", asyn
 
 test("an action report leads with what was done, one line per action", () => {
   const out = render(samples[0][1], { json: false }).stdout.split("\n");
-  assert.deepEqual(out.slice(0, 2), ["- created: created build-box with 6 CPUs and 6 GiB", "- cold_booted: cold-booted the runtime"]);
+  assert.deepEqual(out.slice(0, 2), ["- created: created build-box with 6 CPUs and 6 GiB; disk cloned; image bold-image (the account default)", "- cold_booted: cold-booted the runtime"]);
   assert.ok(out.includes("  memory_bytes: 6442450944 (6 GiB)"));
   assert.equal(render(samples.find(([name]) => name === "sandbox stop")![1], { json: false }).stdout.split("\n")[0], "- no changes");
 });
