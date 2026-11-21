@@ -1,34 +1,36 @@
 <p align="center">
-  <img src=".github/readme/header.png" alt="Localbox — give your agents all your computers" width="100%">
+  <img src=".github/readme/header.png" alt="Localbox: Xiaohei slides a sandbox out of a shelf of computers you own and sends it to your agent" width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/dzhng/localbox/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dzhng/localbox?label=release"></a>
   <img alt="macOS 14+ on Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-black">
+  <img alt="Linux and macOS sandboxes" src="https://img.shields.io/badge/sandboxes-Linux%20%C2%B7%20macOS-orange">
   <img alt="Works with Claude Code, Codex and MCP agents" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20MCP-blue">
   <img alt="Free" src="https://img.shields.io/badge/price-free-green">
 </p>
 
 ---
 
-**Localbox gives your agents all your computers.**
+**Stop renting sandboxes. You already own them.**
 
-Your agent is ready to do real work: install toolchains, run test suites, click
-through a staging site, leave a build running overnight. But it's stuck on the
-one machine it was started on, or in someone else's cloud, while the desktop with
-the RAM for the full build and the Mac mini on the shelf sit idle. Handing it SSH
-would get it there, and hand it your whole computer: your files, your keys, your
-logged-in sessions.
+Localbox turns every Mac you own into sandboxes for your agents: Linux or macOS,
+set up your way, and still there next week. Free.
+
+Your agent needs somewhere to work that isn't your laptop: install toolchains,
+run test suites, click through a staging site, leave a build running overnight.
+The usual answer is a cloud sandbox, rented by the minute, thrown away when the
+session ends and set up from scratch every time. Meanwhile the desktop with the
+RAM for the full build and the Mac mini on the shelf sit idle.
 
 Localbox lets every agent you run, on your laptop, in the cloud or on a schedule,
-work on every Mac you own. Each one gets a **sandbox** there: a whole Linux
-computer with a shell, files, a browser and a desktop, that stays exactly as the
-agent left it. It never gets your whole computer, and sees none of your files
-unless you share a folder. **Claude Code, Codex, or any agent harness** drives it through one
-CLI, with an optional MCP endpoint.
-
-**Every computer you own, for every agent you run. Free.** Much safer, and much
-easier to set up, than SSH and Tailscale.
+work on every Mac you own. Each one gets a **sandbox** there: a whole computer,
+Linux or macOS, with a shell, files, a browser and a desktop, that stays exactly
+as the agent left it. Set one up the way you like, save it as an image, and every
+new sandbox starts from it. Your agent never gets your whole computer, the way it
+would over SSH, and sees none of your files unless you share a folder.
+**Claude Code, Codex, or any agent harness** drives it through one CLI, with an
+optional MCP endpoint.
 
 **[Get started →](#get-started)** Your agent installs it for you.
 
@@ -36,31 +38,33 @@ easier to set up, than SSH and Tailscale.
 
 > "Use the Mac mini in the closet for tonight's full build."
 
-> "Run the integration tests on my desktop at home, then open the PR."
+> "Set up a sandbox with our toolchain and make it my default image."
 
 > "Give each of these three branches its own sandbox, on whichever Macs have room."
+
+> "Open a macOS sandbox, install Xcode with my Apple ID, and run the iOS tests."
 
 > "Run this with permissions off, inside a sandbox, not on my laptop."
 
 > "Pick up where we left off yesterday. The dev server should still be running."
 
-> "Spin up a sandbox, clone this repo and get the tests passing."
-
-## Your machines are the fleet
+## Stop renting sandboxes
 
 <p align="center">
   <img src=".github/readme/05-your-machines-are-the-fleet.png" alt="Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out" width="85%">
 </p>
 
-You probably own more compute than your agent uses: a desktop with the RAM for
-the full build, a Mac mini on the shelf, last year's laptop. Sign each one in with
-your email and it joins your fleet, even from another country. Sandboxes stay on
-the machine your agent is running on unless it asks otherwise: name a machine, or
-let Localbox pick whichever has the most room. Start with the Mac you have; every
-Mac you add joins. No per-minute billing, no session limit, and your code never
+A cloud sandbox is someone else's computer by the minute. It forgets everything
+when the session ends, so every session starts by reinstalling the world. You
+probably own more compute than your agent uses: a desktop with the RAM for the
+full build, a Mac mini on the shelf, last year's laptop. Sign each one in with
+your email and it joins, even from another country. Sandboxes stay on the machine
+your agent is running on unless it asks otherwise: name a machine, or let
+Localbox pick whichever has the most room. Start with the Mac you have; every Mac
+you add joins. No per-minute billing, no session limit, and your code never
 leaves hardware you own.
 
-## Cloud agents, your computers
+## Every Mac, from anywhere
 
 <p align="center">
   <img src=".github/readme/03-outbound-only.png" alt="The Mac's front door stays padlocked while a line runs from the roof to the relay" width="85%">
@@ -74,6 +78,29 @@ email and a code, gets a token for your account that you can revoke any time, an
 request that may have half-applied is reported as uncertain, never silently
 retried.
 
+## Set up your way
+
+Every developer's setup is different, and your agent shouldn't rebuild yours for
+each task. Set a sandbox up once (toolchains, dotfiles, a logged-in browser) and
+save it as an **image** while it keeps running; it pauses for about a second.
+Make that image your default and every new sandbox starts from it, each with its
+own identity. Images move straight from one of your Macs to another, over your
+local network or a direct connection across the internet, never through anyone's
+cloud storage. Ask for a sandbox on a Mac that doesn't have the image yet and
+Localbox copies it there first, then tells your agent the size, time and path the
+copy took.
+
+## macOS sandboxes
+
+Some work needs a Mac: building and testing iOS and Mac apps in Xcode, or driving
+a Mac app through its desktop. A **macOS sandbox** is a whole Mac of its own, with
+everything a Linux sandbox has, desktop and browser included. Localbox builds the
+macOS base on your own Mac from Apple's restore image, with nothing for you to
+click through, and installs Chrome. Xcode needs your Apple ID, so your agent
+installs it once in a macOS sandbox and saves that as an image. macOS sandboxes
+need macOS 27 or newer on the Mac, and Apple's licence allows two running at a
+time on each Mac, for your own development and testing.
+
 ## A sandbox, not your whole computer
 
 <p align="center">
@@ -86,8 +113,9 @@ agents run with permission prompts off, which is exactly what nobody wants on
 their own laptop. Inside a sandbox, let it. The sandbox is the boundary,
 so there's nothing inside worth prompting about: install anything, run untrusted
 scripts, break things. The worst case is deleting the sandbox. Each sandbox is a
-full Linux virtual machine on Apple's own Virtualization framework, the one built
-into macOS, with its own kernel, disk and network.
+full Linux or macOS virtual machine on Apple's own Virtualization framework, the
+one built into macOS, with its own kernel, disk and network. Much safer, and much
+easier to set up, than SSH and Tailscale.
 
 ## Share a folder, see every access
 
@@ -100,16 +128,16 @@ the folder it needs, read-only unless you say otherwise, and Localbox logs every
 file the sandbox reads or writes through it. Your processes, credentials and
 screen are never shared. The [security model](SECURITY.md) spells out the boundary.
 
-## Still set up next week
+## Still there next week
 
 <p align="center">
   <img src=".github/readme/01-still-there-next-week.png" alt="The agent leaves its desk at the end of a session and finds everything exactly where it left it" width="85%">
 </p>
 
 Close your laptop and the work keeps going. Cloud sandboxes and containers are
-built to be thrown away, so every session starts by reinstalling the world. A Localbox sandbox keeps its files, installed
-packages, browser profile and desktop across sessions, sleep and reconnects. Set
-it up once and it's still set up next week.
+built to be thrown away. A Localbox sandbox keeps its files, installed packages,
+browser profile and desktop across sessions, sleep and reconnects. Set it up once
+and it's still set up next week.
 
 Durable doesn't mean always running. A sandbox nobody has used for 30 minutes
 goes to sleep, and the next request wakes it with every process exactly where it
@@ -128,21 +156,24 @@ the same operation catalog, with identical operations, schemas, errors and
 permissions, so a request means the same thing from a shell, Claude Code, Codex or
 a script. Every command does what it was asked when the result can be undone, then
 says exactly what it did: the size and machine it chose, the sandboxes it slept to
-make room, the output it trimmed. Your agent never has to guess.
+make room, the image it started from and the copy it made to get it there, the
+output it trimmed. Your agent never has to guess.
 
 | | What your agent can use |
 | --- | --- |
-| **Sandboxes** | Create, list, rename, resize, sleep, wake and delete; sized to the machine, durable by default, optional idle deletion |
+| **Sandboxes** | Linux or macOS. Create, list, rename, resize, sleep, wake and delete; sized to the machine, durable by default, optional idle deletion |
+| **Images** | Save any sandbox as an image, make one the default, copy images directly between your Macs, and start sandboxes from any of them |
 | **Machines** | Sign in with an email code; list, rename and remove machines; place sandboxes locally, on a named machine, or automatically |
 | **Shell** | Run bounded commands, or start long jobs and wait, poll, cancel or read their output |
 | **Files** | List, read, write, create and remove paths inside the sandbox |
 | **Browser** | Open, navigate and close tabs; click, type, send keys and take screenshots |
-| **Desktop** | Screenshot, move, click, scroll and type on a 1440×900 virtual display |
+| **Desktop** | Screenshot, move, click, scroll and type on a 1440×900 display, Linux or macOS |
 | **Shared folders** | Share a host folder read-only or read-write, and read its access log |
 
 ## Get started
 
-Requires **Apple Silicon and macOS 14 or newer**. Free.
+Requires **Apple Silicon and macOS 14 or newer**; macOS sandboxes need
+**macOS 27 or newer**. Free.
 
 Open Claude Code or Codex and say:
 

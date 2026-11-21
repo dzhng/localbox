@@ -11,8 +11,8 @@ invariants and rejected alternatives.
 ## Product boundary
 
 Localbox gives an agent durable sandboxes on the user's own machines. A sandbox
-is a Linux VM: product copy says "sandbox", and "VM" belongs to technical docs
-and code. The [positioning](positioning.md) doc
+is a Linux or macOS VM started from an image: product copy says "sandbox", and
+"VM" belongs to technical docs and code. The [positioning](positioning.md) doc
 owns the product message and the use cases; what is built is the code.
 
 Shell is the authority inside the VM; filesystem, browser, screenshot and desktop
