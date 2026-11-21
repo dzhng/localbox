@@ -1,7 +1,8 @@
 #if os(macOS)
 import Foundation
 import HostDaemonCore
-import Virtualization
+import ImageIO
+import Vision
 
 /// Spikes 18 and 19 (and slice 33's agent), on clones of the provisioned cache (slice 17), with tools copied in over SSH.
 ///   vmlab macos-tcc --agent <darwin agent> --units <dir> --evidence <dir> --json
@@ -12,15 +13,12 @@ extension MacLab {
     static let vsockPath = "/usr/local/localbox/localbox-vsock"
 
     /// A booted clone of the provisioned cache and an SSH session into it.
-    func bootProvisioned() async throws -> (Guest, MacVM, GuestSSH, Date) {
+    func bootProvisioned() async throws -> (Guest, MacVirtualMachine, GuestSSH, Date) {
         guard FileManager.default.fileExists(atPath: provisioned.appendingPathComponent("disk.img").path) else { throw LabError("blocked: no provisioned macOS base; run npm run proof -- 17 --tier m") }
         let guest = try clone(from: provisioned)
-        let password = try String(contentsOf: guest.directory.appendingPathComponent("password"), encoding: .utf8)
-        let vm = try MacVM(guest: guest)
+        let user = MacProvisioningUser(name: Self.guestUser, password: try String(contentsOf: guest.directory.appendingPathComponent("password"), encoding: .utf8))
         let started = Date()
-        try await vm.start()
-        let ssh = GuestSSH(address: try await waitForAddress(try guest.mac().string), user: Self.guestUser, password: password)
-        try await ssh.waitUntilReachable(timeout: 600)
+        let (vm, ssh) = try await MacProvisioning.bootOverSSH(guest.files, user: user)
         return (guest, vm, ssh, started)
     }
 
@@ -42,31 +40,27 @@ extension MacLab {
 
     // MARK: 18 (and slice 33's agent)
 
-    /// The darwin agent (`--agent`, the Bun build) with the helper and forwarder built beside vmlab, installed by the
-    /// agent's own `install.sh` and launchd units (`--units`, `apps/guest-agent/darwin`). Spike 18's question still
-    /// gates: TCC rows grant the desktop role, a binary replaced behind the agent's back loses screen capture (recorded),
-    /// and an `agent.update` keeps it because the system role rewrites the rows (P6). Every desktop operation goes over
-    /// vsock through the system role to the desktop role, so this is the whole darwin agent in a real guest.
-    func tcc(agent: URL, units: URL, evidence: URL) async throws -> [String: Any] {
+    /// The host's guest agent build (`--guest-agent`, `dist/guest-agent`: the darwin binary and `darwin/` with the helper,
+    /// forwarder, units and `install.sh`), packed and installed exactly as the macOS base build does. Spike 18's question
+    /// still gates: TCC rows grant the desktop role, a binary replaced behind the agent's back loses screen capture
+    /// (recorded), and an `agent.update` keeps it because the system role rewrites the rows (P6). The grant is the base
+    /// build's own `tcc` step, so whether macOS still asks to confirm the capture (slice 33's window-picker prompt) is read
+    /// from every screenshot. Every desktop operation goes over vsock through the system role to the desktop role.
+    func tcc(guestAgent: URL, evidence: URL) async throws -> [String: Any] {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
-        let stage = FileManager.default.temporaryDirectory.appendingPathComponent("localbox-stage-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: stage) }
-        try FileManager.default.copyItem(at: agent, to: stage.appendingPathComponent("localbox-agent"))
-        for tool in ["localbox-desktop", "localbox-vsock"] { try FileManager.default.copyItem(at: hostTool(tool), to: stage.appendingPathComponent(tool)) }
-        for file in try FileManager.default.contentsOfDirectory(atPath: units.path) { try FileManager.default.copyItem(at: units.appendingPathComponent(file), to: stage.appendingPathComponent(file)) }
-        let tarball = stage.appendingPathExtension("tgz")
-        try run("/usr/bin/tar", ["-czf", tarball.path, "-C", stage.path, "."])
+        let tarball = FileManager.default.temporaryDirectory.appendingPathComponent("localbox-payload-\(UUID().uuidString).tgz")
+        try MacBaseBuilder.packPayload(guestAgent: guestAgent, to: tarball)
         defer { try? FileManager.default.removeItem(at: tarball) }
+        let agent = guestAgent.appendingPathComponent("localbox-agent-darwin-arm64")
 
         let (guest, vm, ssh, _) = try await bootProvisioned()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: guest.directory) } }
-        try ssh.copy(tarball, to: "/tmp/localbox-stage.tgz")
-        let installed = try ssh.run("rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf /tmp/localbox-stage.tgz -C /tmp/localbox-stage && sh /tmp/localbox-stage/install.sh /tmp/localbox-stage && echo ok", elevated: true)
+        try ssh.copy(tarball, to: MacBaseBuilder.remotePayload)
+        let installed = try ssh.run("rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(MacBaseBuilder.remotePayload) -C /tmp/localbox-stage && sh /tmp/localbox-stage/install.sh /tmp/localbox-stage && echo ok", elevated: true)
         guard installed.stdout.contains("ok") else { throw LabError("install.sh failed: \(installed.stderr)") }
         let uid = try ssh.run("id -u").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let vnc = try RecoveryVNC(virtualMachine: vm.vm, queue: vm.queue)
-        let screen = try await connect(vnc)
+        let vnc = try vm.attachVNC()
+        let screen = try await MacProvisioning.connect(vnc)
         defer { screen.close(); vnc.stop() }
 
         let lane = RequestLane(vm: vm, sandboxID: "sandbox_lab33", name: "lab-agent-33")
@@ -81,11 +75,14 @@ extension MacLab {
             for _ in 0..<60 { last = try await lane.call("desktop.status", [:]); if ok(last) { return last }; try await Task.sleep(nanoseconds: 1_000_000_000) }
             throw LabError("the desktop role never answered: \(errorText(last))")
         }
-        func screenshot(_ name: String?) async throws -> [String: Any] {
+        /// Screenshots that showed macOS's window-picker bypass prompt, by when they were taken.
+        var promptSeen: [String] = []
+        func screenshot(_ name: String?, _ moment: String = "") async throws -> [String: Any] {
             let response = try await lane.call("desktop.screenshot", [:])
-            if let name, ok(response), let data = result(response)["data"] as? String, let comma = data.firstIndex(of: ","), let bytes = Data(base64Encoded: String(data[data.index(after: comma)...])) {
+            if ok(response), let data = result(response)["data"] as? String, let comma = data.firstIndex(of: ","), let bytes = Data(base64Encoded: String(data[data.index(after: comma)...])) {
                 // A full 1440x900 PNG is over the output cap, so the agent usually answers JPEG.
-                try bytes.write(to: evidence.appendingPathComponent(name).appendingPathExtension(data.hasPrefix("data:image/jpeg") ? "jpg" : "png"))
+                if let name { try bytes.write(to: evidence.appendingPathComponent(name).appendingPathExtension(data.hasPrefix("data:image/jpeg") ? "jpg" : "png")) }
+                if showsPickerPrompt(bytes) { promptSeen.append(name ?? moment) }
             }
             return response
         }
@@ -95,10 +92,12 @@ extension MacLab {
 
         _ = try await desktopUp()
         let beforeGrant = try await screenshot(nil)
-        let granted = try ssh.run("/usr/local/localbox/localbox-agent --grant-tcc 2>&1 && launchctl kickstart -k gui/\(uid)/sh.localbox.desktop && echo ok", elevated: true)
-        guard granted.stdout.contains("ok") else { throw LabError("--grant-tcc failed: \(granted.stdout) \(granted.stderr)") }
+        let granted = try ssh.run(MacBaseBuilder.tccScript(user: Self.guestUser) + "\necho ok", elevated: true)
+        guard granted.stdout.contains("ok") else { throw LabError("the build's tcc step failed: \(granted.stdout) \(granted.stderr)") }
         let status = try await desktopUp()
         let shot = try await screenshot("33-desktop")
+        // macOS 27 may ask to confirm a capture some seconds after it; watch the screen for half a minute of captures.
+        for index in 1...6 { try await Task.sleep(nanoseconds: 5_000_000_000); _ = try await screenshot(index == 6 ? "34-after-grant" : nil, "after grant +\(index * 5) s") }
         // The Apple menu; a fresh grant can take a moment to reach event posting (spike 18), so one retry.
         var clicks = 0, menuOpened = false
         while !menuOpened && clicks < 2 {
@@ -109,7 +108,7 @@ extension MacLab {
         let withMenuOpen = try await screenshot("33-menu-open")
         let escape = try await lane.call("desktop.key", ["key": "Escape"])
         try await Task.sleep(nanoseconds: 1_000_000_000)
-        let afterClose = try await screenshot(nil)
+        let afterClose = try await screenshot(nil, "after close")
         let typed = try await lane.call("desktop.type", ["text": "localbox"])
         let identity = try ssh.run("scutil --get LocalHostName; scutil --get ComputerName; cat /var/db/localbox/sandbox-id").stdout.split(separator: "\n").map(String.init)
         let chrome = try ssh.run("test -d '/Applications/Google Chrome.app' && echo yes || echo no").stdout.contains("yes")
@@ -122,7 +121,7 @@ extension MacLab {
         _ = try ssh.run("launchctl kickstart -k system/sh.localbox.agent; launchctl kickstart -k gui/\(uid)/sh.localbox.desktop", elevated: true)
         try await lane.open()
         _ = try await desktopUp()
-        let afterReplace = try await screenshot(nil)
+        let afterReplace = try await screenshot(nil, "after replace")
 
         // P6: an agent.update over the control lane; the system role rewrites the rows, the desktop role restarts itself.
         let pushed = try resigned(agent)
@@ -149,7 +148,7 @@ extension MacLab {
         return ["ok": checks.values.allSatisfy { $0 } && (browser["skipped"] != nil || browser["ok"] as? Bool == true), "checks": checks,
                 "survives_replace": ok(afterReplace), "before_grant": summary(beforeGrant), "desktop_status": result(status), "screenshot": summary(shot),
                 "with_menu_open": summary(withMenuOpen), "after_replace": summary(afterReplace), "after_update": summary(afterUpdate),
-                "clicks": clicks, "browser": browser, "identity": identity, "shell": result(shell)]
+                "clicks": clicks, "browser": browser, "identity": identity, "shell": result(shell), "picker_prompt_seen": promptSeen]
     }
 
     /// A copy of `binary` with a new ad-hoc signature: different bytes at the same path, as an update brings.
@@ -218,16 +217,22 @@ extension MacLab {
 
 /// One host-to-guest vsock stream, retried while the guest's listener comes up. The descriptor is duplicated so the
 /// handle outlives Virtualization's connection object.
-func dial(_ vm: MacVM, port: UInt32) async throws -> FileHandle {
-    for _ in 0..<60 { if let connection = try? await vm.connect(port: port) { return FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true) }; try await Task.sleep(nanoseconds: 500_000_000) }
-    throw LabError("vsock port \(port) never accepted")
+/// Whether a screenshot shows macOS's "… is requesting to bypass the system private window picker" prompt (Vision OCR).
+func showsPickerPrompt(_ image: Data) -> Bool {
+    guard let source = CGImageSourceCreateWithData(image as CFData, nil), let frame = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+    let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
+    try? VNImageRequestHandler(cgImage: frame, options: [:]).perform([request])
+    let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+    return text.contains("window picker") || text.contains("bypass")
 }
+
+func dial(_ vm: MacVirtualMachine, port: UInt32) async throws -> FileHandle { try await vm.connect(port: port, within: 30) }
 
 /// The host end of the agent's request lane, reopened after the agent restarts (an update, a kickstart).
 final class RequestLane: @unchecked Sendable {
-    let vm: MacVM, sandboxID: String, name: String
+    let vm: MacVirtualMachine, sandboxID: String, name: String
     private var channel: FramedFileHandleGuestChannel?
-    init(vm: MacVM, sandboxID: String, name: String) { self.vm = vm; self.sandboxID = sandboxID; self.name = name }
+    init(vm: MacVirtualMachine, sandboxID: String, name: String) { self.vm = vm; self.sandboxID = sandboxID; self.name = name }
 
     /// Dials until an agent answers with its ready frame (the forwarder accepts before the agent listens).
     func open() async throws {
@@ -281,6 +286,81 @@ extension GuestSSH {
         let result = try run("base64 -i \(remote)", timeout: 120)
         guard result.status == 0, let data = Data(base64Encoded: result.stdout.replacingOccurrences(of: "\n", with: "")) else { throw LabError("could not read \(remote)") }
         try data.write(to: local)
+    }
+}
+#endif
+
+#if os(macOS)
+/// Slice 34's look inside a built macOS base: `vmlab macos-image --image <images>/<id> --evidence <dir> --json` makes a
+/// sandbox from it the way the daemon does (`AppleSandboxFactory`, `AppleVirtualizationBackend`, the agent over vsock)
+/// and checks what the build promises: SIP disabled, Chrome present, no Xcode, Remote Login off, and no window-picker
+/// prompt left over the desktop while the desktop role captures it.
+extension MacLab {
+    func image(_ image: URL, evidence: URL) async throws -> [String: Any] {
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let factory = AppleSandboxFactory(images: try ImageStore(imagesDirectory: image.deletingLastPathComponent()))
+        let scratch = root.appendingPathComponent("macos-image-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
+        let directory = SandboxDirectory(scratch)
+        var record = SandboxRecord(sandboxID: "sandbox_lab34", name: "lab-image-34", imageID: image.lastPathComponent, cpus: MacVirtualMachine.cpus, memoryBytes: MacVirtualMachine.memoryBytes, sleepAfterMs: .max)
+        _ = try await factory.provision(&record, in: directory)
+        try directory.save(record)
+        let backend = AppleVirtualizationBackend(spec: try VMSpec(record: record, in: directory), sandboxID: record.sandboxID, name: record.name)
+        let booted = Date()
+        try await backend.start()
+        let agentMs = Int(Date().timeIntervalSince(booted) * 1000)
+        func call(_ operation: String, _ input: [String: Any] = [:]) async throws -> [String: Any] {
+            let channel = try await backend.makeGuestChannel()
+            let envelope: [String: Any] = ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": operation, "sandbox_id": record.sandboxID, "deadline_ms": 90_000, "mutation_id": UUID().uuidString, "input": input]
+            return try JSONSerialization.jsonObject(with: try await channel.send(JSONSerialization.data(withJSONObject: envelope))) as? [String: Any] ?? [:]
+        }
+        func sh(_ command: String) async throws -> String { ((try await call("shell.exec", ["command": command]))["result"] as? [String: Any])?["stdout"] as? String ?? "" }
+        var promptSeen: [String] = [], shots = 0
+        func screenshot(_ moment: String, save name: String? = nil) async throws -> Bool {
+            let response = try await call("desktop.screenshot")
+            guard let data = (response["result"] as? [String: Any])?["data"] as? String, let comma = data.firstIndex(of: ","), let bytes = Data(base64Encoded: String(data[data.index(after: comma)...])) else { return false }
+            shots += 1
+            if let name { try bytes.write(to: evidence.appendingPathComponent(name)) }
+            if showsPickerPrompt(bytes) { promptSeen.append(moment) }
+            return true
+        }
+
+        let sip = try await sh("csrutil status").trimmingCharacters(in: .whitespacesAndNewlines)
+        let chrome = try await sh("/usr/bin/defaults read '/Applications/Google Chrome.app/Contents/Info' CFBundleShortVersionString 2>/dev/null").trimmingCharacters(in: .whitespacesAndNewlines)
+        let xcode = try await sh("ls -d /Applications/Xcode*.app /Library/Developer/CommandLineTools 2>/dev/null; true").trimmingCharacters(in: .whitespacesAndNewlines)
+        let sshd = try await sh("launchctl print-disabled system | grep com.openssh.sshd; true").trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = try await MacProvisioning.waitForAddress(record.mac ?? "", timeout: 60)
+        let port22 = Process(); port22.executableURL = URL(fileURLWithPath: "/usr/bin/nc"); port22.arguments = ["-z", "-G", "3", address, "22"]
+        try port22.run(); port22.waitUntilExit()
+
+        // The desktop role captures right away, again after Chrome opens a page, and for half a minute after.
+        var desktopUp = false
+        for _ in 0..<60 where !desktopUp { desktopUp = (try await call("desktop.status"))["ok"] as? Bool == true; if !desktopUp { try await Task.sleep(nanoseconds: 1_000_000_000) } }
+        let first = try await screenshot("first capture", save: "34-desktop.jpg")
+        let browser = try await call("browser.open", ["url": "https://example.com"])
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+        _ = try await screenshot("after browser.open", save: "34-browser.jpg")
+        for index in 1...6 { try await Task.sleep(nanoseconds: 5_000_000_000); _ = try await screenshot("+\(index * 5) s") }
+        // The desktop role logs each prompt its guard answered (its LaunchAgent's stderr).
+        let guardLog = try await sh("grep -h 'window-picker bypass prompt' /tmp/localbox-desktop.log 2>/dev/null | tail -5; true").split(separator: "\n").map(String.init)
+        try await backend.stop()
+
+        let checks: [String: Bool] = [
+            "sip_disabled": sip.contains("disabled"), "chrome_installed": !chrome.isEmpty, "no_xcode": xcode.isEmpty,
+            "remote_login_off": sshd.contains("disabled") || sshd.contains("true"), "port_22_refused": port22.terminationStatus != 0,
+            "desktop_captures": desktopUp && first, "browser_opens": browser["ok"] as? Bool == true,
+            // The prompt may show on the first captures until the desktop role's guard presses Allow (it looks every second).
+            "picker_prompt_answered": !promptSeen.contains { $0.hasPrefix("+") },
+        ]
+        return ["ok": checks.values.allSatisfy { $0 }, "checks": checks, "csrutil_status": sip, "chrome_version": chrome, "xcode": xcode, "sshd": sshd, "guard_log": guardLog,
+                "agent_ready_ms": agentMs, "screenshots": shots, "picker_prompt_seen": promptSeen, "browser": (browser["result"] ?? browser["error"]) ?? NSNull()]
+    }
+
+    /// The release Apple serves this Mac now, as a build would choose it.
+    func latestIPSW() async throws -> [String: Any] {
+        let release = try await AppleIPSWCatalog().latest()
+        return ["ok": true, "url": release.url.absoluteString, "file_name": release.fileName, "version": release.version, "build": release.build, "size_bytes": release.sizeBytes]
     }
 }
 #endif

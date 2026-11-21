@@ -52,11 +52,6 @@ public actor ImageCopy {
         await operations.register(kind: Self.kind) { [self] context in try await self.run(context) }
     }
 
-    /// The temporaries copies the last run left unfinished may resume into, for the start's sweep to spare.
-    public static func resumableTemps(_ operations: HostOperationStore) async -> Set<String> {
-        Set(await operations.running(kind: kind).map { ImageStore.resumableTempName($0.subject, key: $0.key) })
-    }
-
     /// Starts this Mac's side of copying `imageID` under `key` (the copy's mutation id), or returns the side already
     /// under that key.
     public func begin(key: String, imageID: String) async throws -> HostOperationRecord {

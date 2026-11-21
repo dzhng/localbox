@@ -20,15 +20,16 @@ struct HostDaemonMain {
             let isDev = ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1"
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
             let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
-            // A copy the last run left unfinished resumes into the temporary it was writing.
-            for name in images.sweepTemps(keeping: await ImageCopy.resumableTemps(operations)) { log("removed \(name), an image write or delete the last run left unfinished") }
-            // Kinds register before the store starts (image.capture and sandbox.create_after_copy once the sandboxes exist, below); dev daemons also run the
+            // A running operation's temporaries (a macOS build directory, a copy's partial files) stay for its resume.
+            for name in images.sweepTemps(keeping: await operations.runningSubjects()) { log("removed \(name), an image write or delete the last run left unfinished") }
+            // Kinds register before the store starts (macos.build, image.capture and sandbox.create_after_copy below); dev daemons also run the
             // proof's fixture kind.
             if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
             // The guest agent build this Mac ships; without it sandboxes keep the agent their image carries.
-            let agentUpdater = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : GuestAgentUpdater(directory: URL(fileURLWithPath: expanded($0), isDirectory: true)) }
+            let guestAgent = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: expanded($0), isDirectory: true) }
+            let agentUpdater = guestAgent.map { GuestAgentUpdater(directory: $0) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
             let capture = ImageCapture(store: images, operations: operations)
             // The image copy transport. Slice 37's ImageTransfer library is wired here (an `ImageCopyTransport` adapter over
@@ -37,7 +38,9 @@ struct HostDaemonMain {
             let copyTransport: (any ImageCopyTransport)? = isDev ? LoopbackImageCopyTransport(pauseMs: 50) : nil
             let copy = copyTransport.map { ImageCopy(store: images, operations: operations, transport: $0) }
             await copy?.attach()
-            let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, allowsDirectOperations: isDev)
+            let macBuilder = MacBaseBuilder(store: images, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
+            await macBuilder.register()
+            let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, macBuilder: macBuilder, allowsDirectOperations: isDev)
             // A sandbox whose image is still copying here is created once the copy lands; only a Mac that copies needs it.
             let afterCopy = copy.map { _ in SandboxCreateAfterCopy(operations: operations) }
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,

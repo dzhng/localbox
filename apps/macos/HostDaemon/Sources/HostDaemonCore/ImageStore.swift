@@ -147,12 +147,47 @@ public struct ImageStore: Sendable {
         return UInt64(stats.f_bavail) * UInt64(stats.f_bsize)
     }
 
-    /// At daemon start: removes temporaries a crash left (an unfinished write or delete), except those `keeping` names
-    /// (a copy that resumes). Returns their names.
-    @discardableResult public func sweepTemps(keeping: Set<String> = []) -> [String] {
-        let temps = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" && !keeping.contains($0) }.sorted()
-        for name in temps { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
-        return temps
+    /// The IPSW cache (`.ipsw/`): kept across starts and never swept, since it holds downloads that took an hour.
+    public var ipswDirectory: URL { root.appendingPathComponent(".ipsw", isDirectory: true) }
+
+    /// The directory a macOS base build of image `id` works in (`.<id>.build/`), made if missing. Its name is fixed, so a
+    /// resumed build finds what the last run installed; it is committed like any temporary once it holds an image.
+    public func buildDirectory(_ id: String) throws -> URL {
+        _ = try imageDirectory(id)
+        let directory = root.appendingPathComponent(".\(id).build", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    /// Removes image `id`'s build directory, if any.
+    public func discardBuild(_ id: String) throws {
+        let directory = root.appendingPathComponent(".\(try imageDirectory(id).lastPathComponent).build", isDirectory: true)
+        if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+    }
+
+    /// Removes every temporary of image `id` (`.<id>.*`): a resumed operation that starts over clears what its last run
+    /// left before writing anew.
+    public func discardTemps(of id: String) {
+        for name in temps() where Self.temp(name, belongsTo: [id]) { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
+    }
+
+    /// At daemon start: removes temporaries a crash left (an unfinished write or delete). A dot-entry a running host
+    /// operation owns (`.<subject>.*`, for every subject in `running`) stays for its resume, and so does the IPSW cache.
+    /// Returns the names removed.
+    @discardableResult public func sweepTemps(keeping running: Set<String> = []) -> [String] {
+        let swept = temps().filter { $0 != ipswDirectory.lastPathComponent && !Self.temp($0, belongsTo: running) }
+        for name in swept { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
+        return swept
+    }
+
+    private func temps() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" }.sorted()
+    }
+
+    /// Whether dot-entry `name` is a temporary of one of `images` (`.<id>.<anything>`).
+    private static func temp(_ name: String, belongsTo images: Set<String>) -> Bool {
+        let parts = name.dropFirst().split(separator: ".", maxSplits: 1)
+        return parts.count == 2 && images.contains(String(parts[0]))
     }
 
     static let manifestName = "image.json", diskName = "disk.img"

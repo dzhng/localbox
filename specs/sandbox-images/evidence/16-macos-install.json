@@ -13,38 +13,30 @@
       "ok": true
     }
   ],
-  "install": {
-    "cpus": 4,
-    "disk_allocated_bytes": 26982068224,
-    "install_ms": 243121,
-    "ipsw_bytes": 25595954706,
-    "macos_version": "27.2.1 (26B131)",
-    "memory_bytes": 8589934592,
-    "ok": true
-  },
+  "install": "cached",
   "clones": {
     "both_running": [
       true,
       true
     ],
-    "clone_private_bytes": 98570240,
+    "clone_private_bytes": 98611200,
     "distinct_identifiers": true,
     "lease_ms": {
-      "clone_0": 8871,
-      "clone_1": 8871
+      "clone_0": 8585,
+      "clone_1": 8585
     },
     "ok": true,
     "third_refused_by_limit": true,
     "third_vm": "VZErrorDomain code 6: The number of virtual machines exceeds the limit. The maximum supported number of active virtual machines has been reached."
   },
   "hibernate": {
-    "lease_ms": 6476,
+    "lease_ms": 6453,
     "ok": true,
     "phase2": {
-      "restore_ms": 3224,
+      "restore_ms": 2409,
       "running_after": true
     },
-    "save_ms": 2649,
-    "state_file_bytes": 2483032064
+    "save_ms": 2691,
+    "state_file_bytes": 2617249792
   }
 }

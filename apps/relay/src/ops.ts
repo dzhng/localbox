@@ -3,7 +3,7 @@ import {
   BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, gibibytes, requestFromInvocation, sizeText, success, validateInput, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type ImageOperationState, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
-import { byNameOrId, place, type PlacementImage, type PlacementMachine } from "../../../packages/placement/src/index.js";
+import { atLeast, byNameOrId, place, type PlacementImage, type PlacementMachine } from "../../../packages/placement/src/index.js";
 
 /** The caller: one of the account's machines (machine credential) or a signed-in agent (OAuth token family). */
 export interface Principal { accountId: string; machineId?: string; familyId?: string }
@@ -65,6 +65,10 @@ const DEFINITIVE_CREATE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not
 const DEFINITIVE_CAPTURE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "sandbox_not_found", "invalid_input", "unsupported"];
 /** The same for one side of `image copy`: that Mac never journaled its side, so the copy can't go on. */
 const DEFINITIVE_COPY_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "invalid_input", "unsupported", "image_not_found"];
+/** A macOS build the machine refused before it journaled anything (too old a macOS, too little disk) built nothing. */
+const DEFINITIVE_BUILD_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "invalid_input", "unsupported", "image_incompatible", "disk_full"];
+/** The oldest host macOS that builds (and runs) a macOS image: provisioning a guest with no Setup Assistant needs 27. */
+const MACOS_BUILD_MINIMUM = "27";
 
 /** Operations that only read or change the account catalog; they are never relayed to a machine. */
 const ACCOUNT_OPERATIONS: Record<string, ["mutation" | "query", string]> = {
@@ -451,8 +455,8 @@ async function deleteSandbox(principal: Principal, request: RequestEnvelope, tar
 async function createImage(principal: Principal, base: RequestEnvelope, machine: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
   const asked = base.input as { from?: string; macos?: true; name?: string; image?: string };
   if (asked.image !== undefined) throw new ContractError("invalid_input", "image is set by the agent API; leave it out");
-  if (asked.macos) throw new ContractError("unsupported", "building a macOS base is not available yet; save an image from a sandbox with from");
   if (!base.mutation_id) throw new ContractError("invalid_input", "image.create requires mutation_id");
+  if (asked.macos) return await buildMacOSImage(principal, base, machine, deps);
   const source = await resolveSandbox(principal, asked.from, deps);
   await requireSameMachine(principal, source, machine, deps);
   // Sandbox rows carry no OS: every sandbox runs linux until macOS sandboxes land.
@@ -518,6 +522,33 @@ async function startCopySides(principal: Principal, base: RequestEnvelope, image
     return { received, failed: { definitive: true, response: { ...response, operation: base.operation, request_id: base.request_id, error: { ...response.error, message: `${where} did not start its side of the copy, so nothing was copied: ${response.error.message}` } } } };
   }
   return { received };
+}
+
+/**
+ * `image create --macos`: build the account's macOS base from Apple's IPSW on the target Mac (the named machine, else
+ * the caller's own, else the account's only one). A Mac that reports a macOS older than 27 is refused before anything
+ * is reserved; otherwise the image is reserved (`source.kind = "ipsw"`, the target its first holder, `building`) and
+ * the Mac starts the build under the create's mutation id, answering with its operation state as soon as the build
+ * moves past its first phase. A refusal that built nothing (too old a macOS, too little disk, offline) releases the
+ * reservation; the IPSW version and the oldest macOS that runs the image reach the row when the build reports ready.
+ */
+async function buildMacOSImage(principal: Principal, base: RequestEnvelope, machine: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { name?: string };
+  const target = await resolveMachine(principal, undefined, machine, deps);
+  const row = (await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[]).find((candidate) => candidate.machineId === target);
+  const where = row?.name ?? target;
+  const version = row?.capacity?.macos_version;
+  if (version !== undefined && !atLeast(version, MACOS_BUILD_MINIMUM)) {
+    throw new ContractError("image_incompatible", `${where} runs macOS ${version}; building a macOS image needs macOS ${MACOS_BUILD_MINIMUM} or later on that Mac`, { next_step: "update that Mac to macOS 27, or build on another Mac with --machine" });
+  }
+  const image = await deps.accountCall(principal, "mutation", "images:reserve", { machineId: target, ...(asked.name === undefined ? {} : { name: asked.name }), os: "macos", source: { kind: "ipsw" }, createMutationId: base.mutation_id }) as ImageRow;
+  const relayed = await relay(principal, target, { ...base, input: { macos: true, image: image.image_id } }, deps);
+  const response = (relayed.body as { response?: ResponseEnvelope }).response;
+  if (response && !response.ok) {
+    if (!definitive(response, DEFINITIVE_BUILD_FAILURES)) return answer({ ...response, error: { ...response.error, message: `${response.error.message}; the build may still be running on ${where}: image ${image.name} stays reserved (follow it with localbox image wait ${image.name})` } });
+    await deps.accountCall(principal, "mutation", "images:remove", { image: image.image_id }).catch((error: unknown) => { if (contractError(error).code !== "image_not_found") throw error; });
+  }
+  return await imageWaitAnswer(principal, relayed, deps, image);
 }
 
 /**
@@ -626,6 +657,7 @@ function operationState(image: ImageRow, record: HostOperationView): ImageOperat
     ...(record.progress ? { progress: { phase: record.progress.phase, done_bytes: record.progress.completed ?? 0, total_bytes: record.progress.total ?? 0 } } : {}),
     ...(record.error ? { error: { code: errorCode(record.error.code), message: record.error.message, next_step: record.error.next_step ?? nextStepFor(image) } } : {}),
     ...(record.state === "succeeded" && record.kind === "image.capture" ? { report: captureReport(image, record.result as unknown as CaptureResult, holder) } : {}),
+    ...(record.state === "succeeded" && record.kind === "macos.build" ? { report: buildReport(image, record.result as unknown as BuildResult, holder) } : {}),
   };
 }
 
@@ -647,6 +679,19 @@ export function captureReport(image: ImageRow, result: CaptureResult, holder: Im
     froze,
     ...(result.made_room ?? []).map((detail) => `made room for it: ${detail}`),
     `on machine ${holder?.machine_name ?? holder?.machine_id ?? "its source's Mac"}; copies to other Macs on first use`,
+    `start a sandbox from it: localbox sandbox create --image ${image.name}`,
+  ];
+}
+
+/** What a finished `macos.build` reports: the release it installed, what it holds, and the oldest macOS that runs it. */
+interface BuildResult { size_bytes: number; ipsw_version: string; ipsw_build?: string; min_macos?: string; chrome_version?: string }
+
+/** A built macOS base, line by line: where it came from, what is in it, where it lives, and the next command. */
+export function buildReport(image: ImageRow, result: BuildResult, holder: ImageRow["holders"][number] | undefined): string[] {
+  return [
+    `image ${image.name} built from the macOS ${result.ipsw_version}${result.ipsw_build ? ` (${result.ipsw_build})` : ""} IPSW (${image.os}, ${sizeText(result.size_bytes)})`,
+    `SIP is disabled, Google Chrome${result.chrome_version ? ` ${result.chrome_version}` : ""} is installed, Remote Login is off, and there is no Xcode`,
+    `on machine ${holder?.machine_name ?? holder?.machine_id ?? "the Mac that built it"}; runs on Macs with macOS ${result.min_macos ?? image.min_macos ?? MACOS_BUILD_MINIMUM} or later`,
     `start a sandbox from it: localbox sandbox create --image ${image.name}`,
   ];
 }

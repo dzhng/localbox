@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
  * Builds the guest agent as one self-contained executable per guest OS, so no image depends on a runtime of its own.
- * `bun build --compile` bundles the agent with Bun's runtime and cross-compiles both targets from one Mac.
+ * `bun build --compile` bundles the agent with Bun's runtime and cross-compiles both targets from one Mac. Beside them,
+ * `darwin/` holds everything else a macOS image build installs (`install.sh`, the launchd units, and the native
+ * `localbox-desktop` helper and `localbox-vsock` forwarder), so the host app ships all of it.
  */
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -41,7 +43,25 @@ export async function buildGuestAgent(outDir = join(root, "dist/guest-agent"), r
   const version = `${release}+${digest}`;
   const agentVersion: AgentVersion = { version, sha256: await compileAll(outDir, version) };
   await writeFile(join(outDir, "agent-version.json"), `${JSON.stringify(agentVersion, null, 2)}\n`);
+  await writeDarwinFiles(join(outDir, "darwin"));
   return agentVersion;
+}
+
+/** The native darwin tools, built from the host daemon's package for the guest (same arm64 macOS). */
+export const DARWIN_TOOLS = ["localbox-desktop", "localbox-vsock"] as const;
+
+/** `darwin/`: `install.sh` and the units from `apps/guest-agent/darwin`, and release builds of the native tools. */
+async function writeDarwinFiles(outDir: string): Promise<void> {
+  await mkdir(outDir, { recursive: true });
+  const units = join(root, "apps/guest-agent/darwin");
+  for (const name of await readdir(units)) await copyFile(join(units, name), join(outDir, name));
+  const swift = (args: string[]) => spawnSync("swift", [...args, "--package-path", "apps/macos/HostDaemon", "-c", "release"], { cwd: root, encoding: "utf8" });
+  for (const tool of DARWIN_TOOLS) {
+    const build = swift(["build", "--product", tool]);
+    if (build.status !== 0) throw new Error(`swift build of ${tool} failed:\n${build.stdout}${build.stderr}`);
+  }
+  const bin = swift(["build", "--show-bin-path"]).stdout.trim();
+  for (const tool of DARWIN_TOOLS) await copyFile(join(bin, tool), join(outDir, tool));
 }
 
 /** Compiles both targets into `outDir` with `version` embedded; returns their digests. */

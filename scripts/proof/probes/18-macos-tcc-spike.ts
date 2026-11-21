@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { vmlab, vmlabDir } from "../lib/macos-lab.js";
-import { agentBinaryName, buildGuestAgent } from "../../build-guest-agent.js";
+import { buildGuestAgent } from "../../build-guest-agent.js";
 
 export const id = "18";
 export const tiers = ["m"];
@@ -17,7 +17,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
   const checks = [await ctx.check("TCC rows grant screen capture, accessibility and event posting to the desktop role", async () => {
     if (!existsSync(join(vmlabDir(), "macos-provisioned", "disk.img"))) throw new Error("blocked: no provisioned macOS base; run npm run proof -- 17 --tier m");
     const agents = join(ctx.root, "dist/guest-agent"); await buildGuestAgent(agents);
-    const result = await vmlab(ctx, ["macos-tcc", "--agent", join(agents, agentBinaryName("darwin")), "--units", join(ctx.root, "apps/guest-agent/darwin"), "--evidence", directory, "--json"]);
+    const result = await vmlab(ctx, ["macos-tcc", "--guest-agent", agents, "--evidence", directory, "--json"]);
     verdict = result.verdict;
     assert.equal(verdict.ok, true, JSON.stringify(verdict).slice(0, 3000) + result.stderr.slice(-2000));
   })];

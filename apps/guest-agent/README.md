@@ -67,7 +67,9 @@ post input, so the darwin binary runs twice
   was replaced when it redials and exits for launchd to start the new one.
 
 `localbox-agent --grant-tcc` (as root, with the desktop user logged in)
-writes the TCC rows; an image build runs it once after `install.sh`.
+writes the TCC rows; an image build runs it once after `install.sh`. The build
+output's `darwin/` holds everything else the build installs (`install.sh`, the
+units, the helper and the forwarder), so the host app ships all of it.
 
 Each new connection starts at the channel epoch the last one ended on; the
 host's `hello` frame raises it and carries the sandbox's identity (the agent

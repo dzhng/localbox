@@ -365,6 +365,11 @@ test("a finished host operation becomes its image's holder state, reported once 
   await settle();
   assert.deepEqual(daemon.polls().at(-1), ["m-4"]);
   assert.equal(convex.named("images:setHolder").filter((call) => call.args.operationId === "m-4").length, 1, "the retry went through");
+
+  // A finished macOS build also reports what placement and image list read off the image.
+  daemon.finish({ key: "m-5", subject: "image_5", state: "succeeded", result: { size_bytes: 31 * GIB, min_macos: "27.0", ipsw_version: "27.2.1" } });
+  await settle();
+  assert.deepEqual(convex.named("images:setHolder").at(-1)?.args, { imageId: "image_5", operationId: "m-5", state: "ready", sizeBytes: 31 * GIB, minMacOS: "27.0", ipswVersion: "27.2.1" });
   await connector.stop();
 });
 

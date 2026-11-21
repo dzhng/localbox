@@ -1,5 +1,32 @@
 # 34 macOS base build
 
+**Outcome 2026-11-21: built; probe 34 green at tiers u, s and m.** Evidence:
+[34-macos-base-build.json](../evidence/34-macos-base-build.json),
+[a sandbox's desktop](../evidence/34-desktop.jpg), [its browser](../evidence/34-browser.jpg).
+
+- A real daemon built macOS 27.2.1 (26B131) to `ready` with no human step in
+  432 s with the IPSW cached (install 3.3 min, provision 50 s, bootstrap 52 s,
+  sip 1.6 min, tcc 27 s, finish 8 s); the cached rebuild took 366 s and fetched
+  nothing. The image holds 30 GB of its 50 GB disk. **The uncached build was not
+  measured:** this Mac's free disk can't hold the 25.6 GB IPSW plus the disk, so
+  the probe seeds `images/.ipsw/` by APFS clone and the resumable download is
+  proven on a fake HTTP layer.
+- A sandbox from the image (through `AppleSandboxFactory`): SIP disabled,
+  Google Chrome 158 installed from Google's signed package, no Xcode or
+  command-line tools, sshd disabled and port 22 refused, `browser.open` works,
+  the agent answers 19 s after boot.
+- **The window-picker prompt:** Apple's `forceBypassScreenCaptureAlert`
+  restriction, written as a managed preference, suppressed it until the build
+  rebooted the guest, then it was back on every capture. The fallback is in: the
+  desktop role presses the prompt's Allow through the Accessibility API
+  (`localbox-desktop guard-capture-prompt`); in the built image's sandbox no
+  capture showed it and the guard logged one press (choice 34).
+- Four real runs found four bugs the fakes couldn't: a TLS read error on the
+  in-guest Chrome download (curl now retries every error and resumes), a step
+  deadline over the agent's 120 s cap, `shell.exec` without a sandbox id, and
+  Apple's catalog failing on a second fetch inside the daemon (a build now falls
+  back to the newest release cached whole).
+
 **Unlocks:** Q3, L2, L5 and P3/P12 in the product. `localbox image create --macos`
 builds the account's macOS base with no human step, as a durable host operation.
 

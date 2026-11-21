@@ -165,6 +165,8 @@ cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Con
 # without rewriting their bytes, so the digests in agent-version.json stay true.
 cp "$ROOT/dist/guest-agent/localbox-agent-linux-arm64" "$ROOT/dist/guest-agent/localbox-agent-darwin-arm64" \
   "$ROOT/dist/guest-agent/agent-version.json" "$APP/Contents/Resources/guest-agent/"
+# What a macOS image build installs besides the agent: install.sh, the launchd units, the desktop helper and forwarder.
+cp -R "$ROOT/dist/guest-agent/darwin" "$APP/Contents/Resources/guest-agent/darwin"
 
 CLI="$STAGE/localbox-cli"
 mkdir -p "$CLI/dist" "$CLI/bin"

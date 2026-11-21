@@ -46,7 +46,9 @@ that reason.
 size, a macOS hardware model and minimum version, the agent version it
 carries), `disk.img` and `boot/`. An image is written into a dot-prefixed
 temporary directory and committed by one rename, so nothing ever reads half an
-image, and each start sweeps the temporaries a crash left. A sandbox is
+image, and each start sweeps the temporaries a crash left, except those of an
+image whose operation is still running (`.<id>.*`, kept for its resume) and the
+IPSW cache (`.ipsw/`). A sandbox is
 provisioned from an image off the `SandboxHost` actor and keeps its own disk
 clone and boot store, so deleting the image never breaks it; `SandboxHost`
 itself does no image file I/O and learns free disk only through capacity.
@@ -65,7 +67,18 @@ finished, and never starts the work again. Callers poll with `wait`, which
 answers when the work finishes or after at most 120 s with the record as it
 stands, so a pending state is an answer, not a timeout. Each kind registers one
 resumer at daemon start; an unfinished record continues from its last
-checkpoint, and one whose kind is no longer registered fails.
+checkpoint, and one whose kind is no longer registered fails. A macOS build's
+waits also answer when it moves to its next phase, so `image wait` shows each.
+
+`MacBaseBuilder` (kind `macos.build`) builds the account's macOS base from
+Apple's latest IPSW with no human step: download (resumable, into the IPSW
+cache), install, a provisioning boot with a random password and Remote Login,
+the darwin agent and Chrome over SSH, `csrutil disable` in Recovery, then TCC
+grants and Remote Login off through the agent's own shell. The password lives
+only in the builder's memory, so a restart before SIP is off begins again from
+a fresh clone of the installed disk. Every macOS VM outside a sandbox is a
+`MacVirtualMachine` made from a `VMSpec`, and the provisioning steps
+(`MacProvisioning`) are the ones `localbox-vmlab`'s macOS labs call.
 
 `AuthenticatedLocalIPC` is the local CLI boundary: it checks the injected
 owner-only IPC token and forwards the envelope to `SandboxHost.request` without

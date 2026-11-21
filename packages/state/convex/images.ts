@@ -157,9 +157,11 @@ export const remove = mutationGeneric({ args: { image: v.string() }, handler: as
 
 /**
  * The calling machine's holding of an image, as its connector reports it: started, progressing, ready or failed. A
- * `ready` report may carry the image's size, which the record keeps; a `failed` one carries why and what to try next.
+ * `ready` report may carry what only the finished image knows, which the record keeps: its size, and for a macOS base
+ * built from an IPSW, the oldest macOS that runs it (placement needs it) and the IPSW's version. A `failed` one carries
+ * why and what to try next.
  */
-export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
+export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()), minMacOS: v.optional(v.string()), ipswVersion: v.optional(v.string()), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
   const { machineId, accountId } = await requireIdentity(ctx, "machine");
   const image = await byField(ctx, "images", "by_image", "imageId", args.imageId);
   if (!image || image.accountId !== accountId) return refuse("image_not_found", `no image ${args.imageId} on this account`);
@@ -169,7 +171,14 @@ export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: h
   // A patch without `error` clears a failure an earlier report left.
   if (existing) await ctx.db.patch(existing._id, { error: undefined, ...holder });
   else await ctx.db.insert("imageHolders", { imageId: args.imageId, accountId, machineId: machineId!, ...holder });
-  if (args.state === "ready" && args.sizeBytes !== undefined && args.sizeBytes !== image.sizeBytes) await ctx.db.patch(image._id, { sizeBytes: args.sizeBytes });
+  if (args.state === "ready") {
+    const learned = {
+      ...(args.sizeBytes !== undefined && args.sizeBytes !== image.sizeBytes ? { sizeBytes: args.sizeBytes } : {}),
+      ...(args.minMacOS !== undefined && args.minMacOS !== image.minMacOS ? { minMacOS: args.minMacOS } : {}),
+      ...(args.ipswVersion !== undefined && image.source.kind === "ipsw" && args.ipswVersion !== image.source.ipswVersion ? { source: { ...image.source, ipswVersion: args.ipswVersion } } : {}),
+    };
+    if (Object.keys(learned).length) await ctx.db.patch(image._id, learned);
+  }
   return { image_id: args.imageId, machine_id: machineId, state: args.state };
 } });
 

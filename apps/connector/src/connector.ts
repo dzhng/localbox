@@ -40,7 +40,7 @@ export interface SandboxState { sandbox_id: string; state: string; cpus?: number
 /** A finished host operation, as the daemon's `host.operations` hands it over to be reported. `subject` is the image. */
 export interface OperationOutcome {
   key: string; kind?: string; subject: string; state: "succeeded" | "failed";
-  result?: { size_bytes?: number; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" } | null; error?: { code: string; message: string; next_step?: string } | null;
+  result?: { size_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" } | null; error?: { code: string; message: string; next_step?: string } | null;
 }
 /** One of this machine's copies as `images:copiesForMachine` lists it: what its daemon's side needs, key included. */
 export interface CopyRendezvous { copy_id: string; operation_id: string; image_id: string; role: "sender" | "receiver"; key: string; size_bytes: number | null; state: string; candidates: Json[] | null; peer_candidates: Json[] | null; error: Json }
@@ -324,9 +324,9 @@ export class Connector {
   private async reportOutcome(outcome: OperationOutcome): Promise<void> {
     if (outcome.kind === "image.copy") return await this.reportCopy(outcome);
     if (outcome.kind === "sandbox.create_after_copy") return await this.reportCreate(outcome);
-    const size = outcome.result?.size_bytes;
+    const { size_bytes: size, min_macos: minMacOS, ipsw_version: ipswVersion } = outcome.result ?? {};
     const args = outcome.state === "succeeded"
-      ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}) }
+      ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}), ...(typeof minMacOS === "string" ? { minMacOS } : {}), ...(typeof ipswVersion === "string" ? { ipswVersion } : {}) }
       : { imageId: outcome.subject, operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the operation failed", nextStep: outcome.error?.next_step ?? "try it again; if it fails the same way, check this Mac's disk space and logs" } };
     try { await this.deps.convex.mutation(relay.setHolder, args); this.deps.log(`image ${outcome.subject}: operation ${outcome.key} ${args.state}`); }
     catch (error) {

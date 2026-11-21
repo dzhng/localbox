@@ -5,10 +5,10 @@
       "ok": true
     }
   ],
-  "bytes": 461538536,
+  "bytes": 462340268,
   "control_stream_ok": true,
-  "echo_mb_per_s": 29,
-  "first_boot_to_ssh_ms": 9510,
+  "echo_mb_per_s": 32,
+  "first_boot_to_ssh_ms": 12848,
   "forwarder_pid_unchanged": true,
   "frames": 10016,
   "guest_local_dial": "refused: closed by the forwarder",

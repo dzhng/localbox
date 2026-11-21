@@ -8,6 +8,7 @@ import { GuestControl, GuestGateway, linuxFreezeCommands, runGuestService, syncO
 import { macChromeLauncher, productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import type { HandlerRegistry } from "../../../packages/runtime/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
+import { guardCapturePrompt } from "./capture-prompt.js";
 import { DesktopLink, serveDesktopLink } from "./desktop-link.js";
 import { adoptSandboxIdentity, realSystem, setGuestClock, type GuestPlatform } from "./identity.js";
 import { grantDarwinTcc } from "./tcc.js";
@@ -106,14 +107,17 @@ async function desktopBackend(): Promise<HandlerRegistry | undefined> {
 }
 
 /**
- * The darwin desktop role: the macOS backend, with Chrome launched in this session on first use. An update renames a
+ * The darwin desktop role: the macOS backend, with Chrome launched in this session on first use, and the guard that
+ * answers macOS's window-picker bypass prompt (`guardCapturePrompt`). An update renames a
  * new binary over this one (a new inode), so a changed inode at the next dial means this process is the old build.
  */
 function desktopRole(): void {
   const cdpUrl = process.env.LOCALBOX_CDP_URL ?? "http://127.0.0.1:9222";
+  const helper = process.env.LOCALBOX_DESKTOP_HELPER ?? join(dirname(process.execPath), "localbox-desktop");
+  guardCapturePrompt(helper, (message) => log(`desktop: ${message}`));
   const handlers = productionDesktopHandlers({
     backend: "macos", cdpUrl,
-    helper: process.env.LOCALBOX_DESKTOP_HELPER ?? join(dirname(process.execPath), "localbox-desktop"),
+    helper,
     launch: macChromeLauncher({ port: Number(new URL(cdpUrl).port || 9222), userDataDir: join(homedir(), "Library/Application Support/Localbox/Chrome") }),
   });
   const inode = statSync(process.execPath).ino;
