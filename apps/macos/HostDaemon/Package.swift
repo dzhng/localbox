@@ -13,6 +13,7 @@ let package = Package(
         .target(name: "HostDaemonCore"),
         .executableTarget(name: "localbox-hostd", dependencies: ["HostDaemonCore"]),
         .executableTarget(name: "localbox-vmlab", dependencies: ["HostDaemonCore"]),
+        .executableTarget(name: "localbox-punchlab"),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
     ]
 )

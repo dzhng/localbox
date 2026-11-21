@@ -55,7 +55,7 @@ any blocker, and tick the TODO list.
 - [ ] [17 macOS provisioning, bootstrap and SIP spike](slices/17-macos-provision-spike.md)
 - [ ] [18 macOS TCC and desktop helper spike](slices/18-macos-tcc-spike.md)
 - [ ] [19 darwin vsock forwarder spike](slices/19-darwin-vsock-spike.md)
-- [ ] [20 hole-punch and transfer spike](slices/20-punch-spike.md) (tier x waits on the user's second Mac)
+- [ ] [20 hole-punch and transfer spike](slices/20-punch-spike.md) (run 2026-11-21: no-go on throughput, 40–61% of iperf3 UDP; everything else holds; waits on the user's transport call; tier x waits on the user's second Mac)
 - [ ] [21 catalog routing and image operations](slices/21-catalog-routing.md)
 - [ ] [22 Convex image records](slices/22-convex-images.md)
 - [ ] [23 VM spec and boot store](slices/23-vmspec-bootstore.md)

@@ -1,0 +1,270 @@
+{
+  "s": {
+    "at": "2026-11-21T18:26:45.623Z",
+    "checks": [
+      {
+        "name": "localbox-punchlab builds (release)",
+        "ok": true
+      },
+      {
+        "name": "an 8 GiB sparse file crosses loopback: sha256 matches, holes stay holes",
+        "ok": true
+      },
+      {
+        "name": "receiver killed at 40% resumes from its bitmap and finishes intact",
+        "ok": true
+      },
+      {
+        "name": "a tampered datagram and a corrupted chunk are rejected and fetched again",
+        "ok": true
+      },
+      {
+        "name": "a receiver with the wrong key gets no reply and the sender authenticates nothing",
+        "ok": true
+      }
+    ],
+    "source": {
+      "size": 8589934592,
+      "allocated": 2147483648,
+      "sha256": "75f296846d750b3f947b11453d8d875da972ee372eef1c16872b3dd6913bac78"
+    },
+    "loopback": {
+      "chunks": 8192,
+      "data_bytes": 2147483648,
+      "data_seconds": 11.369968056678772,
+      "duplicate_fragments": 0,
+      "event": "done",
+      "files": 1,
+      "lanes": 2,
+      "lost_fragments": 2581,
+      "path": "local 127.0.0.1:52743",
+      "path_kind": "local",
+      "received_bytes": 2147483648,
+      "rejected_chunks": 0,
+      "rejected_datagrams": 0,
+      "resume_rejected_chunks": 0,
+      "resumed_bytes": 0,
+      "resumed_chunks": 0,
+      "throughput_gbps": 1.510986583107282,
+      "zero_chunks": 6144
+    },
+    "resume": {
+      "killedAt": 0.416015625,
+      "bitmapBytes": 1064,
+      "after": {
+        "chunks": 8192,
+        "data_bytes": 2147483648,
+        "data_seconds": 3.8499900102615356,
+        "duplicate_fragments": 0,
+        "event": "done",
+        "files": 1,
+        "lanes": 2,
+        "lost_fragments": 818,
+        "path": "local 127.0.0.1:52952",
+        "path_kind": "local",
+        "received_bytes": 1254096896,
+        "rejected_chunks": 0,
+        "rejected_datagrams": 0,
+        "resume_rejected_chunks": 0,
+        "resumed_bytes": 893386752,
+        "resumed_chunks": 852,
+        "throughput_gbps": 2.6059223897358783,
+        "zero_chunks": 6144
+      }
+    },
+    "tamper": {
+      "chunks": 256,
+      "data_bytes": 33554432,
+      "data_seconds": 0.26134300231933594,
+      "duplicate_fragments": 0,
+      "event": "done",
+      "files": 1,
+      "lanes": 2,
+      "lost_fragments": 1,
+      "path": "local 127.0.0.1:58029",
+      "path_kind": "local",
+      "received_bytes": 33554432,
+      "rejected_chunks": 1,
+      "rejected_datagrams": 1,
+      "resume_rejected_chunks": 0,
+      "resumed_bytes": 0,
+      "resumed_chunks": 0,
+      "throughput_gbps": 1.0271384870370386,
+      "zero_chunks": 224
+    },
+    "wrongKey": {
+      "receiver": {
+        "event": "error",
+        "message": "no authenticated reply within 3s (wrong key, or no path); tried: local 127.0.0.1:54007"
+      },
+      "sender": {
+        "data_bytes": 0,
+        "data_datagrams": 0,
+        "event": "idle",
+        "final_rate": 20000,
+        "finished": false,
+        "peers": [],
+        "rejected_datagrams": 30
+      }
+    }
+  },
+  "l": {
+    "at": "2026-11-21T18:25:08.891Z",
+    "checks": [
+      {
+        "name": "localbox-punchlab builds (release)",
+        "ok": true
+      },
+      {
+        "name": "Cloudflare STUN reflects this Mac's public address",
+        "ok": true
+      },
+      {
+        "name": "over the LAN address with a reflexive candidate offered, the local candidate wins",
+        "ok": true
+      },
+      {
+        "name": "LAN throughput is at least 70% of iperf3 on the same path",
+        "ok": false,
+        "detail": "punchlab 2.37 Gbps is 53% of iperf3 UDP 4.44 Gbps (TCP 77.9 Gbps; bare Network.framework datagrams 2.50 Gbps)"
+      }
+    ],
+    "source": {
+      "size": 8589934592,
+      "allocated": 2147483648,
+      "sha256": "75f296846d750b3f947b11453d8d875da972ee372eef1c16872b3dd6913bac78"
+    },
+    "lanAddress": "192.168.0.198",
+    "stun": {
+      "event": "stun",
+      "mapping": "endpoint-independent",
+      "reflexive": {
+        "address": "<public>",
+        "kind": "reflexive",
+        "port": 57337
+      },
+      "second_reflexive": {
+        "address": "<public>",
+        "kind": "reflexive",
+        "port": 57337
+      },
+      "server": "stun.cloudflare.com:3478"
+    },
+    "lan": {
+      "offer": {
+        "candidates": [
+          {
+            "address": "192.168.0.198",
+            "kind": "local",
+            "port": 52326
+          },
+          {
+            "address": "<public>",
+            "kind": "reflexive",
+            "port": 52326
+          }
+        ],
+        "event": "offer",
+        "id": "7fc8a18c60770b3c",
+        "nat": {
+          "mapping": "endpoint-independent",
+          "reflexive": {
+            "address": "<public>",
+            "kind": "reflexive",
+            "port": 52326
+          },
+          "second_reflexive": {
+            "address": "<public>",
+            "kind": "reflexive",
+            "port": 52326
+          },
+          "server": "stun.cloudflare.com:3478"
+        }
+      },
+      "receiver": {
+        "chunks": 8192,
+        "data_bytes": 2147483648,
+        "data_seconds": 8.478132009506226,
+        "duplicate_fragments": 0,
+        "event": "done",
+        "files": 1,
+        "lanes": 2,
+        "lost_fragments": 1657,
+        "path": "local 192.168.0.198:52326",
+        "path_kind": "local",
+        "received_bytes": 2147483648,
+        "rejected_chunks": 0,
+        "rejected_datagrams": 0,
+        "resume_rejected_chunks": 0,
+        "resumed_bytes": 0,
+        "resumed_chunks": 0,
+        "throughput_gbps": 2.0263743433974404,
+        "zero_chunks": 6144
+      }
+    },
+    "throughput": {
+      "rounds": [
+        {
+          "iperfUdpGbps": 4.117229812378699,
+          "iperfTcpGbps": 77.3096276881237,
+          "punchGbps": 2.732003257961166,
+          "lostFragments": 405
+        },
+        {
+          "iperfUdpGbps": 4.435533153446107,
+          "iperfTcpGbps": 83.12399204040614,
+          "punchGbps": 2.0676859491063673,
+          "lostFragments": 2806
+        },
+        {
+          "iperfUdpGbps": 4.619458254962802,
+          "iperfTcpGbps": 77.89734139772797,
+          "punchGbps": 2.365861547691791,
+          "lostFragments": 1549
+        }
+      ],
+      "networkFramework": {
+        "sweep": [
+          {
+            "offeredPps": 150000,
+            "deliveredPps": 149991.9484059976,
+            "gbps": 1.6463116257042296
+          },
+          {
+            "offeredPps": 200000,
+            "deliveredPps": 199560.33305223737,
+            "gbps": 2.1903742155813575
+          },
+          {
+            "offeredPps": 250000,
+            "deliveredPps": 215198.79689795134,
+            "gbps": 2.362021994751914
+          },
+          {
+            "offeredPps": 300000,
+            "deliveredPps": 227490.27193471766,
+            "gbps": 2.496933224755461
+          }
+        ],
+        "bestGbps": 2.496933224755461
+      },
+      "medianPunchGbps": 2.365861547691791,
+      "medianIperfUdpGbps": 4.435533153446107,
+      "medianIperfTcpGbps": 77.89734139772797,
+      "ratioToUdp": 0.5333883133876877,
+      "ratioToTcp": 0.030371531367318214,
+      "ratioToNetworkFramework": 0.9475069354021244,
+      "note": "this Mac's LAN address routes through lo0, so both baselines measure kernel speed, not a wire; punchlab counts file data bytes, iperf3 UDP counts 1400-byte datagram payloads"
+    }
+  },
+  "x": {
+    "at": "2026-11-21T18:19:01.499Z",
+    "checks": [
+      {
+        "name": "punch and transfer between this Mac and a second Mac on another network",
+        "ok": false,
+        "detail": "blocked: no second Mac on another network; run `localbox-punchlab offer --send <file> --offer offer.json --answer answer.json` here, paste offer.json to the other Mac, run `localbox-punchlab answer offer.json --receive <dir> --answer answer.json` there, paste answer.json back (see slices/20-punch-spike.md)"
+      }
+    ]
+  }
+}
