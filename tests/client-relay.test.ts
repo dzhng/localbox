@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runOps } from "../apps/relay/src/ops.js";
 import { AgentApiTransport } from "../packages/client/src/index.js";
-import type { RequestEnvelope, ResponseEnvelope } from "../packages/contract/src/index.js";
+import { success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
+import type { ImageRow } from "../apps/relay/src/ops.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
 const request = (overrides: Partial<RequestEnvelope> = {}): RequestEnvelope => ({ protocol_version: "v1", request_id: `req_${Math.random()}`, operation: "system.info", sandbox_id: "sandbox_b", deadline_ms: 5_000, mutation_id: null, input: {}, ...overrides });
@@ -91,4 +92,39 @@ test("a caller Convex refuses as unauthorized is answered 401, whatever the erro
   const refusing = { ...deps, accountCall: async () => { throw new ConvexError({ code: "unauthorized", message: "redacted" }); } };
   assert.equal((await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "machine.list", input: {} }, refusing)).status, 401);
   assert.equal((await runOps({ accountId: "acct", familyId: "f" }, { operation: "system.info", sandbox: "quiet-otter", input: {} }, refusing)).status, 401);
+});
+
+const imageRow = (holders: Array<Partial<ImageRow["holders"][number]> & { machine_id: string; state: ImageRow["holders"][number]["state"] }>): ImageRow => ({
+  image_id: "image_1", name: "rails-dev", os: "linux", size_bytes: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
+  holders: holders.map((holder) => ({ machine_name: holder.machine_id === "m_b" ? "attic" : "studio", operation_id: null, error: null, updated_at: 1, ...holder })),
+});
+
+test("image.wait asks the Mac building the image, waits there, and answers its operation state inline or by continuation", async () => {
+  const asked: RequestEnvelope[] = []; let step = 0;
+  const record = (state: string) => ({ key: "m-build", kind: "capture", subject: "image_1", state, progress: { phase: "copying disk", completed: ++step * 10, total: 100 }, started_at: 1, updated_at: 2 });
+  const machineB = async (envelope: RequestEnvelope) => { asked.push(envelope); await new Promise((resolve) => setTimeout(resolve, 60)); return success(envelope, record(asked.length < 2 ? "running" : "succeeded")); };
+  const { deps } = memoryMailbox({ machines, maxWaitMs: 20, images: [imageRow([{ machine_id: "m_b", state: "building", operation_id: "m-build" }])], connectors: { m_b: machineB } });
+  const calls: Array<Record<string, unknown>> = [];
+  const pending = await transportFor(deps, calls).dispatch(request({ operation: "image.wait", sandbox_id: null, input: { image: "rails-dev", timeout_ms: 500 } }));
+  assert.ok(calls.some((call) => typeof call.continue === "string"), "the machine's answer came by continuation");
+  assert.deepEqual(pending.ok && pending.result, { image: "image_1", name: "rails-dev", os: "linux", state: "building", progress: { phase: "copying disk", done_bytes: 10, total_bytes: 100 } });
+  assert.deepEqual(asked[0].input, { image: "image_1", timeout_ms: 500 }, "the machine is asked by image id");
+  const ready = await transportFor(deps).dispatch(request({ operation: "image.wait", sandbox_id: null, input: { image: "image_1" } }));
+  assert.equal(ready.ok && (ready.result as any).state, "ready");
+});
+
+test("image.wait answers from the catalog when no Mac is building or copying, without asking a machine", async () => {
+  const failure = { code: "disk_full", message: "attic has 2 GiB free", next_step: "free some disk on attic and copy it again" };
+  const answers = async (holders: Parameters<typeof imageRow>[0], image = "rails-dev") => {
+    const { deps, rows } = memoryMailbox({ machines, images: [imageRow(holders), { ...imageRow([{ machine_id: "m_a", state: "ready" }, { machine_id: "m_b", state: "ready" }]), image_id: "linux", name: "linux", source: { kind: "release" } }], connectors: {} });
+    const response = await transportFor(deps).dispatch(request({ operation: "image.wait", sandbox_id: null, input: { image } }));
+    assert.equal(rows.size, 0, "nothing was relayed");
+    return response.ok ? response.result as any : response.error;
+  };
+  assert.equal((await answers([], "linux")).state, "ready");
+  assert.equal((await answers([{ machine_id: "m_a", state: "ready" }, { machine_id: "m_b", state: "failed", error: failure }])).state, "ready");
+  assert.deepEqual((await answers([{ machine_id: "m_b", state: "failed", error: failure }])).error, { code: "disk_full", message: "on attic: attic has 2 GiB free", next_step: failure.next_step });
+  const orphan = await answers([]);
+  assert.equal(orphan.state, "failed"); assert.match(orphan.error.next_step, /localbox image delete rails-dev --confirm rails-dev/);
+  assert.equal((await answers([], "nope")).code, "image_not_found");
 });

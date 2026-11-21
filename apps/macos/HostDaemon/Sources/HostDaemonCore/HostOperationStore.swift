@@ -44,15 +44,20 @@ public struct HostOperationProgress: Codable, Equatable, Sendable {
     public init(phase: String, completed: Int? = nil, total: Int? = nil) { self.phase = phase; self.completed = completed; self.total = total }
 }
 
-/// Why an operation failed, in the envelope's error vocabulary.
+/// Why an operation failed, in the envelope's error vocabulary, and what the caller can try next (a kind knows; a
+/// failure the store makes itself leaves it to the caller's reader).
 public struct HostOperationFailure: Error, Codable, Equatable, Sendable {
     public let code: String
     public let message: String
-    public init(code: String, message: String) { self.code = code; self.message = message }
+    public let nextStep: String?
+    public init(code: String, message: String, nextStep: String? = nil) { self.code = code; self.message = message; self.nextStep = nextStep }
+    enum CodingKeys: String, CodingKey { case code, message, nextStep = "next_step" }
 }
 
 /// One long piece of host work, as `<operations>/<key>.json`. `checkpoint` is the kind's own resume point (a phase, a
 /// bitmap of copied chunks): seeded by `begin`, replaced by every `report`, and the only thing a resumer starts from.
+/// `subject` is the image the work produces on this Mac. `reportedAt` is set once the connector has told the account
+/// how a finished operation ended, so an outcome is reported until it lands, across restarts of either process.
 public struct HostOperationRecord: Codable, Equatable, Sendable {
     public let key: String
     public let kind: String
@@ -66,8 +71,9 @@ public struct HostOperationRecord: Codable, Equatable, Sendable {
     /// read back after a restart equals the one a replay got before it.
     public let startedAt: Int
     public var updatedAt: Int
+    public var reportedAt: Int?
     enum CodingKeys: String, CodingKey {
-        case key, kind, subject, state, progress, checkpoint, result, error, startedAt = "started_at", updatedAt = "updated_at"
+        case key, kind, subject, state, progress, checkpoint, result, error, startedAt = "started_at", updatedAt = "updated_at", reportedAt = "reported_at"
     }
 }
 
@@ -101,7 +107,11 @@ public actor HostOperationStore {
     private var resumers: [String: HostOperationWork] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
     private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    /// Callers of `unreported`, woken when an operation finishes.
+    private var outcomeWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var stopped = false
+    /// The last `startedAt` given out: each begin takes a later one, so "the most recent operation" never ties.
+    private var lastStartedAt = 0
 
     /// Loads every journal under `operationsDirectory`; nothing runs until `start()`.
     public init(operationsDirectory: URL) throws {
@@ -113,6 +123,7 @@ public actor HostOperationStore {
             guard let record = try? decoder.decode(HostOperationRecord.self, from: Data(contentsOf: directory.appendingPathComponent(name))) else { continue }
             records[record.key] = record
         }
+        lastStartedAt = records.values.map(\.startedAt).max() ?? 0
     }
 
     /// Kinds register before `start()`, by their owning slice; `begin` refuses a kind with no resumer, so every record
@@ -139,7 +150,8 @@ public actor HostOperationStore {
         guard !stopped else { throw HostDaemonError.invalidState("the operation store has stopped") }
         guard resumers[kind] != nil else { throw HostDaemonError.invalidState("operation kind \(kind) has no resumer registered") }
         guard !key.isEmpty, !key.contains("/"), !key.hasPrefix(".") else { throw HostDaemonError.invalidState("operation key \(key) is not a file name") }
-        let now = epochMs()
+        let now = max(epochMs(), lastStartedAt + 1)
+        lastStartedAt = now
         let record = HostOperationRecord(key: key, kind: kind, subject: subject, state: .running, checkpoint: checkpoint, startedAt: now, updatedAt: now)
         // Journaled before the work starts: a crash right after this still finds the record and resumes it.
         try save(record)
@@ -148,7 +160,53 @@ public actor HostOperationStore {
         return record
     }
 
+    /// `begin` with the kind's registered resumer as the work, for a kind whose checkpoint carries everything it needs.
+    public func begin(kind: String, key: String, subject: String, checkpoint: JSONValue) throws -> HostOperationRecord {
+        guard let resume = resumers[kind] else { throw HostDaemonError.invalidState("operation kind \(kind) has no resumer registered") }
+        return try begin(kind: kind, key: key, subject: subject, checkpoint: checkpoint, work: resume)
+    }
+
     public func state(_ key: String) -> HostOperationRecord? { records[key] }
+
+    /// The most recently started operation on `subject`: what a wait on an image follows, since a retried copy or
+    /// build starts a new record for the same image.
+    public func latest(subject: String) -> HostOperationRecord? {
+        records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
+    }
+
+    /// Whether any operation on `subject` is still running.
+    public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
+
+    /// Finished operations whose outcome the connector has not yet reported, oldest first. With none, waits up to
+    /// `timeoutMs` (capped at `maxWaitMs`) for one to finish.
+    public func unreported(timeoutMs: Int) async -> [HostOperationRecord] {
+        if outcomes().isEmpty, !stopped {
+            let id = UUID()
+            let timeout = UInt64(min(max(timeoutMs, 0), Self.maxWaitMs)) * 1_000_000
+            let timer = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: timeout)
+                await self?.wakeOutcome(id)
+            }
+            await withCheckedContinuation { outcomeWaiters[id] = $0 }
+            timer.cancel()
+        }
+        return outcomes()
+    }
+
+    /// Records that the account has these outcomes, so `unreported` stops returning them. Unknown or running keys are
+    /// ignored.
+    public func markReported(_ keys: [String]) throws {
+        for key in keys {
+            guard var record = records[key], record.state != .running, record.reportedAt == nil else { continue }
+            record.reportedAt = epochMs()
+            try save(record)
+            records[key] = record
+        }
+    }
+
+    private func outcomes() -> [HostOperationRecord] {
+        records.values.filter { $0.state != .running && $0.reportedAt == nil }.sorted { ($0.updatedAt, $0.key) < ($1.updatedAt, $1.key) }
+    }
 
     /// The record once it finishes, or as it stands after `timeoutMs` (capped at `maxWaitMs`); nil for an unknown key.
     public func wait(_ key: String, timeoutMs: Int) async -> HostOperationRecord? {
@@ -171,6 +229,8 @@ public actor HostOperationStore {
     /// start to resume.
     public func stop() async {
         stopped = true
+        for continuation in outcomeWaiters.values { continuation.resume() }
+        outcomeWaiters = [:]
         let running = Array(tasks.values)
         for task in running { task.cancel() }
         for task in running { await task.value }
@@ -215,10 +275,16 @@ public actor HostOperationStore {
         try? save(record)
         records[key] = record
         for continuation in (waiters.removeValue(forKey: key) ?? [:]).values { continuation.resume() }
+        for continuation in outcomeWaiters.values { continuation.resume() }
+        outcomeWaiters = [:]
     }
 
     private func wake(_ key: String, _ id: UUID) {
         waiters[key]?.removeValue(forKey: id)?.resume()
+    }
+
+    private func wakeOutcome(_ id: UUID) {
+        outcomeWaiters.removeValue(forKey: id)?.resume()
     }
 
     private func save(_ record: HostOperationRecord) throws {

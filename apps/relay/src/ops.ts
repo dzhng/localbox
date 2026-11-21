@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import {
   BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateInput, validateRequest,
-  type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
+  type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type ImageOperationState, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place } from "../../../packages/placement/src/index.js";
 
@@ -28,6 +28,18 @@ export interface OpsResponse { status: number; body: unknown }
 
 /** A row of `machines:list`: the machine's last capacity report and when it last reached the relay. */
 interface MachineRow { machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport; capacityAt?: number }
+
+/** A row of `images:list` / `images:get`. */
+export interface ImageRow {
+  image_id: string; name: string; os: "linux" | "macos"; size_bytes: number | null; source: { kind: "sandbox" | "ipsw" | "release"; sandboxName?: string; ipswVersion?: string };
+  default: boolean; created_at: number | null;
+  holders: Array<{ machine_id: string; machine_name: string | null; state: "building" | "copying" | "ready" | "failed"; operation_id: string | null; error: { code: string; message: string; next_step: string } | null; updated_at: number | null }>;
+}
+/** A host operation record as the daemon answers `image.wait` with it. */
+interface HostOperationView {
+  key: string; kind: string; subject: string; state: "running" | "succeeded" | "failed";
+  progress?: { phase: string; completed?: number; total?: number }; result?: Json; error?: { code: string; message: string; next_step?: string };
+}
 
 /** A row of `sandboxes:list`. */
 export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string }
@@ -84,7 +96,7 @@ export async function runOps(principal: Principal, input: Record<string, unknown
  * reported `machine_offline`; one still running when the wait ends comes back as a continuation the client resumes with `{continue: request_id}`.
  */
 async function handleOps(principal: Principal, input: Record<string, unknown>, deps: OpsDeps): Promise<OpsResponse> {
-  if (typeof input.continue === "string") return await waitFor(principal, input.continue, Number(input.deadline_at ?? 0), deps);
+  if (typeof input.continue === "string") return await imageWaitAnswer(principal, await waitFor(principal, input.continue, Number(input.deadline_at ?? 0), deps), deps);
   const operation = String(input.operation ?? "");
   const payload = (input.input ?? {}) as Record<string, Json>;
   const entry = catalogById.get(operation as OperationId);
@@ -96,6 +108,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     validateInput(entry.id, payload);
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
+    if (entry.id === "image.wait") return await waitForImage(principal, base, deps);
     if (!entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, sandbox, machine, deps), base, deps);
     const target = await resolveSandbox(principal, sandbox, deps).catch((error) => {
       // A delete of a sandbox that is already gone has nothing left to do.
@@ -280,6 +293,64 @@ async function deleteSandbox(principal: Principal, request: RequestEnvelope, tar
   const report: ActionReport = { requested: request.input, produced: { sandbox_id: target.sandbox_id, name: target.name, machine, removed }, actions: [{ kind: "deleted", detail }] };
   return answer(success(request, report as unknown as Json));
 }
+
+/**
+ * An image's operation state. While a Mac's holder row is `building` or `copying`, that Mac answers from its operation
+ * journal, waiting up to `timeout_ms` (and within the request's deadline) for the work to finish; the answer comes back
+ * inline or by continuation, a normal result either way. With no such holder, the catalog answers.
+ */
+async function waitForImage(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { image: string; timeout_ms?: number };
+  const image = await deps.accountCall(principal, "query", "images:get", { image: asked.image }) as ImageRow;
+  const active = image.holders.filter((holder) => holder.state === "building" || holder.state === "copying").sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))[0];
+  if (!active) return answer(success(base, catalogState(image) as unknown as Json));
+  const request = { ...base, input: { image: image.image_id, ...(asked.timeout_ms === undefined ? {} : { timeout_ms: asked.timeout_ms }) } };
+  return await imageWaitAnswer(principal, await relay(principal, active.machine_id, request, deps), deps, image);
+}
+
+/**
+ * A machine's `image.wait` answer (its operation record) as the image's operation state, with the image's name and OS
+ * from the catalog. Used on the first call and on every continuation, so a long wait reads the same either way; any
+ * other answer passes through.
+ */
+async function imageWaitAnswer(principal: Principal, relayed: OpsResponse, deps: OpsDeps, known?: ImageRow): Promise<OpsResponse> {
+  const response = (relayed.body as { response?: ResponseEnvelope }).response;
+  if (!response?.ok || response.operation !== "image.wait") return relayed;
+  const record = response.result as unknown as HostOperationView;
+  let image = known;
+  if (!image) {
+    try { image = await deps.accountCall(principal, "query", "images:get", { image: record.subject }) as ImageRow; }
+    catch (error) { return answer(failure(response as unknown as RequestEnvelope, contractError(error))); }
+  }
+  return answer({ ...response, result: operationState(image, record) as unknown as Json });
+}
+
+const nextStepFor = (image: ImageRow) => `delete it with localbox image delete ${image.name} --confirm ${image.name}, then create or copy it again`;
+
+/** A running record shows its holder's state (`building` or `copying`); a finished one is `ready` or `failed`. */
+function operationState(image: ImageRow, record: HostOperationView): ImageOperationState {
+  const holder = image.holders.find((candidate) => candidate.operation_id === record.key);
+  const state = record.state === "succeeded" ? "ready" : record.state === "failed" ? "failed" : holder?.state === "copying" ? "copying" : "building";
+  return {
+    image: image.image_id, name: image.name, os: image.os, state,
+    ...(record.progress ? { progress: { phase: record.progress.phase, done_bytes: record.progress.completed ?? 0, total_bytes: record.progress.total ?? 0 } } : {}),
+    ...(record.error ? { error: { code: errorCode(record.error.code), message: record.error.message, next_step: record.error.next_step ?? nextStepFor(image) } } : {}),
+  };
+}
+
+/** No Mac is building or copying the image, so the catalog's holder rows say how it stands. */
+function catalogState(image: ImageRow): ImageOperationState {
+  const base = { image: image.image_id, name: image.name, os: image.os };
+  if (image.holders.some((holder) => holder.state === "ready")) return { ...base, state: "ready" };
+  const failed = image.holders.find((holder) => holder.state === "failed");
+  if (failed) {
+    const where = failed.machine_name ?? failed.machine_id;
+    return { ...base, state: "failed", error: failed.error ? { code: errorCode(failed.error.code), message: `on ${where}: ${failed.error.message}`, next_step: failed.error.next_step } : { code: "internal", message: `the operation on ${where} failed`, next_step: nextStepFor(image) } };
+  }
+  return { ...base, state: "failed", error: { code: "machine_not_found", message: `no machine holds ${image.name} any more (the Macs that held it left the account)`, next_step: nextStepFor(image) } };
+}
+
+const errorCode = (code: string): ErrorCode => (ERROR_CODES as readonly string[]).includes(code) ? code as ErrorCode : "internal";
 
 /** The machine's answer (`machine_not_found` when the machine was removed), or undefined while it is still running past this call's wait. */
 async function relayedResponse(principal: Principal, machineId: string, request: RequestEnvelope, deps: OpsDeps): Promise<ResponseEnvelope | undefined> {

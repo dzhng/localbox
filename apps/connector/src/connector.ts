@@ -37,6 +37,8 @@ export interface ConnectorDeps {
 export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[]; deleted?: IdleDeletion[] }
 export interface IdleDeletion { sandbox_id: string; name: string; reason: string }
 export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
+/** A finished host operation, as the daemon's `host.operations` hands it over to be reported. `subject` is the image. */
+export interface OperationOutcome { key: string; subject: string; state: "succeeded" | "failed"; result?: { size_bytes?: number } | null; error?: { code: string; message: string; next_step?: string } | null }
 
 export const relay = {
   pendingForMachine: makeFunctionReference<"query">("relay:pendingForMachine"),
@@ -46,11 +48,13 @@ export const relay = {
   forMachine: makeFunctionReference<"query">("sandboxes:forMachine"),
   reportState: makeFunctionReference<"mutation">("sandboxes:reportState"),
   removeIdle: makeFunctionReference<"mutation">("sandboxes:removeIdle"),
+  setHolder: makeFunctionReference<"mutation">("images:setHolder"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
 const WATCH_RETRY_MAX_MS = 30_000;
 const REPORT_HEARTBEAT_MS = 60_000;
+const OUTCOMES_TIMEOUT_MS = 25_000;
 const RECENT_LIMIT = 512;
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -72,6 +76,7 @@ export class Connector {
   private mirrorQueue: Promise<void> = Promise.resolve();
   private lastReportAt = 0;
   private reportSeq = 0;
+  private outcomesSeq = 0;
   private settle!: { resolve(state: ConnectorState): void; reject(error: Error): void };
   /** Resolves with "revoked" or "stopped" when the connector ends; rejects on a fatal error. */
   readonly finished = new Promise<ConnectorState>((resolve, reject) => { this.settle = { resolve, reject }; });
@@ -95,6 +100,7 @@ export class Connector {
     this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
+    void this.reportOutcomes();
   }
 
   async stop(): Promise<void> { await this.end("stopped"); }
@@ -215,6 +221,42 @@ export class Connector {
         this.deps.log(`host watch failed: ${message(error)}`);
         await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
       }
+    }
+  }
+
+  /**
+   * Long work on this Mac (an image build, capture or copy) runs in the daemon's operation journal; when one finishes,
+   * its image's holder row here becomes `ready` (with the image's size) or `failed` (with why). The daemon hands over
+   * each outcome until a later poll says it was reported, so an outcome lands once the account is reachable, across
+   * restarts of either process. An image the account deleted meanwhile has nothing left to report.
+   */
+  private async reportOutcomes(): Promise<void> {
+    let reported: string[] = []; let backoff = 1_000;
+    while (!this.ended) {
+      try {
+        const response = await this.deps.daemon.dispatch(hostRequest("host.operations", { reported, timeout_ms: OUTCOMES_TIMEOUT_MS }, `host-operations-${++this.outcomesSeq}`, OUTCOMES_TIMEOUT_MS + 10_000));
+        if (this.ended) return;
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+        reported = [];
+        for (const outcome of (response.result as { operations?: OperationOutcome[] }).operations ?? []) { await this.reportOutcome(outcome); reported.push(outcome.key); }
+        backoff = 1_000;
+      } catch (error) {
+        if (this.ended) return;
+        this.deps.log(`operation reports failed: ${message(error)}`);
+        await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
+      }
+    }
+  }
+
+  private async reportOutcome(outcome: OperationOutcome): Promise<void> {
+    const size = outcome.result?.size_bytes;
+    const args = outcome.state === "succeeded"
+      ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}) }
+      : { imageId: outcome.subject, operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the operation failed", nextStep: outcome.error?.next_step ?? "try it again; if it fails the same way, check this Mac's disk space and logs" } };
+    try { await this.deps.convex.mutation(relay.setHolder, args); this.deps.log(`image ${outcome.subject}: operation ${outcome.key} ${args.state}`); }
+    catch (error) {
+      if (contractError(error).code !== "image_not_found") throw error;
+      this.deps.log(`image ${outcome.subject} is no longer on the account; operation ${outcome.key} has nothing to report`);
     }
   }
 

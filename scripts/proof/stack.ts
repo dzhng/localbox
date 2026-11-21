@@ -80,8 +80,11 @@ async function up(specs: MachineSpec[]): Promise<void> {
   await startDaemons(specs);
 }
 const hostdPid = (machine: string) => join(pidDir, `hostd-${machine}.pid`);
-/** One fixture host daemon per machine root: its own socket, IPC token and sandboxes, each with its own guest. */
-async function startDaemons(machines: MachineSpec[]): Promise<void> {
+/**
+ * One fixture host daemon per machine root: its own socket, IPC token and sandboxes, each with its own guest. `up`
+ * starts each from empty; `restart` kills a daemon outright (a crash) and starts it on the state it left.
+ */
+async function startDaemons(machines: MachineSpec[], options: { fresh: boolean } = { fresh: true }): Promise<void> {
   if (!machines.length) return;
   execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--product", "localbox-hostd"], { cwd: root, stdio: "ignore" });
   const bin = execFileSync("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"], { cwd: root, encoding: "utf8" }).trim();
@@ -89,11 +92,15 @@ async function startDaemons(machines: MachineSpec[]): Promise<void> {
     if (alive(pid(hostdPid(machine)))) continue;
     const paths = machinePaths({ LOCALBOX_MACHINE_ROOT: join(state, "machines", machine) });
     if (!readFileSafe(paths.ipcToken).trim()) { mkdirSync(paths.root, { recursive: true }); writeFileSync(paths.ipcToken, randomBytes(32).toString("hex"), { mode: 0o600 }); }
-    // `up` wipes local Convex, so a machine's old credential, sandboxes and operations would belong to an account that no longer exists.
-    rmSync(paths.socket, { force: true }); rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true }); rmSync(paths.operations, { recursive: true, force: true });
-    rmSync(fixtureHome(paths.root), { recursive: true, force: true }); rmSync(join(paths.root, "agent-setup.json"), { force: true }); mkdirSync(fixtureHome(paths.root));
+    // A killed daemon leaves its socket behind, which would read as the new one listening.
+    rmSync(paths.socket, { force: true });
+    if (options.fresh) {
+      // `up` wipes local Convex, so a machine's old credential, sandboxes and operations would belong to an account that no longer exists.
+      rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true }); rmSync(paths.operations, { recursive: true, force: true });
+      rmSync(fixtureHome(paths.root), { recursive: true, force: true }); rmSync(join(paths.root, "agent-setup.json"), { force: true }); mkdirSync(fixtureHome(paths.root));
+    }
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
-    const log = join(paths.logs, "hostd.log"); writeFileSync(log, "");
+    const log = join(paths.logs, "hostd.log"); writeFileSync(log, "", { flag: options.fresh ? "w" : "a" });
     const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_OPERATIONS: paths.operations, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
@@ -113,7 +120,16 @@ async function down(): Promise<void> {
   for (let waited = 0; waited < 10_000 && pids.some(alive); waited += 250) await sleep(250);
   for (const value of [...pids, ...children]) { if (alive(value)) { try { process.kill(-value, "SIGKILL"); } catch { try { process.kill(value, "SIGKILL"); } catch { /* gone */ } } } }
 }
+/** SIGKILLs each machine's daemon (no hibernate, no clean exit) and starts it again on its state. */
+async function restart(specs: MachineSpec[]): Promise<void> {
+  for (const { name } of specs) {
+    const value = pid(hostdPid(name)); if (!alive(value)) continue;
+    process.kill(value!, "SIGKILL");
+    for (let waited = 0; waited < 10_000 && alive(value); waited += 50) await sleep(50);
+  }
+  await startDaemons(specs, { fresh: false });
+}
 function status(): void { mkdirSync(pidDir, { recursive: true }); process.stdout.write(`${JSON.stringify({ convex: alive(pid(convexPid)), devLocal: alive(pid(localPid)), daemons: Object.fromEntries(daemonPidFiles().map((path) => [path.slice(path.lastIndexOf("hostd-") + 6, -4), alive(pid(path))])) })}\n`); }
 function logs(): void { process.stdout.write(`== convex ==\n${readFileSafe(convexLog)}== dev-local ==\n${readFileSafe(localLog)}`); }
 const [command, ...args] = process.argv.slice(2); const machinesIndex = args.indexOf("--machines"); const machines = machinesIndex >= 0 ? (args[machinesIndex + 1] ?? "").split(",").filter(Boolean) : [];
-try { if (command === "up") await up(machines.map(machineSpec)); else if (command === "down") await down(); else if (command === "status") status(); else if (command === "logs") logs(); else { process.stderr.write("usage: stack.ts up|down|status|logs [--machines a,b | a:8G,b:16G]\n"); process.exitCode = 2; } } catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 2; }
+try { if (command === "up") await up(machines.map(machineSpec)); else if (command === "restart") await restart(machines.map(machineSpec)); else if (command === "down") await down(); else if (command === "status") status(); else if (command === "logs") logs(); else { process.stderr.write("usage: stack.ts up|restart|down|status|logs [--machines a,b | a:8G,b:16G]\n"); process.exitCode = 2; } } catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 2; }

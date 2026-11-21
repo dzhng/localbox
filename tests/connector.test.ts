@@ -35,15 +35,26 @@ class FakeConvex implements ConvexLike {
   named(name: string) { return this.calls.filter((call) => call.name === name); }
 }
 
+const INTERNAL = ["connector.report", "sandbox.mirror", "host.operations"];
+
 class FakeDaemon {
   requests: RequestEnvelope[] = [];
   respond: (request: RequestEnvelope) => Promise<ResponseEnvelope> = async (request) => success(request, { ran: request.request_id });
+  /** `host.operations` long-polls: each poll takes the next batch of outcomes the test released, or waits for one. */
+  private outcomes: unknown[][] = [];
+  private polling?: () => void;
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.requests.push(request);
     if (request.operation === "connector.report" || request.operation === "sandbox.mirror") return success(request, { recorded: true });
+    if (request.operation === "host.operations") {
+      if (!this.outcomes.length) await new Promise<void>((resolve) => { this.polling = resolve; });
+      return success(request, { operations: this.outcomes.shift() as any });
+    }
     return await this.respond(request);
   }
-  work() { return this.requests.filter((request) => !["connector.report", "sandbox.mirror"].includes(request.operation)); }
+  finish(...outcomes: unknown[]): void { this.outcomes.push(outcomes); const polling = this.polling; this.polling = undefined; polling?.(); }
+  polls() { return this.requests.filter((request) => request.operation === "host.operations").map((request) => (request.input as { reported: string[] }).reported); }
+  work() { return this.requests.filter((request) => !INTERNAL.includes(request.operation)); }
   reports() { return this.requests.filter((request) => request.operation === "connector.report").map((request) => (request.input as { state: string }).state); }
 }
 
@@ -313,5 +324,35 @@ test("sandboxes the daemon deleted for idleness are removed from the catalog onc
   await settle();
   assert.deepEqual(convex.named("sandboxes:removeIdle").map((call) => call.args), [{ sandboxId: "sandbox_1", reason: gone.reason }]);
   assert.ok(logs.includes(`removed quiet-otter (sandbox_1) from the catalog: ${gone.reason}`));
+  await connector.stop();
+});
+
+test("a finished host operation becomes its image's holder state, reported once and acknowledged to the daemon", async () => {
+  const { convex, daemon, logs, connector } = harness();
+  let refuse: string | undefined;
+  const mutation = convex.mutation.bind(convex);
+  convex.mutation = async (fn, args) => { if (getFunctionName(fn) === "images:setHolder" && refuse) { const code = refuse; refuse = undefined; throw new ConvexError({ code, message: code }); } return await mutation(fn, args); };
+  await settle();
+  assert.deepEqual(daemon.polls(), [[]], "one poll waits on the daemon; nothing reaches Convex while idle");
+  daemon.finish({ key: "m-1", subject: "image_1", state: "succeeded", result: { size_bytes: 4 * GIB } }, { key: "m-2", subject: "image_2", state: "failed", error: { code: "disk_full", message: "no room", next_step: "free some disk" } });
+  await settle();
+  assert.deepEqual(convex.named("images:setHolder").map((call) => call.args), [
+    { imageId: "image_1", operationId: "m-1", state: "ready", sizeBytes: 4 * GIB },
+    { imageId: "image_2", operationId: "m-2", state: "failed", error: { code: "disk_full", message: "no room", nextStep: "free some disk" } },
+  ]);
+  assert.deepEqual(daemon.polls().at(-1), ["m-1", "m-2"], "the next poll acknowledges both");
+
+  // A deleted image has nothing to report and is acknowledged; any other refusal is retried, never acknowledged.
+  refuse = "image_not_found"; daemon.finish({ key: "m-3", subject: "image_3", state: "succeeded", result: {} });
+  await settle();
+  assert.deepEqual(daemon.polls().at(-1), ["m-3"]);
+  assert.ok(logs.some((line) => line.includes("image image_3 is no longer on the account")));
+  refuse = "internal"; daemon.finish({ key: "m-4", subject: "image_4", state: "succeeded", result: {} });
+  await settle();
+  assert.deepEqual(daemon.polls().at(-1), [], "a failed report is not acknowledged");
+  daemon.finish({ key: "m-4", subject: "image_4", state: "succeeded", result: {} });
+  await settle();
+  assert.deepEqual(daemon.polls().at(-1), ["m-4"]);
+  assert.equal(convex.named("images:setHolder").filter((call) => call.args.operationId === "m-4").length, 1, "the retry went through");
   await connector.stop();
 });

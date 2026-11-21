@@ -168,7 +168,7 @@ final class HostOperationStoreTests: XCTestCase {
 }
 
 /// Holds every waiter until opened.
-private actor Gate {
+actor Gate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     func wait() async {

@@ -17,11 +17,15 @@ struct HostDaemonMain {
             let token = try loadToken()
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
+            let isDev = ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1"
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
+            // Kinds register before the store starts, as their slices land; dev daemons also run the proof's fixture kind.
+            if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
+            let images = ImageHost(operations: operations, allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup)
+                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, images: images)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
@@ -32,7 +36,7 @@ struct HostDaemonMain {
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
             // Long host work the last run left unfinished continues from its checkpoint, after the sandboxes it may
-            // act on are back. Kinds register here as their slices land.
+            // act on are back.
             for key in await operations.start() { log("operation \(key) resumed") }
             // The Mac's sleep and power-off notices hibernate the sandboxes first.
             do { try power(host).start() } catch { log("no power notices: \(error)") }
