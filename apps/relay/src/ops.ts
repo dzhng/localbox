@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import {
-  catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateJson, validateRequest,
+  catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateInput, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place } from "../../../packages/placement/src/index.js";
@@ -93,7 +93,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
   const machine = typeof input.machine === "string" ? input.machine : undefined;
   try {
     if (!entry) throw new ContractError("invalid_input", `unsupported operation: ${operation}`);
-    validateJson(payload, entry.input_schema);
+    validateInput(entry.id, payload);
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
     if (!entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, sandbox, machine, deps), base, deps);

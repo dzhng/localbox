@@ -347,6 +347,7 @@ public actor SandboxHost {
         if host == .sandboxList { return hostSuccess(object, result: ["sandboxes": await snapshots().map(view)]) }
         if host == .relayStatus { return relayStatus(object) }
         if let host, host.isAgentSetup { return await runAgentSetup(object, operation: operation, input: input) }
+        if let host, host.isImage { return hostFailure(object, code: "unsupported", message: "this machine does not run \(operation) yet") }
         guard let sandboxID = object["sandbox_id"] as? String, !sandboxID.isEmpty else { return hostFailure(object, code: "invalid_input", message: "\(operation) needs a sandbox_id") }
         if host == .sandboxCreate { return await create(object, sandboxID: sandboxID, input: input) }
         guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else { return hostFailure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
@@ -372,7 +373,8 @@ public actor SandboxHost {
         let sandbox = await runtime.snapshot()
         let name = sandbox.record.name, sandboxID = sandbox.record.sandboxID
         switch host {
-        case .sandboxCreate, .sandboxList, .relayStatus, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet:
+        case .sandboxCreate, .sandboxList, .relayStatus, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet,
+             .imageCreate, .imageCopy, .imageDelete, .imageWait:
             preconditionFailure("answered by request()")
         case .systemInfo:
             return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
@@ -672,6 +674,8 @@ public actor SandboxHost {
 extension HostOperation {
     /// The skill, the CLI link and the agent setup setting: machine-level, answered by the installed CLI.
     var isAgentSetup: Bool { ["skill.", "cli.", "agents."].contains { rawValue.hasPrefix($0) } }
+    /// Account image operations the relay passes on to a machine holding, or about to hold, the image.
+    var isImage: Bool { rawValue.hasPrefix("image.") }
 }
 
 /// Lets runtimes tell the host their lifecycle changed, so `host.watch` answers.
