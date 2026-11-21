@@ -223,6 +223,40 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertNil(try SandboxDirectory(root.appendingPathComponent("sandbox_1")).load().coldBootPending, "the debt is paid")
     }
 
+    /// macOS allows two running macOS guests per Mac: a third start sleeps the least recently used idle one and says
+    /// so; with both busy it is refused with that reason, never Virtualization's raw limit error. Linux is not counted.
+    func testThirdMacOSSandboxSleepsOneOrIsRefused() async throws {
+        let clock = TestClock()
+        let jobs = JobsGuest()
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(images: [builtInImage, "macos-base"], guest: jobs.answer), hostCPUs: 12, hostMemoryBytes: 64 * gib, now: { clock.now })
+        for name in ["a", "b"] {
+            clock.now += 60
+            _ = try await hostCall(host, "sandbox.create", #"{"name":"\#(name)","image":"macos-base","cpus":4,"memory_bytes":8589934592,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_\(name)")
+        }
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"lin","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_lin")
+        clock.now += 60
+        let third = try await hostCall(host, "sandbox.create", #"{"name":"c","image":"macos-base","cpus":4,"memory_bytes":8589934592,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_c")
+        XCTAssertEqual((third["actions"] as? [[String: Any]])?.filter { $0["kind"] as? String == "made_room" }.map { $0["detail"] as? String }, ["slept a (8 GiB) to make room"], "a is the least recently used macOS sandbox; the Linux one is not counted")
+        for id in ["sandbox_b", "sandbox_c"] { jobs.set(id, jobs: 1) }
+        let fourth = try await call(host, envelope("sandbox.create", #"{"name":"d","image":"macos-base","cpus":4,"memory_bytes":8589934592,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_d"))
+        let error = fourth["error"] as? [String: Any]
+        XCTAssertEqual(error?["code"] as? String, "machine_full")
+        XCTAssertTrue((error?["message"] as? String)?.contains("already runs 2 macOS sandboxes, the most macOS allows") == true, String(describing: error))
+    }
+
+    /// A macOS guest's process list is mostly system daemons; a resize reports only what the agent's work started.
+    func testResizeOnDarwinReportsOnlyUserProcesses() async throws {
+        let ps = #"{"ok":true,"result":{"stdout":"40\n1 0 /sbin/launchd\n77 1 /usr/libexec/logd\n78 1 /System/Library/CoreServices/WindowServer -daemon\n80 1 /usr/local/localbox/localbox-agent\n81 1 /usr/local/localbox/localbox-vsock 1024=/var/run/localbox/agent.sock\n90 1 /usr/local/localbox/localbox-agent --desktop\n120 1 /Applications/Xcode.app/Contents/MacOS/Xcode\n41 40 ps -eo pid=,ppid=,args=\n"}}"#
+        let factory = FakeBackendFactory { request in
+            let operation = (try JSONSerialization.jsonObject(with: request) as? [String: Any])?["operation"] as? String
+            return operation == "shell.exec" ? Data(ps.utf8) : request
+        }
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 12, hostMemoryBytes: 24 * gib)
+        _ = try await hostCall(host, "sandbox.create", #"{"name":"mac","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        let resized = try await hostCall(host, "sandbox.resize", #"{"cpus":3}"#, sandboxID: "sandbox_1")
+        XCTAssertEqual((resized["actions"] as? [[String: Any]])?.first?["detail"] as? String, "restarted mac at 3 CPUs and 2 GiB; 2 processes ended: Xcode, launchd")
+    }
+
     func testAdmitSleepsLeastRecentlyUsed() async throws {
         let clock = TestClock()
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(guest: JobsGuest().answer), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })

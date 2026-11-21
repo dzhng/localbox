@@ -118,6 +118,8 @@ final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
     public var made: [FakeSandboxBackend] { lock.lock(); defer { lock.unlock() }; return backends }
     public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
         guard images.contains(record.imageID) else { throw ImageNotHere(imageID: record.imageID) }
+        // Fixture convention: an image whose id starts with "macos" is a macOS image, as its manifest would say.
+        if record.imageID.hasPrefix("macos") { record.os = .macos }
         record.mac = randomLocalMAC(); return [:]
     }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {

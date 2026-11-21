@@ -147,6 +147,8 @@ public actor SandboxHost {
     private let budgetBytes: UInt64
     /// Changes only when what sandboxes reserve changes (a lifecycle event), so the connector writes capacity only then.
     private var capacityRevision = 0
+    /// Running macOS guests one Mac may hold (Apple's licence; Virtualization refuses a third).
+    static let macOSRunningLimit = 2
     /// Free disk as last reported. Free space moves by a few bytes all the time; the connector reports capacity to
     /// Convex whenever it changes, so the figure only moves once it is a gibibyte off, and an idle Mac makes no calls.
     private var reportedFreeDisk: UInt64?
@@ -602,25 +604,38 @@ public actor SandboxHost {
         let others = await snapshots(includingUnlisted: true).filter { $0.record.sandboxID != sandboxID }
         let holding = others.filter { $0.reservesMemory || admitted.contains($0.record.sandboxID) }
         var reserved = holding.map(\.record.memoryBytes).reduce(0, +)
-        guard reserved + needed > budgetBytes else { return [] }
+        let macOSHolding = sandbox.record.os == .macos ? holding.filter { $0.record.os == .macos } : []
+        guard reserved + needed > budgetBytes || macOSHolding.count >= Self.macOSRunningLimit else { return [] }
         let candidates = holding.filter { [.ready, .paused].contains($0.status.lifecycle) && !admitted.contains($0.record.sandboxID) }
             .sorted { ($0.record.lastActivityAt ?? .distantPast, $0.record.sandboxID) < ($1.record.lastActivityAt ?? .distantPast, $1.record.sandboxID) }
         var jobs: [String: Int?] = [:]
         // A sandbox asleep in memory was idle when it slept and runs nothing meanwhile.
         for candidate in candidates { jobs[candidate.record.sandboxID] = candidate.status.lifecycle == .paused ? 0 : await runtimes[candidate.record.sandboxID]?.runningJobs() }
-        var victims: [SandboxRuntime] = []
-        for candidate in candidates where reserved + needed > budgetBytes && (jobs[candidate.record.sandboxID] ?? nil) == 0 {
-            if let victim = runtimes[candidate.record.sandboxID] { victims.append(victim); reserved -= candidate.record.memoryBytes }
+        var victims: [SandboxRuntime] = [], chosen: Set<String> = []
+        func choose(_ candidate: RuntimeSnapshot) {
+            guard let victim = runtimes[candidate.record.sandboxID] else { return }
+            victims.append(victim); chosen.insert(candidate.record.sandboxID); reserved -= candidate.record.memoryBytes
         }
-        guard makeRoom, reserved + needed <= budgetBytes else {
+        func describe(_ held: RuntimeSnapshot) -> String {
+            let jobs = jobs[held.record.sandboxID] ?? nil
+            let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle == .freezing ? "frozen for a disk clone" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
+            return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
+        }
+        // macOS runs at most two macOS guests per Mac (its licence, enforced by Virtualization); a third start sleeps the
+        // least recently used idle one, or is refused with the reason, never with Virtualization's raw error.
+        var macOSRunning = macOSHolding.count
+        for candidate in candidates where candidate.record.os == .macos && macOSRunning >= Self.macOSRunningLimit && (jobs[candidate.record.sandboxID] ?? nil) == 0 {
+            choose(candidate); macOSRunning -= 1
+        }
+        if macOSRunning >= Self.macOSRunningLimit {
+            let holders = macOSHolding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
+            throw AdmissionRefused(message: "\(sandbox.record.name) is a macOS sandbox, and this Mac already runs \(Self.macOSRunningLimit) macOS sandboxes, the most macOS allows; \(makeRoom ? "none of them can sleep" : "none is slept at daemon start"): \(macOSHolding.map(describe).joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: holding.map(\.record.memoryBytes).reduce(0, +), holders: holders)
+        }
+        for candidate in candidates where reserved + needed > budgetBytes && !chosen.contains(candidate.record.sandboxID) && (jobs[candidate.record.sandboxID] ?? nil) == 0 { choose(candidate) }
+        guard makeRoom || victims.isEmpty, reserved + needed <= budgetBytes else {
             let holders = holding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
-            let listed = holding.map { held -> String in
-                let jobs = jobs[held.record.sandboxID] ?? nil
-                let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle == .freezing ? "frozen for a disk clone" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
-                return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
-            }
             let total = holding.map(\.record.memoryBytes).reduce(0, +)
-            throw AdmissionRefused(message: "\(sandbox.record.name) needs \(gibibytes(needed)), but sandboxes reserve \(gibibytes(total)) of this machine's \(gibibytes(budgetBytes)) and \(makeRoom ? "not enough of them can sleep" : "none is slept at daemon start"): \(listed.isEmpty ? "none running" : listed.joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: total, holders: holders)
+            throw AdmissionRefused(message: "\(sandbox.record.name) needs \(gibibytes(needed)), but sandboxes reserve \(gibibytes(total)) of this machine's \(gibibytes(budgetBytes)) and \(makeRoom ? "not enough of them can sleep" : "none is slept at daemon start"): \(holding.isEmpty ? "none running" : holding.map(describe).joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: total, holders: holders)
         }
         var actions: [SandboxAction] = []
         for victim in victims { actions.append(["kind": "made_room", "detail": try await victim.sleepForRoom()]) }

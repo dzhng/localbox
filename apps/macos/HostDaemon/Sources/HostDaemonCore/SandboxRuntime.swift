@@ -561,7 +561,10 @@ public actor SandboxRuntime {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true).map(String.init)
             guard fields.count == 3, fields[0] != shell, fields[1] != shell, !fields[2].hasPrefix("[") else { return nil }
             let args = fields[2]
-            if args.contains("/usr/local/localbox/localbox-agent") || args.contains("VSOCK-LISTEN") { return nil } // Localbox's own agent and forwarder
+            // Localbox's own agent, forwarders (socat on Linux, localbox-vsock on darwin) and desktop helper.
+            if ["/usr/local/localbox/", "VSOCK-LISTEN"].contains(where: args.contains) { return nil }
+            // A macOS guest runs hundreds of system daemons; they restart with it and are not the agent's work.
+            if args.hasPrefix("/System/") || args.hasPrefix("/usr/libexec/") { return nil }
             return URL(fileURLWithPath: String(args.split(separator: " ").first ?? "")).lastPathComponent
         }
     }
