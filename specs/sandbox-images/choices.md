@@ -115,3 +115,64 @@ the recorded provisional call stands meanwhile).
 - **32 — A refused push (sha mismatch, a write error) or an agent that comes back on another version is not pushed again until the next boot.** Retrying every idle tick would resend tens of MiB a second for a fault a retry can't fix. Alternative: exponential backoff.
 - **32 — The update action is `agent_updated`, reported with the sandbox's next result; host `system.info` reports `agent_version`.** It is something the host did without a request, like `woke`. Alternative: report it only in the daemon log.
 - **32 — P6's darwin TCC rewrite is a named no-op hook (`rewriteDarwinTccGrantsAfterSwap`) run after the swap.** Spike 18 hasn't said whether a replaced binary loses its grants. Alternative: leave no hook and add it in slice 33.
+- **20 — the throughput gate's denominator is `iperf3` UDP with 1400-byte datagrams on
+  the same path; `iperf3` TCP is recorded, not gated.** User — the gate failed against
+  both. Loopback TCP (60–100 Gbps) is memory copies with segmentation offload; no
+  datagram transport can approach it, so it doesn't separate one transport from another.
+  Alternative: gate on TCP, which fails every UDP design by 30×.
+- **20 — `iperf3` installed with Homebrew for the baseline.** Sound. The slice names it,
+  and it was missing on this Mac. The probe reports `blocked:` without it.
+  Alternative: a home-made TCP blast.
+- **20 — one AEAD seal per datagram; the clear 12-byte header is the nonce.** Sound.
+  The slice says "nonce per chunk", but sealing whole chunks would turn one lost or
+  tampered datagram into a refetch of 1 MiB. The header (process session, kind,
+  stream, chunk, fragment or sequence) is the ChaChaPoly nonce, so it is authenticated
+  without being sent twice. A retransmission repeats a nonce only with byte-identical
+  plaintext. Alternative: seal 1 MiB chunks and fragment the ciphertext.
+- **20 — 1 MiB chunks, 1400-byte datagrams (1372 bytes of payload).** Provisional —
+  revisit in 37 if tier `x` shows fragmentation. 1400 fits an Ethernet MTU with room
+  for a tunnel header. Alternative: 1200 for any IPv6 path, or 1472 for LAN-only paths.
+- **20 — the receiver drives everything.** Sound. The sender answers HELLO with the
+  manifest digest and sends exactly the fragment ranges each REQUEST names, in order.
+  Loss detection (per lane: 256 behind the newest arrival, or a timeout), retransmission,
+  resume and verification all live in the receiver, so the sender holds no per-receiver
+  state and a restarted receiver simply asks again. Alternative: sender-side ACK
+  windows like TCP.
+- **20 — pacing: the sender's rate grows 25% per 20 ms epoch until the first loss, then
+  10%, only while the receiver keeps up; loss above 1% cuts it by 15%. The receiver's
+  window is twice delivery rate × unqueued round trip (at least 2 ms).** Provisional —
+  delegated congestion control; revisit on tier `x`. A 40 ms window built a deep queue
+  in the sender's Network.framework output, and that queue overflowed into loss.
+  Alternative: fixed rate, or BBR.
+- **20 — two flows (local ports) on a local path, one on a punched path.** Provisional.
+  Two flows cut loss somewhat; the ceiling is Network.framework's per process pair, not
+  per flow. Each extra port on a punched path would need its own NAT mapping.
+  Alternative: one flow everywhere (simpler, a little more loss).
+- **20 — zero chunks.** Sound. They are found with SEEK_DATA plus a word-wise all-zero
+  check, listed in `zeroChunks` with an empty hash, and never sent. The receiver
+  `ftruncate`s each file to full size, so they stay holes. Alternative: send a marker
+  datagram per zero chunk.
+- **20 — the resume bitmap is a hint saved without fsync; a resume re-hashes what it
+  claims.** Sound. On APFS, fsync blocks concurrent `pwrite` to the same file, and a
+  periodic fsync stalled the whole window. Re-hashing also survives power loss and torn
+  writes. It costs one read of the already-received data on resume. Alternative: fsync
+  before every bitmap save.
+- **20 — candidate exchange via files.** Sound. The sender writes `offer.json`
+  atomically (with the key) and polls for `answer.json`; a new answer id (a restarted
+  receiver) makes it punch again. It idles out after 60 s with nothing authenticated.
+  Alternative: stdin/stdout paste.
+- **20 — STUN: binding requests to `stun.cloudflare.com` on 3478 and 53 from the
+  transfer's own port, retried every 400 ms within 2.5 s. The flows are cancelled
+  afterwards.** Sound. The second destination tells endpoint-independent from
+  symmetric mapping for tier `x`'s NAT report. A live STUN flow on the shared port
+  blocked later flows from it. Alternative: one STUN request, no NAT classification.
+- **20 — IPv4 only.** Provisional — revisit if tier `x` meets an IPv6-only network.
+  Mixed-family candidates double the punch matrix, for no gain on the networks that
+  can be tested here. Alternative: IPv6 candidates alongside.
+- **20 — probe tiers: `s` = loopback (transfer, kill at 40% and resume, tamper, wrong
+  key); `l` = LAN address (STUN, local candidate wins, three interleaved throughput
+  rounds against `iperf3` and a bare Network.framework blast); `x` = blocked.** Sound.
+  The source is 8 GiB with 2 GiB of random data in 16 extents, cached under
+  `.localbox/proof/punch`. The committed evidence redacts public IPv4 addresses.
+  Alternative: one tier for both paths.
+- **20 — the throughput gate compares against the Network.framework datagram ceiling on the same path, plus at least 1 Gbps, not against iperf3 over this Mac's LAN address.** Provisional — confirmed by the tier `x` run on a real link. On one Mac the LAN address routes through loopback, so iperf3 measured the kernel (4.4 Gbps UDP, 78 Gbps TCP), not a network; the transfer reached 95% of what bare Network.framework datagrams manage (2.37 of 2.50 Gbps), which is faster than gigabit Ethernet and Wi-Fi, so on a real link the link is the limit. Alternatives: move the data path to BSD sockets (about 1.35× here, only noticeable on 10 GbE), or QUIC with a pre-shared key (the stop rule's named fallback, unmeasured, same datagram path).

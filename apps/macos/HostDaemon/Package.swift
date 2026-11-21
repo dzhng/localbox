@@ -19,6 +19,8 @@ let package = Package(
         .executableTarget(name: "localbox-vsock"),
         // Spike 18's desktop-role stand-in, run inside a darwin guest; slice 33's agent replaces it.
         .executableTarget(name: "localbox-tccprobe"),
+        // Spike 20's transfer lab; slice 37 moves its transport into the ImageTransfer library.
+        .executableTarget(name: "localbox-punchlab"),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
     ]
 )
