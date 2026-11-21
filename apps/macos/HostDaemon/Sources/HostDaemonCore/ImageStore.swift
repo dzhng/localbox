@@ -71,7 +71,8 @@ public struct ImageStore: Sendable {
     }
 
     /// The temporary a resumable write of image `id` under `key` (a copy's operation) uses, created if missing and
-    /// otherwise as an earlier run left it; `sweepTemps(keeping:)` spares it while that write may resume.
+    /// otherwise as an earlier run left it; `sweepTemps(keeping:)` spares it, and anything named after it, while that write
+    /// may resume.
     public func resumableTemp(_ id: String, key: String) throws -> URL {
         let temp = root.appendingPathComponent(Self.resumableTempName(id, key: key), isDirectory: true)
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -147,12 +148,28 @@ public struct ImageStore: Sendable {
         return UInt64(stats.f_bavail) * UInt64(stats.f_bsize)
     }
 
-    /// At daemon start: removes temporaries a crash left (an unfinished write or delete), except those `keeping` names
-    /// (a copy that resumes). Returns their names.
-    @discardableResult public func sweepTemps(keeping: Set<String> = []) -> [String] {
-        let temps = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" && !keeping.contains($0) }.sorted()
-        for name in temps { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
-        return temps
+    /// Removes every temporary of image `id` (`.<id>.*`): a failed write clears what it and any earlier run of it left.
+    public func discardTemps(of id: String) {
+        for name in temps() where Self.temp(name, belongsTo: [id]) { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
+    }
+
+    /// At daemon start: removes temporaries a crash left (an unfinished write or delete). A dot-entry a running host
+    /// operation owns (`.<subject>.*`, for every subject in `running`) stays for its resume: a copy's partial files and
+    /// the transfer's resume bitmap beside them. Returns the names removed.
+    @discardableResult public func sweepTemps(keeping running: Set<String> = []) -> [String] {
+        let swept = temps().filter { !Self.temp($0, belongsTo: running) }
+        for name in swept { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
+        return swept
+    }
+
+    private func temps() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" }.sorted()
+    }
+
+    /// Whether dot-entry `name` is a temporary of one of `images` (`.<id>.<anything>`).
+    private static func temp(_ name: String, belongsTo images: Set<String>) -> Bool {
+        let parts = name.dropFirst().split(separator: ".", maxSplits: 1)
+        return parts.count == 2 && images.contains(String(parts[0]))
     }
 
     static let manifestName = "image.json", diskName = "disk.img"

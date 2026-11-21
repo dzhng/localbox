@@ -52,11 +52,6 @@ public actor ImageCopy {
         await operations.register(kind: Self.kind) { [self] context in try await self.run(context) }
     }
 
-    /// The temporaries copies the last run left unfinished may resume into, for the start's sweep to spare.
-    public static func resumableTemps(_ operations: HostOperationStore) async -> Set<String> {
-        Set(await operations.running(kind: kind).map { ImageStore.resumableTempName($0.subject, key: $0.key) })
-    }
-
     /// Starts this Mac's side of copying `imageID` under `key` (the copy's mutation id), or returns the side already
     /// under that key.
     public func begin(key: String, imageID: String) async throws -> HostOperationRecord {
@@ -103,14 +98,20 @@ public actor ImageCopy {
         checkpoint["role"] = .string(row.role); checkpoint["copy_id"] = .string(row.copyID)
         let link = Link(copy: self, key: context.key, copyID: row.copyID)
         if row.role == "sender" {
+            // The receiver may have everything already (this side restarted after it finished, or its done never arrived).
+            guard row.state != "copied" else { return .object(["role": .string("sender")]) }
             let source: ImageCopySource
             do { source = try store.copySource(imageID) } catch {
                 throw HostOperationFailure(code: "image_not_found", message: "image \(imageID) is no longer on this Mac", nextStep: "copy it from another Mac that holds it")
             }
             try await context.report(HostOperationProgress(phase: "sending"), checkpoint: .object(checkpoint))
             let journaled = checkpoint
-            let sent = try await transfer { [self] in try await transport.send(source, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "sending")) }
-            return Self.result(["role": .string("sender")], sent)
+            do {
+                let sent = try await transfer { [self] in try await transport.send(source, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "sending")) }
+                return Self.result(["role": .string("sender")], sent)
+            } catch is ReceiverFinished {
+                return .object(["role": .string("sender")])
+            }
         }
         if let manifest = try? store.manifest(imageID) {
             // Committed before the last run could record it; the checkpoint has what the transfer did.
@@ -128,7 +129,9 @@ public actor ImageCopy {
         do {
             try await context.report(HostOperationProgress(phase: "receiving", completed: 0, total: row.sizeBytes.map(Int.init)), checkpoint: .object(checkpoint))
             let journaled = checkpoint
-            let received = try await transfer { [self] in try await transport.receive(into: temp, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "receiving")) }
+            let report = try await transfer { [self] in try await transport.receive(into: temp, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "receiving")) }
+            // The copy's duration is what the person waited, from the request on, across any restart of this daemon.
+            let received = ImageCopyReport(bytes: report.bytes, durationMs: max(report.durationMs, Int(Date().timeIntervalSince1970 * 1000) - context.startedAt), path: report.path)
             guard case .object(let done) = Self.result(checkpoint, received) else { throw HostOperationFailure(code: "internal", message: "unreachable") }
             checkpoint = done
             try await context.report(HostOperationProgress(phase: "committing"), checkpoint: .object(checkpoint))
@@ -137,7 +140,7 @@ public actor ImageCopy {
             // The daemon is exiting: the temporary stays for the resumed transfer.
             throw CancellationError()
         } catch {
-            try? FileManager.default.removeItem(at: temp)
+            store.discardTemps(of: imageID)
             throw error is HostOperationFailure ? error : HostOperationFailure(code: "internal", message: "could not receive image \(imageID): \(explain(error))", nextStep: "copy it again; if it fails the same way, check this Mac's logs")
         }
         return .object(checkpoint.merging(["size_bytes": .number(Double(try store.manifest(imageID).sizeBytes))]) { $1 })
@@ -194,18 +197,24 @@ public actor ImageCopy {
         wakeOutboxAll()
     }
 
+    /// The first wait (no `previous`) gives up after `peerWaitMs`; a wait for the peer's next set has no deadline, since
+    /// the transfer it watches bounds itself.
     fileprivate func peerCandidates(_ key: String, after previous: [ImageCopyCandidate]?) async throws -> [ImageCopyCandidate] {
-        let deadline = Date().addingTimeInterval(Double(peerWaitMs) / 1000)
+        let deadline = previous == nil ? Date().addingTimeInterval(Double(peerWaitMs) / 1000) : .distantFuture
         while true {
             if let row = rows[key] {
                 if row.state == "failed" { throw peerFailure(row) }
+                if row.state == "copied" { throw ReceiverFinished() }
                 if let peer = row.peerCandidates, peer != previous { return peer }
             }
             guard try await changed(key, until: deadline) else {
-                throw HostOperationFailure(code: "copy_unreachable", message: "the other Mac published \(previous == nil ? "no address to reach it" : "nothing new") within \(peerWaitMs / 1000) s", nextStep: Self.unreachableNextStep)
+                throw HostOperationFailure(code: "copy_unreachable", message: "the other Mac published no address to reach it within \(peerWaitMs / 1000) s", nextStep: Self.unreachableNextStep)
             }
         }
     }
+
+    /// The copy's row says the receiver committed: a sender still waiting on its peer has nothing left to do.
+    struct ReceiverFinished: Error {}
 
     private func peerFailure(_ row: Rendezvous) -> HostOperationFailure {
         HostOperationFailure(code: row.error?.code ?? "internal", message: "the copy failed elsewhere: \(row.error?.message ?? "no reason given")", nextStep: row.error?.nextStep ?? "copy it again")
@@ -216,7 +225,8 @@ public actor ImageCopy {
         let remaining = deadline.timeIntervalSinceNow
         guard remaining > 0 else { return false }
         let id = UUID()
-        let timer = Task { [weak self] in try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)); await self?.wake(key, id) }
+        // A day at most per wait, so a distant deadline never overflows; the caller waits again.
+        let timer = Task { [weak self] in try? await Task.sleep(nanoseconds: UInt64(min(remaining, 86_400) * 1_000_000_000)); await self?.wake(key, id) }
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled { continuation.resume() } else { waiters[key, default: [:]][id] = continuation }

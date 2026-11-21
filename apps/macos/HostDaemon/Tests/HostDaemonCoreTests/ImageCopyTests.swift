@@ -134,7 +134,7 @@ private struct Mac {
         self.root = root; self.freeBytes = freeBytes; self.peerWaitMs = peerWaitMs
         operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
         store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"))
-        store.sweepTemps(keeping: await ImageCopy.resumableTemps(operations))
+        store.sweepTemps(keeping: await operations.runningSubjects())
         let copy = ImageCopy(store: store, operations: operations, transport: transport, freeBytes: { freeBytes }, peerWaitMs: peerWaitMs)
         await copy.attach()
         host = ImageHost(operations: operations, files: StoredImageFiles(store: store), copy: copy)

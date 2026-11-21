@@ -20,8 +20,8 @@ struct HostDaemonMain {
             let isDev = ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1"
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
             let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
-            // A copy the last run left unfinished resumes into the temporary it was writing.
-            for name in images.sweepTemps(keeping: await ImageCopy.resumableTemps(operations)) { log("removed \(name), an image write or delete the last run left unfinished") }
+            // A running operation's temporaries (a copy's partial files and its resume bitmap) stay for its resume.
+            for name in images.sweepTemps(keeping: await operations.runningSubjects()) { log("removed \(name), an image write or delete the last run left unfinished") }
             // Kinds register before the store starts (image.capture once the sandboxes exist, below); dev daemons also run the
             // proof's fixture kind.
             if isDev { await FixtureOperations.register(on: operations) }
