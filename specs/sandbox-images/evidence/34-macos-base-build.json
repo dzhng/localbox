@@ -1,0 +1,158 @@
+{
+  "checks": [
+    {
+      "name": "the daemon starts with the guest agent build (darwin/ included) and an IPSW cache seeded by APFS clone",
+      "ok": true
+    },
+    {
+      "name": "image create --macos builds to ready with no human step; image.wait answers at every phase",
+      "ok": true
+    },
+    {
+      "name": "a sandbox from the image: SIP disabled, Chrome present, no Xcode, Remote Login off, no window-picker prompt",
+      "ok": true
+    },
+    {
+      "name": "a cached rebuild skips the download and reaches ready again",
+      "ok": true
+    }
+  ],
+  "host_macos": "27.0.1",
+  "uncached_build": "not measured: an uncached build needs the 25.6 GB IPSW plus the 50 GB disk free, more than this Mac has; the IPSW cache was seeded from the lab's by APFS clone",
+  "ipsw": {
+    "build": "26B131",
+    "file_name": "UniversalMac_27.2.1_26B131_Restore.ipsw",
+    "ok": true,
+    "size_bytes": 25595954706,
+    "url": "https://updates.cdn-apple.com/2026FallFCS/c202a724-db7e-4d56-917b-110aa0226507/UniversalMac_27.2.1_26B131_Restore.ipsw",
+    "version": "27.2.1"
+  },
+  "first_build": {
+    "seconds": 432,
+    "phases": [
+      {
+        "phase": "download",
+        "at_s": 0,
+        "done_bytes": 25595954706,
+        "total_bytes": 25595954706
+      },
+      {
+        "phase": "install",
+        "at_s": 0
+      },
+      {
+        "phase": "provision",
+        "at_s": 201
+      },
+      {
+        "phase": "bootstrap",
+        "at_s": 251
+      },
+      {
+        "phase": "sip",
+        "at_s": 303
+      },
+      {
+        "phase": "tcc",
+        "at_s": 397
+      },
+      {
+        "phase": "finish",
+        "at_s": 424
+      }
+    ],
+    "result": {
+      "ipsw_build": "26B131",
+      "chrome_version": "158.0.8127.37",
+      "os": "macos",
+      "size_bytes": 30830485504,
+      "agent_version": "0.1.1+a6b394b443d9",
+      "ipsw_version": "27.2.1",
+      "min_macos": "27.0"
+    },
+    "error": null
+  },
+  "manifest": {
+    "agent_version": "0.1.1+a6b394b443d9",
+    "hardware_model": "(set)",
+    "image_id": "image_p34amwquau7f",
+    "min_macos": "27.0",
+    "os": "macos",
+    "size_bytes": 30830485504
+  },
+  "image_check": {
+    "agent_ready_ms": 19421,
+    "browser": {
+      "focused": true,
+      "generation": 1,
+      "tab_id": "AFBEA9ADEFE0F13B8C9137AEE78316CF",
+      "title": "",
+      "url": "https://example.com/"
+    },
+    "checks": {
+      "browser_opens": true,
+      "chrome_installed": true,
+      "desktop_captures": true,
+      "no_xcode": true,
+      "picker_prompt_answered": true,
+      "port_22_refused": true,
+      "remote_login_off": true,
+      "sip_disabled": true
+    },
+    "chrome_version": "158.0.8127.37",
+    "csrutil_status": "System Integrity Protection status: disabled.",
+    "guard_log": [
+      "[localbox-guest] desktop: allowed the window-picker bypass prompt shown by UserNotificationCenter"
+    ],
+    "ok": true,
+    "picker_prompt_seen": [],
+    "screenshots": 8,
+    "sshd": "\"com.openssh.sshd\" => disabled",
+    "xcode": ""
+  },
+  "cached_rebuild": {
+    "seconds": 366,
+    "phases": [
+      {
+        "phase": "download",
+        "at_s": 0,
+        "done_bytes": 25595954706,
+        "total_bytes": 25595954706
+      },
+      {
+        "phase": "install",
+        "at_s": 0
+      },
+      {
+        "phase": "provision",
+        "at_s": 189
+      },
+      {
+        "phase": "bootstrap",
+        "at_s": 218
+      },
+      {
+        "phase": "sip",
+        "at_s": 266
+      },
+      {
+        "phase": "tcc",
+        "at_s": 315
+      },
+      {
+        "phase": "finish",
+        "at_s": 338
+      }
+    ],
+    "result": {
+      "ipsw_build": "26B131",
+      "chrome_version": "158.0.8127.37",
+      "os": "macos",
+      "size_bytes": 29963976704,
+      "agent_version": "0.1.1+a6b394b443d9",
+      "ipsw_version": "27.2.1",
+      "min_macos": "27.0"
+    },
+    "error": null
+  }
+}
