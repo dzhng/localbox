@@ -10,26 +10,16 @@ import Network
 /// work there slows its reads and the kernel buffer overflows); an opener authenticates them in batches
 /// (AEAD is most of the per-datagram cost, and one opener per socket spreads it across flows); the owner
 /// gets the results in batches on `delivery`, where its state lives.
-final class UDPSocket: @unchecked Sendable {
-    struct Datagram {
-        var data: Data
-        var from: NWEndpoint
-        /// What `open` returned; nil when it isn't set or the datagram failed authentication.
-        var opened: (header: PacketHeader, payload: Data)?
-    }
+public final class UDPSocket: DatagramPort, @unchecked Sendable {
+    public let delivery: DispatchQueue
+    public private(set) var localPort: UInt16 = 0
+    public var onDatagrams: (([Datagram]) -> Void)?
+    public var open: ((Data) -> (PacketHeader, Data)?)?
 
-    /// The owner's queue: batches are delivered here, and the owner's state lives here.
-    let delivery: DispatchQueue
-    private(set) var port: UInt16 = 0
-    /// Called on `delivery` with every datagram that arrived since the previous call.
-    var onDatagrams: (([Datagram]) -> Void)?
-    /// Runs on this socket's opener thread for every datagram; set before traffic starts.
-    var open: ((Data) -> (PacketHeader, Data)?)?
-
-    private let io = DispatchQueue(label: "punchlab.udp.io", qos: .userInteractive)
-    private let opener = DispatchQueue(label: "punchlab.udp.open", qos: .userInteractive)
+    private let io = DispatchQueue(label: "imagetransfer.udp.io", qos: .userInteractive)
+    private let opener = DispatchQueue(label: "imagetransfer.udp.open", qos: .userInteractive)
     private let lock = NSLock()
-    private var connections: [NWEndpoint: NWConnection] = [:]
+    private var connections: [PeerAddress: NWConnection] = [:]
     private var raw: [Datagram] = []
     private var inbox: [Datagram] = []
     private var listener: NWListener?
@@ -37,7 +27,7 @@ final class UDPSocket: @unchecked Sendable {
     /// round trip at a time and the receive rate drops by about half.
     private let pendingReceives = 32
 
-    init(port requested: UInt16 = 0, delivery: DispatchQueue) throws {
+    public init(port requested: UInt16 = 0, delivery: DispatchQueue) throws {
         self.delivery = delivery
         let listener = try NWListener(using: Self.parameters(localPort: nil), on: requested == 0 ? .any : NWEndpoint.Port(rawValue: requested)!)
         let ready = DispatchSemaphore(value: 0)
@@ -53,9 +43,10 @@ final class UDPSocket: @unchecked Sendable {
         listener.start(queue: io)
         self.listener = listener
         guard ready.wait(timeout: .now() + 5) == .success, failure == nil, let bound = listener.port?.rawValue else {
-            throw PunchError("cannot bind UDP port \(requested): \(failure.map { "\($0)" } ?? "timed out")")
+            listener.cancel()
+            throw TransferError.failed("cannot bind UDP port \(requested): \(failure.map { "\($0)" } ?? "timed out")")
         }
-        port = bound
+        localPort = bound
     }
 
     static func parameters(localPort: UInt16?) -> NWParameters {
@@ -66,33 +57,44 @@ final class UDPSocket: @unchecked Sendable {
         return parameters
     }
 
-    static func endpoint(_ address: String, _ port: UInt16) -> NWEndpoint {
-        .hostPort(host: IPv4Address(address).map { .ipv4($0) } ?? .name(address, nil), port: NWEndpoint.Port(rawValue: port)!)
+    static func endpoint(_ peer: PeerAddress) -> NWEndpoint {
+        .hostPort(host: IPv4Address(peer.host).map { .ipv4($0) } ?? .name(peer.host, nil), port: NWEndpoint.Port(rawValue: peer.port)!)
     }
 
-    /// Any thread. `.idempotent` sends: a datagram the kernel drops is the protocol's loss to recover, not
-    /// an error to surface.
-    func send(_ datagrams: [Data], to remote: NWEndpoint) {
+    /// The flow's address as candidates spell it: dotted IPv4 with no interface scope.
+    static func peer(_ endpoint: NWEndpoint) -> PeerAddress? {
+        guard case let .hostPort(host, port) = endpoint else { return nil }
+        switch host {
+        case .ipv4(let address): return PeerAddress(address.rawValue.map(String.init).joined(separator: "."), port.rawValue)
+        case .ipv6(let address): return PeerAddress("\(address)", port.rawValue)
+        case .name(let name, _): return PeerAddress(name, port.rawValue)
+        @unknown default: return nil
+        }
+    }
+
+    /// `.idempotent` sends: a datagram the kernel drops is the protocol's loss to recover, not an error to surface.
+    public func send(_ datagrams: [Data], to remote: PeerAddress) {
         let connection = connection(to: remote)
         connection.batch { for datagram in datagrams { connection.send(content: datagram, completion: .idempotent) } }
     }
 
-    /// Cancels the flow to `remote`, if any.
-    func disconnect(_ remote: NWEndpoint) {
+    public func disconnect(_ remote: PeerAddress) {
         lock.lock(); let connection = connections.removeValue(forKey: remote); lock.unlock()
         connection?.cancel()
     }
 
-    func close() {
+    public func close() {
         lock.lock(); let all = Array(connections.values); connections.removeAll(); lock.unlock()
         listener?.cancel()
         all.forEach { $0.cancel() }
     }
 
-    private func connection(to remote: NWEndpoint) -> NWConnection {
+    public func sibling() throws -> any DatagramPort { try UDPSocket(delivery: delivery) }
+
+    private func connection(to remote: PeerAddress) -> NWConnection {
         lock.lock()
         if let existing = connections[remote] { lock.unlock(); return existing }
-        let connection = NWConnection(to: remote, using: Self.parameters(localPort: port))
+        let connection = NWConnection(to: Self.endpoint(remote), using: Self.parameters(localPort: localPort))
         connections[remote] = connection
         lock.unlock()
         start(connection, remote: remote)
@@ -100,14 +102,14 @@ final class UDPSocket: @unchecked Sendable {
     }
 
     private func adopt(_ connection: NWConnection) {
-        let remote = connection.endpoint
+        guard let remote = Self.peer(connection.endpoint) else { return connection.cancel() }
         lock.lock()
         if connections[remote] == nil { connections[remote] = connection }
         lock.unlock()
         start(connection, remote: remote)
     }
 
-    private func start(_ connection: NWConnection, remote: NWEndpoint) {
+    private func start(_ connection: NWConnection, remote: PeerAddress) {
         // A flow that fails (ICMP unreachable while the peer restarts) is dropped so the next send rebuilds it.
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard case .failed = state, let self, let connection else { return }
@@ -120,7 +122,7 @@ final class UDPSocket: @unchecked Sendable {
         for _ in 0..<pendingReceives { receive(on: connection, from: remote) }
     }
 
-    private func receive(on connection: NWConnection, from remote: NWEndpoint) {
+    private func receive(on connection: NWConnection, from remote: PeerAddress) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self else { return }
             if let data, !data.isEmpty {

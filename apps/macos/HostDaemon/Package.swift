@@ -19,8 +19,11 @@ let package = Package(
         .executableTarget(name: "localbox-vsock"),
         // The darwin agent's desktop helper (ScreenCaptureKit, CGEvent); runs inside darwin guests.
         .executableTarget(name: "localbox-desktop"),
-        // Spike 20's transfer lab; slice 37 moves its transport into the ImageTransfer library.
-        .executableTarget(name: "localbox-punchlab"),
+        // Image transfer between Macs (chunks, AEAD, resume, LAN and punched UDP paths). Never imports HostDaemonCore.
+        .target(name: "ImageTransfer"),
+        // The manual transfer tool and probe 20's driver, on top of ImageTransfer.
+        .executableTarget(name: "localbox-punchlab", dependencies: ["ImageTransfer"]),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
+        .testTarget(name: "ImageTransferTests", dependencies: ["ImageTransfer"]),
     ]
 )

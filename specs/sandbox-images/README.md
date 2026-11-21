@@ -76,7 +76,7 @@ any blocker, and tick the TODO list.
 - [ ] [34 macOS base build](slices/34-macos-base-build.md)
 - [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
 - [x] [36 placement with images](slices/36-placement-images.md)
-- [ ] [37 transfer library](slices/37-transfer-library.md)
+- [x] [37 transfer library](slices/37-transfer-library.md)
 - [ ] [38 image copy](slices/38-image-copy.md)
 - [ ] [39 create with copy](slices/39-create-with-copy.md)
 - [ ] [40 positioning, docs and security](slices/40-docs-positioning.md)

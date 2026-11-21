@@ -1,6 +1,6 @@
 {
   "s": {
-    "at": "2026-11-21T18:29:28.523Z",
+    "at": "2026-11-21T18:43:49.718Z",
     "checks": [
       {
         "name": "localbox-punchlab builds (release)",
@@ -26,18 +26,20 @@
     "source": {
       "size": 8589934592,
       "allocated": 2147483648,
-      "sha256": "4e8405d1ed8fd39a16e819061cbd4157e0ba026e23d58dd707a95977c67306ff"
+      "sha256": "eb9dbd0b29df8362b584046d2f88899f17299f0020635b30525f13650ff15b5f"
     },
     "loopback": {
+      "bytes": 2147483648,
       "chunks": 8192,
       "data_bytes": 2147483648,
-      "data_seconds": 9.74839699268341,
+      "data_seconds": 5.877223014831543,
       "duplicate_fragments": 0,
+      "duration": 6.285549998283386,
       "event": "done",
       "files": 1,
       "lanes": 2,
-      "lost_fragments": 2401,
-      "path": "local 127.0.0.1:64418",
+      "lost_fragments": 873,
+      "path": "local 127.0.0.1:57251",
       "path_kind": "local",
       "received_bytes": 2147483648,
       "rejected_chunks": 0,
@@ -45,43 +47,47 @@
       "resume_rejected_chunks": 0,
       "resumed_bytes": 0,
       "resumed_chunks": 0,
-      "throughput_gbps": 1.762327611082543,
+      "throughput_gbps": 2.9231269837209712,
       "zero_chunks": 6144
     },
     "resume": {
-      "killedAt": 0.4169921875,
+      "killedAt": 0.4150390625,
       "bitmapBytes": 1064,
       "after": {
+        "bytes": 2147483648,
         "chunks": 8192,
         "data_bytes": 2147483648,
-        "data_seconds": 5.0292229652404785,
+        "data_seconds": 4.214668035507202,
         "duplicate_fragments": 0,
+        "duration": 4.529347896575928,
         "event": "done",
         "files": 1,
         "lanes": 2,
-        "lost_fragments": 1437,
-        "path": "local 127.0.0.1:50572",
+        "lost_fragments": 826,
+        "path": "local 127.0.0.1:59498",
         "path_kind": "local",
-        "received_bytes": 1307574272,
+        "received_bytes": 1363148800,
         "rejected_chunks": 0,
         "rejected_datagrams": 0,
         "resume_rejected_chunks": 0,
-        "resumed_bytes": 839909376,
-        "resumed_chunks": 801,
-        "throughput_gbps": 2.079962301989491,
+        "resumed_bytes": 784334848,
+        "resumed_chunks": 748,
+        "throughput_gbps": 2.5874375652192136,
         "zero_chunks": 6144
       }
     },
     "tamper": {
+      "bytes": 33554432,
       "chunks": 256,
       "data_bytes": 33554432,
-      "data_seconds": 0.2640269994735718,
+      "data_seconds": 0.27744901180267334,
       "duplicate_fragments": 0,
+      "duration": 0.2861889600753784,
       "event": "done",
       "files": 1,
       "lanes": 2,
       "lost_fragments": 1,
-      "path": "local 127.0.0.1:59783",
+      "path": "local 127.0.0.1:52808",
       "path_kind": "local",
       "received_bytes": 33554432,
       "rejected_chunks": 1,
@@ -89,13 +95,13 @@
       "resume_rejected_chunks": 0,
       "resumed_bytes": 0,
       "resumed_chunks": 0,
-      "throughput_gbps": 1.016696991350195,
+      "throughput_gbps": 0.9675127485799663,
       "zero_chunks": 224
     },
     "wrongKey": {
       "receiver": {
         "event": "error",
-        "message": "no authenticated reply within 3s (wrong key, or no path); tried: local 127.0.0.1:54271"
+        "message": "no authenticated reply within 3s (wrong key, or no path); tried: local 127.0.0.1:54595: no authenticated reply within 3s"
       },
       "sender": {
         "data_bytes": 0,
@@ -109,7 +115,7 @@
     }
   },
   "l": {
-    "at": "2026-11-21T18:30:56.061Z",
+    "at": "2026-11-21T18:45:06.245Z",
     "checks": [
       {
         "name": "localbox-punchlab builds (release)",
@@ -131,7 +137,7 @@
     "source": {
       "size": 8589934592,
       "allocated": 2147483648,
-      "sha256": "4e8405d1ed8fd39a16e819061cbd4157e0ba026e23d58dd707a95977c67306ff"
+      "sha256": "eb9dbd0b29df8362b584046d2f88899f17299f0020635b30525f13650ff15b5f"
     },
     "lanAddress": "192.168.0.198",
     "stun": {
@@ -140,12 +146,12 @@
       "reflexive": {
         "address": "<public>",
         "kind": "reflexive",
-        "port": 53114
+        "port": 58464
       },
       "second_reflexive": {
         "address": "<public>",
         "kind": "reflexive",
-        "port": 53114
+        "port": 58464
       },
       "server": "stun.cloudflare.com:3478"
     },
@@ -155,41 +161,43 @@
           {
             "address": "192.168.0.198",
             "kind": "local",
-            "port": 52484
+            "port": 54824
           },
           {
             "address": "<public>",
             "kind": "reflexive",
-            "port": 52484
+            "port": 54824
           }
         ],
         "event": "offer",
-        "id": "066b9987fd4795c4",
+        "id": "ee6b0516a11d5a22",
         "nat": {
           "mapping": "endpoint-independent",
           "reflexive": {
             "address": "<public>",
             "kind": "reflexive",
-            "port": 52484
+            "port": 54824
           },
           "second_reflexive": {
             "address": "<public>",
             "kind": "reflexive",
-            "port": 52484
+            "port": 54824
           },
           "server": "stun.cloudflare.com:3478"
         }
       },
       "receiver": {
+        "bytes": 2147483648,
         "chunks": 8192,
         "data_bytes": 2147483648,
-        "data_seconds": 7.716105937957764,
+        "data_seconds": 8.266195058822632,
         "duplicate_fragments": 0,
+        "duration": 8.61574900150299,
         "event": "done",
         "files": 1,
         "lanes": 2,
-        "lost_fragments": 1771,
-        "path": "local 192.168.0.198:52484",
+        "lost_fragments": 2225,
+        "path": "local 192.168.0.198:54824",
         "path_kind": "local",
         "received_bytes": 2147483648,
         "rejected_chunks": 0,
@@ -197,62 +205,62 @@
         "resume_rejected_chunks": 0,
         "resumed_bytes": 0,
         "resumed_chunks": 0,
-        "throughput_gbps": 2.2264947270212088,
+        "throughput_gbps": 2.0783285491991474,
         "zero_chunks": 6144
       }
     },
     "throughput": {
       "rounds": [
         {
-          "iperfUdpGbps": 4.3277288333883535,
-          "iperfTcpGbps": 76.73282144682291,
-          "punchGbps": 1.607051216976664,
-          "lostFragments": 3653
+          "iperfUdpGbps": 3.952795234225356,
+          "iperfTcpGbps": 58.53980210920965,
+          "punchGbps": 2.1156903773693765,
+          "lostFragments": 2500
         },
         {
-          "iperfUdpGbps": 2.352724651576311,
-          "iperfTcpGbps": 59.87809342875472,
-          "punchGbps": 1.7498722318200104,
-          "lostFragments": 1147
+          "iperfUdpGbps": 4.757412141682284,
+          "iperfTcpGbps": 68.11396300233893,
+          "punchGbps": 2.727945011708879,
+          "lostFragments": 528
         },
         {
-          "iperfUdpGbps": 2.669672113213718,
-          "iperfTcpGbps": 49.660453437747705,
-          "punchGbps": 1.687434399422149,
-          "lostFragments": 3940
+          "iperfUdpGbps": 4.169864691631536,
+          "iperfTcpGbps": 81.05281254308314,
+          "punchGbps": 2.773446806399961,
+          "lostFragments": 808
         }
       ],
       "networkFramework": {
         "sweep": [
           {
             "offeredPps": 150000,
-            "deliveredPps": 149990.8857998204,
-            "gbps": 1.6462999625388286
+            "deliveredPps": 149991.81176003485,
+            "gbps": 1.6463101258781423
           },
           {
             "offeredPps": 200000,
-            "deliveredPps": 190402.5729266713,
-            "gbps": 2.0898586404431443
+            "deliveredPps": 199964.6725363001,
+            "gbps": 2.1948122457584294
           },
           {
             "offeredPps": 250000,
-            "deliveredPps": 187252.59633157626,
-            "gbps": 2.055284497335381
+            "deliveredPps": 249988.25271094753,
+            "gbps": 2.7438710617553603
           },
           {
             "offeredPps": 300000,
-            "deliveredPps": 178783.44951240357,
-            "gbps": 1.9623271418481416
+            "deliveredPps": 267326.65417675325,
+            "gbps": 2.934177356244043
           }
         ],
-        "bestGbps": 2.0898586404431443
+        "bestGbps": 2.934177356244043
       },
-      "medianPunchGbps": 1.687434399422149,
-      "medianIperfUdpGbps": 2.669672113213718,
-      "medianIperfTcpGbps": 59.87809342875472,
-      "ratioToUdp": 0.6320755238330885,
-      "ratioToTcp": 0.028181164475951863,
-      "ratioToNetworkFramework": 0.8074394922061986,
+      "medianPunchGbps": 2.727945011708879,
+      "medianIperfUdpGbps": 4.169864691631536,
+      "medianIperfTcpGbps": 68.11396300233893,
+      "ratioToUdp": 0.6542046837115764,
+      "ratioToTcp": 0.04004971802353073,
+      "ratioToNetworkFramework": 0.9297137427305497,
       "note": "this Mac's LAN address routes through lo0, so both baselines measure kernel speed, not a wire; punchlab counts file data bytes, iperf3 UDP counts 1400-byte datagram payloads"
     }
   },
