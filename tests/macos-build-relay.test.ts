@@ -77,7 +77,7 @@ test("--machine routes the build there; an agent with several Macs must name one
 
 test("a Mac older than macOS 27 is refused before anything is reserved; a Mac's own refusal releases the reservation", async () => {
   const told: RequestEnvelope[] = [];
-  const { op, images } = await setup({ m3: building(told), m1: async (request) => failure(request, { code: "disk_full", message: "building a macOS image needs 60 GiB free on this Mac, and 41 GiB is free", retryable: false }) });
+  const { op, images } = await setup({ m3: building(told), m1: async (request) => failure(request, { code: "disk_full", message: "building a macOS image on this Mac needs 46.6 GiB free for its disk, and 41 GiB is free", retryable: false }) });
   const old = await op({ macos: true }, { machine: "old-mini" });
   assert.equal(old.error.code, "image_incompatible");
   assert.equal(old.error.message, "old-mini runs macOS 26.4; building a macOS image needs macOS 27 or later on that Mac");

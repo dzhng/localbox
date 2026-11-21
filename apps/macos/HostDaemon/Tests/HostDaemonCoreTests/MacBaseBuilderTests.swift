@@ -114,7 +114,7 @@ final class MacBaseBuilderTests: XCTestCase {
         let journals = await old.operations.state("m-1")
         XCTAssertNil(journals)
 
-        // The 60 GB disk plus the 4 KiB IPSW: one byte short is refused; with the IPSW cached it fits.
+        // The 50 GB disk plus the 4 KiB IPSW: one byte short is refused; with the IPSW cached it fits.
         let tight = try await Rig(test: self, freeBytes: MacBaseBuilder.diskBytes + 4095)
         let full = try await tight.request(["macos": true, "image": "image_mac"], key: "m-1")
         let error = try XCTUnwrap(full["error"] as? [String: Any])

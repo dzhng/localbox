@@ -84,8 +84,9 @@ public protocol MacBuildGuest: Sendable {
 /// The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint.
 public actor MacBaseBuilder {
     public static let kind = "macos.build"
-    /// The guest's disk: the spec's 60 GB, inside the 50–80 GB it delegates; a fresh install allocates about 27 GB of it.
-    public static let diskBytes: UInt64 = 60_000_000_000
+    /// The guest's disk: 50 GB, the low end of the 50–80 GB the spec delegates and the size the map's E14 measures; the
+    /// built base holds about 30 GB of it (Chrome and the agent included).
+    public static let diskBytes: UInt64 = 50_000_000_000
     /// How a building guest is named in the agent's hello (its host name until a sandbox renames it).
     static let guestName = "localbox-macos-base"
 
