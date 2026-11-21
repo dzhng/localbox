@@ -24,7 +24,7 @@ const sha = (path: string) => createHash("sha256").update(readFileSync(path)).di
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "u") {
     return [await ctx.check("copy rendezvous in Convex (lifecycle, key visible only to the two Macs, 24 h expiry), the relay's image copy, the connector's exchange", async () => {
-      const result = await ctx.exec("npx", ["tsx", "--test", "tests/copy-rendezvous.test.ts", "tests/image-copy-relay.test.ts", "tests/connector.test.ts", "tests/relay-convex.test.ts", "tests/catalog-routing.test.ts"]);
+      const result = await ctx.exec("npx", ["tsx", "--test", "tests/copy-rendezvous.test.ts", "tests/image-copy-relay.test.ts", "tests/connector.test.ts", "tests/relay-convex.test.ts", "tests/catalog-routing.test.ts", "tests/convex-auth.test.ts"]);
       assert.equal(result.code, 0, result.stdout.slice(-2500));
     })];
   }
