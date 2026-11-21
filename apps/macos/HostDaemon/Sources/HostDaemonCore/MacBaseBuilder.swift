@@ -278,14 +278,19 @@ public actor MacBaseBuilder: HostOperationKind {
     /// metrics or privacy-sandbox prompts. A sandbox's browser is driven by agents, so anything Chrome asks covers what
     /// they look at.
     static let chromePolicies: [(key: String, value: String)] = [
-        ("BrowserSignin", "-int 0"), ("SyncDisabled", "-bool true"), ("DefaultNotificationsSetting", "-int 2"), ("PromotionalTabsEnabled", "-bool false"),
-        ("DefaultBrowserSettingEnabled", "-bool false"), ("MetricsReportingEnabled", "-bool false"), ("PrivacySandboxPromptEnabled", "-bool false"),
+        ("BrowserSignin", "<integer>0</integer>"), ("SyncDisabled", "<true/>"), ("DefaultNotificationsSetting", "<integer>2</integer>"), ("PromotionalTabsEnabled", "<false/>"),
+        ("DefaultBrowserSettingEnabled", "<false/>"), ("MetricsReportingEnabled", "<false/>"), ("PrivacySandboxPromptEnabled", "<false/>"),
     ]
+
+    /// `chromePolicies` as the plist Chrome reads from `/Library/Managed Preferences`.
+    static var chromePolicyPlist: String {
+        #"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>"# + chromePolicies.map { "<key>\($0.key)</key>\($0.value)" }.joined() + "</dict></plist>"
+    }
 
     /// Over SSH as root, on the first boot: wait for the auto-login session the agent's desktop role runs in, install
     /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google, and its policies.
     public static func bootstrapScript(user: String) -> String {
-        let policies = "/Library/Managed Preferences/com.google.Chrome"
+        let policies = "/Library/Managed Preferences/com.google.Chrome.plist"
         return """
         set -eu
         \(waitForSession(user: user, seconds: 300))
@@ -297,8 +302,8 @@ public actor MacBaseBuilder: HostOperationKind {
         installer -pkg /tmp/GoogleChrome.pkg -target / >/dev/null
         test -d '/Applications/Google Chrome.app'
         mkdir -p '/Library/Managed Preferences'
-        \(chromePolicies.map { "defaults write '\(policies)' \($0.key) \($0.value)" }.joined(separator: "\n"))
-        chmod 644 '\(policies).plist'
+        printf '%s\\n' '\(chromePolicyPlist)' > '\(policies)'
+        chmod 644 '\(policies)' && plutil -lint '\(policies)' >/dev/null
         rm -rf /tmp/GoogleChrome.pkg /tmp/localbox-stage \(remotePayload)
         """
     }

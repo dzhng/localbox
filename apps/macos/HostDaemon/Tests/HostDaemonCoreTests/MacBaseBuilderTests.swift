@@ -38,7 +38,9 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("sh /tmp/localbox-stage/install.sh"), "bootstrap runs the darwin agent's install.sh")
         XCTAssertTrue(scripts[0].contains("https://dl.google.com/chrome/mac/universal/stable/gcem/GoogleChrome.pkg") && scripts[0].contains("Developer ID Installer: Google LLC"), "Chrome comes from Google's own signed installer (P12)")
         XCTAssertFalse(scripts.joined().contains("xcode"), "no Xcode (L5)")
-        XCTAssertTrue(scripts[0].contains("defaults write '/Library/Managed Preferences/com.google.Chrome' BrowserSignin -int 0") && scripts[0].contains("DefaultNotificationsSetting -int 2"), "Chrome's sign-in prompt and notification asks are off by policy")
+        XCTAssertTrue(scripts[0].contains("> '/Library/Managed Preferences/com.google.Chrome.plist'") && scripts[0].contains("<key>BrowserSignin</key><integer>0</integer>") && scripts[0].contains("<key>DefaultNotificationsSetting</key><integer>2</integer>"), "Chrome's sign-in prompt and notification asks are off by policy")
+        let plist = try PropertyListSerialization.propertyList(from: Data(MacBaseBuilder.chromePolicyPlist.utf8), format: nil) as? [String: Any]
+        XCTAssertEqual(plist?["BrowserSignin"] as? Int, 0, "the policy plist parses")
         XCTAssertTrue(scripts[1].contains("localbox-agent --grant-tcc") && scripts[1].contains("kickstart -k gui/"), "the desktop role restarts holding its grants")
         XCTAssertTrue(scripts[1].contains("launchctl disable gui/$(id -u localbox)/com.apple.notificationcenterui.agent"), "no notification banner covers a screenshot")
         XCTAssertTrue(scripts[2].contains("launchctl disable system/com.openssh.sshd"), "finish turns Remote Login off for good")
