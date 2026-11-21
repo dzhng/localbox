@@ -4,7 +4,8 @@ import Virtualization
 
 /// The only use of private Apple API in Localbox: Virtualization's built-in VNC server (`_VZVNCServer`), which lets an
 /// unattended build see and type into a macOS guest's screen. It is used for exactly one screen, Recovery's Terminal,
-/// to run `csrutil disable`, which macOS offers no other way to do (see the sandbox-images spec, slice 17).
+/// to run `csrutil disable`, which macOS offers no other way to do. A macOS whose private API changed shape answers
+/// `unsupported` here rather than crashing the daemon.
 public final class RecoveryVNC: @unchecked Sendable {
     private let server: NSObject
     public let port: UInt16
@@ -19,9 +20,11 @@ public final class RecoveryVNC: @unchecked Sendable {
         }
         let port = try freeTCPPort()
         password = String((0..<8).map { _ in Array("abcdefghijkmnpqrstuvwxyz23456789").randomElement()! })
-        let security = (securityClass.perform(NSSelectorFromString("alloc"))!.takeUnretainedValue() as! NSObject)
-            .perform(NSSelectorFromString("initWithPassword:"), with: password)!.takeRetainedValue() as! NSObject
-        let allocated = serverClass.perform(NSSelectorFromString("alloc"))!.takeUnretainedValue() as! NSObject
+        guard let unsecured = securityClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject,
+              let security = unsecured.perform(NSSelectorFromString("initWithPassword:"), with: password)?.takeRetainedValue() as? NSObject,
+              let allocated = serverClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject else {
+            throw HostDaemonError.unsupported("this macOS's _VZVNCServer did not take a password; the macOS image build cannot disable SIP")
+        }
         typealias Initializer = @convention(c) (AnyObject, Selector, UInt16, DispatchQueue, AnyObject) -> Unmanaged<NSObject>
         let selector = NSSelectorFromString("initWithPort:queue:securityConfiguration:")
         guard let method = class_getInstanceMethod(serverClass, selector) else { throw HostDaemonError.unsupported("_VZVNCServer has no initWithPort:queue:securityConfiguration:") }

@@ -8,8 +8,11 @@ import UniformTypeIdentifiers
 import Vision
 
 /// A minimal RFB 3.8 client for driving a macOS guest's screen during an unattended build: raw 32-bit frames to read
-/// the screen, key and pointer events to act on it. Only what scripted setup needs; never a viewer.
+/// the screen, key and pointer events to act on it. Only what scripted setup needs; never a viewer. Every read has a
+/// deadline (`readTimeout`): a server that goes quiet cancels the connection, so a wait on the screen ends on time.
 public final class VNCClient: @unchecked Sendable {
+    /// The longest one read may wait; a whole raw frame of the guest's display arrives well inside it.
+    static let readTimeout: TimeInterval = 30
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "org.localbox.vnc")
     public private(set) var width = 0
@@ -24,11 +27,11 @@ public final class VNCClient: @unchecked Sendable {
 
     public func connect() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let once = ResumeOnce()
+            let answered = Locked(false)
             connection.stateUpdateHandler = { state in
                 switch state {
-                case .ready: once.run { continuation.resume() }
-                case .failed(let error), .waiting(let error): once.run { continuation.resume(throwing: error) }
+                case .ready: if answered.claim() { continuation.resume() }
+                case .failed(let error), .waiting(let error): if answered.claim() { continuation.resume(throwing: error) }
                 default: break
                 }
             }
@@ -203,11 +206,19 @@ public final class VNCClient: @unchecked Sendable {
 
     private func read(_ count: Int) async throws -> Data {
         guard count > 0 else { return Data() }
+        let connection = connection
         return try await withCheckedThrowingContinuation { continuation in
+            let answered = Locked(false)
+            let finish: @Sendable (Result<Data, Error>) -> Void = { result in if answered.claim() { continuation.resume(with: result) } }
+            queue.asyncAfter(deadline: .now() + Self.readTimeout) {
+                guard answered.claim() else { return }
+                continuation.resume(throwing: HostDaemonError.unsupported("the VNC server sent nothing for \(spoken(Self.readTimeout))"))
+                connection.cancel()
+            }
             connection.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, complete, error in
-                if let error { continuation.resume(throwing: error) }
-                else if let data, data.count == count { continuation.resume(returning: data) }
-                else { continuation.resume(throwing: HostDaemonError.unsupported(complete ? "VNC connection closed" : "short VNC read")) }
+                if let error { finish(.failure(error)) }
+                else if let data, data.count == count { finish(.success(data)) }
+                else { finish(.failure(HostDaemonError.unsupported(complete ? "VNC connection closed" : "short VNC read"))) }
             }
         }
     }
@@ -227,11 +238,5 @@ public final class VNCClient: @unchecked Sendable {
         guard let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { throw HostDaemonError.unsupported("cannot make an image from the VNC frame") }
         return image
     }
-}
-
-/// Runs a closure at most once (a continuation must be resumed exactly once).
-private final class ResumeOnce: @unchecked Sendable {
-    private let lock = NSLock(); private var done = false
-    func run(_ body: () -> Void) { lock.lock(); defer { lock.unlock() }; guard !done else { return }; done = true; body() }
 }
 #endif

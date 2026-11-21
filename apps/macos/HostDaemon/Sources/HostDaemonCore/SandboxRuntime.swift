@@ -343,8 +343,7 @@ public actor SandboxRuntime {
     }
 
     private func runningJobs(on channel: any GuestChannel) async -> Int? {
-        let id = "admission-\(UUID().uuidString)"
-        guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
+        guard let request = try? requestEnvelope("guest.activity", sandboxID: record.sandboxID, deadlineMs: 5_000, mutates: false),
               let response = try? await send(request, on: channel),
               let object = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
               let jobs = (object["result"] as? [String: Any])?["running_jobs"] as? NSNumber else { return nil }
@@ -359,13 +358,16 @@ public actor SandboxRuntime {
         return try await send(envelope, on: channel)
     }
 
-    /// A channel that closes under a ready sandbox (not one this runtime closed) means the guest agent is gone.
+    /// A channel that closes under a ready sandbox (not one this runtime closed), or misses an answer's deadline, means
+    /// the guest agent is gone.
     private func send(_ envelope: Data, on channel: any GuestChannel) async throws -> Data {
         let boot = bootCount, epoch = statusValue.channelEpoch
-        do { return try await channel.send(envelope) } catch HostDaemonError.guestUnavailable {
-            if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch, !agentRestarting { await guestLost("the guest agent closed its channel", boot: boot) }
-            throw HostDaemonError.guestUnavailable
+        func lost(_ why: String) async {
+            if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch, !agentRestarting { await guestLost(why, boot: boot) }
         }
+        do { return try await channel.send(envelope) }
+        catch HostDaemonError.guestUnavailable { await lost("the guest agent closed its channel"); throw HostDaemonError.guestUnavailable }
+        catch HostDaemonError.guestUnresponsive(let why) { await lost(why); throw HostDaemonError.guestUnresponsive(why) }
     }
 
     /// Freezes the guest's filesystem and pauses the VM around `body` (a disk clone), so the clone holds everything
@@ -394,7 +396,11 @@ public actor SandboxRuntime {
         } catch {
             var stuck: String?
             if paused { do { try await backend.resume() } catch { stuck = "paused in memory: could not resume after a disk clone: \(explain(error))" } }
-            if let control { _ = await thaw(control, timeoutMs: timeoutMs) }
+            // A freeze may have reached the guest, so it is thawed, on a fresh lane: the first may have closed on a missed answer.
+            if let control {
+                await control.close()
+                if let fresh = try? await dialer.dialControl() { _ = await thaw(fresh, timeoutMs: timeoutMs) }
+            }
             // A guest lost meanwhile already left `.freezing`; a VM that would not resume sleeps paused, and its next use resumes it.
             if statusValue.lifecycle == .freezing { setStatus(stuck == nil ? .ready : .paused, detail: stuck) }
             throw error
@@ -437,7 +443,7 @@ public actor SandboxRuntime {
         agentRestarting = true; defer { agentRestarting = false }
         await channel.close(); self.channel = nil
         let fresh: any GuestChannel
-        do { fresh = try await redial(lane, expecting: binary.version, within: await agentUpdater.restartWindow) } catch {
+        do { fresh = try await redial(lane, expecting: binary.version, within: agentUpdater.restartWindow) } catch {
             await guestLost("the guest agent did not come back after its update to \(binary.version): \(explain(error))", boot: bootCount)
             return nil
         }
@@ -551,8 +557,7 @@ public actor SandboxRuntime {
     private func guestProcesses() async throws -> [String] {
         // `ps` where the image has it, else /proc (kernel threads have an empty cmdline there). Both print "pid ppid args".
         let script = #"echo $$; if command -v ps >/dev/null 2>&1; then ps -eo pid=,ppid=,args=; else for d in /proc/[0-9]*; do c=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null); [ -n "$c" ] && echo "${d#/proc/} $(awk '/^PPid/{print $2}' "$d/status") $c"; done; fi"#
-        let id = "resize-\(UUID().uuidString)"
-        let request = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "shell.exec", "sandbox_id": record.sandboxID, "deadline_ms": 15_000, "mutation_id": id, "input": ["command": script]])
+        let request = try requestEnvelope("shell.exec", sandboxID: record.sandboxID, input: ["command": script], deadlineMs: 15_000)
         let response = try JSONSerialization.jsonObject(with: try await forward(request)) as? [String: Any]
         guard let stdout = (response?["result"] as? [String: Any])?["stdout"] as? String else { throw HostDaemonError.unsupported("the guest did not list its processes") }
         var lines = stdout.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }

@@ -1,9 +1,18 @@
 import Foundation
 
+/// The guest's vsock ports: the request lane, and the control lane (`ControlChannel.swift`) for freeze, thaw and agent
+/// updates. Each guest's forwarder (socat on Linux, `localbox-vsock` on darwin) maps them to the agent's sockets.
+public enum GuestPort {
+    public static let request: UInt32 = 1024
+    public static let control: UInt32 = 1025
+}
+
 /// GuestService transport: a big-endian uint32 length followed by one JSON frame. Requests travel as
 /// `{kind: "request", request, channel_epoch}` and replies as `{kind: "response", response, …}`; the epoch is
 /// the one the guest announced in its ready frame. One request at a time goes over the ordered stream; reads block
-/// on the channel's own queue, so a long request never holds a thread of the cooperative pool.
+/// on the channel's own queue, so a long request never holds a thread of the cooperative pool. The guest answers every
+/// request by its `deadline_ms`; one that has not answered `answerGrace` after it is wedged, and since its late answer
+/// would be read as the next request's, the lane closes.
 public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider, GuestAgentReporting {
     private let reader: FileHandle
     private let readQueue = DispatchQueue(label: "org.localbox.guest-channel.read")
@@ -20,22 +29,33 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider,
     /// Who the guest is: it keys its machine-id and SSH host keys on the id and takes the name as its hostname.
     private let sandboxID: String
     private var name: String
-    private let wallClock: () -> Int64
+    private let wallClock: () -> Int
     private var helloSent = false
     /// The agent build and OS its ready frame named.
     private var agent: GuestAgentIdentity?
 
-    public init(reader: FileHandle, writer: FileHandle, sandboxID: String, name: String, maxFrameBytes: UInt32 = 8 * 1024 * 1024, wallClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
-        self.reader = reader; self.writer = writer; self.sandboxID = sandboxID; self.name = name; self.maxFrameBytes = maxFrameBytes; self.wallClock = wallClock
+    /// How long past a request's deadline its answer may still arrive (the guest's own reply and the frame's way back).
+    private let answerGrace: TimeInterval
+
+    public init(reader: FileHandle, writer: FileHandle, sandboxID: String, name: String, maxFrameBytes: UInt32 = 8 * 1024 * 1024, answerGrace: TimeInterval = 30, wallClock: @escaping () -> Int = { Date().epochMs }) {
+        self.reader = reader; self.writer = writer; self.sandboxID = sandboxID; self.name = name; self.maxFrameBytes = maxFrameBytes; self.answerGrace = answerGrace; self.wallClock = wallClock
     }
+
 
     public func send(_ envelope: Data) async throws -> Data {
         await acquire(); defer { release() }
         guard !closed else { throw HostDaemonError.guestUnavailable }
         guard let request = try JSONSerialization.jsonObject(with: envelope) as? [String: Any] else { throw HostDaemonError.unsupported("guest request is not a JSON object") }
+        let waited = (request["deadline_ms"] as? NSNumber).map { $0.doubleValue / 1000 + answerGrace }
+        let deadline = waited.map { Date().addingTimeInterval($0) }
         try writer.write(contentsOf: try GuestFrameCodec.encode(["kind": "request", "request": request, "channel_epoch": channelEpoch], maxFrameBytes: maxFrameBytes))
         while true {
-            let object = try JSONSerialization.jsonObject(with: try await readFrame()) as? [String: Any]
+            let frame: Data
+            do { frame = try await readFrame(until: deadline) } catch is GuestFrameTimeout {
+                await close()
+                throw HostDaemonError.guestUnresponsive("the guest agent did not answer \(request["operation"] as? String ?? "a request") within \(spoken(waited ?? 0)); its request lane is closed")
+            }
+            let object = try JSONSerialization.jsonObject(with: frame) as? [String: Any]
             switch object?["kind"] as? String {
             case "ready": adopt(object); try sendHello(); continue
             case "response":
@@ -50,7 +70,7 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider,
         await acquire(); defer { release() }
         guard !closed else { throw HostDaemonError.guestUnavailable }
         while !ready {
-            let object = try JSONSerialization.jsonObject(with: try await readFrame()) as? [String: Any]
+            let object = try JSONSerialization.jsonObject(with: try await readFrame(until: nil)) as? [String: Any]
             guard object?["kind"] as? String == "ready" else { throw HostDaemonError.unsupported("guest channel emitted a frame before readiness") }
             adopt(object)
             try sendHello()
@@ -95,11 +115,11 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider,
         if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
     }
 
-    private func readFrame() async throws -> Data {
+    private func readFrame(until deadline: Date?) async throws -> Data {
         let reader = reader, maxFrameBytes = maxFrameBytes
         reading = true
         let frame = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Data, Error>, Never>) in
-            readQueue.async { continuation.resume(returning: Result { try GuestFrameCodec.read(from: reader, maxFrameBytes: maxFrameBytes) }) }
+            readQueue.async { continuation.resume(returning: Result { try GuestFrameCodec.read(from: reader, maxFrameBytes: maxFrameBytes, deadline: deadline) }) }
         }
         reading = false
         // Closed while the read was blocked: the reader was left to it, so it closes here.

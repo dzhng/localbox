@@ -1,8 +1,7 @@
 import Foundation
 
-/// The guest's control lane (vsock port 1025): freeze, thaw and agent updates, apart from the request lane, so they never queue
-/// behind a guest request (the request lane has no timeout) and never pass its mutation journal. Twin of
-/// `packages/guest-gateway/src/control.ts`.
+/// The guest's control lane (`GuestPort.control`): freeze, thaw and agent updates, apart from the request lane, so they
+/// never queue behind a guest request and never pass its mutation journal. Twin of `packages/guest-gateway/src/control.ts`.
 public protocol GuestControlChannel: Sendable {
     /// `sync`, then freeze the guest's root filesystem; the guest thaws itself after `timeoutMs` if no thaw comes.
     func freeze(timeoutMs: Int) async throws
@@ -19,7 +18,8 @@ public protocol GuestControlDialer: Sendable {
 }
 
 /// A control lane over a byte stream: each frame the host writes gets one answer, in order. Every answer has a
-/// deadline, so a guest that never answers fails the exchange instead of holding the sandbox's operation lock.
+/// deadline, so a guest that never answers fails the exchange instead of holding the sandbox's operation lock; a missed
+/// deadline closes the lane, since the late answer would be taken for the next frame's.
 public actor FramedControlChannel: GuestControlChannel {
     private let reader: FileHandle
     private let writer: FileHandle
@@ -73,7 +73,8 @@ public actor FramedControlChannel: GuestControlChannel {
         let sent = frame["kind"] as? String ?? "control"
         let data: Data
         do { data = try read.get() } catch is GuestFrameTimeout {
-            throw HostDaemonError.unsupported("the guest did not answer \(sent) on its control lane within \(spoken(seconds))")
+            close()
+            throw HostDaemonError.guestUnresponsive("the guest did not answer \(sent) on its control lane within \(spoken(seconds)); the lane is closed")
         }
         let answer = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         switch answer["kind"] as? String {
