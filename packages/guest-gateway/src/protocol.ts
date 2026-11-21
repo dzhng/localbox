@@ -44,7 +44,7 @@ export function decodeGuestFrames<F extends { kind: string } = GuestFrame>(buffe
   let offset = 0;
   while (buffer.byteLength - offset >= 4) {
     const length = buffer.readUInt32BE(offset);
-    if (length > 8 * 1024 * 1024) throw new Error("guest frame exceeds 8 MiB");
+    if (length > MAX_GUEST_FRAME_BYTES) throw new Error("guest frame exceeds 8 MiB");
     if (buffer.byteLength - offset - 4 < length) break;
     const raw = buffer.subarray(offset + 4, offset + 4 + length).toString("utf8");
     const parsed = JSON.parse(raw) as F;
@@ -53,6 +53,33 @@ export function decodeGuestFrames<F extends { kind: string } = GuestFrame>(buffe
     offset += 4 + length;
   }
   return { frames, remainder: buffer.subarray(offset) };
+}
+
+/** The protocol's ceiling on one frame's body; a reader may choose a lower limit. */
+export const MAX_GUEST_FRAME_BYTES = 8 * 1024 * 1024;
+
+/**
+ * A reader for one framed byte stream: each chunk in, every frame it completes out. A frame over `maxFrameBytes` is
+ * refused from its length prefix, before its body is buffered, and more than `maxBufferedBytes` waiting for a frame to
+ * complete is refused too. A refusal or malformed frame throws, and the stream has no boundary left to resynchronize
+ * on, so its connection ends.
+ */
+export function readGuestFrames<F extends { kind: string } = GuestFrame>(limits: { maxFrameBytes?: number; maxBufferedBytes?: number } = {}): (chunk: Buffer) => F[] {
+  const { maxFrameBytes = MAX_GUEST_FRAME_BYTES, maxBufferedBytes = Infinity } = limits;
+  let buffer: Buffer = Buffer.alloc(0);
+  return (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    if (buffer.byteLength > maxBufferedBytes) throw new Error("guest input buffer exceeds configured limit");
+    for (let cursor = 0; buffer.byteLength - cursor >= 4;) {
+      const length = buffer.readUInt32BE(cursor);
+      if (length > maxFrameBytes) throw new Error("guest frame exceeds configured limit");
+      if (buffer.byteLength - cursor - 4 < length) break;
+      cursor += 4 + length;
+    }
+    const decoded = decodeGuestFrames<F>(buffer);
+    buffer = Buffer.from(decoded.remainder);
+    return decoded.frames;
+  };
 }
 
 export function inventoryDigest(names: readonly string[]): string {

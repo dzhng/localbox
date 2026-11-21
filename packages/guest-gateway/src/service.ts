@@ -10,9 +10,9 @@ import {
 } from "../../contract/src/index.js";
 import { GuestGateway } from "./index.js";
 import {
-  decodeGuestFrames,
   encodeGuestFrame,
   inventoryDigest,
+  readGuestFrames,
   type GuestFrame,
 } from "./protocol.js";
 
@@ -66,7 +66,7 @@ export class GuestService {
   private readonly maxFrameBytes: number;
   private readonly maxBufferedBytes: number;
   private readonly onProtocolError: (error: Error) => void;
-  private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  private readonly read: (chunk: Buffer) => GuestFrame[];
   private pending = 0;
   private readonly aborts = new Map<string, AbortController>();
   private outputChain = Promise.resolve();
@@ -94,6 +94,7 @@ export class GuestService {
     if (!Number.isInteger(this.maxPending) || this.maxPending < 1) throw new TypeError("guest service maxPending must be positive");
     if (!Number.isInteger(this.maxFrameBytes) || this.maxFrameBytes < 1 || this.maxFrameBytes > 8 * 1024 * 1024) throw new TypeError("guest service maxFrameBytes must be between 1 byte and 8 MiB");
     if (!Number.isInteger(this.maxBufferedBytes) || this.maxBufferedBytes < 1) throw new TypeError("guest service maxBufferedBytes must be positive");
+    this.read = readGuestFrames({ maxFrameBytes: this.maxFrameBytes, maxBufferedBytes: this.maxBufferedBytes });
     this.onProtocolError = options.onProtocolError ?? (() => undefined);
     this.finished = new Promise<void>((resolve) => { this.finishResolve = resolve; });
   }
@@ -134,24 +135,10 @@ export class GuestService {
 
   private async consume(chunk: Buffer): Promise<void> {
     if (this.stopped) return;
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    if (this.buffer.byteLength > this.maxBufferedBytes) throw new Error("guest input buffer exceeds configured limit");
-    // Inspect complete and partial headers before JSON decoding. The framing
-    // decoder has an 8 MiB protocol ceiling; this service may choose a lower
-    // per-channel limit and must reject that frame before admitting it.
-    let cursor = 0;
-    while (this.buffer.byteLength - cursor >= 4) {
-      const length = this.buffer.readUInt32BE(cursor);
-      if (length > this.maxFrameBytes) throw new Error("guest frame exceeds configured limit");
-      if (this.buffer.byteLength - cursor - 4 < length) break;
-      cursor += 4 + length;
-    }
-    const decoded = decodeGuestFrames(this.buffer);
-    this.buffer = Buffer.from(decoded.remainder);
     // Do not serialize frames: a cancel frame must be able to reach an active
     // request even when that request is waiting on a process or network call.
     // `pending` and `maxPending` bound the amount of work admitted below.
-    for (const frame of decoded.frames) {
+    for (const frame of this.read(chunk)) {
       this.handle(frame).catch((error) => this.protocolError(error));
     }
   }

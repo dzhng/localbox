@@ -6,20 +6,20 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { adoptSandboxIdentity, setGuestClock, type GuestPlatform, type IdentitySystem } from "../apps/guest-agent/src/identity.js";
 
-/** A guest root cloned from the template: its machine-id and SSH host keys, and the commands run against it. */
+/** A guest root cloned from an image: its machine-id and SSH host keys, and the commands run against it. */
 async function clonedRoot(withSsh: boolean, platform: GuestPlatform = "linux"): Promise<IdentitySystem & { ran: string[] }> {
   const root = await mkdtemp(join(tmpdir(), "localbox-identity-"));
   await mkdir(join(root, "etc/ssh"), { recursive: true });
   await mkdir(join(root, "var/lib/dbus"), { recursive: true });
-  await writeFile(join(root, "etc/machine-id"), "template\n");
-  await writeFile(join(root, "var/lib/dbus/machine-id"), "template\n");
-  if (withSsh) await writeFile(join(root, "etc/ssh/ssh_host_ed25519_key"), "template key");
+  await writeFile(join(root, "etc/machine-id"), "image\n");
+  await writeFile(join(root, "var/lib/dbus/machine-id"), "image\n");
+  if (withSsh) await writeFile(join(root, "etc/ssh/ssh_host_ed25519_key"), "image key");
   const ran: string[] = [];
   return {
     platform, root, ran,
     run: (command, args) => {
       ran.push([command, ...args].join(" "));
-      if (command === "systemd-machine-id-setup") assert.ok(!existsSync(join(root, "var/lib/dbus/machine-id")), "setup must not copy the template's D-Bus id");
+      if (command === "systemd-machine-id-setup") assert.ok(!existsSync(join(root, "var/lib/dbus/machine-id")), "setup must not copy the image's D-Bus id");
     },
   };
 }
@@ -28,7 +28,7 @@ test("a clone takes its own machine-id and SSH host keys the first time it serve
   const system = await clonedRoot(true);
   assert.equal(adoptSandboxIdentity("sandbox_1", "quiet-otter", system), true);
   assert.deepEqual(system.ran, ["systemd-machine-id-setup", "ssh-keygen -A", "hostname quiet-otter"]);
-  assert.deepEqual(await readdir(join(system.root, "etc/ssh")), [], "the template's host keys are gone before ssh-keygen -A");
+  assert.deepEqual(await readdir(join(system.root, "etc/ssh")), [], "the image's host keys are gone before ssh-keygen -A");
   assert.equal((await readFile(join(system.root, "var/lib/localbox/sandbox-id"), "utf8")).trim(), "sandbox_1");
   system.ran.length = 0;
   assert.equal(adoptSandboxIdentity("sandbox_1", "calm-heron", system), false, "a reconnect or rename keeps the identity");
@@ -51,7 +51,7 @@ test("a macOS clone takes its own SSH host keys and names itself through scutil;
   const system = await clonedRoot(true, "darwin");
   assert.equal(adoptSandboxIdentity("sandbox_3", "quiet-otter", system), true);
   assert.deepEqual(system.ran, ["ssh-keygen -A", "scutil --set HostName quiet-otter", "scutil --set LocalHostName quiet-otter", "scutil --set ComputerName quiet-otter"]);
-  assert.equal(await readFile(join(system.root, "etc/machine-id"), "utf8"), "template\n", "macOS has no machine-id to replace");
+  assert.equal(await readFile(join(system.root, "etc/machine-id"), "utf8"), "image\n", "macOS has no machine-id to replace");
   assert.equal((await readFile(join(system.root, "var/db/localbox/sandbox-id"), "utf8")).trim(), "sandbox_3");
   system.ran.length = 0;
   assert.equal(adoptSandboxIdentity("sandbox_3", "calm-heron", system), false);

@@ -14,9 +14,9 @@ const realRunner: TccRunner = (command, args) => {
 
 /**
  * Grants `binary` (by path) the three desktop services in the system TCC database and the desktop user's live one, as
- * root with SIP off (spikes 17, 18). macOS 27 keeps the user database in a per-user container; the files the user's
- * `tccd` holds open name it. A replaced binary loses its screen-capture grant (spike 18), so this runs after every
- * agent swap (P6) and once when an image is built (`localbox-agent --grant-tcc`). Returns the databases written.
+ * root with SIP off. macOS 27 keeps the user database in a per-user container; the files the user's
+ * `tccd` holds open name it. A replaced binary loses its screen-capture grant, so this runs after every
+ * agent swap and once when an image is built (`localbox-agent --grant-tcc`). Returns the databases written.
  */
 export function grantDarwinTcc(binary: string, user: string, run: TccRunner = realRunner): string[] {
   const uid = check(run("/usr/bin/id", ["-u", user]), `id -u ${user}`).stdout.trim();

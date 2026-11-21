@@ -282,9 +282,10 @@ export function validateRequest(request: unknown): asserts request is RequestEnv
 
 export function identityFromRequest(request: RequestEnvelope): EnvelopeIdentity { return { protocol_version: PROTOCOL_VERSION, request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id ?? null, release_id: RELEASE_ID }; }
 export function success<T extends Json>(request: RequestEnvelope, result: T): SuccessEnvelope<T> { return { ...identityFromRequest(request), ok: true, result }; }
+/** A contract error as the body every envelope and frame carries. */
+export const errorBody = (error: ContractError): ErrorBody => ({ code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) });
 export function failure(request: RequestEnvelope, error: ContractError | ErrorBody): ErrorEnvelope {
-  const body: ErrorBody = error instanceof ContractError ? { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) } : error;
-  return { ...identityFromRequest(request), ok: false, error: body };
+  return { ...identityFromRequest(request), ok: false, error: error instanceof ContractError ? errorBody(error) : error };
 }
 
 export interface ResultTruncation { original_bytes: number; returned_bytes: number }

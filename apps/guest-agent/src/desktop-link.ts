@@ -2,13 +2,13 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import { ContractError, type ErrorBody, type Json } from "../../../packages/contract/src/index.js";
+import { ContractError, errorBody, type ErrorBody, type Json } from "../../../packages/contract/src/index.js";
 import { DESKTOP_OPERATIONS } from "../../../packages/desktop/src/index.js";
-import { decodeGuestFrames, encodeGuestFrame } from "../../../packages/guest-gateway/src/protocol.js";
+import { encodeGuestFrame, readGuestFrames } from "../../../packages/guest-gateway/src/protocol.js";
 import type { DispatchContext, HandlerRegistry } from "../../../packages/runtime/src/index.js";
 
 /**
- * The darwin agent's two roles (P4) talk over one Unix socket: the root role listens, and the `--desktop` role, which
+ * The darwin agent's two roles talk over one Unix socket: the root role listens, and the `--desktop` role, which
  * runs in the auto-login session where ScreenCaptureKit and CGEvent work, dials in and answers the desktop and browser
  * calls the root role forwards. The desktop role dials (not the reverse) so the socket stays root-owned; its newest
  * connection wins.
@@ -118,17 +118,16 @@ export function serveDesktopLink(path: string, handlers: HandlerRegistry, log: (
       return { kind: "result", id: frame.id, result: await handler(frame.input, { request } as DispatchContext) };
     } catch (error) {
       const failure = error instanceof ContractError ? error : new ContractError("internal", error instanceof Error ? error.message : String(error));
-      return { kind: "error", id: frame.id, error: { code: failure.code, message: failure.message, retryable: failure.retryable, ...(failure.details === undefined ? {} : { details: failure.details }) } };
+      return { kind: "error", id: frame.id, error: errorBody(failure) };
     }
   };
   dial();
 }
 
 function readFrames(socket: Socket, onFrame: (frame: LinkFrame) => void): void {
-  let buffer: Buffer = Buffer.alloc(0);
+  const read = readGuestFrames<LinkFrame>();
   socket.on("data", (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    try { const decoded = decodeGuestFrames<LinkFrame>(buffer); buffer = decoded.remainder; decoded.frames.forEach(onFrame); }
+    try { read(chunk).forEach(onFrame); }
     catch { socket.destroy(); }
   });
 }

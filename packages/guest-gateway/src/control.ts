@@ -4,7 +4,7 @@ import { readdirSync, rmSync } from "node:fs";
 import { open, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
-import { decodeGuestFrames, encodeGuestFrame, type ControlFrame } from "./protocol.js";
+import { encodeGuestFrame, readGuestFrames, type ControlFrame } from "./protocol.js";
 
 /** How the guest quiesces its root filesystem for a disk clone. */
 export interface FreezeCommands {
@@ -38,11 +38,11 @@ const MAX_AGENT_BYTES = 512 * 1024 * 1024;
 export interface AgentUpdateOptions {
   /** The running agent's own executable, which an update replaces in place. */
   binary: string;
-  /** Running Localbox jobs: an update waits while any runs (P5), since their tracking lives only in this process. */
+  /** Running Localbox jobs: an update waits while any runs, since their tracking lives only in this process. */
   runningJobs: () => number;
   /** Ends this process once `updated` is on the wire; systemd (`Restart=always`) or launchd (`KeepAlive`) starts the new binary. */
   exit: () => void;
-  /** Runs after the swap, before `updated` is answered: where darwin re-grants the new binary its TCC rows (P6). */
+  /** Runs after the swap, before `updated` is answered: where darwin re-grants the new binary its TCC rows. */
   afterSwap?: (binary: string) => Promise<void>;
 }
 
@@ -90,17 +90,14 @@ export class GuestControl {
   /** Serves one control connection until it closes; answers each frame in order. */
   serve(input: Readable, output: Writable): Promise<void> {
     const connection = Symbol("control connection");
-    let buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    const read = readGuestFrames<ControlFrame>({ maxFrameBytes: this.maxFrameBytes });
     let pending = Promise.resolve();
     const answer = (frame: ControlFrame) => new Promise<void>((resolve) => { if (output.writableEnded || output.destroyed) { resolve(); return; } output.write(encodeGuestFrame(frame), () => resolve()); });
     return new Promise<void>((resolve) => {
       input.on("data", (chunk: Buffer | string) => {
-        buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
         let frames: ControlFrame[];
-        try {
-          if (buffer.byteLength >= 4 && buffer.readUInt32BE(0) > this.maxFrameBytes) throw new Error("control frame exceeds the frame limit");
-          const decoded = decodeGuestFrames<ControlFrame>(buffer); frames = decoded.frames; buffer = Buffer.from(decoded.remainder);
-        } catch (error) {
+        try { frames = read(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); }
+        catch (error) {
           // A malformed stream has no frame boundary left to resynchronize on, so the connection ends.
           pending = pending.then(() => answer({ kind: "control_error", message: messageOf(error) })).then(() => { output.end(); });
           input.removeAllListeners("data");
