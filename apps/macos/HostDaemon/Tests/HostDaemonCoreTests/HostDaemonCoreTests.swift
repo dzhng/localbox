@@ -24,6 +24,21 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertTrue(unknown["free_disk_bytes"] is NSNull, "unread free disk is reported as unknown, never as 0")
     }
 
+    /// The connector reports capacity to Convex whenever it changes, so free disk wobbling by a few bytes must not
+    /// change it: the figure moves only once it is a gibibyte off (probe 07's idle-Mac check).
+    func testFreeDiskWobbleLeavesCapacityUnchanged() async throws {
+        let free = FreeDisk(42 * gib)
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), freeDiskBytes: { free.value })
+        let first = try await capacity(host)
+        free.value = 42 * gib - 4096
+        let wobbled = try await capacity(host)
+        XCTAssertEqual(wobbled["free_disk_bytes"] as? UInt64, first["free_disk_bytes"] as? UInt64, "a few bytes is not a change")
+        free.value = 40 * gib
+        let moved = try await capacity(host)
+        XCTAssertEqual(moved["free_disk_bytes"] as? UInt64, 40 * gib, "two gibibytes is")
+    }
+    final class FreeDisk: @unchecked Sendable { var value: UInt64; init(_ value: UInt64) { self.value = value } }
+
     /// Agent setup is the CLI's: the daemon runs `agents op` and answers with its result or error, never a sandbox's.
     func testAgentSetupRunsTheInstalledCLI() async throws {
         let directory = try scratch()

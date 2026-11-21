@@ -147,6 +147,10 @@ public actor SandboxHost {
     private let budgetBytes: UInt64
     /// Changes only when what sandboxes reserve changes (a lifecycle event), so the connector writes capacity only then.
     private var capacityRevision = 0
+    /// Free disk as last reported. Free space moves by a few bytes all the time; the connector reports capacity to
+    /// Convex whenever it changes, so the figure only moves once it is a gibibyte off, and an idle Mac makes no calls.
+    private var reportedFreeDisk: UInt64?
+    static let freeDiskReportStep: UInt64 = 1 << 30
     private var lastReserved: (bytes: UInt64, running: Int)?
     /// Sandboxes admitted and starting, counted against the budget until their runtime reports `starting` or later.
     private var admitted: Set<String> = []
@@ -557,13 +561,20 @@ public actor SandboxHost {
 
     /// What this Mac can still take: reservation-based, not live free memory. Unlisted sandboxes still hold
     /// what they run with. Free disk and the macOS version are what placement checks before copying an image here.
+    private func reportFreeDisk(_ current: UInt64?) -> UInt64? {
+        guard let current else { return reportedFreeDisk }
+        if let last = reportedFreeDisk, (current > last ? current - last : last - current) < Self.freeDiskReportStep { return last }
+        reportedFreeDisk = current
+        return current
+    }
+
     private func capacity() async -> [String: Any] {
         let holding = await snapshots(includingUnlisted: true).filter(\.reservesMemory)
         let reserved = holding.map(\.record.memoryBytes).reduce(0, +)
         if lastReserved?.bytes != reserved || lastReserved?.running != holding.count { capacityRevision += 1; lastReserved = (reserved, holding.count) }
         let macOS = ProcessInfo.processInfo.operatingSystemVersion
         return ["cpus": hostCPUs, "total_bytes": hostMemoryBytes, "reserved_bytes": reserved, "room_bytes": budgetBytes > reserved ? budgetBytes - reserved : 0, "running": holding.count, "revision": capacityRevision,
-                "free_disk_bytes": freeDiskBytes().map { $0 as Any } ?? NSNull(), "macos_version": "\(macOS.majorVersion).\(macOS.minorVersion).\(macOS.patchVersion)"]
+                "free_disk_bytes": reportFreeDisk(freeDiskBytes()).map { $0 as Any } ?? NSNull(), "macos_version": "\(macOS.majorVersion).\(macOS.minorVersion).\(macOS.patchVersion)"]
     }
 
     /// Admits `runtime` (making room unless told not to), then runs `body`, which starts it. Returns the made_room
