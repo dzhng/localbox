@@ -372,8 +372,9 @@ public actor SandboxRuntime {
     /// written before it and nothing half-written. Lock, freeze, pause, body, resume, thaw, unlock: resume, thaw and
     /// unlock run on every path, and a thaw the guest never receives is covered by its own self-thaw after `timeoutMs`.
     /// While it runs the sandbox is `.freezing`. `body` must not call back into this runtime's lifecycle, which waits
-    /// for the lock `body` runs under.
-    public func freezeAndClone<T: Sendable>(timeoutMs: Int = 10_000, _ body: @Sendable () async throws -> T) async throws -> T {
+    /// for the lock `body` runs under. The stall is the guest's: from asking it to freeze until its thaw answered.
+    @discardableResult
+    public func freezeAndClone<T: Sendable>(timeoutMs: Int = 10_000, _ body: @Sendable () async throws -> T) async throws -> FrozenClone<T> {
         await lockOperation(); defer { unlockOperation() }
         guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
         guard let dialer = backend as? any GuestControlDialer else { throw HostDaemonError.unsupported("\(record.name) has no control lane to freeze it on (the process fixture)") }
@@ -381,13 +382,15 @@ public actor SandboxRuntime {
         var control: (any GuestControlChannel)?, paused = false
         do {
             let lane = try await dialer.dialControl(); control = lane
+            let frozenAt = ContinuousClock.now
             try await lane.freeze(timeoutMs: timeoutMs)
             try await backend.pause(); paused = true
             let value = try await body()
             try await backend.resume(); paused = false
             let unconfirmed = await thaw(lane, timeoutMs: timeoutMs)
+            let stall = ContinuousClock.now - frozenAt
             if statusValue.lifecycle == .freezing { setStatus(.ready, detail: unconfirmed) }
-            return value
+            return FrozenClone(value: value, stallMs: Int(stall / .milliseconds(1)))
         } catch {
             var stuck: String?
             if paused { do { try await backend.resume() } catch { stuck = "paused in memory: could not resume after a disk clone: \(explain(error))" } }
@@ -396,6 +399,16 @@ public actor SandboxRuntime {
             if statusValue.lifecycle == .freezing { setStatus(stuck == nil ? .ready : .paused, detail: stuck) }
             throw error
         }
+    }
+
+    /// Runs `body` (a disk clone) under the operation lock when no VM runs on the disk (stopped, or down after an
+    /// error), so nothing starts it meanwhile; nil, without running `body`, when it is running or asleep. A start or
+    /// stop in flight settles first.
+    public func cloneWhileDown<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T? {
+        await lockOperation(); defer { unlockOperation() }
+        // A bring-up already in flight ends running; none can begin while the lock is held.
+        guard booting == nil, [.stopped, .error].contains(await settled()) else { return nil }
+        return try await body()
     }
 
     /// Brings the guest agent to the host's build when its ready frame named another: on each connect and each idle
@@ -565,6 +578,12 @@ public actor SandboxRuntime {
         guard !discarded else { return }
         do { try directory.save(record) } catch { statusValue = RuntimeStatus(lifecycle: statusValue.lifecycle, channelEpoch: statusValue.channelEpoch, detail: "could not write \(directory.recordFile.path): \(explain(error))") }
     }
+}
+
+/// What `freezeAndClone`'s body returned, and how long the guest stood frozen for it (freeze asked to thaw answered).
+public struct FrozenClone<T: Sendable>: Sendable {
+    public let value: T
+    public let stallMs: Int
 }
 
 /// A runtime as `SandboxHost` reports it, read in one hop.

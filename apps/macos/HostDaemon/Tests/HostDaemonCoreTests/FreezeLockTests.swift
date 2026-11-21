@@ -10,7 +10,7 @@ final class FreezeLockTests: XCTestCase {
         let log = EventLog()
         let host = try await hostWithSandbox(log: log)
         let runtime = await host.runtime("sandbox_1")!
-        let value = try await runtime.freezeAndClone { log.append("body"); return 42 }
+        let value = try await runtime.freezeAndClone { log.append("body"); return 42 }.value
         XCTAssertEqual(value, 42)
         XCTAssertEqual(lane(log), ["freeze 10000", "pause", "body", "resume", "thaw"])
         let status = await runtime.status()

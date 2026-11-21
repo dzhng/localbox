@@ -1,4 +1,4 @@
-import type { Json, ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { sizeText, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
 
 export interface Rendered { stdout: string; stderr: string; exitCode: number }
 
@@ -14,27 +14,22 @@ const isActionReport = (value: Json): value is { requested: Json; produced: Json
 export function render(value: ResponseEnvelope | Json, options: { json: boolean }): Rendered {
   if (isEnvelope(value)) {
     if (options.json) return { stdout: `${JSON.stringify(value, null, 2)}\n`, stderr: value.ok ? "" : `${value.error.code}: ${value.error.message}\n`, exitCode: exitCode(value) };
-    if (value.ok) return { stdout: value.operation === "image.list" && isImageList(value.result) ? imageTable(value.result.images) : text(value.result), stderr: "", exitCode: 0 };
+    if (value.ok) return { stdout: value.operation === "image.list" && isImageList(value.result) ? imageTable(value.result.images) : isReported(value.result) ? `${value.result.report.join("\n")}\n` : text(value.result), stderr: "", exitCode: 0 };
     const details = value.error.details === undefined ? "" : text(value.error.details);
     return { stdout: "", stderr: `${value.error.code}: ${value.error.message}\n${details}`, exitCode: exitCode(value) };
   }
   return { stdout: options.json ? `${JSON.stringify(value, null, 2)}\n` : text(value), stderr: "", exitCode: 0 };
 }
 
+/** A finished image operation (`image create`, `image wait`) prints its report lines, the map's output standard; `--json` keeps the whole state. */
+const isReported = (value: Json): value is { report: string[] } => isObject(value) && Array.isArray(value.report) && value.report.every((line) => typeof line === "string");
+
 type ImageListRow = { name: string; os: string; size_bytes: number | null; from: string; on: string[]; default: boolean };
 const isImageList = (value: Json): value is { images: ImageListRow[] } => isObject(value) && Array.isArray(value.images);
 
-/** A size for a table cell: one decimal in GiB from 1 GiB, whole MiB below; `-` when not known yet. */
-export function size(bytes: number | null): string {
-  if (bytes === null) return "-";
-  if (bytes >= GIB) return `${Math.round(bytes / GIB * 10) / 10} GiB`;
-  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MiB`;
-  return `${bytes} B`;
-}
-
 /** `image list` as a table, one image per row; `ON` names the Macs holding it, `DEFAULT` marks the account default. */
 function imageTable(images: ImageListRow[]): string {
-  const rows = [["NAME", "OS", "SIZE", "FROM", "ON", "DEFAULT"], ...images.map((image) => [image.name, image.os, size(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""])];
+  const rows = [["NAME", "OS", "SIZE", "FROM", "ON", "DEFAULT"], ...images.map((image) => [image.name, image.os, sizeText(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""])];
   const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
   return rows.map((row) => row.map((cell, column) => cell.padEnd(widths[column])).join("  ").trimEnd()).join("\n") + "\n";
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { render, size } from "../apps/cli/src/render.js";
-import { failure, requestFromInvocation, success, type Json, type ResponseEnvelope } from "../packages/contract/src/index.js";
+import { render } from "../apps/cli/src/render.js";
+import { failure, requestFromInvocation, sizeText, success, type Json, type ResponseEnvelope } from "../packages/contract/src/index.js";
 import { FakeDispatcher } from "../packages/runtime/src/index.js";
 
 const GIB = 1024 ** 3;
@@ -81,8 +81,8 @@ test("image list prints one row per image under NAME OS SIZE FROM ON DEFAULT, ca
     const row = rows[index];
     const cell = (column: string, next?: string) => row.slice(at(column), next ? at(next) : undefined).trim();
     assert.deepEqual([cell("NAME", "OS"), cell("OS", "SIZE"), cell("SIZE", "FROM"), cell("FROM", "ON"), cell("ON", "DEFAULT"), cell("DEFAULT")],
-      [image.name, image.os, size(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""], row);
+      [image.name, image.os, sizeText(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""], row);
   }
-  assert.deepEqual([size(null), size(Math.round(4.2 * GIB)), size(300 * 1024 ** 2)], ["-", "4.2 GiB", "300 MiB"]);
+  assert.deepEqual([sizeText(null), sizeText(Math.round(4.2 * GIB)), sizeText(300 * 1024 ** 2)], ["-", "4.2 GiB", "300 MiB"]);
   assert.deepEqual(JSON.parse(render(response, { json: true }).stdout), response, "--json prints the whole envelope");
 });

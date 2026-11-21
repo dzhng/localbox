@@ -68,7 +68,8 @@ public struct ImageStore: Sendable {
     /// id, or would replace an image already here.
     public func commit(_ temp: URL, as id: String) throws {
         let destination = try imageDirectory(id)
-        guard temp.deletingLastPathComponent().standardizedFileURL == root.standardizedFileURL, temp.lastPathComponent.hasPrefix(".") else { throw HostDaemonError.invalidState("\(temp.path) is not a temporary directory of \(root.path)") }
+        // Compared as paths: a root made before its directory existed has no trailing slash, the parent of a child does.
+        guard temp.deletingLastPathComponent().standardizedFileURL.path == root.standardizedFileURL.path, temp.lastPathComponent.hasPrefix(".") else { throw HostDaemonError.invalidState("\(temp.path) is not a temporary directory of \(root.path)") }
         let manifest = try JSONDecoder().decode(ImageManifest.self, from: Data(contentsOf: temp.appendingPathComponent(Self.manifestName)))
         guard manifest.imageID == id else { throw HostDaemonError.invalidState("the image being committed as \(id) names \(manifest.imageID)") }
         for file in [temp.appendingPathComponent(Self.diskName), bootStore(in: temp, os: manifest.os)] where !FileManager.default.fileExists(atPath: file.path) {
@@ -96,6 +97,25 @@ public struct ImageStore: Sendable {
         let disk = try cloneDisk(image.appendingPathComponent(Self.diskName), to: directory.disk)
         try FileManager.default.copyItem(at: bootStore(in: image, os: manifest.os), to: directory.bootStore(for: manifest.os))
         return ClonedImage(manifest: manifest, boot: BootStore(os: manifest.os, in: directory), disk: disk)
+    }
+
+    /// Lays a sandbox's files into temporary `temp` as an image's: an APFS clone of `disk` and a copy of `bootStore`.
+    /// Quick enough to run while the sandbox is frozen; the manifest comes after (`seal`). Returns "cloned" or "copied".
+    public func layDown(disk: URL, bootStore source: URL, os: GuestOS, into temp: URL) throws -> String {
+        let cloned = try cloneDisk(disk, to: temp.appendingPathComponent(Self.diskName))
+        let boot = bootStore(in: temp, os: os)
+        try FileManager.default.createDirectory(at: boot.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: source, to: boot)
+        return cloned
+    }
+
+    /// Writes the manifest of the image laid down in `temp`, sized from its files, ready for `commit`.
+    public func seal(_ temp: URL, imageID: String, os: GuestOS, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
+        let size = allocatedBytes(temp.appendingPathComponent(Self.diskName)) + allocatedBytes(bootStore(in: temp, os: os))
+        let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(manifest).write(to: temp.appendingPathComponent(Self.manifestName), options: .atomic)
+        return manifest
     }
 
     /// Bytes free to an unprivileged writer on the images volume (`statfs` `f_bavail`).
@@ -132,6 +152,14 @@ public func cloneDisk(_ source: URL, to disk: URL) throws -> String {
     guard errno == ENOTSUP || errno == EXDEV else { throw HostDaemonError.unsupported("could not clone \(source.path): errno \(errno)") }
     try FileManager.default.copyItem(at: source, to: disk)
     return "copied"
+}
+
+/// Bytes the file has allocated (`st_blocks`), so a sparse disk counts only what it stores; 0 for a missing file.
+/// Blocks shared with an APFS clone count in full.
+public func allocatedBytes(_ url: URL) -> UInt64 {
+    var info = stat()
+    guard stat(url.path, &info) == 0 else { return 0 }
+    return UInt64(info.st_blocks) * 512
 }
 
 /// Bytes only this file holds (APFS `ATTR_CMNEXT_PRIVATESIZE`): blocks shared with a clone are not counted, unlike `du`.

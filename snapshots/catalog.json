@@ -285,7 +285,7 @@
   },
   {
     "id": "image.create",
-    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers at once with the image's operation state; follow it with image.wait.",
+    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers with the image's operation state, which for a saved sandbox is usually already ready, with what was done line by line; follow one still building with image.wait. `image` is set by the agent API (the reserved image's id, handed to the machine); callers leave it out.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -300,6 +300,10 @@
           ]
         },
         "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
           "type": "string",
           "minLength": 1
         }
