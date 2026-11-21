@@ -1,37 +1,36 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { checkHost } from "../../../apps/cli/src/host-check.js";
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProofContext } from "../run.js";
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
+import { linuxImage } from "./linux-image.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked. */
 /** Hibernate is unavailable only when the lock needs a password and the screen is locked (see apps/cli/src/host-check.ts). */
 export const screenLocked = () => checkHost().hibernate !== "available" && checkHost().screen_locked_now;
 
-/** Builds what a real-VM tier needs: the JS build, the minimal image, the host daemon and its signature. Returns the bin path. */
+/** Builds what a real-VM tier needs: the JS build, the dev linux image, the host daemon and its signature. Returns the bin path. */
 export async function buildRealVMs(ctx: ProofContext): Promise<string> {
   assert.equal((await ctx.exec("npm", ["run", "-s", "build"])).code, 0, "npm run build");
-  const image = await ctx.exec("npm", ["run", "-s", "image:boot", "--", "--profile", "minimal"]);
-  if (image.code !== 0) throw new Error(`blocked: could not build the minimal image (Docker running?): ${(image.stderr || image.stdout).slice(-600)}`);
+  await linuxImage(ctx, { fresh: true });
   const build = await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon"]); assert.equal(build.code, 0, build.stderr.slice(-1500));
   assert.equal((await ctx.exec("sh", ["scripts/proof/lib/sign-dev.sh"])).code, 0);
   return (await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"])).stdout.trim();
 }
 
 /**
- * One real host daemon on this Mac (Apple backend, minimal image) in a temporary machine root, driven over its
+ * One real host daemon on this Mac (Apple backend, the dev linux image) in a temporary machine root, driven over its
  * socket. `env` adds daemon environment (e.g. a dev admission cap). `cleanup` kills it and removes the root.
  */
 export function realDaemon(ctx: ProofContext, options: { probe: string; env?: NodeJS.ProcessEnv }) {
-  const artifacts = join(ctx.root, "dist/vm-image/minimal");
   const machine = realpathSync(mkdtempSync(join(tmpdir(), `localbox-proof-${options.probe}-`)));
-  const sandboxes = join(machine, "sandboxes"); const operations = join(machine, "operations"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
+  const sandboxes = join(machine, "sandboxes"); const operations = join(machine, "operations"); const images = join(machine, "images"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
   const token = randomBytes(32).toString("hex"); writeFileSync(tokenFile, token, { mode: 0o600 });
   const log = join(ctx.evidence, `${options.probe}-hostd.log`);
   const transport = new LocalIPCTransport({ socketPath: socket, token, timeoutMs: 300_000 });
@@ -40,8 +39,10 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   const ours = (pid: number): boolean => { try { return execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(machine); } catch { return false; } };
 
   const start = async (bin: string) => {
+    // This machine's `images/linux` is an APFS clone of the dev image (`cp -c`), so it costs neither time nor space.
+    if (!existsSync(join(images, "linux"))) { mkdirSync(images, { recursive: true }); execFileSync("cp", ["-c", "-R", await linuxImage(ctx), join(images, "linux")]); }
     const fd = openSync(log, "a");
-    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
+    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
     closeSync(fd);
     for (let attempt = 0; attempt < 120 && !existsSync(socket); attempt++) { if (daemon.exitCode !== null) break; await sleep(250); }
     assert.ok(existsSync(socket), `the daemon did not open its socket: ${readFileSync(log, "utf8").slice(-1500)}`);

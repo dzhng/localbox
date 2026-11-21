@@ -30,7 +30,6 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
 
 /** One real host daemon on this Mac (Apple backend, minimal image) in a temporary machine root, driven over its socket. */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {
-  const artifacts = join(ctx.root, "dist/vm-image/minimal");
   const { machine, sandboxes, start, stop, ok, sh, record, cleanup } = realDaemon(ctx, { probe: "10" });
   const evidence: Record<string, unknown> = { machine_root: machine, screen_locked: screenLocked() };
   let bin = "";
@@ -43,8 +42,8 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
   try {
     checks.push(await ctx.check("the minimal image (with this guest agent), the host daemon and its signature are built", async () => {
       bin = await buildRealVMs(ctx);
-      evidence.template_du_kb = Number(execFileSync("du", ["-k", join(artifacts, "template.img")], { encoding: "utf8" }).split("\t")[0]);
       await startDaemon();
+      evidence.image_disk_du_kb = Number(execFileSync("du", ["-k", join(machine, "images/linux/disk.img")], { encoding: "utf8" }).split("\t")[0]);
     }));
     checks.push(await ctx.check("two sandboxes boot from APFS clones that allocate under 50 MB at creation", async () => {
       for (const sandboxId of [ids.alpha, ids.beta]) {
@@ -54,7 +53,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
         assert.equal(created.produced.disk, "cloned");
         assert.ok(created.produced.disk_allocated_bytes >= 0 && created.produced.disk_allocated_bytes < 50 * 1024 * 1024, `clone allocated ${created.produced.disk_allocated_bytes} bytes`);
         assert.deepEqual(created.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
-        // `du` counts blocks a clone shares with the template, so it reports the template's size; kept as evidence only.
+        // `du` counts blocks a clone shares with the image, so it reports the image's size; kept as evidence only.
         evidence[`${sandboxId}_disk_du_kb`] = Number(execFileSync("du", ["-k", join(sandboxes, sandboxId, "disk.img")], { encoding: "utf8" }).split("\t")[0]);
       }
     }));

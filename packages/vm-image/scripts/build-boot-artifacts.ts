@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { artifactDigests, buildImageManifest, digestJson, type ImageBuildPins } from "../src/manifest.js";
 import { DUET_REQUIRED_TOOL_INVENTORY } from "../src/duet-inventory.js";
 
@@ -18,6 +18,9 @@ const boot = process.argv.includes("--boot") ? bootArg : "direct";
 if (boot !== "direct" && boot !== "efi") throw new Error(`--boot must be direct or efi, not ${bootArg}`);
 const outputRoot = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 const output = join(outputRoot, boot === "efi" ? `${profile}-efi` : profile);
+// `--out <images>/<id>` also writes the built disk as an image directory the host daemon's ImageStore reads.
+const imageOut = process.argv.includes("--out") ? resolve(process.argv[process.argv.indexOf("--out") + 1] ?? "") : undefined;
+if (imageOut && boot !== "efi") throw new Error("--out writes an image directory, which boots through EFI: add --boot efi");
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
 /** The guest agent binary the Dockerfile installs, from `npm run build:guest-agent`. */
 const AGENT_BINARY = "dist/guest-agent/localbox-agent-linux-arm64";
@@ -120,50 +123,75 @@ const EFI_TEMPLATE_SCRIPT = [
 ].join("; ");
 
 
+/** Bytes a file holds on disk: a sparse disk counts what it stores, not its length. */
+async function allocatedBytes(path: string): Promise<number> { return (await stat(path)).blocks * 512; }
+
+/**
+ * Writes `images/<id>/` from the built EFI disk: `disk.img` (an APFS clone of template.img, so it costs no space),
+ * `boot/efi-vars` (a fresh variable store) and `image.json`. Assembled under a dot-prefixed name beside it and renamed
+ * into place, the way `ImageStore` commits, so the daemon never reads half an image.
+ */
+async function writeImageDirectory(built: string, destination: string): Promise<void> {
+  const id = basename(destination);
+  const temp = join(dirname(destination), `.${id}.${process.pid}`);
+  await rm(temp, { recursive: true, force: true });
+  await mkdir(join(temp, "boot"), { recursive: true });
+  await run("cp", ["-c", join(built, "template.img"), join(temp, "disk.img")]).catch(() => run("cp", [join(built, "template.img"), join(temp, "disk.img")]));
+  await run("swift", [join(root, "packages/vm-image/scripts/create-efi-vars.swift"), join(temp, "boot", "efi-vars")]);
+  const agent = JSON.parse(await readFile(join(root, "dist/guest-agent/agent-version.json"), "utf8")) as { version: string };
+  const sizeBytes = await allocatedBytes(join(temp, "disk.img")) + await allocatedBytes(join(temp, "boot", "efi-vars"));
+  await writeFile(join(temp, "image.json"), `${JSON.stringify({ image_id: id, os: "linux", size_bytes: sizeBytes, agent_version: agent.version }, null, 2)}\n`);
+  await rm(destination, { recursive: true, force: true });
+  await rename(temp, destination);
+  console.log(JSON.stringify({ image: destination, size_bytes: sizeBytes }));
+}
+
 // The agent is built first because its binary is an input: a cache hit must mean the same agent, not a stale one.
 await run("npm", ["run", "build:guest-agent"]);
 const digest = await inputDigest();
-const existing = join(output, "manifest.json");
+let cached = false;
 try {
-  const cached = JSON.parse(await readFile(existing, "utf8")) as { buildInputsDigest?: string; profile?: string };
-  if (cached.buildInputsDigest === digestJson({ profile, baseImage, inputDigest: digest }) && cached.profile === profile) {
-    console.log(JSON.stringify({ cached: true, profile, output }));
-    process.exit(0);
-  }
+  const manifest = JSON.parse(await readFile(join(output, "manifest.json"), "utf8")) as { buildInputsDigest?: string; profile?: string };
+  cached = manifest.buildInputsDigest === digestJson({ profile, baseImage, inputDigest: digest }) && manifest.profile === profile;
 } catch { /* no cache */ }
+if (cached) console.log(JSON.stringify({ cached: true, profile, output }));
+else await build();
+if (imageOut) await writeImageDirectory(output, imageOut);
 
-const tag = `localbox-vm:${profile}-${digest.slice(-12)}`;
-await run("docker", ["build", "--platform", "linux/arm64", "--file", join(root, "packages/vm-image/Dockerfile.arm64"), "--build-arg", `PROFILE=${profile}`, "--build-arg", `BASE_IMAGE=${baseImage}`, "--build-arg", `IMAGE_BUILD_VERSION=${buildVersion}`, "--tag", tag, root], { stdout: "inherit" });
-const container = (await run("docker", ["create", "--platform", "linux/arm64", tag])).trim();
-const staging = join(outputRoot, `.staging-${profile}-${process.pid}`);
-await rm(staging, { recursive: true, force: true });
-await mkdir(staging, { recursive: true });
-try {
-  await mkdir(join(staging, "boot"), { recursive: true });
-  await run("docker", ["cp", `${container}:/boot/.`, join(staging, "boot")]);
-  await extractKernel(container, staging, "vmlinuz");
-  await extractKernel(container, staging, "initrd.img");
-  const template = join(staging, "template.img");
-  // The root filesystem is unpacked inside Linux, never on the Mac: a macOS checkout is case-insensitive and
-  // unprivileged, so it would merge case-distinct paths (kernel headers have them) and drop ownership and setuid bits.
-  await run("sh", ["-c", `docker export ${container} | docker run -i --rm --platform linux/arm64 -v ${JSON.stringify(`${staging}:/out`)} ${baseImage} bash -c ${JSON.stringify(boot === "efi" ? EFI_TEMPLATE_SCRIPT : TEMPLATE_SCRIPT)}`]);
-  await mkdir(output, { recursive: true });
-  await cp(join(staging, "vmlinuz"), join(output, "kernel"));
-  await cp(join(staging, "initrd.img"), join(output, "initrd"));
-  // A move, not a copy: copying would write out the sparse disk's unused 8 GiB.
-  await rename(template, join(output, "template.img"));
-  const pins: ImageBuildPins = {
-    schemaVersion: "agent-computer-image-build.v1", architecture: "arm64", baseImage,
-    baseSnapshot: "ubuntu-24.04-pinned", packages: { nodejs: "24.x", bun: "1.3.14", staticWebServer: "2.43.0", kasmvnc: "1.5.0" },
-    pythonRequirementsSha256: `sha256:${createHash("sha256").update(await readFile(join(root, "packages/vm-image/requirements-arm64.txt"))).digest("hex")}`,
-    buildVersion, display: { width: 1440, height: 900 }, loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:6901"], readinessMarker: "/run/localbox/ready",
-  };
-  const artifacts = await artifactDigests(output);
-  const manifest = buildImageManifest({ pins, artifacts, profile, substitutions, tools: DUET_REQUIRED_TOOL_INVENTORY });
-  const withInput = { ...manifest, buildInputsDigest: digestJson({ profile, baseImage, inputDigest: digest }) };
-  await writeFile(join(output, "manifest.json"), `${JSON.stringify({ ...withInput, digest: digestJson({ ...withInput, digest: undefined }) }, null, 2)}\n`);
-  console.log(JSON.stringify({ cached: false, profile, output, manifest: join(output, "manifest.json"), artifactDigests: artifacts }));
-} finally {
-  await run("docker", ["rm", "-f", container]).catch(() => undefined);
+async function build(): Promise<void> {
+  const tag = `localbox-vm:${profile}-${digest.slice(-12)}`;
+  await run("docker", ["build", "--platform", "linux/arm64", "--file", join(root, "packages/vm-image/Dockerfile.arm64"), "--build-arg", `PROFILE=${profile}`, "--build-arg", `BASE_IMAGE=${baseImage}`, "--build-arg", `IMAGE_BUILD_VERSION=${buildVersion}`, "--tag", tag, root], { stdout: "inherit" });
+  const container = (await run("docker", ["create", "--platform", "linux/arm64", tag])).trim();
+  const staging = join(outputRoot, `.staging-${profile}-${process.pid}`);
   await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
+  try {
+    await mkdir(join(staging, "boot"), { recursive: true });
+    await run("docker", ["cp", `${container}:/boot/.`, join(staging, "boot")]);
+    await extractKernel(container, staging, "vmlinuz");
+    await extractKernel(container, staging, "initrd.img");
+    const template = join(staging, "template.img");
+    // The root filesystem is unpacked inside Linux, never on the Mac: a macOS checkout is case-insensitive and
+    // unprivileged, so it would merge case-distinct paths (kernel headers have them) and drop ownership and setuid bits.
+    await run("sh", ["-c", `docker export ${container} | docker run -i --rm --platform linux/arm64 -v ${JSON.stringify(`${staging}:/out`)} ${baseImage} bash -c ${JSON.stringify(boot === "efi" ? EFI_TEMPLATE_SCRIPT : TEMPLATE_SCRIPT)}`]);
+    await mkdir(output, { recursive: true });
+    await cp(join(staging, "vmlinuz"), join(output, "kernel"));
+    await cp(join(staging, "initrd.img"), join(output, "initrd"));
+    // A move, not a copy: copying would write out the sparse disk's unused 8 GiB.
+    await rename(template, join(output, "template.img"));
+    const pins: ImageBuildPins = {
+      schemaVersion: "agent-computer-image-build.v1", architecture: "arm64", baseImage,
+      baseSnapshot: "ubuntu-24.04-pinned", packages: { nodejs: "24.x", bun: "1.3.14", staticWebServer: "2.43.0", kasmvnc: "1.5.0" },
+      pythonRequirementsSha256: `sha256:${createHash("sha256").update(await readFile(join(root, "packages/vm-image/requirements-arm64.txt"))).digest("hex")}`,
+      buildVersion, display: { width: 1440, height: 900 }, loopbackBindings: ["127.0.0.1:9222", "127.0.0.1:6901"], readinessMarker: "/run/localbox/ready",
+    };
+    const artifacts = await artifactDigests(output);
+    const manifest = buildImageManifest({ pins, artifacts, profile, substitutions, tools: DUET_REQUIRED_TOOL_INVENTORY });
+    const withInput = { ...manifest, buildInputsDigest: digestJson({ profile, baseImage, inputDigest: digest }) };
+    await writeFile(join(output, "manifest.json"), `${JSON.stringify({ ...withInput, digest: digestJson({ ...withInput, digest: undefined }) }, null, 2)}\n`);
+    console.log(JSON.stringify({ cached: false, profile, output, manifest: join(output, "manifest.json"), artifactDigests: artifacts }));
+  } finally {
+    await run("docker", ["rm", "-f", container]).catch(() => undefined);
+    await rm(staging, { recursive: true, force: true });
+  }
 }
