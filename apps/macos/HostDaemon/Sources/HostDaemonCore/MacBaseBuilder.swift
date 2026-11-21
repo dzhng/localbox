@@ -286,13 +286,18 @@ public actor MacBaseBuilder {
     /// Google's own signed installer package for Chrome (P12); Localbox redistributes nothing macOS-side.
     static let chromeInstaller = "https://dl.google.com/chrome/mac/universal/stable/gcem/GoogleChrome.pkg"
 
+    /// Waits up to 5 minutes for `user`'s auto-login session (its launchd domain and Finder): SSH and the agent answer
+    /// before it exists, and the desktop role and its TCC database live in it.
+    static func waitForSession(user: String) -> String {
+        "n=0; until launchctl print gui/$(id -u \(user)) >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+1)); [ $n -lt 150 ] || { echo \"the desktop session of \(user) never came up\" >&2; exit 1; }; sleep 2; done"
+    }
+
     /// Over SSH as root, on the first boot: wait for the auto-login session the agent's desktop role runs in, install
     /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google.
     public static func bootstrapScript(user: String) -> String {
         """
         set -eu
-        uid=$(id -u \(user))
-        n=0; until launchctl print gui/$uid >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+1)); [ $n -lt 150 ] || { echo "the desktop session of \(user) never came up" >&2; exit 1; }; sleep 2; done
+        \(waitForSession(user: user))
         rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(remotePayload) -C /tmp/localbox-stage
         sh /tmp/localbox-stage/install.sh /tmp/localbox-stage
         rm -f /tmp/GoogleChrome.pkg
@@ -311,6 +316,7 @@ public actor MacBaseBuilder {
     public static func tccScript(user: String) -> String {
         """
         set -eu
+        \(waitForSession(user: user))
         /usr/local/localbox/localbox-agent --grant-tcc
         for dir in '/Library/Managed Preferences' '/Library/Managed Preferences/\(user)'; do
           mkdir -p "$dir"
