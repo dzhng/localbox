@@ -68,16 +68,11 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
       assert.match(text.stdout, new RegExp(`created \\S+ with \\d+ CPUs and \\d+ GiB; image ${name} \\(as asked\\)`));
       writeFileSync(join(ctx.evidence, "29-create-default.txt"), `${JSON.stringify(report, null, 2)}\n\n${text.stdout}`);
     }));
-    checks.push(await ctx.check("on A, which does not hold it, the create fails image_not_found naming B, and nothing is made on A", async () => {
-      const before = sandboxRecords(ctx.root, "a").length;
-      for (const extra of [[], ["--image", name]]) {
-        const refused = await a(["sandbox", "create", "--machine", aName, ...extra, "--json"]);
-        assert.equal(refused.envelope.error?.code, "image_not_found", refused.stdout);
-        assert.equal(refused.envelope.error.message, `${aName} does not hold image ${name}; it is on ${bName}: create the sandbox there with --machine ${bName}`);
-      }
-      assert.equal(sandboxRecords(ctx.root, "a").length, before);
-      const sandboxes = (await a(["sandbox", "list", "--json"])).envelope.result.sandboxes;
-      assert.equal(sandboxes.filter((row: any) => row.machine_name === aName).length, 0, "no reservation is left on A");
+    checks.push(await ctx.check("on A, which does not hold it, the create no longer refuses: it waits for the image's copy from B (slice 39 follows it)", async () => {
+      const waiting = await a(["sandbox", "create", "--machine", aName, "--image", name, "--json"]);
+      assert.equal(waiting.envelope.ok, true, waiting.stdout + waiting.stderr);
+      assert.deepEqual([waiting.envelope.result.produced.state, waiting.envelope.result.produced.copying_from], ["copying", bName]);
+      assert.match(waiting.envelope.result.actions[0].detail, new RegExp(`^sandbox \\S+ on ${aName} is waiting for image ${name} to copy \\(1 GiB\\); localbox image wait ${name}$`));
     }));
     checks.push(await ctx.check("--image linux works on any Mac; --image macos before any macOS build prints the guidance", async () => {
       const linux = await createSandbox(ctx.root, "a", ["--machine", aName, "--image", "linux"]);
