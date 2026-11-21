@@ -108,6 +108,18 @@ test("a ready holder report records the image's size; a machine reports only its
   assert.deepEqual(await agent.mutation(ref("images:dropHolder"), { image: "rails-dev", machineId: "m2" }), { image_id: image.image_id, name: "rails-dev", machine_id: "m2", dropped: true });
 });
 
+test("a macOS base's ready report records the oldest macOS that runs it and its IPSW's version, which placement and image list read", async () => {
+  const { agent, m1 } = await setup();
+  const image = await reserve(agent, { os: "macos", source: { kind: "ipsw" } });
+  assert.equal(image.min_macos, null, "unknown until the build finishes");
+  await m1.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", sizeBytes: 31 * 1024 ** 3, minMacOS: "27.0", ipswVersion: "27.2.1" });
+  const built = await agent.query(ref("images:get"), { image: "macos" }) as any;
+  assert.deepEqual([built.image_id, built.min_macos, built.source, built.size_bytes], [image.image_id, "27.0", { kind: "ipsw", ipswVersion: "27.2.1" }, 31 * 1024 ** 3]);
+  const captured = await reserve(agent, { name: "rails-dev" });
+  await m1.mutation(ref("images:setHolder"), { imageId: captured.image_id, state: "ready", ipswVersion: "27.2.1" });
+  assert.deepEqual((await agent.query(ref("images:get"), { image: "rails-dev" }) as any).source, fromSandbox, "only an IPSW-built image has an IPSW version");
+});
+
 test("get resolves one image as list shows it; a failed holding carries why and a later report clears it", async () => {
   const { agent, m1 } = await setup();
   assert.deepEqual((await agent.query(ref("images:get"), { image: "linux" }) as any).holders.map((holder: any) => holder.machine_name), ["studio", "attic"]);

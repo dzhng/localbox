@@ -116,7 +116,6 @@ test("a machine that refused or never got the capture releases the reservation; 
 test("image create refuses what it can't do before reserving anything", async () => {
   const { op, images } = await setup({ m2: capturing([], { size_bytes: GIB, stall_ms: 1 }) });
   assert.equal((await op({ from: "bold-otter", image: "image_mine" })).error.code, "invalid_input", "image is the agent API's own");
-  assert.equal((await op({ macos: true })).error.code, "unsupported");
   assert.equal((await op({ from: "nope" })).error.code, "sandbox_not_found");
   assert.equal((await op({ from: "bold-otter", macos: true })).error.code, "invalid_input", "exactly one of from and macos");
   assert.equal((await images()).length, 0);
