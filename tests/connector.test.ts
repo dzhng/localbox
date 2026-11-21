@@ -4,7 +4,7 @@ import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { Connector, type ConvexLike, type HostChange, type PendingRow } from "../apps/connector/src/connector.js";
 import { MachineTokenSource, RevokedError } from "../apps/connector/src/token.js";
-import { OUTPUT_CAP_BYTES, PROTOCOL_VERSION, success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
+import { HOST_OPERATION_KINDS, OUTPUT_CAP_BYTES, PROTOCOL_VERSION, success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 async function settle(): Promise<void> { for (let i = 0; i < 20; i++) await tick(); }
@@ -418,8 +418,8 @@ test("a finished copy side is reported to the copy, never as a holder state the 
   const { convex, daemon, connector } = harness();
   await settle();
   daemon.finish(
-    { key: "m-copy", kind: "image.copy", subject: "image_1", state: "succeeded", result: { role: "receiver", size_bytes: 3 * GIB, bytes: 3 * GIB, duration_ms: 9_000, path: "local_network" } },
-    { key: "m-copy-2", kind: "image.copy", subject: "image_2", state: "failed", error: { code: "copy_unreachable", message: "tried local network 10.0.0.1:50000 (timed out)", next_step: "put both Macs on the same network once, then copy" } },
+    { key: "m-copy", kind: HOST_OPERATION_KINDS.copy, subject: "image_1", state: "succeeded", result: { role: "receiver", size_bytes: 3 * GIB, bytes: 3 * GIB, duration_ms: 9_000, path: "local_network" } },
+    { key: "m-copy-2", kind: HOST_OPERATION_KINDS.copy, subject: "image_2", state: "failed", error: { code: "copy_unreachable", message: "tried local network 10.0.0.1:50000 (timed out)", next_step: "put both Macs on the same network once, then copy" } },
   );
   await settle();
   assert.deepEqual(convex.named("images:setHolder"), []);
@@ -435,8 +435,8 @@ test("a sandbox create that waited for its image's copy is reported to the sandb
   const { convex, daemon, connector } = harness();
   await settle();
   daemon.finish(
-    { key: "cli-create", kind: "sandbox.create_after_copy", subject: "image_1", state: "succeeded", result: { name: "rails-box" } },
-    { key: "cli-create-2", kind: "sandbox.create_after_copy", subject: "image_1", state: "failed", error: { code: "copy_unreachable", message: "image image_1 did not arrive", next_step: "put both Macs on the same network once, then copy" } },
+    { key: "cli-create", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: "image_1", state: "succeeded", result: { name: "rails-box" } },
+    { key: "cli-create-2", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: "image_1", state: "failed", error: { code: "copy_unreachable", message: "image image_1 did not arrive", next_step: "put both Macs on the same network once, then copy" } },
   );
   await settle();
   assert.deepEqual(convex.named("images:setHolder"), []);

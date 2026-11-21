@@ -346,6 +346,20 @@ export interface ImageOperationState {
   report?: string[];
 }
 
+/** The kinds of long host work the daemon journals; each record's `subject` is the image it produces on that Mac. */
+export const HOST_OPERATION_KINDS = { capture: "image.capture", macosBuild: "macos.build", copy: "image.copy", createAfterCopy: "sandbox.create_after_copy" } as const;
+/**
+ * One journaled host operation, as the daemon answers `image.wait` (and `image.create`, `image.copy`) with it and hands
+ * finished ones to its connector through `host.operations`. `progress` counts bytes when the kind has any; `result` is
+ * the kind's own and `error` says why it failed and, when the kind knows, what to try next.
+ */
+export interface HostOperationRecord {
+  key: string; kind: string; subject: string; state: "running" | "succeeded" | "failed";
+  progress?: { phase: string; completed?: number; total?: number };
+  result?: Json | null;
+  error?: { code: string; message: string; next_step?: string } | null;
+}
+
 /** What a request did: what was asked, what resulted, and every side effect taken on the way. */
 export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "waiting" | "deleted" | "renamed"
   | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "made_default" | "failed";
@@ -355,6 +369,7 @@ export interface ActionReport { requested: Json; produced: Json; actions: Array<
  * What a machine can still take, as its daemon reports it through `host.watch` and its connector stores on the
  * machine row. `room_bytes` is reservation-based: the daemon's admission budget minus what running sandboxes reserve,
  * not live free memory. `revision` changes only when the reservation does, so the connector writes it only then.
+ * Free disk (null: unread) and the macOS version are what placement checks for an image.
  */
 /** A machine's capacity as its daemon reports it; free disk (null: unread) and the macOS version are what placement checks for an image. */
 export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number; free_disk_bytes?: number | null; macos_version?: string }

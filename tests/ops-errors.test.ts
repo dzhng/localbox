@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ConvexError } from "convex/values";
-import { contractError } from "../apps/relay/src/ops.js";
+import { contractError } from "../packages/contract/src/convex-errors.js";
 
 test("a Convex refusal carrying a contract code becomes that code", () => {
   const error = contractError(new ConvexError({ code: "name_conflict", message: "taken" }));
