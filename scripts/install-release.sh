@@ -121,15 +121,14 @@ if [ ! -e "$TARGET" ]; then
   # A download through a quarantining app carries the flag into the unpacked tree, and Gatekeeper would refuse the
   # self-signed, unnotarized binaries. The release is already authenticated by its pinned manifest signature.
   xattr -dr com.apple.quarantine "$INSTALL_STAGE" 2>/dev/null || true
-  # The signed manifest names the template's parts and the expanded disk's digest; expansion refuses a mismatch.
-  mkdir "$INSTALL_STAGE/vm"
-  (cd "$CLI_STAGE" && SOURCE_DIR="$SOURCE_DIR" TEMPLATE="$INSTALL_STAGE/vm/template.img" "$VERIFY_NODE" --input-type=module <<'NODE'
+  # The signed manifest names the linux image's artifacts and the expanded disk's digest; expansion refuses a mismatch.
+  mkdir "$INSTALL_STAGE/images"
+  (cd "$CLI_STAGE" && SOURCE_DIR="$SOURCE_DIR" STAGE="$INSTALL_STAGE" "$VERIFY_NODE" --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expandTemplate } from "./dist/scripts/release.js";
+import { expandImage, IMAGE_PATH } from "./dist/scripts/release.js";
 const manifest = JSON.parse(readFileSync(join(process.env.SOURCE_DIR, "release.json"), "utf8"));
-if (!manifest.template) throw new Error("release has no VM template");
-await expandTemplate(process.env.SOURCE_DIR, manifest.template, process.env.TEMPLATE);
+await expandImage(process.env.SOURCE_DIR, manifest, join(process.env.STAGE, IMAGE_PATH));
 NODE
   )
   cp "$SOURCE_DIR/release.json" "$INSTALL_STAGE/release.json"
@@ -140,14 +139,16 @@ NODE
   INSTALL_STAGE=
 fi
 
-(cd "$CLI_STAGE" && TARGET="$TARGET" RELEASE_ROOT="$RELEASE_ROOT" "$VERIFY_NODE" --input-type=module <<'NODE'
+# The active release's image becomes this Mac's images/linux, which every sandbox is created from.
+(cd "$CLI_STAGE" && TARGET="$TARGET" RELEASE_ROOT="$RELEASE_ROOT" IMAGES_DIR="$IMAGES_DIR" "$VERIFY_NODE" --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { activateRelease } from "./dist/scripts/release.js";
+import { activateRelease, installLinuxImage } from "./dist/scripts/release.js";
 const target = process.env.TARGET;
 const root = process.env.RELEASE_ROOT;
 const manifest = JSON.parse(readFileSync(join(target, "release.json"), "utf8"));
 await activateRelease(root, manifest.version, manifest, "arm64");
+await installLinuxImage(target, process.env.IMAGES_DIR);
 NODE
 )
 
@@ -168,9 +169,6 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$
 plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOXES' -string "$SANDBOXES_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_OPERATIONS' -string "$OPERATIONS_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IMAGES' -string "$IMAGES_DIR" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$RELEASE_ROOT/active/vm/template.img" "$PLIST"
 # The daemon runs the active release's CLI for agent setup: once at every start, and for remote callers.
 plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$ACTIVE_CLI" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"

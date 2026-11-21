@@ -48,7 +48,7 @@ async function publicKey(): Promise<string | undefined> {
   if (configured.includes("BEGIN PUBLIC KEY")) return configured;
   try { return await readFile(configured, "utf8"); } catch { return undefined; }
 }
-/** Streamed to disk: the template's parts are up to 2 GiB each. */
+/** Streamed to disk: the linux image's disk parts are up to 2 GiB each. */
 async function download(url: string, path: string): Promise<void> {
   const response = await fetch(url, { headers: { accept: "application/octet-stream", "user-agent": "localbox-updater" } });
   if (!response.ok || !response.body) throw new Error(`Release download failed: HTTP ${response.status}`);

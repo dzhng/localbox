@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { checkHost } from "../../../apps/cli/src/host-check.js";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { installLinuxImage } from "../../release.js";
 import type { ProofContext } from "../run.js";
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
@@ -39,8 +40,9 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   const ours = (pid: number): boolean => { try { return execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(machine); } catch { return false; } };
 
   const start = async (bin: string) => {
-    // This machine's `images/linux` is an APFS clone of the dev image (`cp -c`), so it costs neither time nor space.
-    if (!existsSync(join(images, "linux"))) { mkdirSync(images, { recursive: true }); execFileSync("cp", ["-c", "-R", await linuxImage(ctx), join(images, "linux")]); }
+    // This machine gets `images/linux` the way an install does: an APFS clone of the image beside it (the dev image
+    // sits at `dist/vm-image/images/linux`, where a release keeps its own), so it costs neither time nor space.
+    if (!existsSync(join(images, "linux"))) await installLinuxImage(dirname(dirname(await linuxImage(ctx))), images);
     const fd = openSync(log, "a");
     daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
     closeSync(fd);

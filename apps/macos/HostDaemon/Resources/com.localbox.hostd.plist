@@ -15,9 +15,6 @@
     <key>LOCALBOX_SANDBOXES</key><string>~/Library/Application Support/Localbox/sandboxes</string>
     <key>LOCALBOX_OPERATIONS</key><string>~/Library/Application Support/Localbox/operations</string>
     <key>LOCALBOX_IMAGES</key><string>~/Library/Application Support/Localbox/images</string>
-    <key>LOCALBOX_KERNEL</key><string>/Applications/Localbox.app/Contents/Resources/vm/vmlinuz</string>
-    <key>LOCALBOX_INITRD</key><string>/Applications/Localbox.app/Contents/Resources/vm/initrd</string>
-    <key>LOCALBOX_TEMPLATE_DISK</key><string>/Applications/Localbox.app/Contents/Resources/vm/template.img</string>
     <!-- The active release's CLI, which reconciles agent setup at every start and answers it for remote callers. -->
     <key>LOCALBOX_CLI</key><string>~/Library/Application Support/Localbox/releases/active/localbox-cli/bin/localbox</string>
   </dict>

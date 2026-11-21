@@ -22,16 +22,18 @@ if [ "$(uname -m)" != "arm64" ]; then
   exit 1
 fi
 if ! command -v zstd >/dev/null 2>&1; then
-  echo "zstd is required to compress the VM template (brew install zstd)" >&2
+  echo "zstd is required to compress the linux image (brew install zstd)" >&2
   exit 1
 fi
-for required in LOCALBOX_KERNEL LOCALBOX_INITRD LOCALBOX_TEMPLATE_DISK; do
-  value=$(eval "printf '%s' \"\${$required-}\"")
-  if [ -z "$value" ] || [ ! -f "$value" ]; then
-    echo "$required must name an existing release artifact" >&2
+# The built-in linux image directory, as `npm run image:build -- --out DIR` writes it.
+LOCALBOX_IMAGE=${LOCALBOX_IMAGE:-}
+for file in image.json disk.img boot/efi-vars; do
+  if [ -z "$LOCALBOX_IMAGE" ] || [ ! -f "$LOCALBOX_IMAGE/$file" ]; then
+    echo "LOCALBOX_IMAGE must name a linux image directory (npm run image:build -- --out DIR); $file is missing" >&2
     exit 1
   fi
 done
+LOCALBOX_IMAGE=$(CDPATH= cd -- "$LOCALBOX_IMAGE" && pwd)
 # Release credentials live in the checkout's git-ignored .release-signing/
 # (backed up outside the repository): the Ed25519 manifest key whose public half
 # is pinned in the skill, and the self-signed code-signing identity.
@@ -126,9 +128,17 @@ fi
 npm --prefix "$ROOT" run build
 npm --prefix "$ROOT" run build:guest-agent -- --release-version "$VERSION"
 swift build --package-path "$ROOT/apps/macos/HostDaemon" -c release
+# Until the host pushes its agent into running guests (slice 32), sandboxes run the agent their image carries, so the
+# image must carry exactly the agent this release ships.
+IMAGE_AGENT=$(node -p 'require(process.argv[1]).agent_version' "$LOCALBOX_IMAGE/image.json")
+RELEASE_AGENT=$(node -p 'require(process.argv[1]).version' "$ROOT/dist/guest-agent/agent-version.json")
+if [ "$IMAGE_AGENT" != "$RELEASE_AGENT" ]; then
+  echo "the image carries guest agent $IMAGE_AGENT but this release builds $RELEASE_AGENT; rebuild the image (npm run image:build -- --out DIR)" >&2
+  exit 1
+fi
 
 APP="$STAGE/Localbox.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/vm" "$APP/Contents/Resources/guest-agent"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/guest-agent"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -159,8 +169,6 @@ cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.hostd.plist" "$APP/Conten
 cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.updater.plist" "$APP/Contents/Resources/com.localbox.updater.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.connector.plist" "$APP/Contents/Resources/com.localbox.connector.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
-cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
-cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"
 # The host is the authority on the guest agent; images only carry a copy. Signing the app seals these as resources
 # without rewriting their bytes, so the digests in agent-version.json stay true.
 cp "$ROOT/dist/guest-agent/localbox-agent-linux-arm64" "$ROOT/dist/guest-agent/localbox-agent-darwin-arm64" \
@@ -227,11 +235,6 @@ ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
 CLI_TAR="$OUT_DIR/localbox-cli-$VERSION.tar.gz"
 tar -czf "$CLI_TAR" -C "$STAGE" localbox-cli
 
-# The template ships beside the app as zstd parts under GitHub's 2 GiB asset cap; the installer expands them. A
-# 128 MiB window (--long=27) is the most Node's zstd decoder accepts by default.
-TEMPLATE_PREFIX="localbox-template-$VERSION.img.zst."
-zstd -q -T0 -19 --long=27 -c "$LOCALBOX_TEMPLATE_DISK" | (cd "$OUT_DIR" && split -d -a 3 -b 2000m - "$TEMPLATE_PREFIX")
-
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$APP"
@@ -239,16 +242,15 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
 fi
 
 cd "$ROOT"
-RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_TEMPLATE="$LOCALBOX_TEMPLATE_DISK" RELEASE_TEMPLATE_PREFIX="$TEMPLATE_PREFIX" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { makeManifest, sha256, signManifest, writeRelease } from "./dist/scripts/release.js";
+# The linux image ships beside the app (its disk as zstd parts under GitHub's 2 GiB asset cap, its boot store and
+# image.json); the installer expands them into images/linux.
+RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_IMAGE="$LOCALBOX_IMAGE" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
+import { readFileSync } from "node:fs";
+import { makeManifest, packImage, signManifest, writeRelease } from "./dist/scripts/release.js";
 const dir = process.env.RELEASE_DIR;
 const version = process.env.RELEASE_VERSION;
-const imageDigest = process.env.RELEASE_IMAGE_DIGEST;
-const source = process.env.RELEASE_TEMPLATE;
-const parts = readdirSync(dir).filter((name) => name.startsWith(process.env.RELEASE_TEMPLATE_PREFIX)).sort();
-const template = { sha256: await sha256(source), size: statSync(source).size, parts };
-let manifest = await makeManifest(dir, version, imageDigest, undefined, template);
+const image = await packImage(process.env.RELEASE_IMAGE, dir, `localbox-linux-${version}`);
+let manifest = await makeManifest(dir, version, process.env.RELEASE_IMAGE_DIGEST, undefined, image);
 if (process.env.RELEASE_PRIVATE_KEY) {
   // The manifest carries no public key: verifiers trust only the pinned one.
   manifest = signManifest(manifest, readFileSync(process.env.RELEASE_PRIVATE_KEY), process.env.RELEASE_KEY_ID || "release");

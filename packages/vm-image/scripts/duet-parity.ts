@@ -47,7 +47,7 @@ export function compareParity(duet: PackageInventory, local: PackageInventory, r
   const expectedApt = new Set(duet.apt);
   const actualApt = new Set(local.apt);
   for (const name of expectedApt) if (!actualApt.has(name)) differences.push(`apt missing: ${name}`);
-  for (const name of actualApt) if (!expectedApt.has(name) && !["xdotool", "systemd", "systemd-sysv", "systemd-resolved", "linux-image-generic", "initramfs-tools", "socat"].includes(name)) differences.push(`apt extra: ${name}`);
+  for (const name of actualApt) if (!expectedApt.has(name) && !["xdotool", "systemd", "systemd-sysv", "systemd-resolved", "initramfs-tools", "socat"].includes(name)) differences.push(`apt extra: ${name}`);
   const expectedPip = new Set(duet.pip); const actualPip = new Set(parseRequirements(requirements));
   for (const name of expectedPip) if (!actualPip.has(name)) differences.push(`pip missing: ${name}`);
   for (const name of actualPip) if (!expectedPip.has(name)) differences.push(`pip extra: ${name}`);

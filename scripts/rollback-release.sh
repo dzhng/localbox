@@ -36,16 +36,18 @@ if [ ! -x "$NODE_ROOT/node" ]; then NODE_ROOT="$TARGET/localbox-cli"; fi
 NODE="$NODE_ROOT/node"
 if [ ! -x "$NODE" ]; then echo "installed release has no bundled node runtime" >&2; exit 1; fi
 
-(cd "$NODE_ROOT" && TARGET="$TARGET" RELEASE_ROOT="$RELEASE_ROOT" RELEASE_PUBLIC_KEY="${RELEASE_PUBLIC_KEY:-}" ALLOW_UNSIGNED="$ALLOW_UNSIGNED" "$NODE" --input-type=module <<'NODE'
+# The release rolled back to brings back its own image as this Mac's images/linux.
+(cd "$NODE_ROOT" && TARGET="$TARGET" RELEASE_ROOT="$RELEASE_ROOT" IMAGES_DIR="$IMAGES_DIR" RELEASE_PUBLIC_KEY="${RELEASE_PUBLIC_KEY:-}" ALLOW_UNSIGNED="$ALLOW_UNSIGNED" "$NODE" --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { rollbackRelease, verifyManifestSignature } from "./dist/scripts/release.js";
+import { installLinuxImage, rollbackRelease, verifyManifestSignature } from "./dist/scripts/release.js";
 const target = process.env.TARGET;
 const root = process.env.RELEASE_ROOT;
 const manifest = JSON.parse(readFileSync(join(target, "release.json"), "utf8"));
 if (process.env.RELEASE_PUBLIC_KEY) verifyManifestSignature(manifest, readFileSync(process.env.RELEASE_PUBLIC_KEY));
 else if (process.env.ALLOW_UNSIGNED !== "1") throw new Error("release signature is required");
 await rollbackRelease(root, manifest.version, manifest, "arm64");
+await installLinuxImage(target, process.env.IMAGES_DIR);
 NODE
 )
 
@@ -63,9 +65,6 @@ plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$
 plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOXES' -string "$SANDBOXES_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_OPERATIONS' -string "$OPERATIONS_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IMAGES' -string "$IMAGES_DIR" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
-plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$RELEASE_ROOT/active/vm/template.img" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_CLI' -string "$RELEASE_ROOT/active/localbox-cli/bin/localbox" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_BIN_DIR' -string "$BIN_DIR" "$PLIST"
 if [ -n "${LOCALBOX_MACHINE_ROOT:-}" ]; then plutil -replace 'EnvironmentVariables.LOCALBOX_MACHINE_ROOT' -string "$LOCALBOX_MACHINE_ROOT" "$PLIST"; fi

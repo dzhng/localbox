@@ -5,7 +5,7 @@ import Virtualization
 #endif
 
 /// Real-VM lab for the proof harness; `--image` is one image directory (`images/<id>/`):
-///   vmlab boot --image <dir> --json        boot a scratch sandbox and run `uname -m` in the guest
+///   vmlab boot --image <dir> --json        boot a scratch sandbox and report `uname -m` and `uname -r` from the guest
 ///   vmlab hibernate --image <dir> --json   the hibernate scenario (save here, restore in a new process)
 ///   vmlab restore --image <dir> --scratch <dir> --json   phase 2 of hibernate, run by `hibernate` itself
 ///   vmlab efi-kernel --image <dir> --json  apt-install another kernel in the guest, reboot, compare `uname -r`
@@ -114,9 +114,9 @@ struct Lab {
             let started = Date()
             try await backend.start()
             let bootMs = Int(Date().timeIntervalSince(started) * 1000)
-            let uname = try await shell(backend, "uname -m").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lines = try await shell(backend, "uname -m; uname -r").stdout.split(separator: "\n").map(String.init)
             try await backend.stop()
-            return ["ok": true, "ready": true, "uname": uname, "boot_ms": bootMs]
+            return ["ok": true, "ready": true, "uname": lines.first ?? "", "kernel": lines.dropFirst().first ?? "", "boot_ms": bootMs]
         } catch {
             let reason = await backend.stopReason()
             if let log = try? String(contentsOf: scratch.appendingPathComponent("console.log"), encoding: .utf8) { FileHandle.standardError.write(Data(String(log.suffix(6000)).utf8)) }
