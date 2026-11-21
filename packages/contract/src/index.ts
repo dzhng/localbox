@@ -327,6 +327,8 @@ export type HelpSnapshotEntry = Omit<OperationCatalogEntry, "limits">;
 export function helpSnapshot(): HelpSnapshotEntry[] { return operationCatalog.map(({ limits: _limits, ...entry }) => entry); }
 export function catalogSnapshot(): OperationCatalogEntry[] { return JSON.parse(JSON.stringify(operationCatalog)) as OperationCatalogEntry[]; }
 
+/** The image every Mac has from its release, named `linux`; it is never a Convex row and never copied. */
+export const BUILT_IN_IMAGE = "linux";
 export type ImageOS = "linux" | "macos";
 export type ImageState = "building" | "copying" | "ready" | "failed";
 /** What a long image operation (a capture, a macOS build, a copy) answers at once and on every `image.wait`. */

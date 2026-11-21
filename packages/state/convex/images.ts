@@ -4,14 +4,12 @@ import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
 import { holderState, imageOs, imageSource } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
+import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 
-// The account's images, the machines holding each, and the account default.
+// The account's images, the machines holding each, and the account default. The built-in `linux` is never a row:
+// every Mac has the build its release shipped, so `list` synthesizes it with every live machine as a ready holder,
+// and holder rows for it could only drift.
 
-/**
- * The built-in image, never a row: every Mac has the build its release shipped, so `list` synthesizes it with every
- * live machine as a ready holder, and holder rows for it could only drift.
- */
-const LINUX_IMAGE = "linux";
 /** Reserved for the account's macOS base: it resolves to the most recent image built from an IPSW. */
 const MACOS_IMAGE = "macos";
 const NAME_ATTEMPTS = 20;
@@ -27,7 +25,7 @@ const machineNames = async (ctx: any, accountId: string) => new Map<string, stri
 /** A name the caller chose: a valid label, neither built-in name, and free on the account. */
 async function freeName(ctx: any, accountId: string, name: string): Promise<string> {
   validateLabel(name);
-  if (name === LINUX_IMAGE || name === MACOS_IMAGE) refuse("invalid_input", `${name} is a built-in image name; choose another`);
+  if (name === BUILT_IN_IMAGE || name === MACOS_IMAGE) refuse("invalid_input", `${name} is a built-in image name; choose another`);
   if (await named(ctx, accountId, name)) {
     const names = (await accountImages(ctx, accountId)).map((row: any) => row.name).sort();
     refuse("name_conflict", `${name} is taken on this account; images: ${names.join(", ")}`, { names });
@@ -40,7 +38,7 @@ async function freeName(ctx: any, accountId: string, name: string): Promise<stri
  * recent IPSW-built image. Anything else not found names the images there are.
  */
 async function resolve(ctx: any, accountId: string, wanted: string): Promise<any | undefined> {
-  if (wanted === LINUX_IMAGE) return undefined;
+  if (wanted === BUILT_IN_IMAGE) return undefined;
   const rows = await accountImages(ctx, accountId);
   if (wanted === MACOS_IMAGE) {
     const base = rows.filter((row: any) => row.source.kind === "ipsw").sort((a: any, b: any) => b.createdAt - a.createdAt)[0];
@@ -48,7 +46,7 @@ async function resolve(ctx: any, accountId: string, wanted: string): Promise<any
   }
   const row = rows.find((candidate: any) => candidate.imageId === wanted) ?? rows.find((candidate: any) => candidate.name === wanted);
   if (row) return row;
-  const names = [LINUX_IMAGE, ...rows.map((candidate: any) => candidate.name).sort()];
+  const names = [BUILT_IN_IMAGE, ...rows.map((candidate: any) => candidate.name).sort()];
   return refuse("image_not_found", `no image ${wanted} on this account; images: ${names.join(", ")}`, { names });
 }
 
@@ -66,7 +64,7 @@ export const list = queryGeneric({ args: {}, handler: async (ctx) => {
   const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
   const holders = await accountHolders(ctx, accountId);
   const linux = {
-    image_id: LINUX_IMAGE, name: LINUX_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
+    image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
     default: defaultImageId === undefined, holders: live.map((row: any) => ({ machine_id: row.machineId, machine_name: row.name, state: "ready", updated_at: null })),
   };
   const images = (await accountImages(ctx, accountId)).sort((a: any, b: any) => a.createdAt - b.createdAt);
@@ -111,7 +109,7 @@ export const setDefault = mutationGeneric({ args: { image: v.string() }, handler
   const owner = await account(ctx, accountId);
   if (!owner) return refuse("invalid_input", "account not found");
   await ctx.db.patch(owner._id, { defaultImageId: row?.imageId });
-  return { image_id: row?.imageId ?? LINUX_IMAGE, name: row?.name ?? LINUX_IMAGE };
+  return { image_id: row?.imageId ?? BUILT_IN_IMAGE, name: row?.name ?? BUILT_IN_IMAGE };
 } });
 
 /**
@@ -128,7 +126,7 @@ export const remove = mutationGeneric({ args: { image: v.string() }, handler: as
   const owner = await account(ctx, accountId);
   const defaultReset = owner?.defaultImageId === row.imageId;
   if (defaultReset) await ctx.db.patch(owner._id, { defaultImageId: undefined });
-  return { image_id: row.imageId, name: row.name, holders: holders.map((holder: any) => holder.machineId), default_reset_to: defaultReset ? LINUX_IMAGE : null };
+  return { image_id: row.imageId, name: row.name, holders: holders.map((holder: any) => holder.machineId), default_reset_to: defaultReset ? BUILT_IN_IMAGE : null };
 } });
 
 /**
