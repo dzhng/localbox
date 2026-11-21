@@ -81,7 +81,7 @@ any blocker, and tick the TODO list.
 - [x] [36 placement with images](slices/36-placement-images.md)
 - [x] [37 transfer library](slices/37-transfer-library.md)
 - [ ] [38 image copy](slices/38-image-copy.md)
-- [ ] [39 create with copy](slices/39-create-with-copy.md)
+- [x] [39 create with copy](slices/39-create-with-copy.md)
 - [ ] [40 positioning, docs and security](slices/40-docs-positioning.md)
 - [ ] Two-Mac different-network run (user; extends the [two-Mac runbook](../durable-sandboxes/two-mac-runbook.md))
 
