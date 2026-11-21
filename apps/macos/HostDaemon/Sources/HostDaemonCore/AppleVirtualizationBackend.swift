@@ -111,101 +111,83 @@ func consoleScreenIsLocked() -> Bool {
     return users?.contains { $0["CGSSessionScreenIsLocked"] as? Bool == true } ?? false
 }
 
-/// Records why the guest stopped and tells the runtime, so a dead guest is reported instead of surfacing as a closed channel.
-final class GuestStopObserver: NSObject, VZVirtualMachineDelegate, @unchecked Sendable {
-    private let lock = NSLock(); private var reason: String?; private var handler: (@Sendable (String) -> Void)?
-    var stopReason: String? { lock.lock(); defer { lock.unlock() }; return reason }
-    func onStop(_ handler: @escaping @Sendable (String) -> Void) { lock.lock(); self.handler = handler; lock.unlock() }
-    func guestDidStop(_ virtualMachine: VZVirtualMachine) { stopped("guest shut down") }
-    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) { stopped("VM stopped: \(error.localizedDescription)") }
-    private func stopped(_ why: String) { lock.lock(); reason = why; let handler = handler; lock.unlock(); handler?(why) }
-}
-
-/// One sandbox's VM for one boot. A vsock connection carries GuestService frames.
+/// One sandbox's VM for one boot, and its request lane once the guest agent is ready.
 public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider, GuestControlDialer, GuestReconnecting, GuestStopReporting {
     private let spec: VMSpec
     private let sandboxID: String
     private let name: String
-    private var machine: VZVirtualMachine?
+    private var machine: VirtualMachine?
     private var guestChannel: FramedFileHandleGuestChannel?
-    private var guestConnection: VZVirtioSocketConnection?
-    /// vsock port the guest agent listens on (socat in the image's localbox-vsock unit).
-    static let guestPort: UInt32 = 1024
-    /// vsock port of the guest's control lane (freeze, thaw; the image's localbox-control-vsock unit).
-    static let controlPort: UInt32 = 1025
-    /// Virtualization asserts that a VM is created and driven on one dispatch queue; every call goes through it.
-    private let queue: DispatchQueue
-    private let stopObserver = GuestStopObserver()
-    /// Why the guest stopped, if it has.
-    public func stopReason() -> String? { stopObserver.stopReason }
-    public func onGuestStop(_ handler: @escaping @Sendable (String) -> Void) { stopObserver.onStop(handler) }
+    private var stopHandler: (@Sendable (String) -> Void)?
+
     /// `sandboxID` and `name` reach the guest in the hello, never the configuration.
     public init(spec: VMSpec, sandboxID: String, name: String) {
         self.spec = spec; self.sandboxID = sandboxID; self.name = name
-        queue = DispatchQueue(label: "org.localbox.vm.\(sandboxID)")
     }
+
+    /// Why the guest stopped, if it has.
+    public func stopReason() -> String? { machine?.stopReason }
+    public func onGuestStop(_ handler: @escaping @Sendable (String) -> Void) { stopHandler = handler; machine?.onStop(handler) }
+
+    /// How long a boot or restore waits for the guest agent's request lane: a macOS first boot answers in 10–30 s.
+    static let guestWait: TimeInterval = 120
 
     public func start() async throws {
         let vm = try makeMachine()
-        try await startMachine(vm)
-        machine = vm
+        try await vm.start()
         try await attachGuest(vm)
     }
 
-    private func makeMachine() throws -> VZVirtualMachine {
-        nonisolated(unsafe) let configuration = try SandboxConfigurationBuilder.build(spec)
-        let observer = stopObserver, queue = queue
-        nonisolated(unsafe) var made: VZVirtualMachine?
-        queue.sync { made = VZVirtualMachine(configuration: configuration, queue: queue); made?.delegate = observer }
-        return made!
+    private func makeMachine() throws -> VirtualMachine {
+        let vm = try VirtualMachine(spec: spec)
+        if let stopHandler { vm.onStop(stopHandler) }
+        machine = vm
+        return vm
     }
 
-    /// How long a boot or restore waits for the guest agent's request lane: a macOS first boot answers in 10–20 s.
-    static let guestWait: TimeInterval = 120
-
-    private func attachGuest(_ vm: VZVirtualMachine, name: String? = nil) async throws {
-        let deadline = Date().addingTimeInterval(Self.guestWait)
-        // A channel is handed out only once the guest announced readiness and received its hello.
-        let (connection, channel) = try await GuestLane.open(until: deadline) {
-            let connection = try await connect(vm, port: Self.guestPort, within: max(deadline.timeIntervalSinceNow, 1))
-            let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), sandboxID: sandboxID, name: name ?? self.name)
-            do { try await channel.waitUntilReady() } catch { await channel.close(); connection.close(); throw error }
-            return (connection, channel)
-        }
-        guestConnection = connection; guestChannel = channel
+    private func attachGuest(_ vm: VirtualMachine, name: String? = nil) async throws {
+        guestChannel = try await vm.openRequestLane(sandboxID: sandboxID, name: name ?? self.name, until: Date().addingTimeInterval(Self.guestWait))
     }
+
     public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
-    /// The request lane again, on the same running VM, after its agent restarted (an update): the old connection
-    /// goes, and the new channel is handed out once the restarted agent announced readiness.
+
+    /// The request lane again, on the same running VM, after its agent restarted (an update): the old lane goes, and the
+    /// new one is handed out once the restarted agent announced readiness.
     public func reconnectGuest(name: String) async throws -> any GuestChannel {
         guard let machine else { throw HostDaemonError.guestUnavailable }
-        await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil
+        await guestChannel?.close(); guestChannel = nil
         try await attachGuest(machine, name: name)
         return try await makeGuestChannel()
     }
-    /// A new connection to the control lane; its forwarder listens once the guest is up, so a ready guest answers at once.
+
     public func dialControl() async throws -> any GuestControlChannel {
         guard let machine else { throw HostDaemonError.guestUnavailable }
-        nonisolated(unsafe) let connection = try await connect(machine, port: Self.controlPort, within: 10)
-        return FramedControlChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), onClose: { connection.close() })
+        return try await machine.dialControl()
     }
+
     /// A guest that already stopped itself is stopped: that is success, not an error.
-    public func stop() async throws { guard let machine else { return }; await guestChannel?.close(); if stopObserver.stopReason == nil { try await stopMachine(machine) }; guestConnection?.close(); self.guestConnection = nil; self.guestChannel = nil; self.machine = nil }
-    public func pause() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await pauseMachine(machine) }
-    public func resume() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await resumeMachine(machine) }
+    public func stop() async throws {
+        guard let machine else { return }
+        await guestChannel?.close(); guestChannel = nil
+        try await machine.stop()
+        self.machine = nil
+    }
+
+    public func pause() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await machine.pause() }
+    public func resume() async throws { guard let machine else { throw HostDaemonError.invalidState("VM is not running") }; try await machine.resume() }
 
     public func save(to url: URL) async throws {
         guard let machine else { throw HostDaemonError.invalidState("VM is not running") }
-        try await pauseMachine(machine)
+        try await machine.pause()
         let temporary = SandboxDirectory(url.deletingLastPathComponent()).temporarySave()
         do {
-            try await saveMachineState(machine, to: temporary)
-            try atomicReplace(temporary, at: url)
-            try await stopMachine(machine)
-            await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil; self.machine = nil
+            try await machine.saveState(to: temporary)
+            if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary) } else { try FileManager.default.moveItem(at: temporary, to: url) }
+            try await machine.stop()
+            await guestChannel?.close(); guestChannel = nil; self.machine = nil
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            try? await resumeMachine(machine)
+            try? await machine.resume()
             throw consoleScreenIsLocked() ? HostDaemonError.screenLocked : error
         }
     }
@@ -213,59 +195,9 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
     public func restore(from url: URL) async throws {
         guard FileManager.default.fileExists(atPath: url.path) else { throw HostDaemonError.invalidState("saved machine state is missing") }
         let vm = try makeMachine()
-        try await restoreMachineState(vm, from: url)
-        machine = vm
-        try await resumeMachine(vm)
+        try await vm.restoreState(from: url)
+        try await vm.resume()
         try await attachGuest(vm)
-    }
-
-    private func startMachine(_ machine: VZVirtualMachine) async throws {
-        try await onQueue(machine) { vm, done in vm.start { done($0.map { () }) } }
-    }
-    private func stopMachine(_ machine: VZVirtualMachine) async throws {
-        try await onQueue(machine) { vm, done in vm.stop { error in done(error.map { .failure($0) } ?? .success(())) } }
-    }
-    private func pauseMachine(_ machine: VZVirtualMachine) async throws {
-        try await onQueue(machine) { vm, done in vm.pause { done($0.map { () }) } }
-    }
-    private func resumeMachine(_ machine: VZVirtualMachine) async throws {
-        try await onQueue(machine) { vm, done in vm.resume { done($0.map { () }) } }
-    }
-    private func saveMachineState(_ machine: VZVirtualMachine, to url: URL) async throws {
-        try await onQueue(machine) { vm, done in vm.saveMachineStateTo(url: url) { error in done(error.map { .failure($0) } ?? .success(())) } }
-    }
-    private func restoreMachineState(_ machine: VZVirtualMachine, from url: URL) async throws {
-        try await onQueue(machine) { vm, done in vm.restoreMachineStateFrom(url: url) { error in done(error.map { .failure($0) } ?? .success(())) } }
-    }
-
-    private func atomicReplace(_ temporary: URL, at url: URL) throws {
-        if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary) } else { try FileManager.default.moveItem(at: temporary, to: url) }
-    }
-    /// The guest's forwarders listen once userspace is up, so retry until one accepts, the VM stops or `within` passes.
-    private func connect(_ machine: VZVirtualMachine, port: UInt32, within seconds: TimeInterval) async throws -> VZVirtioSocketConnection {
-        let deadline = Date().addingTimeInterval(seconds)
-        while true {
-            do {
-                return try await onQueueValue(machine) { vm, done in
-                    guard let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return done(.failure(HostDaemonError.unsupported("VM has no virtio socket device"))) }
-                    device.connect(toPort: port) { done($0.mapError { $0 as Error }) }
-                }
-            } catch {
-                if let reason = stopObserver.stopReason { throw HostDaemonError.unsupported(reason) }
-                if Date() > deadline { throw HostDaemonError.unsupported("guest agent did not accept a vsock connection on port \(port) within \(spoken(seconds)): \(error.localizedDescription)") }
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
-    }
-    /// Runs one lifecycle call on the VM's queue and awaits its completion handler.
-    private func onQueue(_ machine: VZVirtualMachine, _ body: @escaping @Sendable (VZVirtualMachine, @escaping @Sendable (Result<Void, Error>) -> Void) -> Void) async throws {
-        try await onQueueValue(machine, body)
-    }
-    private func onQueueValue<T>(_ machine: VZVirtualMachine, _ body: @escaping @Sendable (VZVirtualMachine, @escaping @Sendable (Result<T, Error>) -> Void) -> Void) async throws -> T {
-        nonisolated(unsafe) let vm = machine
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
-            queue.async { body(vm) { continuation.resume(with: $0) } }
-        }
     }
 }
 #endif
