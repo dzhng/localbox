@@ -1,6 +1,6 @@
 ---
 name: localbox
-description: Give yourself durable Linux sandboxes on the user's own Macs through the localbox CLI — a shell, files, a browser and a desktop that stay exactly as you left them, sleep when idle and wake on use. Use when the user wants work done in a sandbox rather than on their machine (installs, test suites, untrusted code, permissions-off runs, long builds, a dev server kept running), wants a sandbox on another of their Macs, or asks to install, sign in, set up MCP, or check, update or remove the Localbox skill and CLI.
+description: Give yourself durable Linux or macOS sandboxes on the user's own Macs through the localbox CLI — a shell, files, a browser and a desktop that stay exactly as you left them, sleep when idle and wake on use, and start from images saved from other sandboxes. Use when the user wants work done in a sandbox rather than on their machine (installs, test suites, untrusted code, permissions-off runs, long builds, a dev server kept running, Xcode or a Mac app), wants a sandbox on another of their Macs, wants to save, reuse or copy a sandbox setup as an image, or asks to install, sign in, set up MCP, or check, update or remove the Localbox skill and CLI.
 ---
 
 # Localbox
@@ -25,7 +25,10 @@ localbox login --email you@example.com --code NNNNNN   # ask the user for the co
 ## Sandboxes
 
 - `localbox sandbox create` makes one and reports its generated name (like
-  `quiet-otter`), machine, size and why. Override with `--name`, `--cpus`,
+  `quiet-otter`), machine, size, image and why. It starts from the account's
+  default image (initially the built-in `linux`); `--image NAME` picks another,
+  and `--image macos` the account's macOS base ([images](references/images.md)).
+  Override with `--name`, `--cpus`,
   `--memory 4G`, `--sleep-after 10m` (default 30 min idle), `--delete-after 2h`
   (only when it should be disposable).
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
@@ -45,6 +48,23 @@ sandbox. A sandbox on another Mac needs no `--machine`; the name is enough.
 puts the sandbox, or which Mac `relay status`, `skill …` and `agents setup …`
 act on.
 
+## Images
+
+An image is a sandbox's disk saved under a name; new sandboxes start from it with
+their own identity. Read [images](references/images.md) before saving, copying,
+deleting or building one, and for macOS sandboxes and getting Xcode into one.
+
+```sh
+localbox image create --from NAME --name IMAGE   # save a sandbox (it pauses about a second)
+localbox image list                              # OS, size, source, the Macs holding each, the default
+localbox image default IMAGE                     # what sandbox create uses with no --image
+localbox image wait IMAGE                        # follow a build or copy; call again until ready or failed
+```
+
+A sandbox created on a Mac without its image answers at once in state `copying`;
+every other command on it returns `sandbox_not_ready` (retryable) with the copy's
+progress until `localbox image wait IMAGE` reports it created.
+
 ## Running things
 
 ```sh
@@ -61,7 +81,9 @@ Results are capped at 900 KiB. A trimmed result says so (`truncated` with
 `next_offset` until `eof` (`fs read`, `job output`). Use `--background` for
 anything that may run longer than two minutes, then `job status`, `job wait`,
 `job output` or `job cancel`. `browser …` and `desktop …` commands drive the
-sandbox's browser and its 1440×900 desktop.
+sandbox's browser and its 1440×900 desktop, on Linux and macOS alike. Shell
+commands run as root in both; a macOS sandbox has macOS's own tools (`zsh`,
+`sw_vers`, no `apt`).
 
 ## Reading results
 
@@ -72,7 +94,7 @@ sandbox's browser and its 1440×900 desktop.
   `kind` and a `detail` saying why: `created`, `renamed`, `deleted`, `woke`,
   `cold_booted` (its processes did not survive; the detail says why), `slept`,
   `made_room` (a full Mac slept its least recently used idle sandbox for you),
-  `restarted`, `truncated`. Tell the user about anything that changed their world,
+  `restarted`, `truncated`, `waiting` (a create waiting for its image to copy). Tell the user about anything that changed their world,
   such as a restarted dev server.
 - A sandbox idle for its sleep time (no request, no running job) sleeps. The next
   command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
@@ -81,8 +103,10 @@ sandbox's browser and its 1440×900 desktop.
   detail says the sandbox paused in memory. `localbox host check` says which
   ([why and the settings](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
 - Errors name the way out: `sandbox_ambiguous` and `sandbox_not_found` list the
-  names, `machine_full` lists what holds the memory, `machine_offline` is
-  retryable. Never blindly repeat a mutation after `operation_uncertain`: read
+  names, `machine_full` lists what holds the memory (or the two macOS sandboxes
+  already running), `machine_offline` is retryable, and image errors
+  (`image_not_found`, `disk_full`, `copy_unreachable`, `image_incompatible`)
+  carry a next step. Never blindly repeat a mutation after `operation_uncertain`: read
   status first, or repeat it with the same `--mutation-id`.
 
 ## MCP

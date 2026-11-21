@@ -9,7 +9,9 @@ records that Localbox owns it, and keeps it matched to every later release.
 ## Check the Mac
 
 `uname -m` must print `arm64` and `sw_vers -productVersion` must be 14 or newer.
-Anything else (Intel, Linux, Docker) cannot run Localbox; say so and stop.
+Anything else (Intel, Linux, Docker) cannot run Localbox; say so and stop. Linux
+sandboxes run on any of these; macOS sandboxes need macOS 27 or newer on the Mac,
+so tell the user if theirs is older.
 
 ## Prepare the Mac so sandboxes can hibernate
 
@@ -53,7 +55,7 @@ tag=$(/usr/bin/plutil -extract tag_name raw -o - latest.json)
 release="https://github.com/$repo/releases/download/$tag"
 curl --fail --location "$release/release.json" -o release.json
 curl --fail --location "$release/SHA256SUMS" -o SHA256SUMS
-# Every listed file: the app, the CLI, and the VM template's parts (about 2 GB).
+# Every listed file: the app, the CLI, and the built-in linux image's parts (about 2 GB).
 for name in $(awk '{ print $2 }' SHA256SUMS); do
   case "$name" in */*|.*) echo "unexpected release file: $name" >&2; exit 1 ;; esac
   curl --fail --location "$release/$name" -o "$name"

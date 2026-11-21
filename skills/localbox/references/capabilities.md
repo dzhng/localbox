@@ -20,6 +20,10 @@ input that is awkward as flags, pass the schema's JSON directly:
 localbox invoke fs.read --sandbox NAME --input-json '{"path":"/var/log/syslog","offset":0,"length":65536}'
 ```
 
+`image …` operations act on the account, not on a sandbox: they take an image
+name, never `--sandbox`. `--machine` on `image create --macos` and
+`image delete` names the Mac they act on.
+
 A change through `invoke` needs `--mutation-id ID` (other commands make one up).
 Repeating a change with the same id returns the first result instead of acting
 twice.
