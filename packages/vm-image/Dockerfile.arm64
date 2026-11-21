@@ -31,11 +31,20 @@ RUN apt-get update && \
       python-is-python3 qpdf ripgrep tesseract-ocr thunar unzip vim wget \
       x11-utils xclip xfce4-panel xfce4-session xfce4-settings xfce4-terminal \
       xfdesktop4 xfwm4 dbus-x11 openssl xz-utils zip xdotool \
-      systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
+      systemd systemd-sysv systemd-resolved initramfs-tools socat; \
   else \
     apt-get install -y --no-install-recommends \
-      ca-certificates curl systemd systemd-sysv systemd-resolved linux-image-generic initramfs-tools socat; \
+      ca-certificates curl systemd systemd-sysv systemd-resolved initramfs-tools socat; \
   fi && rm -rf /var/lib/apt/lists/*
+
+# The kernel, at the exact version build-boot-artifacts.ts pins (it passes the
+# version; there is no default). It lives on the image's disk and GRUB boots it
+# through EFI, so the host carries no kernel.
+ARG LINUX_IMAGE_GENERIC_VERSION
+RUN test -n "$LINUX_IMAGE_GENERIC_VERSION" \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends "linux-image-generic=${LINUX_IMAGE_GENERIC_VERSION}" \
+  && rm -rf /var/lib/apt/lists/*
 
 # NodeSource is shared by both profiles; Ubuntu's Node 18 package is not the
 # contract. This is the Node 24 channel used by Duet.

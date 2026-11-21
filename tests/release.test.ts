@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, open, writeFile, readFile, readdir, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { zstdCompressSync } from "node:zlib";
-import { activateRelease, activeRelease, expandTemplate, makeManifest, rollbackRelease, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, TEMPLATE_PATH } from "../scripts/release.js";
+import { activateRelease, activeRelease, expandImage, installLinuxImage, makeManifest, packImage, rollbackRelease, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, IMAGE_PATH } from "../scripts/release.js";
 
 test("release manifest and checksums verify artifacts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-")); await writeFile(join(dir, "agent-computer-arm64"), "fixture");
@@ -63,34 +63,81 @@ test("rollback selects an older verified release", async () => {
   assert.equal(await readFile(join(root, "active", "agent-computer-arm64"), "utf8"), "first");
 });
 
-test("a template split into parts expands to the signed disk, leaves zeros as holes, and an install verifies it without the parts", async () => {
-  const root = await mkdtemp(join(tmpdir(), "agent-computer-release-template-"));
-  const download = join(root, "download");
-  await mkdir(download);
-  // 64 MiB of disk with two small extents of data: the rest must stay unallocated.
+/** A linux image directory as the image build writes it: a mostly-empty disk, a boot store and image.json. */
+async function fixtureImage(dir: string, agentVersion = "1"): Promise<Buffer> {
+  await mkdir(join(dir, "boot"), { recursive: true });
+  // 64 MiB of disk with two small extents of data, written sparsely: the rest must stay unallocated wherever it goes.
   const disk = Buffer.alloc(64 * 1024 * 1024);
   disk.write("superblock", 1024); disk.write("tail", disk.length - 4);
+  const file = await open(join(dir, "disk.img"), "w");
+  await file.truncate(disk.length); await file.write(disk, 1024, 10, 1024); await file.write(disk, disk.length - 4, 4, disk.length - 4); await file.close();
+  await writeFile(join(dir, "boot/efi-vars"), "variable store");
+  await writeFile(join(dir, "image.json"), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: 8192, agent_version: agentVersion }));
+  return disk;
+}
+
+test("the linux image ships as disk parts, boot store and image.json, expands to an image directory with holes, and an install verifies it without the artifacts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-release-image-"));
+  const download = join(root, "download");
+  await mkdir(download);
+  const disk = await fixtureImage(join(root, "built"));
+  await writeFile(join(download, "agent-computer-arm64"), "app");
+  // Node's compressor stands in for the zstd CLI here (the packing test below uses the CLI); two parts.
   const compressed = zstdCompressSync(disk);
   const half = Math.floor(compressed.length / 2);
-  await writeFile(join(download, "t.zst.000"), compressed.subarray(0, half));
-  await writeFile(join(download, "t.zst.001"), compressed.subarray(half));
-  await writeFile(join(download, "agent-computer-arm64"), "app");
-  const template = { sha256: createHash("sha256").update(disk).digest("hex"), size: disk.length, parts: ["t.zst.000", "t.zst.001"] };
-  const manifest = await makeManifest(download, "0.1.0", "sha256:image", undefined, template);
+  await writeFile(join(download, "i.zst.000"), compressed.subarray(0, half));
+  await writeFile(join(download, "i.zst.001"), compressed.subarray(half));
+  await writeFile(join(download, "i.efi-vars"), await readFile(join(root, "built/boot/efi-vars")));
+  await writeFile(join(download, "i.image.json"), await readFile(join(root, "built/image.json")));
+  const image = { sha256: createHash("sha256").update(disk).digest("hex"), size: disk.length, parts: ["i.zst.000", "i.zst.001"], bootStore: "i.efi-vars", manifest: "i.image.json" };
+  const manifest = await makeManifest(download, "0.1.0", "sha256:image", undefined, image);
   await verifyRelease(download, manifest);
   const installed = join(root, "releases", "0.1.0");
-  await mkdir(join(installed, "vm"), { recursive: true });
+  await mkdir(join(installed, "images"), { recursive: true });
   await writeFile(join(installed, "agent-computer-arm64"), "app");
-  await expandTemplate(download, template, join(installed, TEMPLATE_PATH));
-  const expanded = join(installed, TEMPLATE_PATH);
-  assert.equal(await sha256(expanded), template.sha256);
-  assert.ok((await stat(expanded)).blocks * 512 < disk.length / 8, "zero blocks are holes");
+  await expandImage(download, manifest, join(installed, IMAGE_PATH));
+  const expanded = join(installed, IMAGE_PATH);
+  assert.deepEqual((await readdir(expanded, { recursive: true })).sort(), ["boot", "boot/efi-vars", "disk.img", "image.json"]);
+  assert.equal(await sha256(join(expanded, "disk.img")), image.sha256);
+  assert.equal(await readFile(join(expanded, "boot/efi-vars"), "utf8"), "variable store");
+  assert.ok((await stat(join(expanded, "disk.img"))).blocks * 512 < disk.length / 8, "zero blocks are holes");
   await activateRelease(join(root, "releases"), "0.1.0", manifest);
-  await writeFile(expanded, "tampered");
-  await assert.rejects(() => activateRelease(join(root, "releases"), "0.1.0", manifest), /checksum mismatch: VM template/);
-  await assert.rejects(() => expandTemplate(download, { ...template, sha256: "0".repeat(64) }, join(root, "refused.img")), /does not match the signed manifest/);
-  await assert.rejects(() => stat(join(root, "refused.img")));
-  await assert.rejects(() => verifyRelease(download, { ...manifest, template: { ...template, parts: ["unlisted"] } }), /invalid VM template entry/);
+  await writeFile(join(expanded, "boot/efi-vars"), "tampered");
+  await assert.rejects(() => activateRelease(join(root, "releases"), "0.1.0", manifest), /checksum mismatch: linux image/);
+  await assert.rejects(() => expandImage(download, { ...manifest, image: { ...image, sha256: "0".repeat(64) } }, join(root, "refused")), /does not match the signed manifest/);
+  assert.deepEqual(await readdir(root), ["built", "download", "releases"], "a refused expansion leaves nothing behind");
+  await assert.rejects(() => verifyRelease(download, { ...manifest, image: { ...image, bootStore: "unlisted" } }), /invalid linux image entry/);
+});
+
+test("packing an image directory with the zstd CLI splits the disk into parts that expand back to it", { skip: spawnSync("zstd", ["--version"]).status === 0 ? false : "the zstd CLI is not installed" }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-release-pack-"));
+  const disk = await fixtureImage(join(root, "image"));
+  await mkdir(join(root, "out"));
+  // Random bytes don't compress, so a 512 KiB part size gives several parts.
+  await writeFile(join(root, "image/disk.img"), Buffer.concat([randomBytes(1536 * 1024), disk]));
+  const image = await packImage(join(root, "image"), join(root, "out"), "localbox-linux-0.1.0", { level: 1, partBytes: 512 * 1024 });
+  assert.ok(image.parts.length >= 3, `${image.parts.length} parts`);
+  assert.deepEqual(image.parts, image.parts.map((_, index) => `localbox-linux-0.1.0.disk.img.zst.${String(index).padStart(3, "0")}`));
+  assert.deepEqual([image.bootStore, image.manifest], ["localbox-linux-0.1.0.efi-vars", "localbox-linux-0.1.0.image.json"]);
+  const manifest = await makeManifest(join(root, "out"), "0.1.0", "sha256:image", undefined, image);
+  await expandImage(join(root, "out"), manifest, join(root, "linux"));
+  assert.equal(await sha256(join(root, "linux/disk.img")), await sha256(join(root, "image/disk.img")));
+  await writeFile(join(root, "image/image.json"), JSON.stringify({ image_id: "other", os: "linux" }));
+  await assert.rejects(() => packImage(join(root, "image"), join(root, "out"), "again"), /is not the linux image/);
+});
+
+test("installing a release's image replaces this Mac's images/linux and leaves no temporary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-computer-release-install-image-"));
+  const images = join(root, "images");
+  for (const version of ["0.1.0", "0.2.0"]) await fixtureImage(join(root, "releases", version, IMAGE_PATH), version);
+  await installLinuxImage(join(root, "releases", "0.2.0"), images);
+  assert.equal(JSON.parse(await readFile(join(images, "linux/image.json"), "utf8")).agent_version, "0.2.0");
+  // A rollback brings back the older release's image.
+  await installLinuxImage(join(root, "releases", "0.1.0"), images);
+  assert.equal(JSON.parse(await readFile(join(images, "linux/image.json"), "utf8")).agent_version, "0.1.0");
+  assert.deepEqual(await readdir(images), ["linux"]);
+  assert.ok((await stat(join(images, "linux/disk.img"))).blocks * 512 < 1024 * 1024, "the installed disk is a clone that keeps the holes");
+  assert.deepEqual((await readdir(join(images, "linux"), { recursive: true })).sort(), ["boot", "boot/efi-vars", "disk.img", "image.json"]);
 });
 
 test("release activation rejects path traversal versions before touching the tree", async () => {

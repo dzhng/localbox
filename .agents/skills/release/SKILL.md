@@ -12,9 +12,9 @@ a browser download flow or a second installer.
 
 1. Pull the current source and tags, inspect the release diff, and keep the
    source tree clean before packaging.
-2. Build the full VM image (`npm run image:build`, needs Colima/Docker), then the
-   signed app, CLI and template parts with `scripts/release.sh` (see
-   DEVELOPMENT.md for its inputs).
+2. Build the full linux image (`npm run image:build -- --out DIR`, needs
+   Colima/Docker), then the signed app, CLI and image artifacts with
+   `scripts/release.sh` (see DEVELOPMENT.md for its inputs).
    The CLI archive must contain the bundled ARM64 Node runtime, the Localbox
    skill, the pinned `skills@1.7.0` installer, and the release scripts.
 3. Verify the manifest signature and checksums, then install from a relocated
@@ -22,7 +22,7 @@ a browser download flow or a second installer.
    skill install` there with a poisoned `npx`/`npm` path to prove the release
    uses its bundled installer.
 4. Only after the local smoke passes, push the tag and upload every file in the
-   release directory (app, CLI, template parts, `release.json`, `SHA256SUMS`)
+   release directory (app, CLI, linux image parts, `release.json`, `SHA256SUMS`)
    with `gh release create vVERSION dist/release/*`.
 5. Verify the public tag and assets. The agent installation procedure in the
    bundled Localbox skill consumes that tagged kit and invokes the installer;

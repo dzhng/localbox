@@ -4,7 +4,7 @@ import { generateKeyPairSync, type KeyObject } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
-import { makeManifest, signManifest, writeRelease } from "../../release.js";
+import { makeManifest, packImage, signManifest, writeRelease } from "../../release.js";
 import { asMachine } from "../lib/as-machine.js";
 import { fixtureHome, machineRoot, stopConnector } from "../lib/login.js";
 import { mcp, registerClient, signInAgent } from "../lib/mcp.js";
@@ -100,13 +100,18 @@ async function releaseKit(ctx: ProofContext, work: string, hostd: string, versio
   // The compiled CLI's runtime dependencies (release.sh installs them with npm).
   symlinkSync(join(ctx.root, "node_modules"), join(cli, "node_modules"));
   const app = join(stage, "Localbox.app/Contents");
-  mkdirSync(join(app, "MacOS"), { recursive: true }); mkdirSync(join(app, "Resources/vm"), { recursive: true });
+  mkdirSync(join(app, "MacOS"), { recursive: true }); mkdirSync(join(app, "Resources"), { recursive: true });
   copyFileSync(hostd, join(app, "MacOS/localbox-hostd")); chmodSync(join(app, "MacOS/localbox-hostd"), 0o755);
   for (const plist of ["com.localbox.hostd.plist", "com.localbox.updater.plist", "com.localbox.connector.plist"]) copyFileSync(join(ctx.root, "apps/macos/HostDaemon/Resources", plist), join(app, "Resources", plist));
-  for (const file of ["vmlinuz", "initrd", "template.img"]) writeFileSync(join(app, "Resources/vm", file), "");
+  // A stand-in linux image (this probe boots no VM), shipped and installed the way a real one is.
+  const image = join(stage, "image");
+  mkdirSync(join(image, "boot"), { recursive: true });
+  writeFileSync(join(image, "disk.img"), Buffer.alloc(1024 * 1024)); writeFileSync(join(image, "boot/efi-vars"), "efi");
+  writeFileSync(join(image, "image.json"), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: 0, agent_version: version }));
   execFileSync("ditto", ["-c", "-k", "--keepParent", join(stage, "Localbox.app"), join(out, `Localbox-${version}.zip`)]);
   execFileSync("tar", ["-czf", join(out, `localbox-cli-${version}.tar.gz`), "-C", stage, "localbox-cli"]);
-  await writeRelease(out, signManifest(await makeManifest(out, version, `sha256:${"0".repeat(64)}`), key, "proof-14"));
+  const shipped = await packImage(image, out, `localbox-linux-${version}`, { level: 1 });
+  await writeRelease(out, signManifest(await makeManifest(out, version, `sha256:${"0".repeat(64)}`, undefined, shipped), key, "proof-14"));
   return out;
 }
 

@@ -239,14 +239,17 @@ functions are in the [security model](SECURITY.md#convex-is-an-authenticated-bou
 
 ## VM image
 
-`npm run image:boot -- --profile minimal|full` builds bootable artifacts
-(kernel, initrd, an ext4 `template.img` and a manifest with their digests) into
-`dist/vm-image/<profile>/`, using Docker on this Mac (start it with `colima start
---arch aarch64`). `full` is the release image and carries exactly Duet's VM
+`npm run image:boot -- --profile minimal|full` builds the linux image's disk
+(a GPT disk: an EFI system partition with GRUB, and the ext4 root carrying the
+kernel, pinned in `packages/vm-image/src/pins.ts`) and a manifest of its digests
+into `dist/vm-image/<profile>/`, using Docker on this Mac (start it with `colima
+start --arch aarch64`). `--out DIR` also writes the image directory the host
+daemon reads (`image.json`, `disk.img`, `boot/efi-vars`); `npm run image:build`
+is the `full` profile. `full` is the release image and carries exactly Duet's VM
 package set, ported to ARM64; `npm run image:parity` fails if it drifts from the
 vendored copy of Duet's Dockerfile in `packages/vm-image/duet-reference/`. The
 recorded substitutions live in the manifest. `minimal` is for fast proofs.
-The template's root filesystem is unpacked and written inside Linux, never on
+The root filesystem is unpacked and written inside Linux, never on
 this Mac, whose case-insensitive, unprivileged checkout would corrupt it.
 
 `full` also runs the desktop the desktop and browser tools drive, as the
@@ -261,24 +264,29 @@ socket, with socat forwarding vsock port 1024 to it. Kernel and boot output go
 to a separate console, which `localbox-vmlab` keeps beside a scratch clone of the disk. To boot an image by
 hand: `swift build --package-path apps/macos/HostDaemon`, sign the binaries with
 the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
-`localbox-vmlab boot --artifacts dist/vm-image/minimal --json`.
+`localbox-vmlab boot --image dist/vm-image/images/linux --json` on an image
+directory written with `--out`.
 
 ## Releasing
 
 Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
 hand; no CI publishes them. `scripts/release.sh` stages the signed HostDaemon
-app bundle, compiled CLI, VM template, checksums and release manifest for the
-`version` in `package.json` (override with `VERSION`). Set
-`LOCALBOX_KERNEL`, `LOCALBOX_INITRD` and `LOCALBOX_TEMPLATE_DISK` to the
-`npm run image:build` outputs in `dist/vm-image/full/` and `IMAGE_DIGEST` to the
-`digest` in its `manifest.json`. It needs `zstd` (`brew install zstd`).
+app bundle, compiled CLI, the built-in linux image, checksums and release
+manifest for the `version` in `package.json` (override with `VERSION`). Set
+`LOCALBOX_IMAGE` to the image directory `npm run image:build -- --out DIR`
+wrote, and `IMAGE_DIGEST` to the `digest` in `dist/vm-image/full/manifest.json`.
+The image must carry the guest agent the release builds, or the script stops.
+It needs `zstd` (`brew install zstd`).
 
-The kernel and initrd ship inside the app. The template does not: GitHub caps a
-release asset at 2 GiB, so it is zstd-compressed and split into
-`localbox-template-VERSION.img.zst.000`, `.001`, … The signed manifest lists the
-parts and the expanded disk's SHA-256 and size; the installer expands them into
-`releases/VERSION/vm/template.img`, leaving unused blocks as holes, and keeps
-only that disk. Activation and rollback re-check it against the manifest.
+The app carries no kernel: the image boots its own through EFI. The image ships
+beside the app because GitHub caps a release asset at 2 GiB: its disk
+zstd-compressed and split into `localbox-linux-VERSION.disk.img.zst.000`,
+`.001`, …, plus `localbox-linux-VERSION.efi-vars` (the boot store) and
+`localbox-linux-VERSION.image.json`. The signed manifest names them and the
+expanded disk's SHA-256 and size; the installer expands them into
+`releases/VERSION/images/linux/`, leaving unused blocks as holes, and keeps only
+that directory. Activation and rollback re-check it against the manifest, then
+make it this Mac's `images/linux` (an APFS clone, so it costs no space).
 
 Upload every file in the output directory to a release named after the tag:
 `gh release create vVERSION dist/release/* --title "Localbox VERSION"`. Add
@@ -309,12 +317,13 @@ virtualization or distribution gates.
 
 `RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`
 verifies checksums and the Ed25519 manifest, keeps versioned app, CLI and
-template trees behind an atomic `releases/active` link, materializes the launchd plist, creates
+image trees behind an atomic `releases/active` link, materializes the launchd plist, creates
 the owner-only IPC token, and loads the daemon and the GitHub release updater.
 Automatic installs leave the running updater loaded while the active release is
 switched, so the updater cannot terminate its own install.
 
-`scripts/rollback-release.sh VERSION` selects an older verified tree.
+`scripts/rollback-release.sh VERSION` selects an older verified tree and makes
+its image `images/linux` again.
 `scripts/uninstall.sh` removes launchd jobs, the CLI link and the marked PATH
 block while preserving VM state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or
 fixture install, and `LOCALBOX_RELEASE_REPOSITORY` when releases come from a

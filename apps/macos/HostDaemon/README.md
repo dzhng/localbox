@@ -50,6 +50,10 @@ image, and each start sweeps the temporaries a crash left. A sandbox is
 provisioned from an image off the `SandboxHost` actor and keeps its own disk
 clone and boot store, so deleting the image never breaks it; `SandboxHost`
 itself does no image file I/O and learns free disk only through capacity.
+The one exception is the built-in `linux` image: the installer (and a rollback)
+makes the active release's copy `images/linux`, as an APFS clone assembled
+under a dot-prefixed name and swapped in, so every Mac runs the image its
+release shipped and the daemon reads it like any other.
 
 `HostOperationStore` is the only owner of long host work (an image build, copy
 or capture), separate from `SandboxHost` so that work never queues behind a

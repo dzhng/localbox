@@ -38,10 +38,6 @@ You are picking up the sandbox-images plan. Where things stand:
   3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
   4. **40 docs** last.
 - **Warnings:**
-  - Releases can't create sandboxes until slice 25 lands (the installer still
-    lays down the old template).
-  - Releases don't push agent updates until `LOCALBOX_GUEST_AGENT` is wired to
-    the app's `Contents/Resources/guest-agent/` (slice 25's installer work).
   - Tier `l` daemons can fail with "socket path is too long" under a long
     worktree path; run those probes from a short `git worktree add /tmp/<x>`.
   - The private VNC server listens on every interface; `RecoveryVNC` always uses
@@ -66,7 +62,7 @@ any blocker, and tick the TODO list.
 - [x] [22 Convex image records](slices/22-convex-images.md)
 - [x] [23 VM spec and boot store](slices/23-vmspec-bootstore.md)
 - [x] [24 image store on the Mac](slices/24-image-store.md)
-- [ ] [25 the built-in linux image ships as an image](slices/25-linux-image-bundle.md)
+- [x] [25 the built-in linux image ships as an image](slices/25-linux-image-bundle.md)
 - [x] [26 durable host operations](slices/26-host-operations.md)
 - [x] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
 - [ ] [28 image create --from](slices/28-image-capture.md)
