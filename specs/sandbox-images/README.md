@@ -38,7 +38,11 @@ You are picking up the sandbox-images plan. Where things stand:
      picker-bypass alert, see slice 33's outcome), then **35 macOS sandboxes**
      (tier `m`).
   3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
-  4. **40 docs** last.
+  4. **40 docs** is done on `t3/sandbox-images-docs-positioning` (README, site,
+     `llms.txt`, skill, SECURITY.md, positioning, runbook step 8). When 34 and the
+     copy transport land, check the docs against what they actually print (the
+     skill's `image create --macos` and `image copy` lines) and rerun
+     `tests/skill-commands.test.ts`.
 - **Warnings:**
   - Run proof sweeps from a short worktree under `$HOME` (`git worktree add
     ~/lbi`): tier `l` daemons fail with "socket path is too long" under a long
@@ -82,7 +86,7 @@ any blocker, and tick the TODO list.
 - [x] [37 transfer library](slices/37-transfer-library.md)
 - [ ] [38 image copy](slices/38-image-copy.md)
 - [x] [39 create with copy](slices/39-create-with-copy.md)
-- [ ] [40 positioning, docs and security](slices/40-docs-positioning.md)
+- [x] [40 positioning, docs and security](slices/40-docs-positioning.md)
 - [ ] Two-Mac different-network run (user; extends the [two-Mac runbook](../durable-sandboxes/two-mac-runbook.md))
 
 ## Slice graph

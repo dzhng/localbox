@@ -1,0 +1,397 @@
+{
+ "note": "Before = the site built at dfa1d49 (pre-edit); after = this slice. Heights differ, so both sides are padded with white at the bottom to the taller one before diffing. Dark-scheme captures were taken too and are pixel-identical to light (the site has no dark theme), so only light is kept.",
+ "pairs": [
+  {
+   "id": "mobile-light-hero",
+   "parityDistance": 0.21072,
+   "mae": 37.12178,
+   "diffRatio32": 0.20984,
+   "before": {
+    "colorBuckets": 95,
+    "colorEntropyBits": 1.29376,
+    "edgeDensity": 0.26664,
+    "dominantColorShare": 0.82327,
+    "transparentShare": 0,
+    "luminanceMean": 223.22327,
+    "luminanceP5": 20,
+    "luminanceP95": 255,
+    "luminanceContrast": 235
+   },
+   "after": {
+    "colorBuckets": 93,
+    "colorEntropyBits": 1.27318,
+    "edgeDensity": 0.25017,
+    "dominantColorShare": 0.82768,
+    "transparentShare": 0,
+    "luminanceMean": 224.08517,
+    "luminanceP5": 20,
+    "luminanceP95": 255,
+    "luminanceContrast": 235
+   }
+  },
+  {
+   "id": "mobile-light-fold",
+   "parityDistance": 0.18507,
+   "mae": 28.16144,
+   "diffRatio32": 0.17231,
+   "before": {
+    "colorBuckets": 93,
+    "colorEntropyBits": 0.99938,
+    "edgeDensity": 0.20949,
+    "dominantColorShare": 0.89495,
+    "transparentShare": 0,
+    "luminanceMean": 239.32778,
+    "luminanceP5": 98.4894,
+    "luminanceP95": 255,
+    "luminanceContrast": 156.5106
+   },
+   "after": {
+    "colorBuckets": 98,
+    "colorEntropyBits": 1.20565,
+    "edgeDensity": 0.22966,
+    "dominantColorShare": 0.84797,
+    "transparentShare": 0,
+    "luminanceMean": 228.61355,
+    "luminanceP5": 20,
+    "luminanceP95": 255,
+    "luminanceContrast": 235
+   }
+  },
+  {
+   "id": "mobile-light-features",
+   "parityDistance": 0.17027,
+   "mae": 18.28985,
+   "diffRatio32": 0.13827,
+   "before": {
+    "colorBuckets": 94,
+    "colorEntropyBits": 0.67708,
+    "edgeDensity": 0.13957,
+    "dominantColorShare": 0.934,
+    "transparentShare": 0,
+    "luminanceMean": 247.0557,
+    "luminanceP5": 196.0722,
+    "luminanceP95": 255,
+    "luminanceContrast": 58.9278
+   },
+   "after": {
+    "colorBuckets": 102,
+    "colorEntropyBits": 1.03159,
+    "edgeDensity": 0.22035,
+    "dominantColorShare": 0.89158,
+    "transparentShare": 0,
+    "luminanceMean": 241.67976,
+    "luminanceP5": 127.2768,
+    "luminanceP95": 255,
+    "luminanceContrast": 127.7232
+   }
+  },
+  {
+   "id": "mobile-light-compare",
+   "parityDistance": 0.13591,
+   "mae": 18.69689,
+   "diffRatio32": 0.12843,
+   "before": {
+    "colorBuckets": 51,
+    "colorEntropyBits": 0.99781,
+    "edgeDensity": 0.27214,
+    "dominantColorShare": 0.87632,
+    "transparentShare": 0,
+    "luminanceMean": 234.87686,
+    "luminanceP5": 34,
+    "luminanceP95": 255,
+    "luminanceContrast": 221
+   },
+   "after": {
+    "colorBuckets": 54,
+    "colorEntropyBits": 0.97764,
+    "edgeDensity": 0.25745,
+    "dominantColorShare": 0.885,
+    "transparentShare": 0,
+    "luminanceMean": 237.5391,
+    "luminanceP5": 91,
+    "luminanceP95": 255,
+    "luminanceContrast": 164
+   }
+  },
+  {
+   "id": "mobile-light-catalog",
+   "parityDistance": 0.12513,
+   "mae": 11.39152,
+   "diffRatio32": 0.08131,
+   "before": {
+    "colorBuckets": 35,
+    "colorEntropyBits": 0.75979,
+    "edgeDensity": 0.18275,
+    "dominantColorShare": 0.92099,
+    "transparentShare": 0,
+    "luminanceMean": 240.49453,
+    "luminanceP5": 170.0642,
+    "luminanceP95": 255,
+    "luminanceContrast": 84.9358
+   },
+   "after": {
+    "colorBuckets": 37,
+    "colorEntropyBits": 0.72066,
+    "edgeDensity": 0.16782,
+    "dominantColorShare": 0.92548,
+    "transparentShare": 0,
+    "luminanceMean": 240.41288,
+    "luminanceP5": 189.1364,
+    "luminanceP95": 255,
+    "luminanceContrast": 65.8636
+   }
+  },
+  {
+   "id": "desktop-light-hero",
+   "parityDistance": 0.09939,
+   "mae": 17.30479,
+   "diffRatio32": 0.09523,
+   "before": {
+    "colorBuckets": 89,
+    "colorEntropyBits": 0.6435,
+    "edgeDensity": 0.12053,
+    "dominantColorShare": 0.92982,
+    "transparentShare": 0,
+    "luminanceMean": 242.6694,
+    "luminanceP5": 109.2842,
+    "luminanceP95": 255,
+    "luminanceContrast": 145.7158
+   },
+   "after": {
+    "colorBuckets": 80,
+    "colorEntropyBits": 0.66453,
+    "edgeDensity": 0.12641,
+    "dominantColorShare": 0.92398,
+    "transparentShare": 0,
+    "luminanceMean": 241.22168,
+    "luminanceP5": 89.6244,
+    "luminanceP95": 255,
+    "luminanceContrast": 165.3756
+   }
+  },
+  {
+   "id": "desktop-light-fold",
+   "parityDistance": 0.09831,
+   "mae": 15.46391,
+   "diffRatio32": 0.09049,
+   "before": {
+    "colorBuckets": 94,
+    "colorEntropyBits": 0.67325,
+    "edgeDensity": 0.12791,
+    "dominantColorShare": 0.92736,
+    "transparentShare": 0,
+    "luminanceMean": 242.85874,
+    "luminanceP5": 101.4172,
+    "luminanceP95": 255,
+    "luminanceContrast": 153.5828
+   },
+   "after": {
+    "colorBuckets": 96,
+    "colorEntropyBits": 0.70599,
+    "edgeDensity": 0.13003,
+    "dominantColorShare": 0.91993,
+    "transparentShare": 0,
+    "luminanceMean": 240.86079,
+    "luminanceP5": 89.6244,
+    "luminanceP95": 255,
+    "luminanceContrast": 165.3756
+   }
+  },
+  {
+   "id": "desktop-light-features",
+   "parityDistance": 0.09364,
+   "mae": 10.56533,
+   "diffRatio32": 0.07374,
+   "before": {
+    "colorBuckets": 82,
+    "colorEntropyBits": 0.60826,
+    "edgeDensity": 0.1267,
+    "dominantColorShare": 0.94076,
+    "transparentShare": 0,
+    "luminanceMean": 246.6585,
+    "luminanceP5": 199.9202,
+    "luminanceP95": 255,
+    "luminanceContrast": 55.0798
+   },
+   "after": {
+    "colorBuckets": 78,
+    "colorEntropyBits": 0.52949,
+    "edgeDensity": 0.10996,
+    "dominantColorShare": 0.94917,
+    "transparentShare": 0,
+    "luminanceMean": 247.71416,
+    "luminanceP5": 237.9278,
+    "luminanceP95": 255,
+    "luminanceContrast": 17.0722
+   }
+  },
+  {
+   "id": "desktop-light-compare",
+   "parityDistance": 0.08229,
+   "mae": 12.15693,
+   "diffRatio32": 0.0722,
+   "before": {
+    "colorBuckets": 39,
+    "colorEntropyBits": 0.4609,
+    "edgeDensity": 0.10463,
+    "dominantColorShare": 0.94903,
+    "transparentShare": 0,
+    "luminanceMean": 245.81687,
+    "luminanceP5": 233,
+    "luminanceP95": 255,
+    "luminanceContrast": 22
+   },
+   "after": {
+    "colorBuckets": 40,
+    "colorEntropyBits": 0.60251,
+    "edgeDensity": 0.148,
+    "dominantColorShare": 0.93041,
+    "transparentShare": 0,
+    "luminanceMean": 246.57293,
+    "luminanceP5": 227.2046,
+    "luminanceP95": 255,
+    "luminanceContrast": 27.7954
+   }
+  },
+  {
+   "id": "mobile-light-faq",
+   "parityDistance": 0.08181,
+   "mae": 5.59867,
+   "diffRatio32": 0.03265,
+   "before": {
+    "colorBuckets": 22,
+    "colorEntropyBits": 0.59292,
+    "edgeDensity": 0.14494,
+    "dominantColorShare": 0.92842,
+    "transparentShare": 0,
+    "luminanceMean": 243.99464,
+    "luminanceP5": 172,
+    "luminanceP95": 255,
+    "luminanceContrast": 83
+   },
+   "after": {
+    "colorBuckets": 22,
+    "colorEntropyBits": 0.68109,
+    "edgeDensity": 0.17365,
+    "dominantColorShare": 0.91571,
+    "transparentShare": 0,
+    "luminanceMean": 241.76486,
+    "luminanceP5": 114,
+    "luminanceP95": 255,
+    "luminanceContrast": 141
+   }
+  },
+  {
+   "id": "desktop-light-catalog",
+   "parityDistance": 0.07184,
+   "mae": 5.42327,
+   "diffRatio32": 0.04003,
+   "before": {
+    "colorBuckets": 35,
+    "colorEntropyBits": 0.39566,
+    "edgeDensity": 0.07655,
+    "dominantColorShare": 0.96077,
+    "transparentShare": 0,
+    "luminanceMean": 246.05182,
+    "luminanceP5": 244.996,
+    "luminanceP95": 255,
+    "luminanceContrast": 10.004
+   },
+   "after": {
+    "colorBuckets": 35,
+    "colorEntropyBits": 0.50404,
+    "edgeDensity": 0.09515,
+    "dominantColorShare": 0.9494,
+    "transparentShare": 0,
+    "luminanceMean": 244.82645,
+    "luminanceP5": 240.996,
+    "luminanceP95": 255,
+    "luminanceContrast": 14.004
+   }
+  },
+  {
+   "id": "desktop-light-faq",
+   "parityDistance": 0.05613,
+   "mae": 1.45168,
+   "diffRatio32": 0.00838,
+   "before": {
+    "colorBuckets": 18,
+    "colorEntropyBits": 0.21535,
+    "edgeDensity": 0.04668,
+    "dominantColorShare": 0.97838,
+    "transparentShare": 0,
+    "luminanceMean": 252.03522,
+    "luminanceP5": 255,
+    "luminanceP95": 255,
+    "luminanceContrast": 0
+   },
+   "after": {
+    "colorBuckets": 18,
+    "colorEntropyBits": 0.25376,
+    "edgeDensity": 0.0557,
+    "dominantColorShare": 0.97423,
+    "transparentShare": 0,
+    "luminanceMean": 251.40705,
+    "luminanceP5": 255,
+    "luminanceP95": 255,
+    "luminanceContrast": 0
+   }
+  },
+  {
+   "id": "mobile-light-asks",
+   "parityDistance": 0.04634,
+   "mae": 6.44147,
+   "diffRatio32": 0.04547,
+   "before": {
+    "colorBuckets": 15,
+    "colorEntropyBits": 0.63315,
+    "edgeDensity": 0.16814,
+    "dominantColorShare": 0.92639,
+    "transparentShare": 0,
+    "luminanceMean": 243.41296,
+    "luminanceP5": 134,
+    "luminanceP95": 255,
+    "luminanceContrast": 121
+   },
+   "after": {
+    "colorBuckets": 15,
+    "colorEntropyBits": 0.65687,
+    "edgeDensity": 0.17386,
+    "dominantColorShare": 0.92341,
+    "transparentShare": 0,
+    "luminanceMean": 243.24119,
+    "luminanceP5": 133,
+    "luminanceP95": 255,
+    "luminanceContrast": 122
+   }
+  },
+  {
+   "id": "desktop-light-asks",
+   "parityDistance": 0.04523,
+   "mae": 6.7181,
+   "diffRatio32": 0.04203,
+   "before": {
+    "colorBuckets": 15,
+    "colorEntropyBits": 0.44054,
+    "edgeDensity": 0.09314,
+    "dominantColorShare": 0.9487,
+    "transparentShare": 0,
+    "luminanceMean": 246.19078,
+    "luminanceP5": 235,
+    "luminanceP95": 255,
+    "luminanceContrast": 20
+   },
+   "after": {
+    "colorBuckets": 15,
+    "colorEntropyBits": 0.48772,
+    "edgeDensity": 0.10912,
+    "dominantColorShare": 0.94072,
+    "transparentShare": 0,
+    "luminanceMean": 244.43298,
+    "luminanceP5": 185,
+    "luminanceP95": 255,
+    "luminanceContrast": 70
+   }
+  }
+ ]
+}
