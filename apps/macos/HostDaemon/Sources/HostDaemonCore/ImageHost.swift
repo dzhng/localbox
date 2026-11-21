@@ -33,9 +33,11 @@ public actor ImageHost {
 
     /// Saves sandboxes as images (`image.create { from }`); nil answers it `unsupported`.
     private let capture: ImageCapture?
+    /// Builds the macOS base (`image.create { macos }`); nil answers it `unsupported`.
+    private let macBuilder: MacBaseBuilder?
 
-    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, allowsDirectOperations: Bool = false) {
-        self.operations = operations; self.files = files; self.capture = capture; self.allowsDirectOperations = allowsDirectOperations
+    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, macBuilder: MacBaseBuilder? = nil, allowsDirectOperations: Bool = false) {
+        self.operations = operations; self.files = files; self.capture = capture; self.macBuilder = macBuilder; self.allowsDirectOperations = allowsDirectOperations
     }
 
     /// Operations answered here: the catalog's image operations a machine runs, and the connector's internal ones
@@ -57,7 +59,15 @@ public actor ImageHost {
             }
             return success(object, result: view(await settled(latest, object, timeoutMs: (input["timeout_ms"] as? NSNumber)?.intValue)))
         case "image.create":
-            if input["macos"] != nil { return failure(object, code: "unsupported", message: "this machine does not build macOS images yet") }
+            if input["macos"] as? Bool == true {
+                guard let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
+                    return failure(object, code: "invalid_input", message: "image.create { macos } takes image (the reserved image's id) and a mutation id")
+                }
+                guard let macBuilder else { return failure(object, code: "unsupported", message: "this machine does not build macOS images") }
+                do { return success(object, result: view(await settled(try await macBuilder.begin(key: key, imageID: image), object, timeoutMs: nil))) }
+                catch let refused as HostOperationFailure { return failure(object, code: refused.code, message: refused.message, nextStep: refused.nextStep) }
+                catch { return failure(object, code: "invalid_input", message: explain(error)) }
+            }
             guard let from = input["from"] as? String, !from.isEmpty, let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                 return failure(object, code: "invalid_input", message: "image.create takes from (the source sandbox's id), image (the reserved image's id) and a mutation id")
             }
@@ -117,10 +127,11 @@ public actor ImageHost {
 
     /// `record` once it finishes, or as it stands when the wait ends. As job.wait: without `timeoutMs`, the wait lasts as
     /// long as the request may run, leaving a second to answer before its deadline. A capture usually finishes inside
-    /// that, so `image.create` mostly answers with the saved image rather than a pending one.
+    /// that, so `image.create` mostly answers with the saved image rather than a pending one. A macOS build runs for many
+    /// minutes, so its waits also end when it moves to its next phase, and `image wait` shows each one.
     private func settled(_ record: HostOperationRecord, _ request: [String: Any], timeoutMs: Int?) async -> HostOperationRecord {
         let deadline = (request["deadline_ms"] as? NSNumber)?.intValue ?? 30_000
-        return await operations.wait(record.key, timeoutMs: min(timeoutMs ?? Int.max, max(0, deadline - 1_000))) ?? record
+        return await operations.wait(record.key, timeoutMs: min(timeoutMs ?? Int.max, max(0, deadline - 1_000)), untilPhaseChanges: record.kind == MacBaseBuilder.kind) ?? record
     }
 
     /// A record as callers see it: everything but the checkpoint, which is the kind's private resume point.
@@ -133,8 +144,10 @@ public actor ImageHost {
 
     private func success(_ request: [String: Any], result: Any) -> Data { envelope(request, ["ok": true, "result": result]) }
 
-    private func failure(_ request: [String: Any], code: String, message: String) -> Data {
-        envelope(request, ["ok": false, "error": ["code": code, "message": message, "retryable": false]])
+    private func failure(_ request: [String: Any], code: String, message: String, nextStep: String? = nil) -> Data {
+        var error: [String: Any] = ["code": code, "message": message, "retryable": false]
+        if let nextStep { error["details"] = ["next_step": nextStep] }
+        return envelope(request, ["ok": false, "error": error])
     }
 
     /// The same envelope identity `SandboxHost` answers with.

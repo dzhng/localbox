@@ -6,8 +6,8 @@ import Foundation
 /// cloned as it lies. The image is assembled in an `ImageStore` temporary and committed by one rename.
 ///
 /// Checkpoint: `{ sandbox_id }`, plus what the clone did (`stall_ms`, `disk`, `woke`, `made_room`) once it is taken. A
-/// resume finds the image committed (only the result was left to record) or starts over: the daemon's start swept the
-/// half-written temporary, and the sandbox's disk has moved on since, so the clone is retaken.
+/// resume finds the image committed (only the result was left to record) or starts over: it removes the half-written
+/// temporary, and the sandbox's disk has moved on since, so the clone is retaken.
 public actor ImageCapture {
     public static let kind = "image.capture"
     /// Free disk a capture leaves beyond the source disk's allocated bytes, which the clone may come to hold in full
@@ -65,6 +65,9 @@ public actor ImageCapture {
 
         // 2–4. Clone as it lies when down; otherwise wake it if it sleeps, then freeze around the clone.
         try await context.report(HostOperationProgress(phase: "saving"), checkpoint: .object(checkpoint))
+        // A resumed capture starts over: what its last run half-wrote goes first (the start sweep keeps a running
+        // operation's temporaries).
+        store.discardTemps(of: imageID)
         let temp = try store.reserveTemp(imageID)
         let manifest: ImageManifest
         do {

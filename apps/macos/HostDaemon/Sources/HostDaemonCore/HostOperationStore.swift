@@ -106,7 +106,9 @@ public actor HostOperationStore {
     private var records: [String: HostOperationRecord] = [:]
     private var resumers: [String: HostOperationWork] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    private var waiters: [String: [UUID: Waiter]] = [:]
+    /// A caller of `wait`; `phase` is set (to the phase it started in) when a phase change should wake it.
+    private struct Waiter { let continuation: CheckedContinuation<Void, Never>; let phase: String?? }
     /// Callers of `unreported`, woken when an operation finishes.
     private var outcomeWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var stopped = false
@@ -177,6 +179,9 @@ public actor HostOperationStore {
     /// Whether any operation on `subject` is still running.
     public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
 
+    /// The subjects of every running operation: what their resumes may still need on disk.
+    public func runningSubjects() -> Set<String> { Set(records.values.filter { $0.state == .running }.map(\.subject)) }
+
     /// Finished operations whose outcome the connector has not yet reported, oldest first. With none, waits up to
     /// `timeoutMs` (capped at `maxWaitMs`) for one to finish.
     public func unreported(timeoutMs: Int) async -> [HostOperationRecord] {
@@ -209,7 +214,9 @@ public actor HostOperationStore {
     }
 
     /// The record once it finishes, or as it stands after `timeoutMs` (capped at `maxWaitMs`); nil for an unknown key.
-    public func wait(_ key: String, timeoutMs: Int) async -> HostOperationRecord? {
+    /// With `untilPhaseChanges`, it also returns as soon as the work reports a phase other than the one it was in, so a
+    /// caller can follow a long build phase by phase.
+    public func wait(_ key: String, timeoutMs: Int, untilPhaseChanges: Bool = false) async -> HostOperationRecord? {
         guard let record = records[key] else { return nil }
         guard record.state == .running else { return record }
         let id = UUID()
@@ -219,7 +226,7 @@ public actor HostOperationStore {
             await self?.wake(key, id)
         }
         await withCheckedContinuation { continuation in
-            waiters[key, default: [:]][id] = continuation
+            waiters[key, default: [:]][id] = Waiter(continuation: continuation, phase: untilPhaseChanges ? .some(record.progress?.phase) : nil)
         }
         timer.cancel()
         return records[key]
@@ -262,6 +269,9 @@ public actor HostOperationStore {
         record.progress = progress; record.checkpoint = checkpoint; record.updatedAt = epochMs()
         try save(record)
         records[key] = record
+        for (id, waiter) in waiters[key] ?? [:] {
+            if case .some(let phase) = waiter.phase, phase != progress.phase { waiters[key]?.removeValue(forKey: id)?.continuation.resume() }
+        }
     }
 
     private func finish(_ key: String, _ outcome: Result<JSONValue, HostOperationFailure>) {
@@ -274,13 +284,13 @@ public actor HostOperationStore {
         // The in-memory record is the answer either way; a failed write means the next start resumes the work again.
         try? save(record)
         records[key] = record
-        for continuation in (waiters.removeValue(forKey: key) ?? [:]).values { continuation.resume() }
+        for waiter in (waiters.removeValue(forKey: key) ?? [:]).values { waiter.continuation.resume() }
         for continuation in outcomeWaiters.values { continuation.resume() }
         outcomeWaiters = [:]
     }
 
     private func wake(_ key: String, _ id: UUID) {
-        waiters[key]?.removeValue(forKey: id)?.resume()
+        waiters[key]?.removeValue(forKey: id)?.continuation.resume()
     }
 
     private func wakeOutcome(_ id: UUID) {
