@@ -19,11 +19,10 @@ sandboxes. You already own them."
 
 ## Next Agent Prompt
 
-*Status 2026-11-21: spikes 15, 16, 17, 19 passed (go); 18's grants work and its
-rerun records P6's fallback. Built and merged: 21, 22, 23, 24, 26, 27, 30, 31,
-32, 36. Built on `t3/darwin-guest-agent`: 33 (smoked in a real macOS guest). In
-flight on branches: 20 → 37, 25, 28, 29. Slice numbers start at 15
-because `scripts/proof/run.ts` keys probes on a two-digit prefix.*
+*Status 2026-11-21: every spike passed (20 with its throughput gate restated, choice
+20). Built and merged: 21–28, 30–33, 36. In flight on branches: 29, 34, 37. Slice
+numbers start at 15 because `scripts/proof/run.ts` keys probes on a two-digit
+prefix.*
 
 You are picking up the sandbox-images plan. Where things stand:
 
@@ -58,7 +57,7 @@ any blocker, and tick the TODO list.
 - [x] [15 EFI Linux boot and save/restore spike](slices/15-efi-spike.md)
 - [x] [16 macOS install, clone identity and suspend spike](slices/16-macos-install-spike.md)
 - [x] [17 macOS provisioning, bootstrap and SIP spike](slices/17-macos-provision-spike.md)
-- [ ] [18 macOS TCC and desktop helper spike](slices/18-macos-tcc-spike.md)
+- [x] [18 macOS TCC and desktop helper spike](slices/18-macos-tcc-spike.md)
 - [x] [19 darwin vsock forwarder spike](slices/19-darwin-vsock-spike.md)
 - [x] [20 hole-punch and transfer spike](slices/20-punch-spike.md) (tier x waits on the user's second Mac)
 - [x] [21 catalog routing and image operations](slices/21-catalog-routing.md)
@@ -68,7 +67,7 @@ any blocker, and tick the TODO list.
 - [x] [25 the built-in linux image ships as an image](slices/25-linux-image-bundle.md)
 - [x] [26 durable host operations](slices/26-host-operations.md)
 - [x] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
-- [ ] [28 image create --from](slices/28-image-capture.md)
+- [x] [28 image create --from](slices/28-image-capture.md)
 - [ ] [29 sandbox create --image (image already here)](slices/29-create-from-image.md)
 - [x] [30 image catalog commands](slices/30-image-catalog-commands.md)
 - [x] [31 single-binary guest agent](slices/31-agent-binary.md)
