@@ -1,32 +1,41 @@
 # Positioning
 
-**Give your agents all your computers.**
+**Stop renting sandboxes. You already own them.**
 
-Localbox lets every agent you run, on your laptop, in the cloud or on a schedule,
-work on every Mac you own. Sign a Mac in with your email and it joins; any agent
-you've signed in can open a sandbox on any of those Macs, from anywhere, with no
-VPN, port forwarding or SSH keys. Each sandbox is a whole Linux computer with a
-shell, files, a browser and a desktop, and it stays exactly as the agent left it
-until someone deletes it.
+Localbox turns every Mac you own into sandboxes for your agents: Linux or macOS,
+set up your way, and still there next week. Free.
+
+Coding agents need somewhere to work that isn't your laptop, and the usual answer
+is a cloud sandbox: rented by the minute, thrown away after the session, set up
+from scratch every time, and Linux only. Meanwhile the Macs you already paid for
+sit idle: the desktop with the RAM for the full build, the Mac mini on the shelf,
+last year's laptop. Localbox makes those Macs the sandboxes.
+
+Sign a Mac in with your email and it joins; any agent you've signed in, on your
+laptop, in the cloud or on a schedule, can open a sandbox on any of those Macs,
+from anywhere, with no VPN, port forwarding or SSH keys. Each sandbox is a whole
+computer, Linux or macOS, with a shell, files, a browser and a desktop, and it
+stays exactly as the agent left it until someone deletes it. Set one up the way
+you like it, save it as an image, and every new sandbox starts from that.
 
 It's not SSH. SSH hands an agent your whole computer: your files, your keys, your
-logged-in sessions. Localbox hands it a sandbox, where it works with
-permission prompts off; your own files are out of reach unless you share a
-folder, and every access to a shared folder is logged. It's much safer, and much
-easier to set up, than SSH and Tailscale: no keys or network to configure on each
-Mac, just your email and a code.
+logged-in sessions. Localbox hands it a sandbox, where it works with permission
+prompts off; your own files are out of reach unless you share a folder, and every
+access to a shared folder is logged.
 
-**Reach** is the headline: your agents get all your computers. **Sandbox** is the
-product word and the reason it's safe to say yes. Say "virtual machine" only
-where isolation is the question, and then name what it is: a full Linux VM on
-Apple's own Virtualization framework. **Durable** is a benefit, not the pitch:
-cloud sandboxes and containers are disposable by design, and a Localbox sandbox
-keeps its installs, files and browser state until it's deleted. Idle sandboxes
-go to sleep instead, and every process, down to a running dev server, resumes on
-the next request. Disposable is an option (delete after an idle period), not the
-default.
+**Owned, not rented** is the headline: the cloud-sandbox bill and its throwaway
+sessions are what the pitch argues against first. **Reach** (every Mac you own,
+from wherever the agent runs) and the SSH comparison come right after it.
+**Sandbox** is the product word and the reason it's safe to say yes. Say "virtual
+machine" only where isolation is the question, and then name what it is: a full
+VM on Apple's own Virtualization framework. **Durable** is part of the subhead
+("still there next week"): cloud sandboxes and containers are disposable by
+design, and a Localbox sandbox keeps its installs, files and browser state until
+it's deleted. Idle sandboxes go to sleep instead, and every process, down to a
+running dev server, resumes on the next request. Disposable is an option (delete
+after an idle period), not the default.
 
-Every sandbox, machine and account gets a generated, renameable name like
+Every sandbox, machine, image and account gets a generated, renameable name like
 `quiet-otter` or `brave-walrus-482`. Names are friendly handles; they never grant
 access.
 
@@ -37,8 +46,9 @@ drives it through one CLI, with MCP as an optional adapter.
 Who it's for: individual developers who run coding agents every day and want
 those agents working on their own hardware, not one laptop and not a rented
 cloud. It starts with the Mac you're on, and every Mac you add joins. It's
-personal: one person's machines, one identity. Teams come later, if the personal
-product earns them.
+personal: one person's machines, one identity, the person's own work. Teams come
+later, if the personal product earns them. Products that want people's Macs as
+their sandbox backend are not the audience.
 
 It's free. The account exists so the identity is stable; it is not a paywall.
 
@@ -50,40 +60,72 @@ emails a 6-digit code, and the agent pastes it back. The same email from a new
 MacBook in another country joins the same account; nothing at home has to do
 anything, and losing every machine just means logging in again.
 
-Every machine the person signs in, and every sandbox on those machines, belongs to
-that account. A machine keeps one credential that lasts until it logs out or is
-removed. Cloud agents connecting over MCP sign in with the same email and code,
-and the page says plainly that the agent gets full access to the account. The
-email is the stable identity that premium features can attach to later.
+Every machine the person signs in, and every sandbox and image on those machines,
+belongs to that account. A machine keeps one credential that lasts until it logs
+out or is removed. Cloud agents connecting over MCP sign in with the same email and
+code, and the page says plainly that the agent gets full access to the account.
+The email is the stable identity that premium features can attach to later.
 
-## 1. Your machines are the fleet
+## 1. Stop renting sandboxes
 
-An agent today works on the one machine it was started on. Plenty of developers
-own more than that: a desktop with the RAM for the full build, a Mac mini on the
-shelf, last year's laptop. Localbox puts all of them in reach of every agent,
-without renting compute in someone else's cloud.
+A cloud sandbox is someone else's computer by the minute. It forgets everything
+when the session ends, so every session starts by reinstalling the world, and it
+runs Linux only. The Macs you own are already paid for.
+
+- No per-minute bill and no session limit. The hardware is already yours.
+- A sandbox keeps its state until you delete it, not until the session times out.
+- Code and data stay on machines you own.
+- Linux or macOS, set up your way and saved as your own images.
+
+## 2. Your machines are the fleet
+
+An agent today works on the one machine it was started on. Localbox puts every
+Mac you own in reach of every agent.
 
 - Every Mac signed in to your account joins your fleet, wherever it is.
 - Sandboxes stay on the machine the agent is running on unless it asks otherwise:
   name a machine, or ask for automatic placement across all of them. Nothing lands
   on another computer by surprise.
-- No per-minute bill and no session limit. The hardware is already paid for.
-- Code and data stay on machines you own.
-
-## 2. Cloud agents, your computers
-
-Background agents (Codex cloud, Claude Code on the web, scheduled agents) run in
-someone else's cloud, far from your machines. With Localbox they reach your
-computers from there and do the work on your hardware.
-
-- The Mac connects out to the hosted relay; there is no port forwarding, VPN,
-  Tailscale or SSH key.
-- The agent signs in on a Localbox page with your email and a code; its token
-  covers your account and is revocable at any time.
+- Cloud agents (Codex cloud, Claude Code on the web, scheduled agents) reach your
+  Macs through a relay each Mac connects out to: no port forwarding, VPN,
+  Tailscale or SSH key. Their token covers your account and is revocable at any
+  time.
 - Requests that might have half-applied are reported as uncertain, never retried
   silently.
 
-## 3. A sandbox, not your whole computer
+## 3. Set up your way: images
+
+Every developer's environment is different, and an agent shouldn't reinstall it
+for each task. Set a sandbox up once, save it as an image, and start new
+sandboxes from it on any of your Macs.
+
+- Any sandbox can be saved as an image while it runs; it pauses for about a
+  second. Sandboxes made from it get their own identity.
+- Make an image your default and every new sandbox starts from it.
+- An image moves straight from one of your Macs to another, over your local
+  network or a direct connection across the internet, never through anyone's
+  cloud storage. A sandbox asked for on a Mac without its image copies it there
+  first and says so.
+- "Any image" means any setup saved from a sandbox, Linux or macOS. It does not
+  mean arbitrary Docker or ISO images; don't imply it.
+
+## 4. macOS sandboxes
+
+Some work needs a Mac: building and testing iOS and Mac apps in Xcode, and
+using Mac apps through the desktop. A macOS sandbox is a whole Mac of its own,
+with every operation a Linux sandbox has, desktop and browser included.
+
+- The macOS base is built on your own Mac from Apple's restore image, with no
+  human step. Nothing macOS is downloaded from Localbox.
+- Xcode isn't included (it needs an Apple ID). The agent installs it once in a
+  macOS sandbox, with your Apple ID or an installer you share, and saves that as
+  an image.
+- Apple's licence allows macOS VMs for your own development, testing and personal
+  use, at most two running per Mac. Localbox's macOS sandboxes are for the person
+  who owns the Mac. Never imply offering macOS sandboxes to other people, as a
+  service or otherwise.
+
+## 5. A sandbox, not your whole computer
 
 Reaching every computer is only worth it if handing that reach to an agent is
 safe. SSH gives the agent your whole computer; a sandbox gives it one of its own.
@@ -96,7 +138,7 @@ people are afraid to do on their own laptop.
   machine.
 - The worst case is deleting the sandbox.
 
-## 4. Share a folder, see every access
+## 6. Share a folder, see every access
 
 A sandbox sees nothing on your Mac by default. When the agent needs your project,
 you share exactly that folder, read-only or read-write, and Localbox records every
@@ -106,7 +148,7 @@ read and write the sandbox makes through it.
 - Read-only by default; read-write when you say so.
 - An audit log of every file the sandbox opened, read or wrote through the share.
 
-## 5. One sandbox per agent, many agents at once
+## 7. One sandbox per agent, many agents at once
 
 Parallel agents step on each other in one checkout and one set of ports.
 
@@ -114,7 +156,7 @@ Parallel agents step on each other in one checkout and one set of ports.
   browser.
 - Fan out several attempts at a problem, keep the winner, delete the rest.
 
-## 6. A computer that's still set up next week
+## 8. Still there next week
 
 The durable default, in its purest form: a configured environment, a logged-in
 browser, an overnight build.
@@ -123,7 +165,7 @@ browser, an overnight build.
 - Long jobs run as long as they need.
 - A real desktop and browser for computer-use tasks.
 
-## 7. Sandboxes without the container tax
+## 9. Sandboxes without the container tax
 
 Docker on a Mac means a background VM that claims gigabytes of RAM and a fixed
 disk image the moment it starts, plus containers and volumes that pile up until
@@ -132,7 +174,8 @@ should you.
 
 - The agent creates a sandbox for a task, uses it, and deletes it, one command
   each.
-- New sandboxes start in seconds and share storage until they diverge.
+- New sandboxes start in seconds and share storage with their image until they
+  diverge.
 - Each sandbox is sized to its machine by default and can be resized; the agent
   is told exactly what it got.
 - Idle sandboxes sleep and wake on the next request with every process intact. A
@@ -146,29 +189,38 @@ The honest resource claim: a running sandbox reserves memory like any VM. What
 changes is the lifecycle: start on demand, sleep when idle, delete in one command.
 Never say "uses no RAM".
 
-## 8. Built for agents to drive
+## 10. Built for agents to drive
 
 The CLI's customer is an agent, not a person. Every command does what it was asked
 when the result can be undone, and says exactly what it did: the size and machine
-it chose, the sandboxes it slept to make room, the restart a resize needed, the
-output it trimmed. The agent never has to guess or ask a follow-up question.
+it chose, the sandboxes it slept to make room, the image it started from and the
+copy it made to get it there, the restart a resize needed, the output it trimmed.
+The agent never has to guess or ask a follow-up question.
 
 ## What this means for messaging
 
-- Lead with what it enables: your agents can use every computer you own, from
-  wherever they run. The sandbox is why that's safe to say yes to, so it comes
-  right after the reach, never instead of it. Never lead with virtualization.
-- The alternative to name is SSH (and Tailscale to reach it): the same reach,
-  but the agent gets your whole computer. Say "your whole computer", not "your account", which reads as
-  a login. Local containers and the cloud sandbox bill are supporting
-  comparisons, not the opening argument. Don't name other sandbox tools.
-- Say "sandbox" for the product, "durable" for the default, "computer" for what's
-  inside one. Name the VM only to answer how sandboxes are isolated.
+- Open with ownership: stop renting sandboxes, you already own the computers.
+  The cloud sandbox (by the minute, thrown away, set up from scratch) is the
+  first comparison and the opening argument. Reach across all your Macs and the
+  SSH comparison come right after it, never instead of it. Never lead with
+  virtualization.
+- The SSH comparison stays: the same reach, but the agent gets your whole
+  computer. Say "your whole computer", not "your account", which reads as a
+  login. Local containers are a supporting comparison. Don't name other sandbox
+  tools or cloud sandbox vendors.
+- A sandbox is "a whole computer, Linux or macOS". Say "sandbox" for the product,
+  "durable" for the default, "computer" for what's inside one, "image" for a
+  saved setup. Name the VM only to answer how sandboxes are isolated.
+- macOS sandboxes are for Xcode work and Mac apps through the desktop, on your own
+  Macs. Never imply offering them to other people (Apple's licence).
+- Images come from sandboxes. Don't promise Dockerfiles, arbitrary Docker images
+  or ISOs.
 - Don't leave out the single-Mac user: it starts with the Mac you're on, and
   every Mac you add joins.
 - Keep "your files stay yours" visible: nothing shared unless you choose, and
   every shared access logged. It's what makes full autonomy feel safe.
-- Free and personal. Don't mention plans, seats or teams.
+- Free and personal, for individual developers. Don't mention plans, seats, teams,
+  or building products on top of other people's Macs.
 - Sign-in is "your email and a code". Never mention passwords, keys or pairing.
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
   give their memory back and resume exactly where they were. The installer
