@@ -39,6 +39,7 @@ export const calls: Call[] = [
   { name: "sandboxes:forMachine", kind: "machine", args: {} },
   { name: "sandboxes:reportState", kind: "machine", mutation: true, args: { states: [{ sandboxId: "s1", state: "running" }] } },
   { name: "sandboxes:removeIdle", kind: "machine", mutation: true, args: { sandboxId: "s1", reason: "idle for 10 s, past its delete-after of 10 s" } },
+  { name: "sandboxes:endCreate", kind: "machine", mutation: true, args: { operationId: "cli-1", state: "succeeded" } },
   { name: "images:list", kind: "account", args: {} },
   { name: "images:get", kind: "account", args: { image: "linux" } },
   { name: "images:reserve", kind: "account", mutation: true, args: { machineId: "m1", os: "linux", source: { kind: "sandbox", sandboxName: "quiet-otter" }, createMutationId: "cli-1" } },

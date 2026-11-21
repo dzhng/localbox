@@ -425,3 +425,20 @@ test("a finished copy side is reported to the copy, never as a holder state the 
   assert.deepEqual(daemon.polls().at(-1), ["m-copy", "m-copy-2"]);
   await connector.stop();
 });
+
+test("a sandbox create that waited for its image's copy is reported to the sandbox, never as a holder state", async () => {
+  const { convex, daemon, connector } = harness();
+  await settle();
+  daemon.finish(
+    { key: "cli-create", kind: "sandbox.create_after_copy", subject: "image_1", state: "succeeded", result: { name: "rails-box" } },
+    { key: "cli-create-2", kind: "sandbox.create_after_copy", subject: "image_1", state: "failed", error: { code: "copy_unreachable", message: "image image_1 did not arrive", next_step: "put both Macs on the same network once, then copy" } },
+  );
+  await settle();
+  assert.deepEqual(convex.named("images:setHolder"), []);
+  assert.deepEqual(convex.named("sandboxes:endCreate").map((call) => call.args), [
+    { operationId: "cli-create", state: "succeeded" },
+    { operationId: "cli-create-2", state: "failed", error: { code: "copy_unreachable", message: "image image_1 did not arrive", nextStep: "put both Macs on the same network once, then copy" } },
+  ]);
+  assert.deepEqual(daemon.polls().at(-1), ["cli-create", "cli-create-2"]);
+  await connector.stop();
+});

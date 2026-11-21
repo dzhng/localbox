@@ -60,6 +60,7 @@ export const relay = {
   copiesForMachine: makeFunctionReference<"query">("images:copiesForMachine"),
   offerCandidates: makeFunctionReference<"mutation">("images:offerCandidates"),
   endCopy: makeFunctionReference<"mutation">("images:endCopy"),
+  endCreate: makeFunctionReference<"mutation">("sandboxes:endCreate"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
@@ -296,8 +297,9 @@ export class Connector {
   }
 
   /**
-   * Long work on this Mac (an image build, capture or copy) runs in the daemon's operation journal; when one finishes,
-   * its image's holder row here becomes `ready` (with the image's size) or `failed` (with why). The daemon hands over
+   * Long work on this Mac (an image build, capture or copy, a sandbox create waiting for its image's copy) runs in the
+   * daemon's operation journal; when one finishes, its image's holder row here becomes `ready` (with the image's size)
+   * or `failed` (with why), a copy's row hears how this side ended, and a waiting sandbox is created or failed. The daemon hands over
    * each outcome until a later poll says it was reported, so an outcome lands once the account is reachable, across
    * restarts of either process. An image the account deleted meanwhile has nothing left to report.
    */
@@ -321,6 +323,7 @@ export class Connector {
 
   private async reportOutcome(outcome: OperationOutcome): Promise<void> {
     if (outcome.kind === "image.copy") return await this.reportCopy(outcome);
+    if (outcome.kind === "sandbox.create_after_copy") return await this.reportCreate(outcome);
     const size = outcome.result?.size_bytes;
     const args = outcome.state === "succeeded"
       ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}) }
@@ -340,6 +343,15 @@ export class Connector {
       : { operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the copy failed", nextStep: outcome.error?.next_step ?? "copy it again; if it fails the same way, check both Macs' logs" } };
     const reported = await this.deps.convex.mutation(relay.endCopy, args) as { reported?: boolean } | null;
     this.deps.log(reported?.reported === false ? `copy ${outcome.key} is no longer on the account; nothing to report` : `image ${outcome.subject}: copy ${outcome.key} ${outcome.state}`);
+  }
+
+  /** How a sandbox create that waited for its image's copy ended; its catalog row stops reading `copying`. */
+  private async reportCreate(outcome: OperationOutcome): Promise<void> {
+    const args = outcome.state === "succeeded"
+      ? { operationId: outcome.key, state: "succeeded" }
+      : { operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the create failed", nextStep: outcome.error?.next_step ?? "delete the sandbox and create it again" } };
+    const reported = await this.deps.convex.mutation(relay.endCreate, args) as { reported?: boolean; sandbox_id?: string } | null;
+    this.deps.log(reported?.reported === false ? `sandbox create ${outcome.key} is no longer on the account; nothing to report` : `sandbox ${reported?.sandbox_id ?? outcome.key}: create after copy ${outcome.state}`);
   }
 
   private setState(state: ConnectorState, lastError = state === "connected" ? undefined : this.status.lastError): void {

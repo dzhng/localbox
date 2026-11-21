@@ -235,9 +235,10 @@ async function setTargetHolder(ctx: any, copy: any, fields: { state: "copying" |
  * Starts copying an image (an id) from `fromMachineId`, which holds it ready, to `toMachineId`: the copy's row with a
  * fresh key, and the target's holder row `copying` under the copy's mutation id. A start carrying a mutation id this
  * account already started a copy with returns that copy. A target that holds the image, or is building or copying it
- * under another operation, is refused.
+ * under another operation, is refused; with `join` (a sandbox create that needs the image there), a copy already
+ * running to it is returned instead, so the create follows that one.
  */
-export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachineId: v.string(), toMachineId: v.string(), createMutationId: v.string() }, handler: async (ctx, args) => {
+export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachineId: v.string(), toMachineId: v.string(), createMutationId: v.string(), join: v.optional(v.boolean()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machines = await machineNames(ctx, accountId);
   const started = await copyByMutation(ctx, accountId, args.createMutationId);
@@ -254,7 +255,7 @@ export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachin
   if (target?.state === "building") return refuse("conflict", `${toName} is still building ${row.name}`);
   if (target?.state === "copying") {
     const running = target.operationId === undefined ? null : await copyByMutation(ctx, accountId, target.operationId);
-    if (running && live(running) && (running.state === "waiting" || running.state === "copying")) return refuse("conflict", `${row.name} is already being copied to ${toName}; follow it with: localbox image wait ${row.name}`, { operation_id: target.operationId });
+    if (running && live(running) && (running.state === "waiting" || running.state === "copying")) return args.join ? copyView(running, machines) : refuse("conflict", `${row.name} is already being copied to ${toName}; follow it with: localbox image wait ${row.name}`, { operation_id: target.operationId });
   }
   const now = Date.now();
   const copy = { copyId: id("copy"), accountId, imageId: row.imageId, fromMachineId: args.fromMachineId, toMachineId: args.toMachineId, key: transferKey(), candidates: {}, state: "waiting" as const, createdAt: now, expiresAt: now + COPY_TTL_MS, createMutationId: args.createMutationId };

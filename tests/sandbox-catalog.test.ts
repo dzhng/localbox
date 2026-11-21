@@ -138,19 +138,14 @@ test("sandbox.create starts from the named image, else the account default, and 
   assert.equal(sandboxes.length, 3); assert.equal(b.seen.length, 3, "an unknown image reserves and relays nothing");
 });
 
-test("a machine without the image is refused with image_not_found naming the machines that hold it, before anything is reserved", async () => {
+test("auto placement takes a machine holding the image with room, and copies nothing", async () => {
   const a = machine(); const b = machine();
   const fleet = machines.map((row) => ({ ...row, capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1, free_disk_bytes: 100 * GIB, macos_version: "27.0.1" } }));
-  const { deps, sandboxes } = memoryMailbox({ machines: fleet, images: [imageRow("rails-dev", ["m_b"])], connectors: { m_a: a.answer, m_b: b.answer } });
-  const refused = await ops(deps, { operation: "sandbox.create", machine: "studio", input: { image: "rails-dev" } });
-  assert.equal(!refused.ok && refused.error.code, "image_not_found");
-  assert.equal(!refused.ok && refused.error.message, "studio does not hold image rails-dev; it is on attic: create the sandbox there with --machine attic");
-  assert.deepEqual(!refused.ok && refused.error.details, { holders: ["attic"] });
-  assert.deepEqual([sandboxes.length, a.seen.length, b.seen.length], [0, 0, 0]);
-  const own = await ops(deps, { operation: "sandbox.create", caller_machine_id: "m_a", input: { image: "rails-dev" } });
-  assert.equal(!own.ok && own.error.code, "image_not_found", "the caller's own Mac is a target like a named one");
+  const { deps } = memoryMailbox({ machines: fleet, images: [imageRow("rails-dev", ["m_b"])], connectors: { m_a: a.answer, m_b: b.answer } });
   const auto = await ops(deps, { operation: "sandbox.create", caller_machine_id: "m_a", input: { image: "rails-dev", placement: "auto" } });
   assert.equal((auto as any).result.produced.machine, "attic", "auto placement takes the holder");
+  assert.equal((b.seen[0].input as any).after_copy, undefined, "a holder creates at once");
+  assert.equal(a.seen.length, 0);
 });
 
 test("a machine that answers image_not_found (its files went meanwhile) releases the reservation", async () => {

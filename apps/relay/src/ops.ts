@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import {
-  BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, sizeText, success, validateInput, validateRequest,
+  BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, gibibytes, requestFromInvocation, sizeText, success, validateInput, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type ImageOperationState, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place, type PlacementImage, type PlacementMachine } from "../../../packages/placement/src/index.js";
@@ -48,8 +48,11 @@ interface CopyRow {
   result: { bytes: number; duration_ms: number; path: "local_network" | "internet" } | null; error: { code: string; message: string; next_step: string } | null;
 }
 
-/** A row of `sandboxes:list`. */
-export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; image_id: string; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string }
+/**
+ * A row of `sandboxes:list`. A sandbox made on a Mac without its image is `copying` (`copy_operation_id` names the copy)
+ * until that Mac reports it created, or `failed` with `error` (why, and what to try next).
+ */
+export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; image_id: string; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string; copy_operation_id?: string | null; error?: { code: string; message: string; next_step: string } | null }
 /** `sandboxes:byCreateMutation`: the sandbox a create with this mutation id reserved, and the input it relayed (null once the relay row expired). */
 interface ReservedCreate extends SandboxRow { create_input: Record<string, Json> | null }
 
@@ -135,6 +138,8 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     if (!target) return answer(success(base, alreadyDeleted(payload, sandbox!) as unknown as Json));
     await requireSameMachine(principal, target, machine, deps);
     const request = { ...base, sandbox_id: target.sandbox_id };
+    // A sandbox still waiting for its image exists only in the catalog: the relay answers for it (a failed one can go).
+    if (target.state === "copying" || (target.state === "failed" && target.error && !(entry.id === "sandbox.delete"))) return await notCreatedYet(principal, request, target, deps);
     if (entry.id === "sandbox.rename") return await renameSandbox(principal, request, target, deps);
     if (entry.id === "sandbox.delete") return await deleteSandbox(principal, request, target, deps);
     return await relay(principal, target.machine_id, request, deps);
@@ -204,11 +209,13 @@ async function resolveMachine(principal: Principal, sandbox: string | undefined,
  * machine's dedupe answer with its result instead of making a second sandbox.
  */
 async function createSandbox(principal: Principal, base: RequestEnvelope, named: string | undefined, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
-  const asked = base.input as { name?: string; image?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
+  const asked = base.input as { name?: string; image?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number; after_copy?: string };
   const policy = { ...(asked.sleep_after_ms ? { sleep_after_ms: asked.sleep_after_ms } : {}), ...(asked.delete_after_ms ? { delete_after_ms: asked.delete_after_ms } : {}) };
   if (callerMachineId !== undefined && callerMachineId !== principal.machineId) throw new ContractError("invalid_input", "caller_machine_id must be the calling machine's own id");
+  if (asked.after_copy !== undefined) throw new ContractError("invalid_input", "after_copy is set by the agent API; leave it out");
   if (base.mutation_id) {
     const reserved = await deps.accountCall(principal, "query", "sandboxes:byCreateMutation", { mutationId: base.mutation_id }) as ReservedCreate | null;
+    if (reserved?.copy_operation_id) return await replayAfterCopy(principal, base, asked, reserved, deps);
     if (reserved) {
       const input = reserved.create_input ?? { name: reserved.name, image: reserved.image_id, cpus: reserved.cpus, memory_bytes: reserved.memory_bytes, sleep_after_ms: reserved.sleep_after_ms, ...(reserved.delete_after_ms ? { delete_after_ms: reserved.delete_after_ms } : {}) };
       const machineName = reserved.machine_name ?? reserved.machine_id;
@@ -232,17 +239,15 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, named:
     const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes, image: placing });
     if ("error" in placed) throw new ContractError(placed.error, placed.message, { machines: placed.machines as unknown as Json }, placed.error === "machine_offline");
     const machine = rows.find((row) => row.machineId === placed.machineId)!;
-    // A target without the image would need a copy first (slice 39); until then the create names where the image is.
-    if (placed.copy) {
-      const holders = [...held.values()].map(holderName);
-      throw new ContractError("image_not_found", `${machine.name} does not hold image ${image.name}; it is on ${holders.join(", ")}: create the sandbox there with --machine ${holders[0]}`, { holders: holders as Json });
-    }
     const { cpus: hostCpus, total_bytes: hostMemory } = machine.capacity ?? {};
     if ((asked.cpus === undefined || asked.memory_bytes === undefined) && (!hostCpus || !hostMemory)) throw new ContractError("machine_offline", `${machine.name} has not connected yet, so its size is unknown; start its connector or pass cpus and memory_bytes`, undefined, true);
     const fallback = hostCpus && hostMemory ? defaultSize(hostCpus, hostMemory) : undefined;
     const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
     const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
       : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: ${defaultSizeReason(hostCpus!, hostMemory!)}`;
+    const facts = { image: image.name, image_reason: imageReason, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason };
+    // A target without the image (a named machine, the caller's own Mac, or auto with no holder that fits) copies first.
+    if (placed.copy) return await createAfterCopy(principal, base, asked, policy, image, machine, placed.copy.fromMachineId, facts, deps);
     const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), imageId: image.image_id, cpus, memoryBytes, ...(policy.sleep_after_ms ? { sleepAfterMs: policy.sleep_after_ms } : {}), ...(policy.delete_after_ms ? { deleteAfterMs: policy.delete_after_ms } : {}), ...(base.mutation_id ? { createMutationId: base.mutation_id } : {}) }) as SandboxRow;
     // Each placement attempt is a new relay row (request ids are scoped to one machine).
     const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, image: image.image_id, cpus, memory_bytes: memoryBytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}) } };
@@ -252,9 +257,113 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, named:
       await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id }); tried.add(machine.machineId); continue;
     }
     const release = () => deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id });
-    return await created(base, asked, row, relayed, { image: image.name, image_reason: imageReason, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason }, release);
+    return await created(base, asked, row, relayed, facts, release);
   }
 }
+
+type CreateFacts = { image: string; image_reason: string; machine: string; placement_reason: string; cpus: number; memory_bytes: number; size_reason: string };
+
+/**
+ * `sandbox create` on a Mac without the image: start the image's copy there (or join one already running), reserve the
+ * sandbox `copying` with the copy's operation id, and have the Mac journal a create chained to the copy
+ * (`sandbox.create_after_copy`, keyed by the create's mutation id). Answers at once: the sandbox is waiting, and
+ * `image wait` follows the copy until the sandbox is created.
+ */
+async function createAfterCopy(principal: Principal, base: RequestEnvelope, asked: Record<string, unknown>, policy: { sleep_after_ms?: number; delete_after_ms?: number }, image: ImageRow, machine: MachineRow, fromMachineId: string, facts: CreateFacts, deps: OpsDeps): Promise<OpsResponse> {
+  const createMutation = base.mutation_id ?? `create-${crypto.randomUUID()}`;
+  const copy = await deps.accountCall(principal, "mutation", "images:startCopy", { image: image.image_id, fromMachineId, toMachineId: machine.machineId, createMutationId: `${createMutation}-copy`, join: true }) as CopyRow;
+  let row: SandboxRow;
+  try { row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), imageId: image.image_id, cpus: facts.cpus, memoryBytes: facts.memory_bytes, ...(policy.sleep_after_ms ? { sleepAfterMs: policy.sleep_after_ms } : {}), ...(policy.delete_after_ms ? { deleteAfterMs: policy.delete_after_ms } : {}), createMutationId: createMutation, copyOperationId: copy.operation_id }) as SandboxRow; }
+  catch (error) {
+    // A copy this create started, which no Mac was told of yet, would hold the target `copying` with nothing running.
+    if (copy.operation_id === `${createMutation}-copy` && copy.state === "waiting") await deps.accountCall(principal, "mutation", "images:cancelCopy", { copyId: copy.copy_id, error: { code: "invalid_input", message: `the sandbox create it was for was refused: ${contractError(error).message}`, nextStep: "create the sandbox again" } });
+    throw error;
+  }
+  const input = { name: row.name, image: image.image_id, cpus: facts.cpus, memory_bytes: facts.memory_bytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}), after_copy: copy.operation_id };
+  return await startAfterCopy(principal, { ...base, sandbox_id: row.sandbox_id, mutation_id: createMutation, input }, asked, row, image, copy, facts, deps);
+}
+
+/**
+ * A replayed create of a sandbox that waited for its image: the copy's sides and the chained create are told again
+ * (the relay's dedupe answers each with its first answer), then the catalog says how it stands.
+ */
+async function replayAfterCopy(principal: Principal, base: RequestEnvelope, asked: Record<string, unknown>, reserved: ReservedCreate, deps: OpsDeps): Promise<OpsResponse> {
+  const image = await deps.accountCall(principal, "query", "images:get", { image: reserved.image_id }) as ImageRow;
+  const copy = await deps.accountCall(principal, "query", "images:copyByOperation", { operationId: reserved.copy_operation_id }) as CopyRow | null;
+  const machine = reserved.machine_name ?? reserved.machine_id;
+  const input = reserved.create_input ?? { name: reserved.name, image: reserved.image_id, cpus: reserved.cpus, memory_bytes: reserved.memory_bytes, sleep_after_ms: reserved.sleep_after_ms, ...(reserved.delete_after_ms ? { delete_after_ms: reserved.delete_after_ms } : {}), after_copy: reserved.copy_operation_id! };
+  const facts: CreateFacts = { image: image.name, image_reason: "as the first create chose it", machine, placement_reason: `on ${machine}, where the first create with this mutation id placed it`, cpus: reserved.cpus, memory_bytes: reserved.memory_bytes, size_reason: "as the first create sized it" };
+  if (reserved.state === "failed") return answer(failure({ ...base, sandbox_id: reserved.sandbox_id }, notCreated(reserved, image.name)));
+  if (reserved.state !== "copying") {
+    const report: ActionReport = { requested: asked as Json, produced: { sandbox_id: reserved.sandbox_id, name: reserved.name, image: image.name, machine, state: reserved.state }, actions: [{ kind: "created", detail: `created ${reserved.name} on ${machine} from image ${image.name}, once it was copied there` }] };
+    return answer(success({ ...base, sandbox_id: reserved.sandbox_id }, report as unknown as Json));
+  }
+  return await startAfterCopy(principal, { ...base, sandbox_id: reserved.sandbox_id, input }, asked, reserved, image, copy, facts, deps);
+}
+
+/**
+ * Tells both Macs their side of the copy, then the target its chained create, and answers that the sandbox is waiting.
+ * A Mac that certainly never took its part releases the reservation; an uncertain answer keeps it for a replay.
+ */
+async function startAfterCopy(principal: Principal, request: RequestEnvelope, asked: Record<string, unknown>, row: SandboxRow, image: ImageRow, copy: CopyRow | null, facts: CreateFacts, deps: OpsDeps): Promise<OpsResponse> {
+  const release = () => deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id });
+  // A replay after the copy's row expired (a day) has no copy left to tell; the chained create on the Mac still answers.
+  const { failed } = copy ? await startCopySides(principal, { ...request, sandbox_id: null }, image, copy, deps) : { failed: undefined };
+  if (failed) {
+    if (failed.definitive) { await release(); return answer({ ...failed.response, sandbox_id: null, error: { ...failed.response.error, message: `${failed.response.error.message}; ${row.name} was not created` } }); }
+    return answer({ ...failed.response, sandbox_id: row.sandbox_id, error: { ...failed.response.error, message: `${failed.response.error.message}; ${row.name} stays reserved` } });
+  }
+  const relayed = await relay(principal, row.machine_id, request, deps);
+  const response = (relayed.body as { response?: ResponseEnvelope }).response;
+  if (!response) return relayed;
+  if (!response.ok) {
+    if (definitive(response)) { await release(); return answer({ ...response, request_id: request.request_id, sandbox_id: null }); }
+    return answer({ ...response, request_id: request.request_id, error: { ...response.error, message: `${response.error.message}; ${facts.machine} may still create ${row.name} once the image is there: it stays reserved (replay with mutation id ${request.mutation_id} to get its state)` } });
+  }
+  const from = copy ? copy.from_machine_name ?? copy.from_machine_id : "its source";
+  const report: ActionReport = {
+    requested: asked as Json,
+    produced: { sandbox_id: row.sandbox_id, name: row.name, image: facts.image, image_reason: facts.image_reason, machine: facts.machine, placement_reason: facts.placement_reason, state: "copying", copying_from: from, image_size_bytes: image.size_bytes, cpus: facts.cpus, memory_bytes: facts.memory_bytes, size_reason: facts.size_reason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
+    actions: [{ kind: "waiting", detail: `sandbox ${row.name} on ${facts.machine} is waiting for image ${image.name} to copy (${sizeText(image.size_bytes)}); localbox image wait ${image.name}` }],
+  };
+  return answer(success({ ...request, sandbox_id: row.sandbox_id }, report as unknown as Json));
+}
+
+/** Why a sandbox that waited for its image was never created, and what to try next, as the create's failure. */
+function notCreated(row: SandboxRow, imageName: string): ErrorBody {
+  const error = row.error ?? { code: "internal", message: `image ${imageName} never arrived`, next_step: `delete it with localbox sandbox delete ${row.name} --confirm ${row.name}, then create it again` };
+  return { code: "sandbox_not_ready", message: `${row.name} on ${row.machine_name ?? row.machine_id} was not created: ${error.message}`, details: { state: "failed", error, next_step: error.next_step }, retryable: false };
+}
+
+/**
+ * Any operation on a sandbox that only exists in the catalog so far, answered here without reaching its Mac. Waiting for
+ * its image, `sandbox status` reports the copy's progress (read from the target's journal, as `image wait` does) and
+ * everything else is `sandbox_not_ready` with that progress; failed, both say why and what to try next.
+ */
+async function notCreatedYet(principal: Principal, request: RequestEnvelope, target: SandboxRow, deps: OpsDeps): Promise<OpsResponse> {
+  const image = await deps.accountCall(principal, "query", "images:get", { image: target.image_id }).then((row: ImageRow) => row.name, () => target.image_id) as string;
+  const where = target.machine_name ?? target.machine_id;
+  const status = request.operation === "sandbox.status";
+  if (target.state === "failed") {
+    const refused = notCreated(target, image);
+    return answer(status ? success(request, { sandbox_id: target.sandbox_id, name: target.name, machine: where, image, state: "failed", error: target.error as Json }) : failure(request, refused));
+  }
+  const progress = await copyProgress(principal, request, target, deps);
+  const shown = progress ? progressText(progress) : "the copy has not reported progress yet";
+  if (status) return answer(success(request, { sandbox_id: target.sandbox_id, name: target.name, machine: where, image, state: "copying", ...(progress ? { progress } : {}), next_step: `localbox image wait ${image}` }));
+  return answer(failure(request, { code: "sandbox_not_ready", message: `${target.name} on ${where} is waiting for image ${image} to copy (${shown}); follow it with: localbox image wait ${image}`, details: { state: "copying", image, ...(progress ? { progress } : {}), operation_id: target.copy_operation_id ?? null }, retryable: true }));
+}
+
+/** The copy's progress as the target's journal has it now, or undefined when the target doesn't answer. */
+async function copyProgress(principal: Principal, request: RequestEnvelope, target: SandboxRow, deps: OpsDeps): Promise<ImageOperationState["progress"] | undefined> {
+  const asked = requestFromInvocation({ operation: "image.wait", request_id: `${request.request_id}-progress`, deadline_ms: 10_000, input: { image: target.image_id, timeout_ms: 1 } });
+  const response = (await relay(principal, target.machine_id, asked, deps).then((relayed) => relayed.body as { response?: ResponseEnvelope })).response;
+  const record = response?.ok ? response.result as unknown as HostOperationView : undefined;
+  return record?.progress ? { phase: record.progress.phase, done_bytes: record.progress.completed ?? 0, total_bytes: record.progress.total ?? 0 } : undefined;
+}
+
+/** "12 MiB of 64 MiB" while bytes move, else the phase in words. */
+const progressText = (progress: NonNullable<ImageOperationState["progress"]>) => progress.total_bytes > 0 ? `${sizeText(progress.done_bytes)} of ${sizeText(progress.total_bytes)}` : progress.phase.replaceAll("_", " ");
 
 const readyHolders = (image: ImageRow) => new Map(image.holders.filter((holder) => holder.state === "ready").map((holder) => [holder.machine_id, holder]));
 
@@ -381,22 +490,34 @@ async function copyImage(principal: Principal, base: RequestEnvelope, deps: OpsD
     }
     copy = await deps.accountCall(principal, "mutation", "images:startCopy", { image: image.image_id, fromMachineId: placed.copy.fromMachineId, toMachineId: placed.machineId, createMutationId: base.mutation_id }) as CopyRow;
   }
-  const started = copy;
-  const side = (machineId: string, suffix: string) => relay(principal, machineId, { ...base, request_id: `${base.request_id}-${suffix}`, input: { image: image.image_id, to: started.to_machine_id } }, deps);
-  const [sent, received] = await Promise.all([side(started.from_machine_id, "from"), side(started.to_machine_id, "to")]);
-  for (const [relayed, machineId, name] of [[sent, started.from_machine_id, started.from_machine_name], [received, started.to_machine_id, started.to_machine_name]] as const) {
+  const sides = await startCopySides(principal, base, image, copy, deps);
+  if (sides.failed) return answer(sides.failed.response);
+  const current = await deps.accountCall(principal, "query", "images:get", { image: image.image_id }) as ImageRow;
+  return await imageWaitAnswer(principal, sides.received, deps, current, copy);
+}
+
+/** One Mac's side of `copy`, relayed under the copy's mutation id (a repeat is answered by the relay's dedupe). */
+const copySide = (principal: Principal, base: RequestEnvelope, image: ImageRow, copy: CopyRow, side: "from" | "to", deps: OpsDeps) =>
+  relay(principal, side === "from" ? copy.from_machine_id : copy.to_machine_id, { ...base, operation: "image.copy", request_id: `${base.request_id}-${side}`, mutation_id: copy.operation_id, input: { image: image.image_id, to: copy.to_machine_id } }, deps);
+
+/**
+ * Tells both Macs their side of `copy`, answering with the receiver's answer, or with the failure to answer with: a Mac
+ * that certainly never took its side cancels the copy (`definitive`), an uncertain answer keeps it for a replay.
+ */
+async function startCopySides(principal: Principal, base: RequestEnvelope, image: ImageRow, copy: CopyRow, deps: OpsDeps): Promise<{ received: OpsResponse; failed?: { response: ResponseEnvelope & { ok: false }; definitive: boolean } }> {
+  const [sent, received] = await Promise.all([copySide(principal, base, image, copy, "from", deps), copySide(principal, base, image, copy, "to", deps)]);
+  for (const [relayed, machineId, name] of [[sent, copy.from_machine_id, copy.from_machine_name], [received, copy.to_machine_id, copy.to_machine_name]] as const) {
     const response = (relayed.body as { response?: ResponseEnvelope }).response;
     if (!response || response.ok) continue;
     const where = name ?? machineId;
     if (!definitive(response, DEFINITIVE_COPY_FAILURES)) {
-      return answer({ ...response, request_id: base.request_id, error: { ...response.error, message: `${where}: ${response.error.message}; the copy may still go on (replay with mutation id ${base.mutation_id} to get its state)` } });
+      return { received, failed: { definitive: false, response: { ...response, operation: base.operation, request_id: base.request_id, error: { ...response.error, message: `${where}: ${response.error.message}; the copy may still go on (replay with mutation id ${base.mutation_id} to get its state)` } } } };
     }
     const nextStep = response.error.code === "machine_offline" || response.error.code === "machine_not_found" ? `start ${where}'s connector (or sign it in), then copy again` : `copy again; if it fails the same way, check ${where}'s logs`;
-    await deps.accountCall(principal, "mutation", "images:cancelCopy", { copyId: started.copy_id, error: { code: response.error.code, message: `${where} did not start its side of the copy: ${response.error.message}`, nextStep } });
-    return answer({ ...response, request_id: base.request_id, error: { ...response.error, message: `${where} did not start its side of the copy, so nothing was copied: ${response.error.message}` } });
+    await deps.accountCall(principal, "mutation", "images:cancelCopy", { copyId: copy.copy_id, error: { code: response.error.code, message: `${where} did not start its side of the copy: ${response.error.message}`, nextStep } });
+    return { received, failed: { definitive: true, response: { ...response, operation: base.operation, request_id: base.request_id, error: { ...response.error, message: `${where} did not start its side of the copy, so nothing was copied: ${response.error.message}` } } } };
   }
-  const current = await deps.accountCall(principal, "query", "images:get", { image: image.image_id }) as ImageRow;
-  return await imageWaitAnswer(principal, received, deps, current, started);
+  return { received };
 }
 
 /**
@@ -407,10 +528,12 @@ async function copyImage(principal: Principal, base: RequestEnvelope, deps: OpsD
 async function waitForImage(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<OpsResponse> {
   const asked = base.input as { image: string; timeout_ms?: number };
   const image = await deps.accountCall(principal, "query", "images:get", { image: asked.image }) as ImageRow;
-  const active = image.holders.filter((holder) => holder.state === "building" || holder.state === "copying").sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))[0];
+  const active = image.holders.filter((holder) => holder.state === "building" || holder.state === "copying").sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))[0]?.machine_id
+    // A copy that landed may still have a sandbox to create from it, on the Mac it landed on.
+    ?? (image.image_id === BUILT_IN_IMAGE ? undefined : (await deps.accountCall(principal, "query", "sandboxes:list", {}) as SandboxRow[]).find((row) => row.image_id === image.image_id && row.state === "copying")?.machine_id);
   if (!active) return answer(success(base, catalogState(image) as unknown as Json));
   const request = { ...base, input: { image: image.image_id, ...(asked.timeout_ms === undefined ? {} : { timeout_ms: asked.timeout_ms }) } };
-  return await imageWaitAnswer(principal, await relay(principal, active.machine_id, request, deps), deps, image);
+  return await imageWaitAnswer(principal, await relay(principal, active, request, deps), deps, image);
 }
 
 /**
@@ -426,12 +549,43 @@ async function imageWaitAnswer(principal: Principal, relayed: OpsResponse, deps:
   try {
     image ??= await deps.accountCall(principal, "query", "images:get", { image: record.subject }) as ImageRow;
     if (record.kind === COPY_KIND) copy ??= await deps.accountCall(principal, "query", "images:copyByOperation", { operationId: record.key }) as CopyRow | null ?? undefined;
+    const copyKey = (record.result as { copy_operation_id?: string } | undefined)?.copy_operation_id;
+    if (record.kind === AFTER_COPY_KIND && copyKey) copy ??= await deps.accountCall(principal, "query", "images:copyByOperation", { operationId: copyKey }) as CopyRow | null ?? undefined;
   } catch (error) { return answer(failure(response as unknown as RequestEnvelope, contractError(error))); }
   // A copy answers for its operation, whatever the request was; a request's id stays its own.
-  return answer({ ...response, result: (record.kind === COPY_KIND ? copyState(image, record, copy) : operationState(image, record)) as unknown as Json });
+  const state = record.kind === COPY_KIND ? copyState(image, record, copy) : record.kind === AFTER_COPY_KIND ? afterCopyState(image, record, copy) : operationState(image, record);
+  return answer({ ...response, result: state as unknown as Json });
 }
 
 const COPY_KIND = "image.copy";
+const AFTER_COPY_KIND = "sandbox.create_after_copy";
+
+/** What a finished `sandbox.create_after_copy` keeps: the sandbox as created, and what its copy moved. */
+interface AfterCopyResult { name: string; cpus: number; memory_bytes: number; state: string; copy: { bytes?: number; duration_ms?: number; path?: string; size_bytes?: number } | null }
+
+/**
+ * A sandbox create chained to its image's copy, as `image wait` follows it on the Mac the copy goes to: `copying` with the
+ * copy's progress, then the copy's line and the created sandbox's, or why it failed and what to try next.
+ */
+function afterCopyState(image: ImageRow, record: HostOperationView, copy: CopyRow | undefined): ImageOperationState {
+  const base = { image: image.image_id, name: image.name, os: image.os };
+  const progress = record.progress ? { progress: { phase: record.progress.phase, done_bytes: record.progress.completed ?? 0, total_bytes: record.progress.total ?? 0 } } : {};
+  if (record.state === "running") return { ...base, state: "copying", ...progress };
+  if (record.state === "failed") return { ...base, state: "failed", error: { code: errorCode(record.error?.code ?? "internal"), message: record.error?.message ?? "the create failed", next_step: record.error?.next_step ?? nextStepFor(image) } };
+  const made = record.result as unknown as AfterCopyResult;
+  const to = copy?.to_machine_name ?? copy?.to_machine_id ?? "this Mac";
+  return { ...base, state: "ready", report: [
+    copiedLine(image, copy, { size: made.copy?.size_bytes ?? image.size_bytes, duration: copy?.result?.duration_ms ?? made.copy?.duration_ms ?? 0, path: copy?.result?.path ?? made.copy?.path }),
+    `created sandbox ${made.name} on ${to}: ${made.cpus} CPUs and ${gibibytes(made.memory_bytes)}, ${made.state}`,
+    `run a command in it: localbox shell exec --sandbox ${made.name} -- CMD`,
+  ] };
+}
+
+/** `copied image NAME from A to B (SIZE, DURATION, PATH)`. */
+function copiedLine(image: ImageRow, copy: CopyRow | undefined, done: { size: number | null | undefined; duration: number; path: string | undefined }): string {
+  const from = copy?.from_machine_name ?? copy?.from_machine_id ?? "its source"; const to = copy?.to_machine_name ?? copy?.to_machine_id ?? "the target";
+  return `copied image ${image.name} from ${from} to ${to} (${sizeText(done.size ?? null)}, ${durationText(done.duration)}, ${done.path === "internet" ? "internet" : "local network"})`;
+}
 
 /**
  * A copy's state, from the target's record and the copy's row. A row that finished wins over a record answered before
@@ -444,7 +598,7 @@ function copyState(image: ImageRow, record: HostOperationView, copy: CopyRow | u
   if (copy?.state === "copied" || record.state === "succeeded") {
     const done = { size: result?.size_bytes ?? image.size_bytes, duration: copy?.result?.duration_ms ?? result?.duration_ms ?? 0, path: copy?.result?.path ?? result?.path };
     return { ...base, state: "ready", report: [
-      `copied image ${image.name} from ${from} to ${to} (${sizeText(done.size ?? null)}, ${durationText(done.duration)}, ${done.path === "internet" ? "internet" : "local network"})`,
+      copiedLine(image, copy, done),
       `start a sandbox from it there: localbox sandbox create --image ${image.name} --machine ${to}`,
     ] };
   }

@@ -2,6 +2,7 @@ import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
+import { holderFailure } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 
 /** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it. */
@@ -20,18 +21,21 @@ async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
   if (!row || row.accountId !== accountId) refuse("sandbox_not_found", `no sandbox ${sandboxId} on this account`);
   return row;
 }
+/** A sandbox waiting for its image's copy reads `copying` (or `failed`, with why) until its machine reports it created. */
 const view = (row: any, machineName?: string) => ({
   sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null, image_id: row.imageId,
   cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
-  state: row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null,
+  state: row.pending ?? row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null, copy_operation_id: row.copyOperationId ?? null,
+  error: row.pendingError ? { code: row.pendingError.code, message: row.pendingError.message, next_step: row.pendingError.nextStep } : null,
 });
 
 /**
  * Reserves a sandbox's identity on one of the caller's machines, with the image it starts from (the id the agent API
- * resolved: an image row's, or the built-in `linux`); the agent API then asks that machine to create it. A create
- * carrying a mutation id this account already reserved with returns that reservation instead of a second one.
+ * resolved: an image row's, or the built-in `linux`); the agent API then asks that machine to create it. With
+ * `copyOperationId` (the image's copy to that machine) the sandbox is `copying` until the machine reports it created. A
+ * create carrying a mutation id this account already reserved with returns that reservation instead of a second one.
  */
-export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), imageId: v.string(), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()) }, handler: async (ctx, args) => {
+export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), imageId: v.string(), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()), copyOperationId: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`);
@@ -42,7 +46,7 @@ export const create = mutationGeneric({ args: { machineId: v.string(), name: v.o
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) refuse("name_conflict", `no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), ...(args.copyOperationId === undefined ? {} : { copyOperationId: args.copyOperationId, pending: "copying" as const }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
 } });
@@ -104,6 +108,21 @@ export const removeIdle = mutationGeneric({ args: { sandboxId: v.string(), reaso
   const reason = args.reason.slice(0, 500);
   console.log(`sandbox ${row.name} (${row.sandboxId}) deleted by its machine ${machineId}: ${reason}`);
   return { sandbox_id: row.sandboxId, name: row.name, removed: true, reason };
+} });
+
+/**
+ * How the calling machine's create of a sandbox that waited for its image's copy ended (`operationId` is the create's
+ * mutation id, which the machine journaled it under): created, and from now on the machine's reported state is the
+ * sandbox's; or failed, with why and what to try next, until the sandbox is deleted. A sandbox deleted meanwhile, or
+ * another machine's, has nothing to report.
+ */
+export const endCreate = mutationGeneric({ args: { operationId: v.string(), state: v.union(v.literal("succeeded"), v.literal("failed")), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
+  const { machineId, accountId } = await requireIdentity(ctx, "machine");
+  if ((args.state === "failed") !== (args.error !== undefined)) refuse("invalid_input", "a failed create carries its error, and only a failed one does");
+  const row = await reservedBy(ctx, accountId!, args.operationId);
+  if (!row || row.machineId !== machineId) return { operation_id: args.operationId, reported: false };
+  await ctx.db.patch(row._id, args.state === "succeeded" ? { pending: undefined, pendingError: undefined } : { pending: "failed", pendingError: args.error });
+  return { operation_id: args.operationId, sandbox_id: row.sandboxId, reported: true, state: args.state === "succeeded" ? "created" : "failed" };
 } });
 
 /** Runtime state (and the size the daemon runs it at) reported by the machine holding each sandbox; other machines' sandboxes are ignored and unchanged values are not written. */
