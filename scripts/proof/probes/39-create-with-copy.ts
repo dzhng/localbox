@@ -88,7 +88,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
       assert.ok(exec.envelope.error.details.progress, JSON.stringify(exec.envelope.error));
       const status = await a(["sandbox", "status", sandbox, "--json"]);
       assert.deepEqual([status.envelope.result?.state, status.envelope.result?.next_step], ["copying", `localbox image wait ${image}`], status.stdout + status.stderr);
-      evidence.push(`$ localbox shell exec --sandbox ${sandbox} -- echo hi --json\n${exec.stdout}${exec.stderr}`, `$ localbox sandbox status --sandbox ${sandbox} --json\n${status.stdout}`);
+      evidence.push(`$ localbox shell exec --sandbox ${sandbox} -- echo hi --json\n${exec.stdout}${exec.stderr}`, `$ localbox sandbox status ${sandbox} --json\n${status.stdout}`);
       assert.equal(journal(copyKey).state, "running", "still copying after both answers");
     }));
 
