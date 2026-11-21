@@ -31,7 +31,7 @@ interface MachineRow { machineId: string; name: string; lastSeenAt?: number; cap
 
 /** A row of `images:list` / `images:get`. */
 export interface ImageRow {
-  image_id: string; name: string; os: "linux" | "macos"; size_bytes: number | null; source: { kind: "sandbox" | "ipsw" | "release"; sandboxName?: string; ipswVersion?: string };
+  image_id: string; name: string; os: "linux" | "macos"; size_bytes: number | null; min_macos: string | null; source: { kind: "sandbox" | "ipsw" | "release"; sandboxName?: string; ipswVersion?: string };
   default: boolean; created_at: number | null;
   holders: Array<{ machine_id: string; machine_name: string | null; state: "building" | "copying" | "ready" | "failed"; operation_id: string | null; error: { code: string; message: string; next_step: string } | null; updated_at: number | null }>;
 }
@@ -42,7 +42,7 @@ interface HostOperationView {
 }
 
 /** A row of `sandboxes:list`. */
-export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string }
+export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; image_id: string; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string }
 /** `sandboxes:byCreateMutation`: the sandbox a create with this mutation id reserved, and the input it relayed (null once the relay row expired). */
 interface ReservedCreate extends SandboxRow { create_input: Record<string, Json> | null }
 
@@ -50,7 +50,7 @@ interface ReservedCreate extends SandboxRow { create_input: Record<string, Json>
  * A create refused this way never made the sandbox, so its reservation is released. Anything else (a deadline that
  * passed, a lost answer, a daily result limit) may still complete on the machine, so the reservation stays.
  */
-const DEFINITIVE_CREATE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "machine_full", "invalid_input", "name_conflict", "sandbox_not_ready"];
+const DEFINITIVE_CREATE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "machine_full", "invalid_input", "name_conflict", "sandbox_not_ready", "image_not_found"];
 /** The same for `image create --from`: the machine refused before journaling the capture, or never got it. */
 const DEFINITIVE_CAPTURE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "sandbox_not_found", "invalid_input", "unsupported"];
 
@@ -186,56 +186,70 @@ async function resolveMachine(principal: Principal, sandbox: string | undefined,
 }
 
 /**
- * Place the sandbox (`place`: on `named`, the machine the request names, else by placement), reserve its identity in
- * Convex, then have the machine create it; a machine that refuses releases the name. `callerMachineId` is the calling
- * machine, sent by a CLI whose local daemon answers; a machine can only name itself, and agents have no machine. A replay (the same mutation id) relays the first create
- * again, so the relay's and the machine's dedupe answer with its result instead of making a second sandbox.
+ * Resolve the image (`image`, else the account default, which is `linux` until changed), place the sandbox on a
+ * machine holding it (`place`: on `named`, the machine the request names, else by placement), reserve its identity
+ * and image in Convex, then have the machine create it from that image; a machine that refuses releases the name.
+ * `callerMachineId` is the calling machine, sent by a CLI whose local daemon answers; a machine can only name itself,
+ * and agents have no machine. A replay (the same mutation id) relays the first create again, so the relay's and the
+ * machine's dedupe answer with its result instead of making a second sandbox.
  */
 async function createSandbox(principal: Principal, base: RequestEnvelope, named: string | undefined, callerMachineId: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
-  const asked = base.input as { name?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
+  const asked = base.input as { name?: string; image?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number };
   const policy = { ...(asked.sleep_after_ms ? { sleep_after_ms: asked.sleep_after_ms } : {}), ...(asked.delete_after_ms ? { delete_after_ms: asked.delete_after_ms } : {}) };
   if (callerMachineId !== undefined && callerMachineId !== principal.machineId) throw new ContractError("invalid_input", "caller_machine_id must be the calling machine's own id");
   if (base.mutation_id) {
     const reserved = await deps.accountCall(principal, "query", "sandboxes:byCreateMutation", { mutationId: base.mutation_id }) as ReservedCreate | null;
     if (reserved) {
-      const input = reserved.create_input ?? { name: reserved.name, cpus: reserved.cpus, memory_bytes: reserved.memory_bytes, sleep_after_ms: reserved.sleep_after_ms, ...(reserved.delete_after_ms ? { delete_after_ms: reserved.delete_after_ms } : {}) };
+      const input = reserved.create_input ?? { name: reserved.name, image: reserved.image_id, cpus: reserved.cpus, memory_bytes: reserved.memory_bytes, sleep_after_ms: reserved.sleep_after_ms, ...(reserved.delete_after_ms ? { delete_after_ms: reserved.delete_after_ms } : {}) };
       const machineName = reserved.machine_name ?? reserved.machine_id;
       const relayed = await relay(principal, reserved.machine_id, { ...base, sandbox_id: reserved.sandbox_id, input }, deps);
       // A replay never releases: the first create owns the reservation.
-      return await created(base, asked, reserved, relayed, { machine: machineName, placement_reason: `on ${machineName}, where the first create with this mutation id placed it`, cpus: input.cpus as number, memory_bytes: input.memory_bytes as number, size_reason: "as the first create sized it" });
+      const image = await deps.accountCall(principal, "query", "images:get", { image: reserved.image_id }).then((row: ImageRow) => row.name, () => reserved.image_id);
+      return await created(base, asked, reserved, relayed, { image, image_reason: "as the first create chose it", machine: machineName, placement_reason: `on ${machineName}, where the first create with this mutation id placed it`, cpus: input.cpus as number, memory_bytes: input.memory_bytes as number, size_reason: "as the first create sized it" });
     }
   }
+  // `macos` with no IPSW-built image, or a name the account lacks, refuses here with image_not_found and what to do.
+  const image = await deps.accountCall(principal, "query", "images:get", asked.image === undefined ? {} : { image: asked.image }) as ImageRow;
+  const imageReason = asked.image === undefined ? "the account default" : "as asked";
+  const held = new Map(image.holders.filter((holder) => holder.state === "ready").map((holder) => [holder.machine_id, holder]));
   const rows = await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
   // An idle connected Mac makes no Convex calls, so report age says nothing about presence. Placement takes any
   // machine that has reported capacity; the relayed create itself finds a gone machine in 3 s (machine_offline), and
   // auto/remote placement then tries the next candidate, counting the one it tried as not reported.
   const machines = rows.map((row) => {
     const lastReportAt = Math.max(row.lastSeenAt ?? 0, row.capacityAt ?? 0) || undefined;
-    return { id: row.machineId, name: row.name, reported: row.capacity !== undefined, roomBytes: row.capacity?.room_bytes ?? 0, totalBytes: row.capacity?.total_bytes ?? 0, lastReportAt };
+    return {
+      id: row.machineId, name: row.name, reported: row.capacity !== undefined, roomBytes: row.capacity?.room_bytes ?? 0, totalBytes: row.capacity?.total_bytes ?? 0, lastReportAt,
+      holds: held.has(row.machineId), heldAt: held.get(row.machineId)?.updated_at ?? undefined, freeDiskBytes: row.capacity?.free_disk_bytes ?? undefined, macOSVersion: row.capacity?.macos_version,
+    };
   });
+  const placing = { id: image.image_id, name: image.name, os: image.os, ...(image.min_macos ? { minMacOS: image.min_macos } : {}), sizeBytes: image.size_bytes ?? 0 };
   const tried = new Set<string>();
-  // Every machine holds the built-in image, so placing it never plans a copy.
-  const image = { id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux" as const, sizeBytes: 0 };
   for (;;) {
-    const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes, image });
+    const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes, image: placing });
     if ("error" in placed) throw new ContractError(placed.error, placed.message, { machines: placed.machines as unknown as Json }, placed.error === "machine_offline");
     const machine = rows.find((row) => row.machineId === placed.machineId)!;
+    // A target without the image would need a copy first (slice 39); until then the create names where the image is.
+    if (placed.copy) {
+      const holders = [...held.values()].map(holderName);
+      throw new ContractError("image_not_found", `${machine.name} does not hold image ${image.name}; it is on ${holders.join(", ")}: create the sandbox there with --machine ${holders[0]}`, { holders: holders as Json });
+    }
     const { cpus: hostCpus, total_bytes: hostMemory } = machine.capacity ?? {};
     if ((asked.cpus === undefined || asked.memory_bytes === undefined) && (!hostCpus || !hostMemory)) throw new ContractError("machine_offline", `${machine.name} has not connected yet, so its size is unknown; start its connector or pass cpus and memory_bytes`, undefined, true);
     const fallback = hostCpus && hostMemory ? defaultSize(hostCpus, hostMemory) : undefined;
     const cpus = asked.cpus ?? fallback!.cpus; const memoryBytes = asked.memory_bytes ?? fallback!.memory_bytes;
     const sizeReason = asked.cpus !== undefined && asked.memory_bytes !== undefined ? "as requested"
       : `${asked.cpus === undefined && asked.memory_bytes === undefined ? "default" : "partly default"} for ${machine.name}: ${defaultSizeReason(hostCpus!, hostMemory!)}`;
-    const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), cpus, memoryBytes, ...(policy.sleep_after_ms ? { sleepAfterMs: policy.sleep_after_ms } : {}), ...(policy.delete_after_ms ? { deleteAfterMs: policy.delete_after_ms } : {}), ...(base.mutation_id ? { createMutationId: base.mutation_id } : {}) }) as SandboxRow;
+    const row = await deps.accountCall(principal, "mutation", "sandboxes:create", { machineId: machine.machineId, ...(asked.name ? { name: asked.name } : {}), imageId: image.image_id, cpus, memoryBytes, ...(policy.sleep_after_ms ? { sleepAfterMs: policy.sleep_after_ms } : {}), ...(policy.delete_after_ms ? { deleteAfterMs: policy.delete_after_ms } : {}), ...(base.mutation_id ? { createMutationId: base.mutation_id } : {}) }) as SandboxRow;
     // Each placement attempt is a new relay row (request ids are scoped to one machine).
-    const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, cpus, memory_bytes: memoryBytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}) } };
+    const request: RequestEnvelope = { ...base, request_id: tried.size ? `${base.request_id}-${tried.size}` : base.request_id, sandbox_id: row.sandbox_id, mutation_id: base.mutation_id ?? `create-${row.sandbox_id}`, input: { name: row.name, image: image.image_id, cpus, memory_bytes: memoryBytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}) } };
     const relayed = await relay(principal, machine.machineId, request, deps);
     const response = (relayed.body as { response?: ResponseEnvelope }).response;
     if (response && !response.ok && response.error.code === "machine_offline" && asked.placement) {
       await deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id }); tried.add(machine.machineId); continue;
     }
     const release = () => deps.accountCall(principal, "mutation", "sandboxes:remove", { sandboxId: row.sandbox_id });
-    return await created(base, asked, row, relayed, { machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason }, release);
+    return await created(base, asked, row, relayed, { image: image.name, image_reason: imageReason, machine: machine.name, placement_reason: placed.reason, cpus, memory_bytes: memoryBytes, size_reason: sizeReason }, release);
   }
 }
 
@@ -244,11 +258,11 @@ const definitive = (response: ResponseEnvelope & { ok: false }, codes = DEFINITI
   || (response.error.code === "rate_limited" && (response.error.details as { limit?: string } | undefined)?.limit === "requests");
 
 /**
- * The create's answer as an action report. A pending create keeps its reservation (its answer arrives by
- * continuation); a definitive failure releases it (`release`, when this call made it); any other failure keeps it
- * and says the create may still complete.
+ * The create's answer as an action report; the machine's creation line gains the image it started from, by name. A
+ * pending create keeps its reservation (its answer arrives by continuation); a definitive failure releases it
+ * (`release`, when this call made it); any other failure keeps it and says the create may still complete.
  */
-async function created(base: RequestEnvelope, asked: Record<string, unknown>, row: SandboxRow, relayed: OpsResponse, facts: { machine: string; placement_reason: string; cpus: number; memory_bytes: number; size_reason: string }, release?: () => Promise<unknown>): Promise<OpsResponse> {
+async function created(base: RequestEnvelope, asked: Record<string, unknown>, row: SandboxRow, relayed: OpsResponse, facts: { image: string; image_reason: string; machine: string; placement_reason: string; cpus: number; memory_bytes: number; size_reason: string }, release?: () => Promise<unknown>): Promise<OpsResponse> {
   const response = (relayed.body as { response?: ResponseEnvelope }).response;
   if (!response) return relayed;
   if (!response.ok) {
@@ -262,8 +276,8 @@ async function created(base: RequestEnvelope, asked: Record<string, unknown>, ro
   const machineReport = response.result as unknown as ActionReport;
   const report: ActionReport = {
     requested: asked as Json,
-    produced: { sandbox_id: row.sandbox_id, name: row.name, machine: facts.machine, placement_reason: facts.placement_reason, cpus: facts.cpus, memory_bytes: facts.memory_bytes, size_reason: facts.size_reason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
-    actions: machineReport.actions ?? [],
+    produced: { sandbox_id: row.sandbox_id, name: row.name, image: facts.image, image_reason: facts.image_reason, machine: facts.machine, placement_reason: facts.placement_reason, cpus: facts.cpus, memory_bytes: facts.memory_bytes, size_reason: facts.size_reason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
+    actions: (machineReport.actions ?? []).map((action) => action.kind === "created" ? { ...action, detail: [action.detail, `image ${facts.image} (${facts.image_reason})`].filter(Boolean).join("; ") } : action),
   };
   return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));
 }

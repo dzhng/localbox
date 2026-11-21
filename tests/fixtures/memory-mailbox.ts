@@ -10,7 +10,7 @@ type Row = RelayResult & { requestId: string; accountId: string; machineId: stri
  * a machine with no connector never claims, so its requests go offline; one not in `machines` (removed) is refused.
  */
 export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; images?: ImageRow[]; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
-  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
+  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, image_id: "linux", cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
   const reservations = new Map<string, string>(); // create mutation id -> sandbox id
   const rows = new Map<string, Row>(); const watchers = new Map<string, Set<(result: RelayResult | null) => void>>();
   const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, response: row.response }); };
@@ -20,13 +20,17 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "machines:list") return options.machines;
       if (name === "sandboxes:list") return sandboxes;
       if (name === "images:get") {
-        const image = (options.images ?? []).find((row) => row.image_id === args.image || row.name === args.image);
+        // As in Convex: no image is the account default (else `linux`), and `linux` is on every machine.
+        const linux: ImageRow = { image_id: "linux", name: "linux", os: "linux", size_bytes: null, min_macos: null, source: { kind: "release" }, default: !(options.images ?? []).some((row) => row.default), created_at: null, holders: options.machines.map((machine) => ({ machine_id: machine.machineId, machine_name: machine.name, state: "ready", operation_id: null, error: null, updated_at: null })) };
+        const wanted = args.image ?? (options.images ?? []).find((row) => row.default)?.image_id ?? "linux";
+        if (wanted === "linux") return linux;
+        const image = (options.images ?? []).find((row) => row.image_id === wanted || row.name === wanted);
         if (!image) throw new ConvexError({ code: "image_not_found", message: `no image ${args.image} on this account` });
         return image;
       }
       if (name === "sandboxes:create") {
         if (sandboxes.some((row) => row.name === args.name)) throw new ConvexError({ code: "name_conflict", message: `${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}` });
-        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
+        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, image_id: args.imageId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
         const reserved = args.createMutationId && sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.createMutationId));
         if (reserved) return reserved;
         if (args.createMutationId) reservations.set(args.createMutationId, row.sandbox_id);

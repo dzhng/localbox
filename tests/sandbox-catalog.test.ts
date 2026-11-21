@@ -4,6 +4,7 @@ import { makeFunctionReference } from "convex/server";
 import { createConvexTestHarness } from "../packages/state/src/index.js";
 import { runOps } from "../apps/relay/src/ops.js";
 import { success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
+import type { ImageRow } from "../apps/relay/src/ops.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
 
 const ref = (name: string) => makeFunctionReference(name) as any;
@@ -20,7 +21,7 @@ async function setup() {
   const as = (machineId: string, accountId: string) => t.withIdentity({ subject: `machine:${machineId}`, account: accountId });
   return { t, m1: as("m1", "a1"), m2: as("m2", "a1"), m3: as("m3", "a2"), agent: t.withIdentity({ subject: "agent:f1", account: "a1" }) };
 }
-const create = (client: any, args: Record<string, unknown>) => client.mutation(ref("sandboxes:create"), { cpus: 2, memoryBytes: 2 * GIB, ...args });
+const create = (client: any, args: Record<string, unknown>) => client.mutation(ref("sandboxes:create"), { imageId: "linux", cpus: 2, memoryBytes: 2 * GIB, ...args });
 const rows = async (t: ReturnType<typeof createConvexTestHarness>) => await t.run(async (ctx) => await ctx.db.query("sandboxes").collect());
 
 test("generated names are adjective-animal and unique per account", async () => {
@@ -98,9 +99,9 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const created = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
-  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: 1_800_000, delete_after_ms: null });
+  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", image: "linux", image_reason: "the account default", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: 1_800_000, delete_after_ms: null });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
-  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 1_800_000 }]);
+  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", image: "linux", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 1_800_000 }]);
   assert.equal(sandboxes.length, 1);
   const taken = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(!taken.ok && taken.error.code, "name_conflict"); assert.match(!taken.ok ? taken.error.message : "", /sandboxes: build-box/);
@@ -108,7 +109,69 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   assert.equal(!agent.ok && agent.error.code, "invalid_input"); assert.match(!agent.ok ? agent.error.message : "", /name a machine/);
   const idle = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { sleep_after_ms: 5_000, delete_after_ms: 10_000 } });
   assert.deepEqual([(idle as any).result.produced.sleep_after_ms, (idle as any).result.produced.delete_after_ms], [5_000, 10_000]);
-  assert.deepEqual(b.seen.at(-1)!.input, { name: "generated-2", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 5_000, delete_after_ms: 10_000 }, "the machine applies the idle policy");
+  assert.deepEqual(b.seen.at(-1)!.input, { name: "generated-2", image: "linux", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 5_000, delete_after_ms: 10_000 }, "the machine applies the idle policy");
+});
+
+/** An image row as `images:get` answers it, held (ready) by the given machines. */
+const imageRow = (name: string, holders: string[], extra: Partial<ImageRow> = {}): ImageRow => ({
+  image_id: `image_${name}`, name, os: "linux", size_bytes: 4 * GIB, min_macos: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
+  holders: holders.map((machineId) => ({ machine_id: machineId, machine_name: machines.find((row) => row.machineId === machineId)?.name ?? null, state: "ready", operation_id: null, error: null, updated_at: 1 })), ...extra,
+});
+
+test("sandbox.create starts from the named image, else the account default, and says which on the creation line", async () => {
+  const b = machine();
+  const { deps, sandboxes } = memoryMailbox({ machines, images: [imageRow("bold-image", ["m_b"], { default: true }), imageRow("rails-dev", ["m_b"])], connectors: { m_b: b.answer } });
+  const byDefault = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "plain" } });
+  assert.equal(byDefault.ok, true, JSON.stringify(byDefault));
+  const report = (byDefault as any).result;
+  assert.deepEqual([report.produced.image, report.produced.image_reason], ["bold-image", "the account default"]);
+  assert.equal(report.actions[0].detail, "image bold-image (the account default)", "the machine's creation line names the image");
+  assert.equal((b.seen[0].input as any).image, "image_bold-image", "the machine is told the image's id, not its renamable name");
+  assert.equal(sandboxes[0].image_id, "image_bold-image", "the catalog row keeps the image it was made from");
+  const named = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "rails", image: "rails-dev" } });
+  assert.deepEqual([(named as any).result.produced.image, (named as any).result.produced.image_reason], ["rails-dev", "as asked"]);
+  assert.deepEqual([(b.seen[1].input as any).image, sandboxes[1].image_id], ["image_rails-dev", "image_rails-dev"]);
+  const linux = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "built-in", image: "linux" } });
+  assert.deepEqual([(linux as any).result.produced.image, (b.seen[2].input as any).image], ["linux", "linux"]);
+  const unknown = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { image: "nope" } });
+  assert.equal(!unknown.ok && unknown.error.code, "image_not_found");
+  assert.equal(sandboxes.length, 3); assert.equal(b.seen.length, 3, "an unknown image reserves and relays nothing");
+});
+
+test("a machine without the image is refused with image_not_found naming the machines that hold it, before anything is reserved", async () => {
+  const a = machine(); const b = machine();
+  const fleet = machines.map((row) => ({ ...row, capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1, free_disk_bytes: 100 * GIB, macos_version: "27.0.1" } }));
+  const { deps, sandboxes } = memoryMailbox({ machines: fleet, images: [imageRow("rails-dev", ["m_b"])], connectors: { m_a: a.answer, m_b: b.answer } });
+  const refused = await ops(deps, { operation: "sandbox.create", machine: "studio", input: { image: "rails-dev" } });
+  assert.equal(!refused.ok && refused.error.code, "image_not_found");
+  assert.equal(!refused.ok && refused.error.message, "studio does not hold image rails-dev; it is on attic: create the sandbox there with --machine attic");
+  assert.deepEqual(!refused.ok && refused.error.details, { holders: ["attic"] });
+  assert.deepEqual([sandboxes.length, a.seen.length, b.seen.length], [0, 0, 0]);
+  const own = await ops(deps, { operation: "sandbox.create", caller_machine_id: "m_a", input: { image: "rails-dev" } });
+  assert.equal(!own.ok && own.error.code, "image_not_found", "the caller's own Mac is a target like a named one");
+  const auto = await ops(deps, { operation: "sandbox.create", caller_machine_id: "m_a", input: { image: "rails-dev", placement: "auto" } });
+  assert.equal((auto as any).result.produced.machine, "attic", "auto placement takes the holder");
+});
+
+test("a machine that answers image_not_found (its files went meanwhile) releases the reservation", async () => {
+  const gone = async (request: RequestEnvelope): Promise<ResponseEnvelope> => ({ protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "localbox-contract-v1", ok: false, error: { code: "image_not_found", message: "could not lay down x: image image_rails-dev is not on this Mac", retryable: false } });
+  const { deps, sandboxes } = memoryMailbox({ machines, images: [imageRow("rails-dev", ["m_b"])], connectors: { m_b: gone } });
+  const refused = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { image: "rails-dev" } });
+  assert.equal(!refused.ok && refused.error.code, "image_not_found");
+  assert.equal(sandboxes.length, 0);
+});
+
+test("the account default resolves in Convex: linux until one is set; macos with no macOS build says how to make one; the row keeps its image", async () => {
+  const { t, m1, agent } = await setup();
+  await t.run(async (ctx) => { await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "brave-walrus-100", createdAt: Date.now() }); });
+  assert.equal((await agent.query(ref("images:get"), {})).image_id, "linux");
+  const image = await m1.mutation(ref("images:reserve"), { machineId: "m1", name: "bold-image", os: "linux", source: { kind: "sandbox", sandboxName: "quiet-otter" }, createMutationId: "c-1" });
+  await agent.mutation(ref("images:setDefault"), { image: "bold-image" });
+  assert.deepEqual(await agent.query(ref("images:get"), {}).then((row: any) => [row.image_id, row.name, row.default]), [image.image_id, "bold-image", true]);
+  await assert.rejects(() => agent.query(ref("images:get"), { image: "macos" }), (error: any) => error.data?.code === "image_not_found" && error.data.message === "no macOS image yet; build one with: localbox image create --macos");
+  const box = await create(m1, { machineId: "m1", name: "bold", imageId: image.image_id, createMutationId: "cli-img" });
+  assert.equal(box.image_id, image.image_id);
+  assert.equal((await agent.query(ref("sandboxes:byCreateMutation"), { mutationId: "cli-img" })).image_id, image.image_id, "a replay after the relay row expired still knows the image");
 });
 
 test("sandbox.create places on the named machine, by placement or on the caller's machine, and says why", async () => {
@@ -147,7 +210,7 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
   assert.equal((await ops(deps, { operation: "sandbox.status", input: {} })).ok, true, "the only sandbox is used");
   assert.equal(b.seen.at(-1)!.sandbox_id, "sandbox_1");
-  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
+  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", image_id: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
   const ambiguous = await ops(deps, { operation: "sandbox.status", input: {} });
   assert.equal(!ambiguous.ok && ambiguous.error.code, "sandbox_ambiguous"); assert.deepEqual(!ambiguous.ok && ambiguous.error.details, { names: ["quiet-otter", "brave-fox"] });
   const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "brave-fox", input: { name: "calm-heron" } });

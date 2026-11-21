@@ -10,7 +10,7 @@ final class AgentUpdaterTests: XCTestCase {
         let log = EventLog(), agent = FakeAgent(version: "0.1.0+aaaaaaaaaaaa")
         let factory = FakeBackendFactory(log: log, agent: agent, guest: Self.guest(log, jobs: Jobs()))
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib, agentUpdater: GuestAgentUpdater(directory: try agentDirectory("0.2.0+bbbbbbbbbbbb")))
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         var reported: [String] = []
         try await until {
             let info = try await self.result(host, "system.info", sandboxID: "sandbox_1")
@@ -32,7 +32,7 @@ final class AgentUpdaterTests: XCTestCase {
         let log = EventLog(), jobs = Jobs()
         let directory = try agentDirectory("0.1.0+aaaaaaaaaaaa")
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(log: log, agent: FakeAgent(version: "0.1.0+aaaaaaaaaaaa"), guest: Self.guest(log, jobs: jobs)), hostCPUs: 4, hostMemoryBytes: 8 * gib, agentUpdater: GuestAgentUpdater(directory: directory))
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         jobs.count = 1
         try writeRelease("0.2.0+bbbbbbbbbbbb", in: directory)
         for _ in 0..<3 { let ticked = await host.idleTick(); XCTAssertTrue(ticked.isEmpty, "a running job defers the update") }
@@ -49,7 +49,7 @@ final class AgentUpdaterTests: XCTestCase {
         let log = EventLog()
         let agent = FakeAgent(version: "0.1.0+aaaaaaaaaaaa", updateError: .invalidState("the guest refused agent.chunk: sha256 mismatch"))
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(log: log, agent: agent, guest: Self.guest(log, jobs: Jobs())), hostCPUs: 4, hostMemoryBytes: 8 * gib, agentUpdater: GuestAgentUpdater(directory: try agentDirectory("0.2.0+bbbbbbbbbbbb")))
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         try await until { (try await self.result(host, "sandbox.status", sandboxID: "sandbox_1"))["detail"] != nil }
         for _ in 0..<3 { _ = await host.idleTick() }
         XCTAssertEqual(log.events.filter { $0.hasPrefix("update") }.count, 1, "one push, not one per tick")
@@ -64,7 +64,7 @@ final class AgentUpdaterTests: XCTestCase {
         let gone = FakeAgent(version: "0.1.0+aaaaaaaaaaaa", reconnectError: .unsupported("the guest agent did not accept a vsock connection on port 1024 within 2 min"))
         let factory = FakeBackendFactory(log: log, agent: gone, guest: Self.guest(log, jobs: Jobs()))
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * gib, agentUpdater: GuestAgentUpdater(directory: try agentDirectory("0.2.0+bbbbbbbbbbbb"), restartWindow: 0.3))
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         try await until { (try await self.result(host, "sandbox.status", sandboxID: "sandbox_1"))["lifecycle"] as? String == "error" }
         XCTAssertGreaterThan(log.events.filter { $0 == "reconnect" }.count, 1, "the host keeps dialling through the restart window")
         let status = try await result(host, "sandbox.status", sandboxID: "sandbox_1")
@@ -75,7 +75,7 @@ final class AgentUpdaterTests: XCTestCase {
         // Without an update, a closed request lane is still the guest lost.
         let closing = FakeBackendFactory(agent: FakeAgent(version: "0.2.0+bbbbbbbbbbbb")) { _ in throw HostDaemonError.guestUnavailable }
         let closed = SandboxHost(sandboxesDirectory: try scratch(), factory: closing, hostCPUs: 4, hostMemoryBytes: 8 * gib, agentUpdater: GuestAgentUpdater(directory: try agentDirectory("0.2.0+bbbbbbbbbbbb")))
-        _ = try await result(closed, "sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(closed, "sandbox.create", #"{"name":"two","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         do { _ = try await closed.request(Self.envelope("fs.stat", #"{"path":"/"}"#)); XCTFail("a closed channel fails the request") } catch {}
         let lost = try await result(closed, "sandbox.status", sandboxID: "sandbox_1")
         XCTAssertEqual(lost["lifecycle"] as? String, "error"); XCTAssertEqual(lost["detail"] as? String, "the guest agent closed its channel")

@@ -509,10 +509,11 @@ public actor SandboxHost {
         return hostSuccess(object, result: result)
     }
 
-    /// Lays down the sandbox the agent API reserved, at the size and idle policy it chose, and boots it.
+    /// Lays down the sandbox the agent API reserved, from the image it resolved (`image`, an id), at the size and idle
+    /// policy it chose, and boots it.
     private func create(_ object: [String: Any], sandboxID: String, input: [String: Any]) async -> Data {
-        guard let name = input["name"] as? String, !name.isEmpty, let cpus = (input["cpus"] as? NSNumber)?.intValue, let memoryBytes = (input["memory_bytes"] as? NSNumber)?.uint64Value,
-              let sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name, cpus, memory_bytes and sleep_after_ms") }
+        guard let name = input["name"] as? String, !name.isEmpty, let imageID = input["image"] as? String, !imageID.isEmpty, let cpus = (input["cpus"] as? NSNumber)?.intValue, let memoryBytes = (input["memory_bytes"] as? NSNumber)?.uint64Value,
+              let sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name, image, cpus, memory_bytes and sleep_after_ms") }
         guard !sandboxID.contains("/"), !sandboxID.hasPrefix(".") else { return hostFailure(object, code: "invalid_input", message: "sandbox id \(sandboxID) is not a directory name") }
         var actions: [[String: Any]] = []
         var facts: [String: String] = [:]
@@ -523,7 +524,7 @@ public actor SandboxHost {
             // A relayed create re-run after a connector restart: the sandbox is already here.
             runtime = existing; await existing.setInCatalog(true); try? await existing.rename(name)
         } else {
-            var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: builtInImage, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
+            var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: imageID, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
             record.deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
             let directory = SandboxDirectory(root.appendingPathComponent(sandboxID, isDirectory: true))
             provisioning.insert(sandboxID)
@@ -535,6 +536,7 @@ public actor SandboxHost {
             } catch {
                 try? FileManager.default.removeItem(at: directory.url)
                 provisioning.remove(sandboxID)
+                if let missing = error as? ImageNotHere { return hostFailure(object, code: "image_not_found", message: "could not lay down \(name): \(missing)") }
                 return hostFailure(object, code: "internal", message: "could not lay down \(name): \(explain(error))")
             }
             runtime = makeRuntime(record, directory); runtimes[sandboxID] = runtime

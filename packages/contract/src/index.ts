@@ -355,7 +355,8 @@ export interface ActionReport { requested: Json; produced: Json; actions: Array<
  * machine row. `room_bytes` is reservation-based: the daemon's admission budget minus what running sandboxes reserve,
  * not live free memory. `revision` changes only when the reservation does, so the connector writes it only then.
  */
-export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number }
+/** A machine's capacity as its daemon reports it; free disk (null: unread) and the macOS version are what placement checks for an image. */
+export interface CapacityReport { cpus: number; total_bytes: number; reserved_bytes: number; room_bytes: number; running: number; revision: number; free_disk_bytes?: number | null; macos_version?: string }
 
 const GIB = 1024 ** 3;
 /** A size for a report, e.g. "2 GiB" or "1.5 GiB". */

@@ -100,7 +100,7 @@ private struct Daemon {
                            images: ImageHost(operations: operations, files: StoredImageFiles(store: store), capture: capture))
         await capture.attach(to: host)
         guard creating else { return }
-        _ = try await request("sandbox.create", input: ["name": "one", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": 1_800_000], sandboxID: "sandbox_1")
+        _ = try await request("sandbox.create", input: ["name": "one", "image": "linux", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": 1_800_000], sandboxID: "sandbox_1")
         let directory = SandboxDirectory(root.appendingPathComponent("sandboxes/sandbox_1"))
         try Self.diskBytes.write(to: directory.disk)
         try Data("efi".utf8).write(to: directory.bootStore(for: .linux))

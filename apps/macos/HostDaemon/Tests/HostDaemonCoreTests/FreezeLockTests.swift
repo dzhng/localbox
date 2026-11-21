@@ -39,7 +39,7 @@ final class FreezeLockTests: XCTestCase {
     func testIdleTickAndAdmissionPassAFreezingSandbox() async throws {
         let log = EventLog(), gate = BodyGate(), clock = Clock()
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(log: log, guest: Self.guest(log)), hostCPUs: 4, hostMemoryBytes: 8 * gib, now: { clock.now })
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":4294967296,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":4294967296,"sleep_after_ms":5000}"#, sandboxID: "sandbox_1")
         clock.now += 6
         let runtime = await host.runtime("sandbox_1")!
         let clone = Task { try await runtime.freezeAndClone { await gate.pass() } }
@@ -47,7 +47,7 @@ final class FreezeLockTests: XCTestCase {
         let ticked = await host.idleTick()
         XCTAssertTrue(ticked.isEmpty, "the idle policy passes a freezing sandbox by")
         XCTAssertFalse(log.events.contains("request guest.activity"), "and does not ask its guest about jobs")
-        let refused = try JSONSerialization.jsonObject(with: try await host.request(Self.envelope("sandbox.create", #"{"name":"two","cpus":2,"memory_bytes":4294967296,"sleep_after_ms":5000}"#, sandboxID: "sandbox_2"))) as? [String: Any]
+        let refused = try JSONSerialization.jsonObject(with: try await host.request(Self.envelope("sandbox.create", #"{"name":"two","image":"linux","cpus":2,"memory_bytes":4294967296,"sleep_after_ms":5000}"#, sandboxID: "sandbox_2"))) as? [String: Any]
         let error = refused?["error"] as? [String: Any]
         XCTAssertEqual(error?["code"] as? String, "machine_full", "admission never sleeps a freezing sandbox for room")
         XCTAssertTrue((error?["message"] as? String)?.contains("one (4 GiB, frozen for a disk clone)") == true, "\(String(describing: error))")
@@ -62,7 +62,7 @@ final class FreezeLockTests: XCTestCase {
         let log = EventLog(), gate = BodyGate()
         let root = try scratch()
         let host = SandboxHost(sandboxesDirectory: root, factory: FakeBackendFactory(log: log, guest: Self.guest(log)), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         let runtime = await host.runtime("sandbox_1")!
         let clone = Task { try await runtime.freezeAndClone { log.append("body"); await gate.pass() } }
         await gate.untilEntered()
@@ -80,7 +80,7 @@ final class FreezeLockTests: XCTestCase {
     func testAFailedFreezeOrBodyStillThawsAndUnlocks() async throws {
         let log = EventLog()
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(freezeError: .invalidState("the guest refused freeze: fsfreeze failed"), log: log, guest: Self.guest(log)), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         let runtime = await host.runtime("sandbox_1")!
         do { try await runtime.freezeAndClone { log.append("body") }; XCTFail("a refused freeze fails the clone") } catch {}
         XCTAssertEqual(lane(log), ["freeze 10000", "thaw"], "the body never runs, and the guest is told to thaw in case it froze")
@@ -98,7 +98,7 @@ final class FreezeLockTests: XCTestCase {
 
     func testTheProcessFixtureHasNoControlLane() async throws {
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: ChannelOnlyFactory(), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         let runtime = await host.runtime("sandbox_1")!
         do { try await runtime.freezeAndClone {}; XCTFail("no control lane, no freeze") } catch HostDaemonError.unsupported {}
         let status = await runtime.status()
@@ -148,7 +148,7 @@ extension FreezeLockTests {
 
     func hostWithSandbox(log: EventLog) async throws -> SandboxHost {
         let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(log: log, guest: Self.guest(log)), hostCPUs: 4, hostMemoryBytes: 8 * gib)
-        _ = try await result(host, "sandbox.create", #"{"name":"one","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
+        _ = try await result(host, "sandbox.create", #"{"name":"one","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         return host
     }
 

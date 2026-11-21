@@ -31,7 +31,7 @@ export const calls: Call[] = [
   { name: "machines:remove", kind: "account", mutation: true, args: { machineId: "m1" } },
   { name: "machines:revokeSelf", kind: "machine", mutation: true, args: {} },
   { name: "machines:touch", kind: "service", mutation: true, args: { machineId: "m1" } },
-  { name: "sandboxes:create", kind: "account", mutation: true, args: { machineId: "m1", cpus: 2, memoryBytes: 2147483648 } },
+  { name: "sandboxes:create", kind: "account", mutation: true, args: { machineId: "m1", imageId: "linux", cpus: 2, memoryBytes: 2147483648 } },
   { name: "sandboxes:list", kind: "account", args: {} },
   { name: "sandboxes:byCreateMutation", kind: "account", args: { mutationId: "cli-1" } },
   { name: "sandboxes:rename", kind: "account", mutation: true, args: { sandboxId: "s1", name: "sandbox-two" } },

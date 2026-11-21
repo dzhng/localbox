@@ -106,15 +106,20 @@ final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
     private let guest: @Sendable (Data) async throws -> Data
     let log: EventLog
     let agent: FakeAgent
+    private let images: Set<String>
     /// `saveError`: every save fails with it, e.g. `.screenLocked` or `.unsupported("permission denied")`; `stopError`
     /// likewise for every stop, `freezeError` for every freeze on the control lane. `bootDelay` (nanoseconds) is how
-    /// long each start or restore takes. Every backend writes to `log` and runs `agent`.
-    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, log: EventLog = EventLog(), agent: FakeAgent = FakeAgent(), guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
-        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.log = log; self.agent = agent; self.guest = guest
+    /// long each start or restore takes. `images` are the images this Mac holds; provisioning from any other fails as
+    /// `ImageStore` does. Every backend writes to `log` and runs `agent`.
+    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage], log: EventLog = EventLog(), agent: FakeAgent = FakeAgent(), guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
+        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.images = images; self.log = log; self.agent = agent; self.guest = guest
     }
     public var boots: Int { made.count }
     public var made: [FakeSandboxBackend] { lock.lock(); defer { lock.unlock() }; return backends }
-    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] { record.mac = randomLocalMAC(); return [:] }
+    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
+        guard images.contains(record.imageID) else { throw ImageNotHere(imageID: record.imageID) }
+        record.mac = randomLocalMAC(); return [:]
+    }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         let backend = FakeSandboxBackend(saveError: saveError, stopError: stopError, freezeError: freezeError, bootDelay: bootDelay, log: log, agent: agent, guest: guest)
         lock.lock(); backends.append(backend); lock.unlock()

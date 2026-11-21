@@ -147,7 +147,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     }));
     checks.push(await ctx.check("three 2 GiB sandboxes boot; the first, least recently used, holds 1000 MiB of written memory", async () => {
       for (const [index, sandboxId] of ids.slice(0, 3).entries()) {
-        const created = await ok("sandbox.create", sandboxId, { name: names[index], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
+        const created = await ok("sandbox.create", sandboxId, { name: names[index], image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
         assert.deepEqual(created.actions.map((action: any) => action.kind), ["created", "cold_booted"], JSON.stringify(created));
         // Fill alpha's memory before the others boot, so it is the least recently used and its VM holds real RAM.
         // Random bytes, because macOS compresses a VM's zero pages out of its resident size.
@@ -160,7 +160,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check(locked ? "a fourth start stops the least recently used (hibernate unavailable while the screen is locked) and its VM's RAM is released" : "a fourth start hibernates the least recently used and its VM's RAM is released", async () => {
       const before = vmRSS();
       assert.equal(before.size, 3, `one VM service per running sandbox: ${JSON.stringify([...before])}`);
-      const created = await ok("sandbox.create", ids[3], { name: names[3], cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
+      const created = await ok("sandbox.create", ids[3], { name: names[3], image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 30 * 60_000 });
       evidence.fourth_create = created;
       await sleep(2_000);
       const after = vmRSS();

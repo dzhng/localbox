@@ -21,16 +21,17 @@ async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
   return row;
 }
 const view = (row: any, machineName?: string) => ({
-  sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null,
+  sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null, image_id: row.imageId,
   cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
   state: row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null,
 });
 
 /**
- * Reserves a sandbox's identity on one of the caller's machines; the agent API then asks that machine to create it.
- * A create carrying a mutation id this account already reserved with returns that reservation instead of a second one.
+ * Reserves a sandbox's identity on one of the caller's machines, with the image it starts from (the id the agent API
+ * resolved: an image row's, or the built-in `linux`); the agent API then asks that machine to create it. A create
+ * carrying a mutation id this account already reserved with returns that reservation instead of a second one.
  */
-export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()) }, handler: async (ctx, args) => {
+export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), imageId: v.string(), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`);
@@ -41,7 +42,7 @@ export const create = mutationGeneric({ args: { machineId: v.string(), name: v.o
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) refuse("name_conflict", `no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
 } });

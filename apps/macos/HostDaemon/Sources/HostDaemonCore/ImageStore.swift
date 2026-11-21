@@ -22,6 +22,12 @@ public struct ImageManifest: Codable, Equatable, Sendable {
     }
 }
 
+/// The image a request names is not on this Mac (never here, or deleted since).
+public struct ImageNotHere: Error, CustomStringConvertible, Sendable {
+    public let imageID: String
+    public var description: String { "image \(imageID) is not on this Mac" }
+}
+
 /// What `cloneForSandbox` laid down in a sandbox's directory.
 public struct ClonedImage: Sendable {
     public let manifest: ImageManifest
@@ -49,7 +55,7 @@ public struct ImageStore: Sendable {
 
     public func manifest(_ id: String) throws -> ImageManifest {
         let directory = try imageDirectory(id)
-        guard let data = try? Data(contentsOf: directory.appendingPathComponent(Self.manifestName)) else { throw HostDaemonError.unsupported("image \(id) is not on this Mac") }
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent(Self.manifestName)) else { throw ImageNotHere(imageID: id) }
         let manifest = try JSONDecoder().decode(ImageManifest.self, from: data)
         guard manifest.imageID == id else { throw HostDaemonError.invalidState("image \(id)'s manifest names \(manifest.imageID)") }
         return manifest
@@ -84,7 +90,7 @@ public struct ImageStore: Sendable {
     /// The directory is first renamed to a temporary, so a crash mid-delete leaves something `sweepTemps` removes.
     public func remove(_ id: String) throws {
         let directory = try imageDirectory(id)
-        guard FileManager.default.fileExists(atPath: directory.path) else { throw HostDaemonError.unsupported("image \(id) is not on this Mac") }
+        guard FileManager.default.fileExists(atPath: directory.path) else { throw ImageNotHere(imageID: id) }
         let doomed = root.appendingPathComponent(".\(id).removing.\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.moveItem(at: directory, to: doomed)
         try FileManager.default.removeItem(at: doomed)

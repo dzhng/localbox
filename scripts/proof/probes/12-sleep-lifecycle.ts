@@ -144,7 +144,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       bin = await buildRealVMs(ctx); await start(bin);
     }));
     checks.push(await ctx.check(locked ? "--sleep-after 5s with a background process: asleep by ~7 s, paused in memory (hibernate needs an unlocked screen)" : "--sleep-after 5s with a background process: hibernated by ~7 s, its memory released", async () => {
-      const created = await ok("sandbox.create", sandboxId, { name, cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 5_000 });
+      const created = await ok("sandbox.create", sandboxId, { name, image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 5_000 });
       assert.deepEqual(kinds(created), ["created", "cold_booted"]);
       pid = await sh(sandboxId, "nohup sleep 100000 >/dev/null 2>&1 & echo $!");
       assert.match(pid, /^\d+$/);

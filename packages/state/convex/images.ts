@@ -76,12 +76,15 @@ export const list = queryGeneric({ args: {}, handler: async (ctx) => {
   return [linuxView(live, defaultImageId), ...images.map((row: any) => view(row, holders.filter((holder: any) => holder.imageId === row.imageId), machines, defaultImageId))];
 } });
 
-/** One image (a name or id; `linux`, `macos` as `list` and `rename` read them) as `list` shows it. */
-export const get = queryGeneric({ args: { image: v.string() }, handler: async (ctx, args) => {
+/**
+ * One image (a name or id; `linux`, `macos` as `list` and `rename` read them) as `list` shows it. With no image, the
+ * account default: `sandbox create` names none.
+ */
+export const get = queryGeneric({ args: { image: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const live = await liveMachines(ctx, accountId);
   const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
-  const row = await resolve(ctx, accountId, args.image);
+  const row = await resolve(ctx, accountId, args.image ?? defaultImageId ?? BUILT_IN_IMAGE);
   if (!row) return linuxView(live, defaultImageId);
   return view(row, await imageHolders(ctx, row.imageId), new Map<string, string>(live.map((machine: any) => [machine.machineId, machine.name])), defaultImageId);
 } });
