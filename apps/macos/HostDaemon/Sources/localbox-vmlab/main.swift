@@ -17,6 +17,40 @@ struct VMLabMain {
         #if os(macOS)
         let arguments = Array(CommandLine.arguments.dropFirst())
         do {
+            if arguments.first == "vnc-shot", let port = option("--port", in: arguments).flatMap(UInt16.init), let out = option("--out", in: arguments) {
+                let screen = VNCClient(port: port, password: option("--password", in: arguments)); try await screen.connect()
+                try screen.savePNG(try await screen.capture(), to: URL(fileURLWithPath: out))
+                emit(["ok": true, "text": try await screen.screenText()]); screen.close(); return
+            }
+            if let command = arguments.first, command.hasPrefix("macos-") {
+                guard arguments.contains("--json") else { throw LabError("usage: localbox-vmlab macos-install --ipsw <path>|macos-clones|macos-hibernate --json") }
+                let lab = MacLab.fromEnvironment()
+                let output: [String: Any]
+                switch command {
+                case "macos-install":
+                    guard let ipsw = option("--ipsw", in: arguments) else { throw LabError("macos-install needs --ipsw <path>") }
+                    output = try await lab.install(ipsw: URL(fileURLWithPath: expanded(ipsw)))
+                case "macos-clones": output = try await lab.clones()
+                case "macos-hibernate": output = try await lab.hibernate()
+                case "macos-tcc":
+                    guard let evidence = option("--evidence", in: arguments) else { throw LabError("macos-tcc needs --evidence <dir>") }
+                    output = try await lab.tcc(evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
+                case "macos-vsock": output = try await lab.vsock()
+                case "macos-check":
+                    guard let guest = option("--guest", in: arguments) else { throw LabError("macos-check needs --guest <dir>") }
+                    output = try await lab.check(guestDirectory: URL(fileURLWithPath: expanded(guest), isDirectory: true))
+                case "macos-provision":
+                    guard let evidence = option("--evidence", in: arguments) else { throw LabError("macos-provision needs --evidence <dir>") }
+                    output = try await lab.provision(evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
+                case "macos-restore":
+                    guard let scratch = option("--scratch", in: arguments) else { throw LabError("macos-restore needs --scratch") }
+                    output = try await lab.restorePhase(scratch: URL(fileURLWithPath: scratch, isDirectory: true))
+                default: throw LabError("unknown vmlab command")
+                }
+                emit(output)
+                if output["ok"] as? Bool == false { exit(1) }
+                return
+            }
             guard let artifacts = option("--artifacts", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore|efi-kernel|efi-clones --artifacts <dir> [--scratch <dir>] [--efi] --json") }
             let lab = Lab(artifacts: SandboxArtifacts(directory: URL(fileURLWithPath: expanded(artifacts), isDirectory: true), extraKernelArguments: option("--kernel-args", in: arguments) ?? ""), efi: arguments.contains("--efi"))
             let output: [String: Any]

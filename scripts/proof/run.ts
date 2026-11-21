@@ -1,4 +1,4 @@
-// `npm run proof -- <NN|all> [--through NN] [--tier u,s,l,v,x] [--keep]`: one JSON verdict line per
+// `npm run proof -- <NN|all> [--through NN] [--tier u,s,l,v,m,x] [--keep]`: one JSON verdict line per
 // slice probe. Exit 0 when every check passes, 2 when a failure is only a missing external input
 // ("blocked: …"), 1 otherwise.
 import { spawn } from "node:child_process";

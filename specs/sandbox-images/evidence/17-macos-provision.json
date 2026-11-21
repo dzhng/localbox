@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {
+      "name": "provisioned, SSH bootstrap ran, SIP disabled in Recovery, Remote Login turns off",
+      "ok": false,
+      "detail": "{\"error\":\"the guest did not power off within 300 s\",\"ok\":false,\"ready\":false}\n\nfalse !== true\n"
+    }
+  ],
+  "error": "the guest did not power off within 300 s",
+  "ok": false,
+  "ready": false
+}

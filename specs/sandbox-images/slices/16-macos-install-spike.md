@@ -1,5 +1,19 @@
 # 16 macOS install, clone identity and suspend spike (go/no-go)
 
+**Outcome 2026-11-21: go.** Evidence: [16-macos-install.json](../evidence/16-macos-install.json).
+
+- macOS 27.2.1 (26B131, 25.6 GB IPSW, the latest this 27.0.1 host supports)
+  installed in 4 min; the base disk allocates 27 GB of its 64 GB.
+- Two clones (APFS clone of the disk, copied auxiliary storage, new identifier
+  and MAC) ran together, each leased a NAT address within 9 s; a clone's private
+  bytes after boot: 94 MB.
+- A third concurrent macOS VM failed to start with `VZErrorDomain` code 6
+  (`virtualMachineLimitExceeded`), as E11 expects.
+- With the suspendable device set, save took 2.6 s (2.5 GB state file) and a new
+  process restored in 3.2 s; the guest kept running.
+- Guest readiness here is the DHCP lease (no agent exists yet); the first-boot
+  vsock wait is measured in slice 19.
+
 **Unlocks:** a macOS 27 guest installs from an IPSW; clones with a new
 `VZMacMachineIdentifier` and copied auxiliary storage boot side by side; the
 suspendable device set saves and restores; a third concurrent macOS VM is

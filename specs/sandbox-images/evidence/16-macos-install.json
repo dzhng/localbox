@@ -1,0 +1,50 @@
+{
+  "checks": [
+    {
+      "name": "macOS base installed from the IPSW (cached after the first run)",
+      "ok": true
+    },
+    {
+      "name": "two clones with new identifiers run at once; a third is refused by the system limit",
+      "ok": true
+    },
+    {
+      "name": "save in one process, restore in another, still running",
+      "ok": true
+    }
+  ],
+  "install": {
+    "cpus": 4,
+    "disk_allocated_bytes": 26982068224,
+    "install_ms": 243121,
+    "ipsw_bytes": 25595954706,
+    "macos_version": "27.2.1 (26B131)",
+    "memory_bytes": 8589934592,
+    "ok": true
+  },
+  "clones": {
+    "both_running": [
+      true,
+      true
+    ],
+    "clone_private_bytes": 98570240,
+    "distinct_identifiers": true,
+    "lease_ms": {
+      "clone_0": 8871,
+      "clone_1": 8871
+    },
+    "ok": true,
+    "third_refused_by_limit": true,
+    "third_vm": "VZErrorDomain code 6: The number of virtual machines exceeds the limit. The maximum supported number of active virtual machines has been reached."
+  },
+  "hibernate": {
+    "lease_ms": 6476,
+    "ok": true,
+    "phase2": {
+      "restore_ms": 3224,
+      "running_after": true
+    },
+    "save_ms": 2649,
+    "state_file_bytes": 2483032064
+  }
+}
