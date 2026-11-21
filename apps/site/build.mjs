@@ -19,9 +19,9 @@ function defaultSiteUrl() {
 const escape = (text) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
-/** Page copy: apostrophes typeset curly, `code` becomes <code>, [label](url) a link; everything else is escaped. */
+/** Page copy: apostrophes typeset curly, "per-minute" never splits, `code` becomes <code>, [label](url) a link; everything else is escaped. */
 const prose = (text) =>
-  escape(text.replaceAll("'", "\u2019"))
+  escape(text.replaceAll("'", "\u2019").replaceAll("per-minute", "per\u2011minute"))
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
 
@@ -162,7 +162,7 @@ ${bar()}
         ${content.openIn.map((link) => `<a class="open" href="${escape(link.href)}">${escape(link.label)}</a>`).join("\n        ")}
         ${copyButton("Copy prompt", "agent-prompt")}
       </div>
-      <p class="fine">The Open buttons fill in the prompt in your agent without sending it.</p>
+      <p class="fine">The Open buttons put the prompt in your agent without sending it.</p>
       <p class="fine req">${requirements.replace("macOS 27", "macOS\u00a027")} · free</p>
     </div>
   </section>

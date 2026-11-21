@@ -16,7 +16,9 @@ for humans, and the same instructions as plain text at `/llms.txt` for agents.
   never carries usage rules or commands.
 - **Artwork has one home.** Illustrations live in `.github/readme` and are copied
   to `/art` at build time; the build reads their PNG size so images reserve
-  layout. `og.png` is the 1200×630 social card cut from the header art.
+  layout. A drawing too wide to read on a phone gets a stacked `<name>-mobile.png`
+  cut beside it, which the page serves at 520 px and below. `og.png` is the
+  1200×630 social card cut from the header art.
 - **No dependencies, no framework.** [build.mjs](build.mjs) writes static files to
   `dist/`, including `404.html`, `robots.txt` and `sitemap.xml`. There is no
   download button: agents are the only install route, and the Open in Claude Code
