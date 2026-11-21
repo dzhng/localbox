@@ -4,21 +4,20 @@ import HostDaemonCore
 import Virtualization
 #endif
 
-/// Real-VM lab for the proof harness:
-///   vmlab boot --artifacts <dir> --json        boot a scratch clone and run `uname -m` in the guest
-///   vmlab hibernate --artifacts <dir> --json   the hibernate scenario (save here, restore in a new process)
-///   vmlab restore --artifacts <dir> --scratch <dir> --json   phase 2 of hibernate, run by `hibernate` itself
-///   --efi                                     boot the artifacts' template.img as a GPT disk through EFI firmware (`BootStore.linuxEFI`)
-///   vmlab efi-kernel --artifacts <dir> --efi --json   apt-install another kernel in the guest, reboot, compare `uname -r`
-///   vmlab efi-clones --artifacts <dir> --efi --json   two clones, each with a copy of one variable store, booted at once
+/// Real-VM lab for the proof harness; `--image` is one image directory (`images/<id>/`):
+///   vmlab boot --image <dir> --json        boot a scratch sandbox and run `uname -m` in the guest
+///   vmlab hibernate --image <dir> --json   the hibernate scenario (save here, restore in a new process)
+///   vmlab restore --image <dir> --scratch <dir> --json   phase 2 of hibernate, run by `hibernate` itself
+///   vmlab efi-kernel --image <dir> --json  apt-install another kernel in the guest, reboot, compare `uname -r`
+///   vmlab efi-clones --image <dir> --json  two sandboxes, each with a copy of the image's variable store, booted at once
 @main
 struct VMLabMain {
     static func main() async {
         #if os(macOS)
         let arguments = Array(CommandLine.arguments.dropFirst())
         do {
-            guard let artifacts = option("--artifacts", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore|efi-kernel|efi-clones --artifacts <dir> [--scratch <dir>] [--efi] --json") }
-            let lab = Lab(artifacts: SandboxArtifacts(directory: URL(fileURLWithPath: expanded(artifacts), isDirectory: true)), efi: arguments.contains("--efi"))
+            guard let image = option("--image", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore|efi-kernel|efi-clones --image <dir> [--scratch <dir>] --json") }
+            let lab = try Lab(image: URL(fileURLWithPath: expanded(image), isDirectory: true))
             let output: [String: Any]
             switch arguments.first {
             case "boot": output = try await lab.boot()
@@ -46,37 +45,35 @@ struct VMLabMain {
 #if os(macOS)
 struct LabError: Error, CustomStringConvertible { let description: String; init(_ text: String) { description = text } }
 
-/// One scratch sandbox made the way `SandboxHost` makes one: an APFS clone of the template plus a record holding its
-/// MAC and machine identifier, booted from its `VMSpec` through `SandboxConfigurationBuilder`.
+/// One scratch sandbox made the way `SandboxHost` makes one: provisioned from the image by `AppleSandboxFactory` and
+/// booted from its `VMSpec` through `SandboxConfigurationBuilder`.
 struct Lab {
-    let artifacts: SandboxArtifacts
-    /// Boot through EFI firmware from the disk (GRUB, kernel on the disk) with the sandbox's own variable store, the
-    /// record's production spec; otherwise the factory's spec, which boots the host's kernel and initrd.
-    var efi = false
-    var factory: AppleSandboxFactory { AppleSandboxFactory(artifacts: artifacts) }
+    let image: URL
+    let factory: AppleSandboxFactory
+    init(image: URL) throws {
+        self.image = image
+        factory = AppleSandboxFactory(images: try ImageStore(imagesDirectory: image.deletingLastPathComponent()))
+    }
 
     func backend(_ scratch: URL, record: SandboxRecord? = nil) throws -> AppleVirtualizationBackend {
         let directory = SandboxDirectory(scratch)
         let record = try record ?? directory.load()
-        let spec = efi ? try VMSpec(record: record, in: directory) : try factory.spec(for: record, in: directory)
-        return AppleVirtualizationBackend(spec: spec, sandboxID: record.sandboxID, name: record.name)
+        return AppleVirtualizationBackend(spec: try VMSpec(record: record, in: directory), sandboxID: record.sandboxID, name: record.name)
     }
 
-    func newScratch() throws -> URL {
+    func newScratch() async throws -> URL {
         let base = ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
         let scratch = base.appendingPathComponent("localbox-vmlab-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         let directory = SandboxDirectory(scratch)
-        var record = SandboxRecord(sandboxID: "sandbox_vmlab", name: "vmlab", imageID: builtInImage, cpus: 2, memoryBytes: 2 * 1024 * 1024 * 1024, sleepAfterMs: .max) // vmlab runs no idle policy
-        _ = try factory.provision(&record, in: directory)
-        // A fresh variable store is empty, so firmware takes the disk's removable boot path.
-        if efi { _ = try VZEFIVariableStore(creatingVariableStoreAt: directory.bootStore(for: .linux)) }
+        var record = SandboxRecord(sandboxID: "sandbox_vmlab", name: "vmlab", imageID: image.lastPathComponent, cpus: 2, memoryBytes: 2 * 1024 * 1024 * 1024, sleepAfterMs: .max) // vmlab runs no idle policy
+        _ = try await factory.provision(&record, in: directory)
         try directory.save(record)
         return scratch
     }
 
     func boot() async throws -> [String: Any] {
-        let scratch = try newScratch()
+        let scratch = try await newScratch()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
         let backend = try backend(scratch)
         do {
@@ -95,7 +92,7 @@ struct Lab {
 
     /// Phase 1: boot, start a long-lived server, measure, save. Phase 2 runs in a new vmlab process.
     func hibernate() async throws -> [String: Any] {
-        let scratch = try newScratch()
+        let scratch = try await newScratch()
         let backend = try backend(scratch)
         try await backend.start()
         let started = try await shell(backend, "nohup node -e \"let n=0; require('http').createServer((q,r)=>r.end(String(n++))).listen(8080)\" >/dev/null 2>&1 & echo $!")
@@ -116,7 +113,7 @@ struct Lab {
         let phase1: [String: Any] = ["pid": pid, "counter_before": before, "nat_http_code": nat, "guest_mac": guestMAC, "persisted_mac": persistedMAC, "vm_memory_kb_running": memoryRunning, "vm_memory_kb_after_save": memorySaved, "save_ms": saveMs, "state_file_bytes": stateBytes]
         try JSONSerialization.data(withJSONObject: phase1).write(to: scratch.appendingPathComponent("phase1.json"))
         // A separate process restores, so the save file must not depend on anything held by this one.
-        let phase2 = try runSelf(["restore", "--artifacts", artifacts.kernelURL.deletingLastPathComponent().path, "--scratch", scratch.path, "--json"] + (efi ? ["--efi"] : []))
+        let phase2 = try runSelf(["restore", "--image", image.path, "--scratch", scratch.path, "--json"])
         let survived = (phase2["pid_alive"] as? Bool ?? false) && (phase2["counter_after"] as? Int).map { $0 > (Int(before.last ?? "-1") ?? -1) } == true
         if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) }
         return ["ok": survived, "phase1": phase1, "phase2": phase2, "process_survived": survived, "mac_matches": !guestMAC.isEmpty && guestMAC == persistedMAC, "nat_ok": nat == "200"]
@@ -156,7 +153,7 @@ struct Lab {
     /// Installs the HWE kernel (a different version from the image's GA kernel) and reboots the same disk: an EFI disk
     /// boots whatever `/boot/vmlinuz` now points at, and the guest agent must still answer over vsock.
     func efiKernel() async throws -> [String: Any] {
-        let scratch = try newScratch()
+        let scratch = try await newScratch()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
         var backend = try backend(scratch)
         try await backend.start()
@@ -181,13 +178,10 @@ struct Lab {
         return ["ok": before != after && lines.first == "0", "kernel_before": before, "kernel_after": after, "apt_exit": lines.first ?? "", "vmlinuz_target": lines.dropFirst().first ?? "", "reboot_ms": bootMs, "vsock_modules": vsock]
     }
 
-    /// One variable store, copied into two clones of the disk, both booted at once.
+    /// Two sandboxes from one image (each a clone of its disk with a copy of its variable store), booted at once.
     func efiClones() async throws -> [String: Any] {
-        let first = try newScratch(), second = try newScratch()
+        let first = try await newScratch(), second = try await newScratch()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { for scratch in [first, second] { try? FileManager.default.removeItem(at: scratch) } } }
-        let store = SandboxDirectory(first).bootStore(for: .linux), copy = SandboxDirectory(second).bootStore(for: .linux)
-        try FileManager.default.removeItem(at: copy)
-        try FileManager.default.copyItem(at: store, to: copy)
         let backends = try [first, second].map { try backend($0) }
         let started = Date()
         async let a: Void = backends[0].start()

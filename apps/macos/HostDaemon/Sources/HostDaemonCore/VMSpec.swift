@@ -12,9 +12,6 @@ public enum BootStore: Equatable, Sendable {
     case linuxEFI(variableStore: URL)
     /// A macOS guest's auxiliary storage (its NVRAM).
     case macos(auxiliaryStorage: URL)
-    /// Short-lived seam (sandbox-images slice 23, removed in 24): the host's shared kernel and initrd, so the daemon
-    /// keeps booting today's bare-ext4 template until sandboxes are provisioned from images.
-    case linuxDirect(kernel: URL, initrd: URL)
 
     /// The boot store a sandbox of `os` keeps in its own directory.
     public init(os: GuestOS, in directory: SandboxDirectory) {
@@ -28,7 +25,6 @@ public enum BootStore: Equatable, Sendable {
         switch self {
         case .linuxEFI(let store): return [store]
         case .macos(let storage): return [storage]
-        case .linuxDirect(let kernel, let initrd): return [kernel, initrd]
         }
     }
 }
@@ -61,15 +57,15 @@ public struct VMSpec: Equatable, Sendable {
             switch self { case .linux: return .linux; case .macos: return .macos }
         }
     }
-    public var platform: Platform
-    public var boot: BootStore
-    public var cpus: Int
-    public var memoryBytes: UInt64
-    public var disk: URL
+    public let platform: Platform
+    public let boot: BootStore
+    public let cpus: Int
+    public let memoryBytes: UInt64
+    public let disk: URL
     /// Locally administered NAT MAC.
-    public var mac: String
+    public let mac: String
     /// Where the virtio console writes kernel and boot output; none for macOS, which has no virtio console.
-    public var consoleLog: URL?
+    public let consoleLog: URL?
     public var devices: [GuestDevice] { GuestPlatform.devices(for: platform.os) }
 
     public init(platform: Platform, boot: BootStore, cpus: Int, memoryBytes: UInt64, disk: URL, mac: String, consoleLog: URL?) {

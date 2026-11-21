@@ -6,8 +6,9 @@ public typealias SandboxAction = [String: String]
 /// Makes the per-sandbox pieces a backend needs: the directory's contents at create, and a backend for each boot.
 public protocol SandboxBackendFactory: Sendable {
     /// Lays down a new sandbox's directory (a disk clone, a guest root) and the runtime identity it boots with.
-    /// Returns facts for the create report, e.g. `disk: cloned`.
-    func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String]
+    /// Returns facts for the create report, e.g. `disk: cloned`. Async so it runs off the `SandboxHost` actor: a disk
+    /// copy where cloning is unsupported takes minutes, and no other request may wait behind it.
+    func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) async throws -> [String: String]
     /// A fresh backend for one boot, configured from the record as it is now.
     func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend
 }

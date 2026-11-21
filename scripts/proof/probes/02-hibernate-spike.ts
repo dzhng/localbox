@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { checkHost } from "../../../apps/cli/src/host-check.js";
+import { linuxImage } from "../lib/linux-image.js";
 
 export const id = "02";
 export const tiers = ["u", "v"];
@@ -24,12 +25,12 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       }),
     ];
   }
-  const artifacts = join(ctx.root, "dist/vm-image/minimal");
+  const image = await linuxImage(ctx);
   const build = await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon"]); assert.equal(build.code, 0, build.stderr.slice(-1500));
   assert.equal((await ctx.exec("sh", ["scripts/proof/lib/sign-dev.sh"])).code, 0);
   const bin = (await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"])).stdout.trim();
   const hibernate = async () => {
-    const result = await ctx.exec(join(bin, "localbox-vmlab"), ["hibernate", "--artifacts", artifacts, "--json"]);
+    const result = await ctx.exec(join(bin, "localbox-vmlab"), ["hibernate", "--image", image, "--json"]);
     const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}");
     writeFileSync(join(ctx.evidence, `02-hibernate-${screenLocked() ? "locked" : "unlocked"}.json`), `${JSON.stringify(verdict, null, 2)}\n`);
     return verdict;

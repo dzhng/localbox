@@ -160,13 +160,17 @@ public actor SandboxHost {
     private let allowsSimulatedPower: Bool
     /// The installed CLI, which answers agent setup for remote callers (`LOCALBOX_CLI`).
     private let agentSetup: AgentSetupCLI?
+    /// Free bytes on the images volume, for capacity; the host never touches image files itself.
+    private let freeDiskBytes: @Sendable () -> UInt64?
+    /// Sandboxes being laid down: provisioning runs off this actor, so a re-run create must not lay down a second copy.
+    private var provisioning: Set<String> = []
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.freeDiskBytes = freeDiskBytes
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -494,6 +498,7 @@ public actor SandboxHost {
         var facts: [String: String] = [:]
         let runtime: SandboxRuntime
         let existing = runtimes[sandboxID]
+        if existing == nil, provisioning.contains(sandboxID) { return hostFailure(object, code: "conflict", message: "\(name) is already being created") }
         if let existing {
             // A relayed create re-run after a connector restart: the sandbox is already here.
             runtime = existing; await existing.setInCatalog(true); try? await existing.rename(name)
@@ -501,12 +506,15 @@ public actor SandboxHost {
             var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: builtInImage, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
             record.deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
             let directory = SandboxDirectory(root.appendingPathComponent(sandboxID, isDirectory: true))
+            provisioning.insert(sandboxID)
             do {
                 try FileManager.default.createDirectory(at: directory.url, withIntermediateDirectories: true)
-                facts = try factory.provision(&record, in: directory)
+                facts = try await factory.provision(&record, in: directory)
                 try directory.save(record)
+                provisioning.remove(sandboxID)
             } catch {
                 try? FileManager.default.removeItem(at: directory.url)
+                provisioning.remove(sandboxID)
                 return hostFailure(object, code: "internal", message: "could not lay down \(name): \(explain(error))")
             }
             runtime = makeRuntime(record, directory); runtimes[sandboxID] = runtime
@@ -526,12 +534,14 @@ public actor SandboxHost {
     }
 
     /// What this Mac can still take: reservation-based, not live free memory. Unlisted sandboxes still hold
-    /// what they run with.
+    /// what they run with. Free disk and the macOS version are what placement checks before copying an image here.
     private func capacity() async -> [String: Any] {
         let holding = await snapshots(includingUnlisted: true).filter(\.reservesMemory)
         let reserved = holding.map(\.record.memoryBytes).reduce(0, +)
         if lastReserved?.bytes != reserved || lastReserved?.running != holding.count { capacityRevision += 1; lastReserved = (reserved, holding.count) }
-        return ["cpus": hostCPUs, "total_bytes": hostMemoryBytes, "reserved_bytes": reserved, "room_bytes": budgetBytes > reserved ? budgetBytes - reserved : 0, "running": holding.count, "revision": capacityRevision]
+        let macOS = ProcessInfo.processInfo.operatingSystemVersion
+        return ["cpus": hostCPUs, "total_bytes": hostMemoryBytes, "reserved_bytes": reserved, "room_bytes": budgetBytes > reserved ? budgetBytes - reserved : 0, "running": holding.count, "revision": capacityRevision,
+                "free_disk_bytes": freeDiskBytes().map { $0 as Any } ?? NSNull(), "macos_version": "\(macOS.majorVersion).\(macOS.minorVersion).\(macOS.patchVersion)"]
     }
 
     /// Admits `runtime` (making room unless told not to), then runs `body`, which starts it. Returns the made_room

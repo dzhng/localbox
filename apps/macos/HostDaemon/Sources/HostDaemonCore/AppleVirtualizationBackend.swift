@@ -1,44 +1,24 @@
 import Foundation
 
-/// The boot artifacts every sandbox on this Mac shares: kernel, initrd and the ext4 template its disk is cloned from.
-/// Short-lived seam (sandbox-images slice 23): slice 24 provisions from `ImageStore` and deletes this.
-public struct SandboxArtifacts: Sendable {
-    public let kernelURL: URL
-    public let initialRamdiskURL: URL
-    public let templateDiskURL: URL
-    public init(kernelURL: URL, initialRamdiskURL: URL, templateDiskURL: URL) {
-        self.kernelURL = kernelURL; self.initialRamdiskURL = initialRamdiskURL; self.templateDiskURL = templateDiskURL
-    }
-    /// The layout `npm run image:boot` writes: `kernel`, `initrd`, `template.img`.
-    public init(directory: URL) {
-        self.init(kernelURL: directory.appendingPathComponent("kernel"), initialRamdiskURL: directory.appendingPathComponent("initrd"), templateDiskURL: directory.appendingPathComponent("template.img"))
-    }
-}
-
 #if os(macOS)
 import IOKit
 import Virtualization
 
-/// Real sandboxes: each disk is an APFS clone of the template, each has its own MAC and machine identifier.
+/// Real sandboxes, each provisioned from an image: an APFS clone of its disk, a copy of its boot store, and a new MAC
+/// and machine identifier, so two sandboxes from one image never share an identity.
 public struct AppleSandboxFactory: SandboxBackendFactory {
-    public let artifacts: SandboxArtifacts
-    public init(artifacts: SandboxArtifacts) { self.artifacts = artifacts }
-    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
-        guard FileManager.default.fileExists(atPath: artifacts.templateDiskURL.path) else { throw HostDaemonError.unsupported("template disk \(artifacts.templateDiskURL.path) is missing") }
-        let disk = try cloneDisk(artifacts.templateDiskURL, to: directory.disk)
-        record.os = .linux
+    public let images: ImageStore
+    public init(images: ImageStore) { self.images = images }
+    public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) async throws -> [String: String] {
+        let clone = try images.cloneForSandbox(record.imageID, into: directory)
+        record.os = clone.manifest.os
+        record.hardwareModel = clone.manifest.hardwareModel
         record.mac = VZMACAddress.randomLocallyAdministered().string
-        record.machineIdentifier = VZGenericMachineIdentifier().dataRepresentation.base64EncodedString()
-        return ["disk": disk, "disk_allocated_bytes": String(privateBytes(directory.disk) ?? -1)]
-    }
-    /// The record's spec, booting the shared kernel and initrd: the short-lived seam slice 24 removes.
-    public func spec(for record: SandboxRecord, in directory: SandboxDirectory) throws -> VMSpec {
-        var spec = try VMSpec(record: record, in: directory)
-        spec.boot = .linuxDirect(kernel: artifacts.kernelURL, initrd: artifacts.initialRamdiskURL)
-        return spec
+        record.machineIdentifier = (clone.manifest.os == .linux ? VZGenericMachineIdentifier().dataRepresentation : VZMacMachineIdentifier().dataRepresentation).base64EncodedString()
+        return ["disk": clone.disk, "disk_allocated_bytes": String(privateBytes(directory.disk) ?? -1)]
     }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
-        AppleVirtualizationBackend(spec: try spec(for: record, in: directory), sandboxID: record.sandboxID, name: record.name)
+        AppleVirtualizationBackend(spec: try VMSpec(record: record, in: directory), sandboxID: record.sandboxID, name: record.name)
     }
 }
 
@@ -71,12 +51,6 @@ public enum SandboxConfigurationBuilder {
         case (.linux(let identifier), .linuxEFI(let store)):
             let boot = VZEFIBootLoader()
             boot.variableStore = VZEFIVariableStore(url: store)
-            configuration.bootLoader = boot
-            configuration.platform = try genericPlatform(identifier)
-        case (.linux(let identifier), .linuxDirect(let kernel, let initrd)):
-            let boot = VZLinuxBootLoader(kernelURL: kernel)
-            boot.initialRamdiskURL = initrd
-            boot.commandLine = "console=hvc0 root=/dev/vda rw"
             configuration.bootLoader = boot
             configuration.platform = try genericPlatform(identifier)
         case (.macos(let identifier, let model), .macos(let storage)):

@@ -18,10 +18,12 @@ struct HostDaemonMain {
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
+            let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
+            for name in images.sweepTemps() { log("removed \(name), an image write or delete the last run left unfinished") }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
-            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup)
+            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
+                                   allowsSimulatedPower: ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1", agentSetup: agentSetup, freeDiskBytes: { try? images.freeBytes() })
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
@@ -54,10 +56,10 @@ struct HostDaemonMain {
 
     #if os(macOS)
     /// Real VMs unless the fixture is explicitly selected; an unknown value is an error, never a fallback.
-    private static func factory() throws -> any SandboxBackendFactory {
+    private static func factory(_ images: ImageStore) throws -> any SandboxBackendFactory {
         switch ProcessInfo.processInfo.environment["LOCALBOX_SANDBOX_BACKEND"] ?? "apple" {
         case "apple":
-            return AppleSandboxFactory(artifacts: SandboxArtifacts(kernelURL: pathURL("LOCALBOX_KERNEL"), initialRamdiskURL: pathURL("LOCALBOX_INITRD"), templateDiskURL: pathURL("LOCALBOX_TEMPLATE_DISK")))
+            return AppleSandboxFactory(images: images)
         case "process-fixture":
             let repo = pathURL("LOCALBOX_REPO_ROOT")
             return try ProcessFixtureFactory(configuration: ProcessFixtureConfiguration(

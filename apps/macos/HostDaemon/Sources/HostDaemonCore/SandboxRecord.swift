@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#endif
 
 private let gib: UInt64 = 1024 * 1024 * 1024
 
@@ -114,22 +111,3 @@ func randomLocalMAC() -> String {
     bytes[0] = (bytes[0] & 0xFC) | 0x02
     return bytes.map { String(format: "%02x", $0) }.joined(separator: ":")
 }
-
-#if canImport(Darwin)
-/// An APFS clone of `template` (shares every block until written); a plain copy where cloning is unsupported.
-/// Returns "cloned" or "copied".
-public func cloneDisk(_ template: URL, to disk: URL) throws -> String {
-    if clonefile(template.path, disk.path, 0) == 0 { return "cloned" }
-    guard errno == ENOTSUP || errno == EXDEV else { throw HostDaemonError.unsupported("could not clone \(template.path): errno \(errno)") }
-    try FileManager.default.copyItem(at: template, to: disk)
-    return "copied"
-}
-
-/// Bytes only this file holds (APFS `ATTR_CMNEXT_PRIVATESIZE`): blocks shared with a clone are not counted, unlike `du`.
-public func privateBytes(_ url: URL) -> Int64? {
-    var list = attrlist(); list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT); list.forkattr = attrgroup_t(ATTR_CMNEXT_PRIVATESIZE)
-    var buffer = [UInt8](repeating: 0, count: 16)
-    guard getattrlist(url.path, &list, &buffer, buffer.count, UInt32(FSOPT_ATTR_CMN_EXTENDED)) == 0 else { return nil }
-    return buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: Int64.self) }
-}
-#endif

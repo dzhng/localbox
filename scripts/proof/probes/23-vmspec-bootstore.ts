@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { checkHost } from "../../../apps/cli/src/host-check.js";
+import { linuxImage } from "../lib/linux-image.js";
 
 export const id = "23";
 export const tiers = ["s", "v"];
@@ -16,18 +16,14 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.match(result.stdout + result.stderr, /Executed \d+ tests, with 0 failures/);
     })];
   }
-  const artifacts = join(ctx.root, "dist/vm-image/minimal-efi");
+  let image = "";
   const checks: Check[] = [];
-  checks.push(await ctx.check("minimal EFI disk exists", async () => {
-    if (existsSync(join(artifacts, "template.img"))) return;
-    const built = await ctx.exec("npm", ["run", "-s", "image:boot", "--", "--profile", "minimal", "--boot", "efi"]);
-    if (built.code !== 0) throw new Error(`blocked: could not build the minimal EFI image (Docker/colima running?): ${(built.stderr || built.stdout).slice(-600)}`);
-  }));
+  checks.push(await ctx.check("the dev linux image (an EFI disk) exists", async () => { image = await linuxImage(ctx); }));
   const build = await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon"]); assert.equal(build.code, 0, build.stderr.slice(-1500));
   assert.equal((await ctx.exec("sh", ["scripts/proof/lib/sign-dev.sh"])).code, 0);
   const bin = (await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"])).stdout.trim();
   const vmlab = async (command: string) => {
-    const result = await ctx.exec(join(bin, "localbox-vmlab"), [command, "--artifacts", artifacts, "--efi", "--json"]);
+    const result = await ctx.exec(join(bin, "localbox-vmlab"), [command, "--image", image, "--json"]);
     return { verdict: JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}") as Record<string, any>, stderr: result.stderr };
   };
   checks.push(await ctx.check("the EFI disk boots through the production translator", async () => {

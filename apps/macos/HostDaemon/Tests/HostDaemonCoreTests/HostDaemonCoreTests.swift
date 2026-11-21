@@ -14,6 +14,16 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual((malformed["error"] as? [String: Any])?["code"] as? String, "invalid_input")
     }
 
+    /// Placement needs free disk before copying an image here and the macOS version before placing a macOS image.
+    func testCapacityReportsFreeDiskAndTheMacOSVersion() async throws {
+        let reported = try await capacity(SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), freeDiskBytes: { 42 * 1024 * 1024 * 1024 }))
+        XCTAssertEqual(reported["free_disk_bytes"] as? Int, 42 * 1024 * 1024 * 1024)
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        XCTAssertEqual(reported["macos_version"] as? String, "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)")
+        let unknown = try await capacity(SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory()))
+        XCTAssertTrue(unknown["free_disk_bytes"] is NSNull, "unread free disk is reported as unknown, never as 0")
+    }
+
     /// Agent setup is the CLI's: the daemon runs `agents op` and answers with its result or error, never a sandbox's.
     func testAgentSetupRunsTheInstalledCLI() async throws {
         let directory = try scratch()

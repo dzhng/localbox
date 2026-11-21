@@ -59,7 +59,7 @@ any blocker, and tick the TODO list.
 - [ ] [21 catalog routing and image operations](slices/21-catalog-routing.md)
 - [ ] [22 Convex image records](slices/22-convex-images.md)
 - [x] [23 VM spec and boot store](slices/23-vmspec-bootstore.md)
-- [ ] [24 image store on the Mac](slices/24-image-store.md)
+- [x] [24 image store on the Mac](slices/24-image-store.md)
 - [ ] [25 the built-in linux image ships as an image](slices/25-linux-image-bundle.md)
 - [ ] [26 durable host operations](slices/26-host-operations.md)
 - [ ] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
