@@ -13,6 +13,7 @@
     <key>LOCALBOX_IPC_TOKEN_PATH</key><string>~/Library/Application Support/Localbox/ipc-token</string>
     <key>LOCALBOX_SOCKET</key><string>~/Library/Application Support/Localbox/agent.sock</string>
     <key>LOCALBOX_SANDBOXES</key><string>~/Library/Application Support/Localbox/sandboxes</string>
+    <key>LOCALBOX_OPERATIONS</key><string>~/Library/Application Support/Localbox/operations</string>
     <key>LOCALBOX_KERNEL</key><string>/Applications/Localbox.app/Contents/Resources/vm/vmlinuz</string>
     <key>LOCALBOX_INITRD</key><string>/Applications/Localbox.app/Contents/Resources/vm/initrd</string>
     <key>LOCALBOX_TEMPLATE_DISK</key><string>/Applications/Localbox.app/Contents/Resources/vm/template.img</string>

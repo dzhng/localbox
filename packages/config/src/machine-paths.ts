@@ -8,6 +8,8 @@ export interface MachinePaths {
   socket: string;
   /** One directory per sandbox (`<id>/sandbox.json`, `disk.img`, `state.vzsave`), owned by the host daemon. */
   sandboxes: string;
+  /** One journal per long host operation (`<mutation_id>.json`), owned by the host daemon's `HostOperationStore`. */
+  operations: string;
   logs: string;
 }
 
@@ -21,6 +23,7 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env): MachinePaths
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
     sandboxes: join(root, "sandboxes"),
+    operations: join(root, "operations"),
     logs: join(root, "logs"),
   };
 }
