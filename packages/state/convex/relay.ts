@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { requireIdentity } from "./lib/identity.js";
 import { byField, clean, jsonHash, fail, refuse } from "./lib/relay.js";
 import { OUTPUT_CAP_BYTES } from "../../contract/src/index.js";
+import { expireCopies } from "./images.js";
 
 const CLAIM_WINDOW_MS = 3_000;
 const dayOf = (at: number) => new Date(at).toISOString().slice(0, 10);
@@ -139,6 +140,7 @@ export const cleanupExpired = internalMutationGeneric({ args: { cutoff: v.option
   sweeps.push(families, tokens);
   // A removed machine is refused whether its row is revoked or gone; its sandboxes' rows went when it was removed.
   await sweep("machines", "by_revoked", "revokedAt", cutoff);
+  sweeps.push(await expireCopies(ctx, now, batch));
   if (sweeps.some((count) => count >= batch)) await ctx.scheduler.runAfter(0, makeFunctionReference<"mutation">("relay:cleanupExpired") as any, { cutoff, batch });
   return { deleted: sweeps.reduce((sum, count) => sum + count, 0) };
 } });

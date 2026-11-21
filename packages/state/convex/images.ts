@@ -2,7 +2,7 @@ import { internalMutationGeneric, makeFunctionReference, mutationGeneric, queryG
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
-import { holderFailure, holderState, imageOs, imageSource } from "./schema.js";
+import { copyCandidate, copyResult, holderFailure, holderState, imageOs, imageSource } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 
@@ -14,6 +14,12 @@ import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 const MACOS_IMAGE = "macos";
 const NAME_ATTEMPTS = 20;
 const HOLDER_BATCH = 200;
+/** A copy's rendezvous row, and its key, last a day; a copy still unfinished then has failed. */
+export const COPY_TTL_MS = 24 * 60 * 60 * 1000;
+/** Candidates one end may publish: every interface address plus what STUN reflected is far fewer. */
+const MAX_CANDIDATES = 16;
+/** Copies a machine's subscription carries per direction, newest first. */
+const COPY_BATCH = 50;
 
 const accountImages = async (ctx: any, accountId: string) => await boundedRows(ctx.db.query("images").withIndex("by_account_name", (q: any) => q.eq("accountId", accountId)), "image list");
 const accountHolders = async (ctx: any, accountId: string) => await boundedRows(ctx.db.query("imageHolders").withIndex("by_account", (q: any) => q.eq("accountId", accountId)), "image holders");
@@ -140,6 +146,8 @@ export const remove = mutationGeneric({ args: { image: v.string() }, handler: as
   if (!row) return refuse("invalid_input", "linux is the built-in image and can't be deleted");
   const holders = await imageHolders(ctx, row.imageId);
   for (const holder of holders) await ctx.db.delete(holder._id);
+  // A copy of a deleted image has nothing left to make; its two Macs give up when their rendezvous row goes.
+  for (const copy of await boundedRows(ctx.db.query("copies").withIndex("by_image", (q: any) => q.eq("imageId", row.imageId)), "image copies")) await ctx.db.delete(copy._id);
   await ctx.db.delete(row._id);
   const owner = await account(ctx, accountId);
   const defaultReset = owner?.defaultImageId === row.imageId;
@@ -196,3 +204,174 @@ export async function dropMachineHolders(ctx: any, machineId: string): Promise<n
   return rows.length;
 }
 export const dropRevokedHolders = internalMutationGeneric({ args: { machineId: v.string() }, handler: async (ctx, args) => ({ deleted: await dropMachineHolders(ctx, args.machineId) }) });
+
+// Copies. A copy moves an image's files directly from a Mac holding it to another (Q4, Q5): the relay starts it
+// (`startCopy`), each Mac's connector meets the other at the row (`copiesForMachine`, `offerCandidates`) and reports
+// how its side ended (`endCopy`), and the target's holder row follows. The transfer key is in the row, readable only
+// by the copy's two machines; agents and every other machine see the copy without it.
+
+const holderRow = async (ctx: any, imageId: string, machineId: string) => await ctx.db.query("imageHolders").withIndex("by_image_machine", (q: any) => q.eq("imageId", imageId).eq("machineId", machineId)).first();
+const copyByMutation = async (ctx: any, accountId: string, createMutationId: string) => await ctx.db.query("copies").withIndex("by_account_mutation", (q: any) => q.eq("accountId", accountId).eq("createMutationId", createMutationId)).first();
+const live = (copy: any) => copy.expiresAt > Date.now();
+const transferKey = () => { const bytes = crypto.getRandomValues(new Uint8Array(32)); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary); };
+
+/** A copy as the account sees it: everything but the key. */
+const copyView = (copy: any, machines: Map<string, string>) => ({
+  copy_id: copy.copyId, image_id: copy.imageId, operation_id: copy.createMutationId, state: copy.state,
+  from_machine_id: copy.fromMachineId, from_machine_name: machines.get(copy.fromMachineId) ?? null, to_machine_id: copy.toMachineId, to_machine_name: machines.get(copy.toMachineId) ?? null,
+  result: copy.result ? { bytes: copy.result.bytes, duration_ms: copy.result.durationMs, path: copy.result.path } : null,
+  error: copy.error ? { code: copy.error.code, message: copy.error.message, next_step: copy.error.nextStep } : null, created_at: copy.createdAt, expires_at: copy.expiresAt,
+});
+
+/** Sets the target's holding as the copy left it; the copy's own machine reports it, or the account when it expires. */
+async function setTargetHolder(ctx: any, copy: any, fields: { state: "copying" | "ready" | "failed"; error?: any }) {
+  const existing = await holderRow(ctx, copy.imageId, copy.toMachineId);
+  const holder = { state: fields.state, operationId: copy.createMutationId, ...(fields.error ? { error: fields.error } : {}), updatedAt: Date.now() };
+  if (existing) await ctx.db.patch(existing._id, { error: undefined, ...holder });
+  else await ctx.db.insert("imageHolders", { imageId: copy.imageId, accountId: copy.accountId, machineId: copy.toMachineId, ...holder });
+}
+
+/**
+ * Starts copying an image (an id) from `fromMachineId`, which holds it ready, to `toMachineId`: the copy's row with a
+ * fresh key, and the target's holder row `copying` under the copy's mutation id. A start carrying a mutation id this
+ * account already started a copy with returns that copy. A target that holds the image, or is building or copying it
+ * under another operation, is refused.
+ */
+export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachineId: v.string(), toMachineId: v.string(), createMutationId: v.string() }, handler: async (ctx, args) => {
+  const { accountId } = await requireAccount(ctx);
+  const machines = await machineNames(ctx, accountId);
+  const started = await copyByMutation(ctx, accountId, args.createMutationId);
+  if (started) return copyView(started, machines);
+  const row = await resolve(ctx, accountId, args.image);
+  if (!row) return refuse("invalid_input", "linux is on every Mac from its own release, so it is never copied");
+  if (args.fromMachineId === args.toMachineId) return refuse("invalid_input", "a copy goes from one machine to another");
+  for (const machineId of [args.fromMachineId, args.toMachineId]) if (!machines.has(machineId)) return refuse("machine_not_found", `no machine ${machineId} on this account`);
+  const source = await holderRow(ctx, row.imageId, args.fromMachineId);
+  if (source?.state !== "ready") return refuse("image_not_found", `${machines.get(args.fromMachineId)} does not hold ${row.name} ready, so it can't be copied from there`);
+  const target = await holderRow(ctx, row.imageId, args.toMachineId);
+  const toName = machines.get(args.toMachineId);
+  if (target?.state === "ready") return refuse("conflict", `${toName} already holds ${row.name}`);
+  if (target?.state === "building") return refuse("conflict", `${toName} is still building ${row.name}`);
+  if (target?.state === "copying") {
+    const running = target.operationId === undefined ? null : await copyByMutation(ctx, accountId, target.operationId);
+    if (running && live(running) && (running.state === "waiting" || running.state === "copying")) return refuse("conflict", `${row.name} is already being copied to ${toName}; follow it with: localbox image wait ${row.name}`, { operation_id: target.operationId });
+  }
+  const now = Date.now();
+  const copy = { copyId: id("copy"), accountId, imageId: row.imageId, fromMachineId: args.fromMachineId, toMachineId: args.toMachineId, key: transferKey(), candidates: {}, state: "waiting" as const, createdAt: now, expiresAt: now + COPY_TTL_MS, createMutationId: args.createMutationId };
+  await ctx.db.insert("copies", copy);
+  await setTargetHolder(ctx, copy, { state: "copying" });
+  return copyView(copy, machines);
+} });
+
+/** The account's copy started under this mutation id (the operation both Macs journal it under), without its key; null when there is none. */
+export const copyByOperation = queryGeneric({ args: { operationId: v.string() }, handler: async (ctx, args) => {
+  const { accountId } = await requireAccount(ctx);
+  const copy = await copyByMutation(ctx, accountId, args.operationId);
+  return copy && live(copy) ? copyView(copy, await machineNames(ctx, accountId)) : null;
+} });
+
+/**
+ * The calling machine's copies, newest first, with what its side needs: its role, the key, the image's size, the peer's
+ * candidates and the copy's state. Its connector subscribes and hands each change to its daemon.
+ */
+export const copiesForMachine = queryGeneric({ args: {}, handler: async (ctx) => {
+  const { machineId } = await requireIdentity(ctx, "machine");
+  const sides = [["sender", "by_from", "fromMachineId"], ["receiver", "by_to", "toMachineId"]] as const;
+  const rows: any[] = [];
+  for (const [role, index, field] of sides) {
+    for (const copy of await ctx.db.query("copies").withIndex(index, (q: any) => q.eq(field, machineId)).order("desc").take(COPY_BATCH)) {
+      if (!live(copy)) continue;
+      const image = await byField(ctx, "images", "by_image", "imageId", copy.imageId);
+      const own = role === "sender" ? copy.candidates.from : copy.candidates.to; const peer = role === "sender" ? copy.candidates.to : copy.candidates.from;
+      rows.push({
+        copy_id: copy.copyId, operation_id: copy.createMutationId, image_id: copy.imageId, role, key: copy.key, size_bytes: image?.sizeBytes ?? null, state: copy.state,
+        candidates: own ?? null, peer_candidates: peer ?? null, error: copy.error ? { code: copy.error.code, message: copy.error.message, next_step: copy.error.nextStep } : null,
+      });
+    }
+  }
+  return rows.sort((a, b) => a.copy_id.localeCompare(b.copy_id));
+} });
+
+/** The calling machine's own side of a copy, or a refusal when it is neither end; an expired copy takes nothing. */
+async function ownCopy(ctx: any, copy: any, machineId: string): Promise<"sender" | "receiver"> {
+  if (copy?.fromMachineId === machineId) return "sender";
+  if (copy?.toMachineId === machineId) return "receiver";
+  return refuse("image_not_found", "no such copy for this machine");
+}
+
+/**
+ * Publishes where the calling end of a copy can be reached, replacing what it published before (a restarted end
+ * gathers new ones). Once both ends have, the copy is `copying`.
+ */
+export const offerCandidates = mutationGeneric({ args: { copyId: v.string(), candidates: v.array(copyCandidate) }, handler: async (ctx, args) => {
+  const { machineId } = await requireIdentity(ctx, "machine");
+  const copy = await byField(ctx, "copies", "by_copy", "copyId", args.copyId);
+  const role = await ownCopy(ctx, copy, machineId!);
+  if (args.candidates.length > MAX_CANDIDATES) return refuse("invalid_input", `a copy end publishes at most ${MAX_CANDIDATES} candidates`);
+  if (!live(copy)) return { copy_id: copy.copyId, state: copy.state, expired: true };
+  const candidates = { ...copy.candidates, [role === "sender" ? "from" : "to"]: args.candidates };
+  const state = copy.state === "waiting" && candidates.from && candidates.to ? "copying" : copy.state;
+  await ctx.db.patch(copy._id, { candidates, state });
+  return { copy_id: copy.copyId, state, expired: false };
+} });
+
+/**
+ * How the calling end's side of a copy ended, as its connector reports the finished operation. The receiver's outcome
+ * is the copy's: copied (its holding `ready`, with the image's size) or failed (its holding `failed`, with why). A
+ * sender that failed fails the copy, so the receiver stops waiting; the receiver reports its own holding. A copy that
+ * expired or whose image was deleted has nothing left to report.
+ */
+export const endCopy = mutationGeneric({ args: { operationId: v.string(), state: v.union(v.literal("succeeded"), v.literal("failed")), sizeBytes: v.optional(v.number()), result: v.optional(copyResult), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
+  const { machineId, accountId } = await requireIdentity(ctx, "machine");
+  if ((args.state === "failed") !== (args.error !== undefined)) return refuse("invalid_input", "a failed copy carries its error, and only a failed one does");
+  const copy = await copyByMutation(ctx, accountId!, args.operationId);
+  if (!copy || !live(copy)) return { operation_id: args.operationId, reported: false };
+  const role = await ownCopy(ctx, copy, machineId!);
+  if (role === "sender") {
+    if (args.state === "failed" && copy.state !== "copied" && copy.state !== "failed") await ctx.db.patch(copy._id, { state: "failed", error: args.error });
+    return { operation_id: args.operationId, reported: true, state: args.state === "failed" ? "failed" : copy.state };
+  }
+  if (args.state === "succeeded") {
+    await ctx.db.patch(copy._id, { state: "copied", error: undefined, ...(args.result ? { result: args.result } : {}) });
+    await setTargetHolder(ctx, copy, { state: "ready" });
+    const image = await byField(ctx, "images", "by_image", "imageId", copy.imageId);
+    if (image && args.sizeBytes !== undefined && image.sizeBytes === undefined) await ctx.db.patch(image._id, { sizeBytes: args.sizeBytes });
+    return { operation_id: args.operationId, reported: true, state: "copied" };
+  }
+  // The first failure names the copy's cause (a sender that gave up, say); the receiver's holding carries its own.
+  if (copy.state !== "failed") await ctx.db.patch(copy._id, { state: "failed", error: args.error });
+  await setTargetHolder(ctx, copy, { state: "failed", error: args.error });
+  return { operation_id: args.operationId, reported: true, state: "failed" };
+} });
+
+/**
+ * A copy that never started on its two Macs (one didn't take the request): the copy fails with why, and the target's
+ * holding, which nothing was written to, goes.
+ */
+export const cancelCopy = mutationGeneric({ args: { copyId: v.string(), error: holderFailure }, handler: async (ctx, args) => {
+  const { accountId } = await requireAccount(ctx);
+  const copy = await byField(ctx, "copies", "by_copy", "copyId", args.copyId);
+  if (!copy || copy.accountId !== accountId) return refuse("image_not_found", `no copy ${args.copyId} on this account`);
+  if (copy.state === "copied") return { copy_id: copy.copyId, cancelled: false };
+  await ctx.db.patch(copy._id, { state: "failed", error: args.error });
+  const target = await holderRow(ctx, copy.imageId, copy.toMachineId);
+  if (target?.state === "copying" && target.operationId === copy.createMutationId) await ctx.db.delete(target._id);
+  return { copy_id: copy.copyId, cancelled: true };
+} });
+
+/**
+ * Copies past their day: each row and its key go, and a target still copying then has failed. The daily cleanup
+ * (`relay:cleanupExpired`) runs it a bounded batch at a time; until then every function already treats the row as gone.
+ * Returns how many rows it deleted.
+ */
+export async function expireCopies(ctx: any, now: number, batch: number): Promise<number> {
+  const rows = await ctx.db.query("copies").withIndex("by_expires", (q: any) => q.lt("expiresAt", now)).take(batch);
+  for (const copy of rows) {
+    const target = await holderRow(ctx, copy.imageId, copy.toMachineId);
+    if (target?.state === "copying" && target.operationId === copy.createMutationId) {
+      await setTargetHolder(ctx, copy, { state: "failed", error: { code: "copy_unreachable", message: "the copy did not finish within a day", nextStep: "put both Macs on the same network once, then copy" } });
+    }
+    await ctx.db.delete(copy._id);
+  }
+  return rows.length;
+}

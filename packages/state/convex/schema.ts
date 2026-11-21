@@ -12,6 +12,12 @@ export const holderState = v.union(v.literal("building"), v.literal("copying"), 
 export const imageSource = v.object({ kind: v.union(v.literal("sandbox"), v.literal("ipsw")), sandboxName: v.optional(v.string()), ipswVersion: v.optional(v.string()) });
 /** Why a holder's operation failed and what to try next, as its machine reported it. */
 export const holderFailure = v.object({ code: v.string(), message: v.string(), nextStep: v.string() });
+/** An address one end of a copy can be reached at, as its transfer library gathered it (local, reflexive, ...). */
+export const copyCandidate = v.object({ kind: v.string(), address: v.string(), port: v.number() });
+export const copyState = v.union(v.literal("waiting"), v.literal("copying"), v.literal("copied"), v.literal("failed"));
+export const copyPath = v.union(v.literal("local_network"), v.literal("internet"));
+/** What a finished copy moved: bytes over the wire, how long it took, and the path that won. */
+export const copyResult = v.object({ bytes: v.number(), durationMs: v.number(), path: copyPath });
 
 const indexes = {
   // `defaultImageId` absent means the built-in `linux`.
@@ -26,6 +32,11 @@ const indexes = {
   // Which machines hold an image, as their connectors report it; `operationId` is the host operation building or copying
   // it, and `error` why it failed (set only while `state` is failed).
   imageHolders: defineTable({ imageId: v.string(), accountId: v.string(), machineId: v.string(), state: holderState, operationId: v.optional(v.string()), error: v.optional(holderFailure), updatedAt: v.number() }).index("by_image_machine", ["imageId", "machineId"]).index("by_account", ["accountId"]).index("by_machine", ["machineId"]),
+  // One image copy between two of the account's Macs, the rendezvous their connectors meet at (`images.ts` owns it):
+  // `key` is the copy's one-time transfer key, readable only by those two machines; `candidates` are where each end
+  // can be reached. `state` is waiting until both ends published candidates, then copying, then copied or failed.
+  // `createMutationId` is the copy's mutation id, which both Macs journal their side under.
+  copies: defineTable({ copyId: v.string(), accountId: v.string(), imageId: v.string(), fromMachineId: v.string(), toMachineId: v.string(), key: v.string(), candidates: v.object({ from: v.optional(v.array(copyCandidate)), to: v.optional(v.array(copyCandidate)) }), state: copyState, result: v.optional(copyResult), error: v.optional(holderFailure), createdAt: v.number(), expiresAt: v.number(), createMutationId: v.string() }).index("by_copy", ["copyId"]).index("by_account_mutation", ["accountId", "createMutationId"]).index("by_from", ["fromMachineId"]).index("by_to", ["toMachineId"]).index("by_image", ["imageId"]).index("by_expires", ["expiresAt"]),
   emailCodes: defineTable({ email: v.string(), codeHash: v.string(), expiresAt: v.number(), attempts: v.number(), createdAt: v.number() }).index("by_email", ["email"]).index("by_code_hash", ["codeHash"]).index("by_expires", ["expiresAt"]),
   rateLimits: defineTable({ key: v.string(), bucket: v.string(), count: v.number(), resetAt: v.number() }).index("by_key_bucket", ["key", "bucket"]).index("by_reset", ["resetAt"]),
   requests: defineTable({ requestId: v.string(), accountId: v.string(), machineId: v.string(), sandboxId: v.optional(v.string()), operation: v.string(), mutationId: v.optional(v.string()), payload: v.any(), payloadHash: v.string(), status: v.union(v.literal("queued"), v.literal("claimed"), v.literal("completed"), v.literal("abandoned")), createdAt: v.number(), claimDeadlineAt: v.number(), claimedAt: v.optional(v.number()) }).index("by_request_id", ["requestId"]).index("by_dedupe", ["machineId", "sandboxId", "operation", "mutationId"]).index("by_machine_status", ["machineId", "status"]).index("by_created", ["createdAt"]),
@@ -48,7 +59,8 @@ export default relaySchema;
 /** Table and index names, for the whole-database snapshot and probes. */
 export const relayStateSchema = {
   accounts: { indexes: ["by_account", "by_email"] }, machines: { indexes: ["by_machine", "by_account", "by_credential_hash", "by_account_revoked", "by_revoked"] }, sandboxes: { indexes: ["by_sandbox", "by_account", "by_account_name", "by_machine", "by_account_mutation"] },
-  images: { indexes: ["by_image", "by_account_name", "by_account_mutation"] }, imageHolders: { indexes: ["by_image_machine", "by_account", "by_machine"] }, emailCodes: { indexes: ["by_email", "by_code_hash", "by_expires"] }, rateLimits: { indexes: ["by_key_bucket", "by_reset"] },
+  images: { indexes: ["by_image", "by_account_name", "by_account_mutation"] }, imageHolders: { indexes: ["by_image_machine", "by_account", "by_machine"] },
+  copies: { indexes: ["by_copy", "by_account_mutation", "by_from", "by_to", "by_image", "by_expires"] }, emailCodes: { indexes: ["by_email", "by_code_hash", "by_expires"] }, rateLimits: { indexes: ["by_key_bucket", "by_reset"] },
   requests: { indexes: ["by_request_id", "by_dedupe", "by_machine_status", "by_created"] },
   responses: { indexes: ["by_request_id", "by_recorded"] }, relayUsage: { indexes: ["by_account_day", "by_day"] }, oauthClients: { indexes: ["by_client"] }, authCodes: { indexes: ["by_code_hash", "by_expires"] },
   oauthTokens: { indexes: ["by_access_hash", "by_refresh_hash", "by_family", "by_refresh_expires"] }, oauthRevocations: { indexes: ["by_family", "by_revoked"] },
