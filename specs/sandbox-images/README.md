@@ -68,7 +68,7 @@ any blocker, and tick the TODO list.
 - [x] [26 durable host operations](slices/26-host-operations.md)
 - [x] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
 - [x] [28 image create --from](slices/28-image-capture.md)
-- [ ] [29 sandbox create --image (image already here)](slices/29-create-from-image.md)
+- [x] [29 sandbox create --image (image already here)](slices/29-create-from-image.md)
 - [x] [30 image catalog commands](slices/30-image-catalog-commands.md)
 - [x] [31 single-binary guest agent](slices/31-agent-binary.md)
 - [x] [32 guest agent self-update](slices/32-agent-self-update.md)
