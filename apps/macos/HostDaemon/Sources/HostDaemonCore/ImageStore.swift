@@ -70,6 +70,22 @@ public struct ImageStore: Sendable {
         return temp
     }
 
+    /// The temporary a resumable write of image `id` under `key` (a copy's operation) uses, created if missing and
+    /// otherwise as an earlier run left it; `sweepTemps(keeping:)` spares it while that write may resume.
+    public func resumableTemp(_ id: String, key: String) throws -> URL {
+        let temp = root.appendingPathComponent(Self.resumableTempName(id, key: key), isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp
+    }
+
+    public static func resumableTempName(_ id: String, key: String) -> String { ".\(id).resume-\(key)" }
+
+    /// Image `id`'s files as a copy sends them: the manifest, the disk and the boot store, never this Mac's own marks.
+    public func copySource(_ id: String) throws -> ImageCopySource {
+        let manifest = try manifest(id)
+        return ImageCopySource(directory: try imageDirectory(id), files: [Self.manifestName, Self.diskName, "boot/\(bootStore(in: root, os: manifest.os).lastPathComponent)"])
+    }
+
     /// Makes a complete temporary directory image `id` with one rename; refuses one that is incomplete, names another
     /// id, or would replace an image already here.
     public func commit(_ temp: URL, as id: String) throws {
@@ -131,9 +147,10 @@ public struct ImageStore: Sendable {
         return UInt64(stats.f_bavail) * UInt64(stats.f_bsize)
     }
 
-    /// At daemon start: removes temporaries a crash left (an unfinished write or delete). Returns their names.
-    @discardableResult public func sweepTemps() -> [String] {
-        let temps = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" }.sorted()
+    /// At daemon start: removes temporaries a crash left (an unfinished write or delete), except those `keeping` names
+    /// (a copy that resumes). Returns their names.
+    @discardableResult public func sweepTemps(keeping: Set<String> = []) -> [String] {
+        let temps = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasPrefix(".") && $0 != ".DS_Store" && !keeping.contains($0) }.sorted()
         for name in temps { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
         return temps
     }

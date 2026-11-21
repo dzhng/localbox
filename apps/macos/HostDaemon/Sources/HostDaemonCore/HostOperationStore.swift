@@ -174,6 +174,9 @@ public actor HostOperationStore {
         records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
     }
 
+    /// The records of `kind` still running (or left running by the last run, before `start()`).
+    public func running(kind: String) -> [HostOperationRecord] { records.values.filter { $0.kind == kind && $0.state == .running }.sorted { $0.key < $1.key } }
+
     /// Whether any operation on `subject` is still running.
     public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
 

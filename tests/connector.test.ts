@@ -32,11 +32,12 @@ class FakeConvex implements ConvexLike {
   push(rows: PendingRow[]): void { this.listeners.get("relay:pendingForMachine")?.(rows); }
   pushSandboxes(rows: unknown[]): void { this.listeners.get("sandboxes:forMachine")?.(rows); }
   pushImages(rows: unknown): void { this.listeners.get("images:forMachine")?.(rows); }
+  pushCopies(rows: unknown): void { this.listeners.get("images:copiesForMachine")?.(rows); }
   fail(name: string, error: Error): void { this.errorListeners.get(name)?.(error); }
   named(name: string) { return this.calls.filter((call) => call.name === name); }
 }
 
-const INTERNAL = ["connector.report", "sandbox.mirror", "image.mirror", "host.operations"];
+const INTERNAL = ["connector.report", "sandbox.mirror", "image.mirror", "host.operations", "image.copy_rendezvous", "image.copy_outbox"];
 
 class FakeDaemon {
   requests: RequestEnvelope[] = [];
@@ -44,9 +45,16 @@ class FakeDaemon {
   /** `host.operations` long-polls: each poll takes the next batch of outcomes the test released, or waits for one. */
   private outcomes: unknown[][] = [];
   private polling?: () => void;
+  /** `image.copy_outbox` long-polls the same way, for candidates to publish and copies missing their rendezvous. */
+  private outbox: unknown[] = [];
+  private outboxPolling?: () => void;
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.requests.push(request);
-    if (request.operation === "connector.report" || request.operation === "sandbox.mirror") return success(request, { recorded: true });
+    if (request.operation === "connector.report" || request.operation === "sandbox.mirror" || request.operation === "image.copy_rendezvous") return success(request, { recorded: true });
+    if (request.operation === "image.copy_outbox") {
+      if (!this.outbox.length) await new Promise<void>((resolve) => { this.outboxPolling = resolve; });
+      return success(request, this.outbox.shift() as any);
+    }
     if (request.operation === "image.mirror") return success(request, { deleted: (request.input as { images: string[] }).images.length ? [] : [{ image: "image_old", detail: "deleted image image_old: the account catalog no longer lists it here" }] });
     if (request.operation === "host.operations") {
       if (!this.outcomes.length) await new Promise<void>((resolve) => { this.polling = resolve; });
@@ -54,6 +62,7 @@ class FakeDaemon {
     }
     return await this.respond(request);
   }
+  offer(answer: unknown): void { this.outbox.push(answer); const polling = this.outboxPolling; this.outboxPolling = undefined; polling?.(); }
   finish(...outcomes: unknown[]): void { this.outcomes.push(outcomes); const polling = this.polling; this.polling = undefined; polling?.(); }
   polls() { return this.requests.filter((request) => request.operation === "host.operations").map((request) => (request.input as { reported: string[] }).reported); }
   work() { return this.requests.filter((request) => !INTERNAL.includes(request.operation)); }
@@ -229,7 +238,7 @@ test("an idle connector makes no Convex calls", async () => {
   await new Promise((resolve) => setTimeout(resolve, 200));
   await settle();
   assert.equal(convex.calls.length, before);
-  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "sandboxes:forMachine", "images:forMachine", "relay:reportCapacity"]);
+  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "sandboxes:forMachine", "images:forMachine", "images:copiesForMachine", "relay:reportCapacity"]);
   await connector.stop();
 });
 
@@ -368,5 +377,51 @@ test("the daemon's image files follow the catalog's list of images on this machi
   const mirrors = daemon.requests.filter((request) => request.operation === "image.mirror").map((request) => request.input);
   assert.deepEqual(mirrors, [{ machine_id: "machine_1", images: ["image_1", "image_2"] }, { machine_id: "machine_1", images: [] }]);
   assert.ok(logs.includes("deleted image image_old: the account catalog no longer lists it here"));
+  await connector.stop();
+});
+
+const rendezvous = (overrides: Record<string, unknown> = {}) => ({ copy_id: "copy_1", operation_id: "m-copy", image_id: "image_1", role: "receiver", key: "k", size_bytes: GIB, state: "waiting", candidates: null, peer_candidates: null, error: null, ...overrides });
+const lan = (address: string) => [{ kind: "local", address, port: 50_000 }];
+
+test("a copy's rendezvous: each listing reaches the daemon, the daemon's candidates reach the row and are acknowledged, and a daemon missing one gets it again", async () => {
+  const { convex, daemon, connector } = harness();
+  await settle();
+  const pushes = () => daemon.requests.filter((request) => request.operation === "image.copy_rendezvous").map((request) => (request.input as { copies: any[] }).copies);
+  convex.pushCopies([rendezvous()]);
+  convex.pushCopies(undefined);
+  await settle();
+  assert.deepEqual(pushes(), [[rendezvous()]], "a failed read pushes nothing");
+  assert.equal(convex.named("images:offerCandidates").length, 0, "nothing reaches Convex until the daemon has candidates");
+
+  daemon.offer({ offers: [{ copy_id: "copy_1", candidates: lan("10.0.0.2"), generation: 1 }], missing: [] });
+  await settle();
+  assert.deepEqual(convex.named("images:offerCandidates").map((call) => call.args), [{ copyId: "copy_1", candidates: lan("10.0.0.2") }]);
+  const outboxPolls = () => daemon.requests.filter((request) => request.operation === "image.copy_outbox").map((request) => (request.input as { published: unknown[] }).published);
+  assert.deepEqual(outboxPolls().at(-1), [{ copy_id: "copy_1", generation: 1 }], "the next poll acknowledges it");
+
+  // A restarted daemon names the copy it has no rendezvous for; the last listing goes to it again, unasked-for ones don't.
+  daemon.offer({ offers: [], missing: ["m-copy"] });
+  await settle();
+  assert.equal(pushes().length, 2);
+  daemon.offer({ offers: [], missing: ["m-other"] });
+  await settle();
+  assert.equal(pushes().length, 2);
+  await connector.stop();
+});
+
+test("a finished copy side is reported to the copy, never as a holder state the connector sets itself", async () => {
+  const { convex, daemon, connector } = harness();
+  await settle();
+  daemon.finish(
+    { key: "m-copy", kind: "image.copy", subject: "image_1", state: "succeeded", result: { role: "receiver", size_bytes: 3 * GIB, bytes: 3 * GIB, duration_ms: 9_000, path: "local_network" } },
+    { key: "m-copy-2", kind: "image.copy", subject: "image_2", state: "failed", error: { code: "copy_unreachable", message: "tried local network 10.0.0.1:50000 (timed out)", next_step: "put both Macs on the same network once, then copy" } },
+  );
+  await settle();
+  assert.deepEqual(convex.named("images:setHolder"), []);
+  assert.deepEqual(convex.named("images:endCopy").map((call) => call.args), [
+    { operationId: "m-copy", state: "succeeded", sizeBytes: 3 * GIB, result: { bytes: 3 * GIB, durationMs: 9_000, path: "local_network" } },
+    { operationId: "m-copy-2", state: "failed", error: { code: "copy_unreachable", message: "tried local network 10.0.0.1:50000 (timed out)", nextStep: "put both Macs on the same network once, then copy" } },
+  ]);
+  assert.deepEqual(daemon.polls().at(-1), ["m-copy", "m-copy-2"]);
   await connector.stop();
 });

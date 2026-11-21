@@ -33,9 +33,12 @@ public actor ImageHost {
 
     /// Saves sandboxes as images (`image.create { from }`); nil answers it `unsupported`.
     private let capture: ImageCapture?
+    /// Copies images between Macs (`image.copy` and its rendezvous); nil, on a daemon without a transport, answers the
+    /// copy `unsupported` and the connector's rendezvous calls with nothing.
+    private let copy: ImageCopy?
 
-    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, allowsDirectOperations: Bool = false) {
-        self.operations = operations; self.files = files; self.capture = capture; self.allowsDirectOperations = allowsDirectOperations
+    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, copy: ImageCopy? = nil, allowsDirectOperations: Bool = false) {
+        self.operations = operations; self.files = files; self.capture = capture; self.copy = copy; self.allowsDirectOperations = allowsDirectOperations
     }
 
     /// Operations answered here: the catalog's image operations a machine runs, and the connector's internal ones
@@ -65,6 +68,29 @@ public actor ImageHost {
             do { return success(object, result: view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from), object, timeoutMs: nil))) }
             catch let refused as HostOperationFailure { return failure(object, code: refused.code, message: refused.message) }
             catch { return failure(object, code: "invalid_input", message: explain(error)) }
+        case "image.copy":
+            guard let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
+                return failure(object, code: "invalid_input", message: "image.copy takes image (the image's id) and a mutation id")
+            }
+            guard let copy else { return failure(object, code: "unsupported", message: "this Mac can't copy images yet: its daemon has no image transfer") }
+            // Answers at once: a copy takes as long as its bytes, and image.wait follows it.
+            do { return success(object, result: view(try await copy.begin(key: key, imageID: image))) }
+            catch { return failure(object, code: "invalid_input", message: explain(error)) }
+        case "image.copy_rendezvous":
+            guard let listed = input["copies"] as? [[String: Any]] else { return failure(object, code: "invalid_input", message: "image.copy_rendezvous takes copies (this machine's copies as the account lists them)") }
+            await copy?.absorb(listed)
+            return success(object, result: ["copies": listed.count])
+        case "image.copy_outbox":
+            let published = (input["published"] as? [[String: Any]] ?? []).compactMap { entry -> (copyID: String, generation: Int)? in
+                guard let copyID = entry["copy_id"] as? String, let generation = (entry["generation"] as? NSNumber)?.intValue else { return nil }
+                return (copyID, generation)
+            }
+            let timeout = (input["timeout_ms"] as? NSNumber)?.intValue ?? 25_000
+            guard let copy else {
+                try? await Task.sleep(nanoseconds: UInt64(min(max(timeout, 0), HostOperationStore.maxWaitMs)) * 1_000_000)
+                return success(object, result: ["offers": [Any](), "missing": [String]()])
+            }
+            return success(object, result: await copy.outbox(published: published, timeoutMs: timeout))
         case "host.operations":
             let reported = input["reported"] as? [String] ?? []
             do { try await operations.markReported(reported) } catch { return failure(object, code: "internal", message: "could not record reported operations: \(explain(error))") }

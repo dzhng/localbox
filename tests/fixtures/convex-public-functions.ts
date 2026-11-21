@@ -48,4 +48,10 @@ export const calls: Call[] = [
   { name: "images:setHolder", kind: "machine", mutation: true, args: { imageId: "i1", state: "ready" } },
   { name: "images:dropHolder", kind: "account", mutation: true, args: { image: "i1", machineId: "m1" } },
   { name: "images:forMachine", kind: "machine", args: {} },
+  { name: "images:startCopy", kind: "account", mutation: true, args: { image: "i1", fromMachineId: "m1", toMachineId: "m2", createMutationId: "copy-1" } },
+  { name: "images:copyByOperation", kind: "account", args: { operationId: "copy-1" } },
+  { name: "images:cancelCopy", kind: "account", mutation: true, args: { copyId: "copy_1", error: { code: "machine_offline", message: "gone", nextStep: "start it" } } },
+  { name: "images:copiesForMachine", kind: "machine", args: {} },
+  { name: "images:offerCandidates", kind: "machine", mutation: true, args: { copyId: "copy_1", candidates: [] } },
+  { name: "images:endCopy", kind: "machine", mutation: true, args: { operationId: "copy-1", state: "succeeded" } },
 ];
