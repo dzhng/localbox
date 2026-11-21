@@ -1,5 +1,6 @@
 import Foundation
 import HostDaemonCore
+import ImageCopyTransfer
 #if os(macOS)
 import Darwin
 #else
@@ -31,12 +32,9 @@ struct HostDaemonMain {
             let agentUpdater = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : GuestAgentUpdater(directory: URL(fileURLWithPath: expanded($0), isDirectory: true)) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
             let capture = ImageCapture(store: images, operations: operations)
-            // The image copy transport. Slice 37's ImageTransfer library is wired here (an `ImageCopyTransport` adapter over
-            // `Sender.send`/`Receiver.receive` and `PathSelector`); until then dev daemons copy over loopback, paced so a
-            // proof can stop the receiver midway, and release daemons answer image.copy unsupported.
-            let copyTransport: (any ImageCopyTransport)? = isDev ? LoopbackImageCopyTransport(pauseMs: 50) : nil
-            let copy = copyTransport.map { ImageCopy(store: images, operations: operations, transport: $0) }
-            await copy?.attach()
+            // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
+            let copy = ImageCopy(store: images, operations: operations, transport: ImageTransferCopyTransport())
+            await copy.attach()
             let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
                                    allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
