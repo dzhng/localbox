@@ -10,6 +10,8 @@ import { v } from "convex/values";
 export const imageOs = v.union(v.literal("linux"), v.literal("macos"));
 export const holderState = v.union(v.literal("building"), v.literal("copying"), v.literal("ready"), v.literal("failed"));
 export const imageSource = v.object({ kind: v.union(v.literal("sandbox"), v.literal("ipsw")), sandboxName: v.optional(v.string()), ipswVersion: v.optional(v.string()) });
+/** Why a holder's operation failed and what to try next, as its machine reported it. */
+export const holderFailure = v.object({ code: v.string(), message: v.string(), nextStep: v.string() });
 
 const indexes = {
   // `defaultImageId` absent means the built-in `linux`.
@@ -21,8 +23,9 @@ const indexes = {
   // An image's identity (`images.ts` owns both tables). `sizeBytes` is absent until a holder reports the image ready;
   // `minMacOS` is the oldest host macOS that runs a macOS image.
   images: defineTable({ imageId: v.string(), accountId: v.string(), name: v.string(), os: imageOs, sizeBytes: v.optional(v.number()), source: imageSource, minMacOS: v.optional(v.string()), createdAt: v.number(), createMutationId: v.string() }).index("by_image", ["imageId"]).index("by_account_name", ["accountId", "name"]).index("by_account_mutation", ["accountId", "createMutationId"]),
-  // Which machines hold an image, as their connectors report it; `operationId` is the host operation building or copying it.
-  imageHolders: defineTable({ imageId: v.string(), accountId: v.string(), machineId: v.string(), state: holderState, operationId: v.optional(v.string()), updatedAt: v.number() }).index("by_image_machine", ["imageId", "machineId"]).index("by_account", ["accountId"]).index("by_machine", ["machineId"]),
+  // Which machines hold an image, as their connectors report it; `operationId` is the host operation building or copying
+  // it, and `error` why it failed (set only while `state` is failed).
+  imageHolders: defineTable({ imageId: v.string(), accountId: v.string(), machineId: v.string(), state: holderState, operationId: v.optional(v.string()), error: v.optional(holderFailure), updatedAt: v.number() }).index("by_image_machine", ["imageId", "machineId"]).index("by_account", ["accountId"]).index("by_machine", ["machineId"]),
   emailCodes: defineTable({ email: v.string(), codeHash: v.string(), expiresAt: v.number(), attempts: v.number(), createdAt: v.number() }).index("by_email", ["email"]).index("by_code_hash", ["codeHash"]).index("by_expires", ["expiresAt"]),
   rateLimits: defineTable({ key: v.string(), bucket: v.string(), count: v.number(), resetAt: v.number() }).index("by_key_bucket", ["key", "bucket"]).index("by_reset", ["resetAt"]),
   requests: defineTable({ requestId: v.string(), accountId: v.string(), machineId: v.string(), sandboxId: v.optional(v.string()), operation: v.string(), mutationId: v.optional(v.string()), payload: v.any(), payloadHash: v.string(), status: v.union(v.literal("queued"), v.literal("claimed"), v.literal("completed"), v.literal("abandoned")), createdAt: v.number(), claimDeadlineAt: v.number(), claimedAt: v.optional(v.number()) }).index("by_request_id", ["requestId"]).index("by_dedupe", ["machineId", "sandboxId", "operation", "mutationId"]).index("by_machine_status", ["machineId", "status"]).index("by_created", ["createdAt"]),

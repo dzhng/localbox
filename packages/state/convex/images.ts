@@ -2,7 +2,7 @@ import { internalMutationGeneric, makeFunctionReference, mutationGeneric, queryG
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
-import { holderState, imageOs, imageSource } from "./schema.js";
+import { holderFailure, holderState, imageOs, imageSource } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 
@@ -50,10 +50,19 @@ async function resolve(ctx: any, accountId: string, wanted: string): Promise<any
   return refuse("image_not_found", `no image ${wanted} on this account; images: ${names.join(", ")}`, { names });
 }
 
-const holderView = (row: any, machines: Map<string, string>) => ({ machine_id: row.machineId, machine_name: machines.get(row.machineId) ?? null, state: row.state, updated_at: row.updatedAt });
+const holderView = (row: any, machines: Map<string, string>) => ({
+  machine_id: row.machineId, machine_name: machines.get(row.machineId) ?? null, state: row.state, operation_id: row.operationId ?? null,
+  error: row.error ? { code: row.error.code, message: row.error.message, next_step: row.error.nextStep } : null, updated_at: row.updatedAt,
+});
 const view = (row: any, holders: any[], machines: Map<string, string>, defaultImageId: string | undefined) => ({
   image_id: row.imageId, name: row.name, os: row.os, size_bytes: row.sizeBytes ?? null, source: row.source, min_macos: row.minMacOS ?? null,
   created_at: row.createdAt, default: row.imageId === defaultImageId, holders: holders.map((holder) => holderView(holder, machines)),
+});
+
+/** The built-in `linux`, synthesized: every live machine holds it, ready. */
+const linuxView = (live: any[], defaultImageId: string | undefined) => ({
+  image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
+  default: defaultImageId === undefined, holders: live.map((row: any) => ({ machine_id: row.machineId, machine_name: row.name, state: "ready", operation_id: null, error: null, updated_at: null })),
 });
 
 /** Every image on the account, `linux` first; an image whose holders are all gone stays listed with `holders: []`. */
@@ -63,12 +72,18 @@ export const list = queryGeneric({ args: {}, handler: async (ctx) => {
   const machines = new Map<string, string>(live.map((row: any) => [row.machineId, row.name]));
   const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
   const holders = await accountHolders(ctx, accountId);
-  const linux = {
-    image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
-    default: defaultImageId === undefined, holders: live.map((row: any) => ({ machine_id: row.machineId, machine_name: row.name, state: "ready", updated_at: null })),
-  };
   const images = (await accountImages(ctx, accountId)).sort((a: any, b: any) => a.createdAt - b.createdAt);
-  return [linux, ...images.map((row: any) => view(row, holders.filter((holder: any) => holder.imageId === row.imageId), machines, defaultImageId))];
+  return [linuxView(live, defaultImageId), ...images.map((row: any) => view(row, holders.filter((holder: any) => holder.imageId === row.imageId), machines, defaultImageId))];
+} });
+
+/** One image (a name or id; `linux`, `macos` as `list` and `rename` read them) as `list` shows it. */
+export const get = queryGeneric({ args: { image: v.string() }, handler: async (ctx, args) => {
+  const { accountId } = await requireAccount(ctx);
+  const live = await liveMachines(ctx, accountId);
+  const defaultImageId = (await account(ctx, accountId))?.defaultImageId;
+  const row = await resolve(ctx, accountId, args.image);
+  if (!row) return linuxView(live, defaultImageId);
+  return view(row, await imageHolders(ctx, row.imageId), new Map<string, string>(live.map((machine: any) => [machine.machineId, machine.name])), defaultImageId);
 } });
 
 /**
@@ -131,18 +146,30 @@ export const remove = mutationGeneric({ args: { image: v.string() }, handler: as
 
 /**
  * The calling machine's holding of an image, as its connector reports it: started, progressing, ready or failed. A
- * `ready` report may carry the image's size, which the record keeps.
+ * `ready` report may carry the image's size, which the record keeps; a `failed` one carries why and what to try next.
  */
-export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()) }, handler: async (ctx, args) => {
+export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
   const { machineId, accountId } = await requireIdentity(ctx, "machine");
   const image = await byField(ctx, "images", "by_image", "imageId", args.imageId);
   if (!image || image.accountId !== accountId) return refuse("image_not_found", `no image ${args.imageId} on this account`);
+  if ((args.state === "failed") !== (args.error !== undefined)) return refuse("invalid_input", "a failed holding carries its error, and only a failed one does");
   const existing = await ctx.db.query("imageHolders").withIndex("by_image_machine", (q: any) => q.eq("imageId", args.imageId).eq("machineId", machineId)).first();
-  const holder = { state: args.state, ...(args.operationId === undefined ? {} : { operationId: args.operationId }), updatedAt: Date.now() };
-  if (existing) await ctx.db.patch(existing._id, holder);
+  const holder = { state: args.state, ...(args.operationId === undefined ? {} : { operationId: args.operationId }), ...(args.error === undefined ? {} : { error: args.error }), updatedAt: Date.now() };
+  // A patch without `error` clears a failure an earlier report left.
+  if (existing) await ctx.db.patch(existing._id, { error: undefined, ...holder });
   else await ctx.db.insert("imageHolders", { imageId: args.imageId, accountId, machineId: machineId!, ...holder });
   if (args.state === "ready" && args.sizeBytes !== undefined && args.sizeBytes !== image.sizeBytes) await ctx.db.patch(image._id, { sizeBytes: args.sizeBytes });
   return { image_id: args.imageId, machine_id: machineId, state: args.state };
+} });
+
+/**
+ * The calling machine's holdings, for its daemon's image mirror: every image the account lists on it, with the
+ * holding's state so a change (building to ready) reaches the mirror too.
+ */
+export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
+  const { machineId } = await requireIdentity(ctx, "machine");
+  const rows = await ctx.db.query("imageHolders").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)).take(HOLDER_BATCH);
+  return rows.map((row: any) => ({ image_id: row.imageId, state: row.state })).sort((a: any, b: any) => a.image_id.localeCompare(b.image_id));
 } });
 
 /** One machine stops holding an image (`image delete --machine`, or a copy that failed); the image record stays. */

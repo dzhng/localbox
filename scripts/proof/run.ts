@@ -14,7 +14,7 @@ export interface ProofContext {
   keep: boolean;
   check(name: string, run: () => Promise<unknown> | unknown): Promise<Check>;
   exec(command: string, args: string[], options?: { env?: NodeJS.ProcessEnv; cwd?: string }): Promise<ExecResult>;
-  stack(command: "up" | "down" | "status", machines?: string[]): Promise<ExecResult>;
+  stack(command: "up" | "restart" | "down" | "status", machines?: string[]): Promise<ExecResult>;
 }
 export interface Probe { id: string; tiers: string[]; run(ctx: ProofContext): Promise<Check[]> }
 

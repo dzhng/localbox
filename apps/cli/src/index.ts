@@ -213,6 +213,10 @@ function inputJson(value: string): Record<string, Json> {
   return parsed as Record<string, Json>;
 }
 
+const MAX_DEADLINE_MS = 120_000;
+/** Room a wait's machine has to answer after its timeout, before the request's deadline. */
+const WAIT_ANSWER_MS = 5_000;
+
 /** `localbox <group> <verb> [positional...] [--flag value...]` for any catalog operation. */
 async function catalogCommand(entry: OperationCatalogEntry, words: string[], implied: Record<string, Json> = {}): Promise<void> {
   const schema = entry.input_schema; const properties = schema.properties ?? {};
@@ -243,7 +247,9 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
     if (positional.length > required.length) throw new ContractError("invalid_input", `unexpected ${positional.slice(required.length).join(" ")}; see localbox help ${entry.id}`);
     required.forEach((key, index) => { if (positional[index] !== undefined) input[key] = coerce(positional[index], properties[key], key); });
   }
-  const request = requestFromInvocation({ operation: entry.id, input, machine: typeof flags.machine === "string" ? flags.machine : undefined, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : undefined, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : entry.idempotency === "required" ? newId("cli") : null });
+  // A wait (`job wait`, `image wait`) may run as long as its timeout, so its deadline covers it unless one is given.
+  const deadline = typeof flags["deadline-ms"] === "string" ? Number(flags["deadline-ms"]) : typeof input.timeout_ms === "number" ? Math.min(MAX_DEADLINE_MS, input.timeout_ms + WAIT_ANSWER_MS) : undefined;
+  const request = requestFromInvocation({ operation: entry.id, input, machine: typeof flags.machine === "string" ? flags.machine : undefined, request_id: typeof flags["request-id"] === "string" ? flags["request-id"] : newId("cli"), deadline_ms: deadline, mutation_id: typeof flags["mutation-id"] === "string" ? flags["mutation-id"] : entry.idempotency === "required" ? newId("cli") : null });
   print(await run(request, sandbox));
 }
 

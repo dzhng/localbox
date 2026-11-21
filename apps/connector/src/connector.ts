@@ -37,6 +37,8 @@ export interface ConnectorDeps {
 export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[]; deleted?: IdleDeletion[] }
 export interface IdleDeletion { sandbox_id: string; name: string; reason: string }
 export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
+/** A finished host operation, as the daemon's `host.operations` hands it over to be reported. `subject` is the image. */
+export interface OperationOutcome { key: string; subject: string; state: "succeeded" | "failed"; result?: { size_bytes?: number } | null; error?: { code: string; message: string; next_step?: string } | null }
 
 export const relay = {
   pendingForMachine: makeFunctionReference<"query">("relay:pendingForMachine"),
@@ -46,11 +48,14 @@ export const relay = {
   forMachine: makeFunctionReference<"query">("sandboxes:forMachine"),
   reportState: makeFunctionReference<"mutation">("sandboxes:reportState"),
   removeIdle: makeFunctionReference<"mutation">("sandboxes:removeIdle"),
+  setHolder: makeFunctionReference<"mutation">("images:setHolder"),
+  imagesForMachine: makeFunctionReference<"query">("images:forMachine"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
 const WATCH_RETRY_MAX_MS = 30_000;
 const REPORT_HEARTBEAT_MS = 60_000;
+const OUTCOMES_TIMEOUT_MS = 25_000;
 const RECENT_LIMIT = 512;
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -67,11 +72,13 @@ export class Connector {
   private readonly sleep: (ms: number) => Promise<void>;
   private unsubscribe?: () => void;
   private unsubscribeMirror?: () => void;
+  private unsubscribeImageMirror?: () => void;
   private mirrorSeq = 0;
   /** Mirror pushes go to the daemon one at a time, in the order Convex sent them, so an older list never lands last. */
   private mirrorQueue: Promise<void> = Promise.resolve();
   private lastReportAt = 0;
   private reportSeq = 0;
+  private outcomesSeq = 0;
   private settle!: { resolve(state: ConnectorState): void; reject(error: Error): void };
   /** Resolves with "revoked" or "stopped" when the connector ends; rejects on a fatal error. */
   readonly finished = new Promise<ConnectorState>((resolve, reject) => { this.settle = { resolve, reject }; });
@@ -94,7 +101,11 @@ export class Connector {
     // A missing result is a failed read, not an empty catalog: mirroring it would delete every sandbox this Mac listed.
     this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
+    // Image files follow the catalog the same way: an image deleted while this Mac was offline goes when it reconnects.
+    this.unsubscribeImageMirror = this.deps.convex.onUpdate(relay.imagesForMachine, {}, (rows: Array<{ image_id: string }> | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map((row) => row.image_id))); },
+      (error) => { if (!this.ended) { this.deps.log(`image mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
+    void this.reportOutcomes();
   }
 
   async stop(): Promise<void> { await this.end("stopped"); }
@@ -104,7 +115,7 @@ export class Connector {
   private async end(state: "revoked" | "stopped", error?: Error): Promise<void> {
     if (this.ended) return;
     this.setState(state, error?.message);
-    this.unsubscribe?.(); this.unsubscribeMirror?.();
+    this.unsubscribe?.(); this.unsubscribeMirror?.(); this.unsubscribeImageMirror?.();
     try { await this.deps.convex.close(); } catch (closeError) { this.deps.log(`close failed: ${message(closeError)}`); }
     if (error && !(error instanceof RevokedError)) this.settle.reject(error); else this.settle.resolve(state);
   }
@@ -182,6 +193,16 @@ export class Connector {
     } catch (error) { this.deps.log(`sandbox mirror failed: ${message(error)}`); }
   }
 
+  /** Pushes the image ids the catalog lists on this machine; the daemon removes the files of any its catalog listed before and no longer does. */
+  private async mirrorImages(images: string[]): Promise<void> {
+    if (this.ended) return;
+    try {
+      const response = await this.deps.daemon.dispatch(hostRequest("image.mirror", { machine_id: this.deps.machineId, images }, `image-mirror-${++this.mirrorSeq}`));
+      if (!response.ok) { this.deps.log(`image mirror refused: ${response.error.code}: ${response.error.message}`); return; }
+      for (const deleted of (response.result as { deleted?: Array<{ image: string; detail: string }> }).deleted ?? []) this.deps.log(deleted.detail);
+    } catch (error) { this.deps.log(`image mirror failed: ${message(error)}`); }
+  }
+
   private async watch(): Promise<void> {
     let since = 0; let capacity: CapacityReport | undefined; let backoff = 1_000;
     const states = new Map<string, SandboxState>(); const removed = new Set<string>();
@@ -215,6 +236,42 @@ export class Connector {
         this.deps.log(`host watch failed: ${message(error)}`);
         await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
       }
+    }
+  }
+
+  /**
+   * Long work on this Mac (an image build, capture or copy) runs in the daemon's operation journal; when one finishes,
+   * its image's holder row here becomes `ready` (with the image's size) or `failed` (with why). The daemon hands over
+   * each outcome until a later poll says it was reported, so an outcome lands once the account is reachable, across
+   * restarts of either process. An image the account deleted meanwhile has nothing left to report.
+   */
+  private async reportOutcomes(): Promise<void> {
+    let reported: string[] = []; let backoff = 1_000;
+    while (!this.ended) {
+      try {
+        const response = await this.deps.daemon.dispatch(hostRequest("host.operations", { reported, timeout_ms: OUTCOMES_TIMEOUT_MS }, `host-operations-${++this.outcomesSeq}`, OUTCOMES_TIMEOUT_MS + 10_000));
+        if (this.ended) return;
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+        reported = [];
+        for (const outcome of (response.result as { operations?: OperationOutcome[] }).operations ?? []) { await this.reportOutcome(outcome); reported.push(outcome.key); }
+        backoff = 1_000;
+      } catch (error) {
+        if (this.ended) return;
+        this.deps.log(`operation reports failed: ${message(error)}`);
+        await this.sleep(backoff); backoff = Math.min(backoff * 2, WATCH_RETRY_MAX_MS);
+      }
+    }
+  }
+
+  private async reportOutcome(outcome: OperationOutcome): Promise<void> {
+    const size = outcome.result?.size_bytes;
+    const args = outcome.state === "succeeded"
+      ? { imageId: outcome.subject, operationId: outcome.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}) }
+      : { imageId: outcome.subject, operationId: outcome.key, state: "failed", error: { code: outcome.error?.code ?? "internal", message: outcome.error?.message ?? "the operation failed", nextStep: outcome.error?.next_step ?? "try it again; if it fails the same way, check this Mac's disk space and logs" } };
+    try { await this.deps.convex.mutation(relay.setHolder, args); this.deps.log(`image ${outcome.subject}: operation ${outcome.key} ${args.state}`); }
+    catch (error) {
+      if (contractError(error).code !== "image_not_found") throw error;
+      this.deps.log(`image ${outcome.subject} is no longer on the account; operation ${outcome.key} has nothing to report`);
     }
   }
 

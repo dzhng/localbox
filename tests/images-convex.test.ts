@@ -108,6 +108,33 @@ test("a ready holder report records the image's size; a machine reports only its
   assert.deepEqual(await agent.mutation(ref("images:dropHolder"), { image: "rails-dev", machineId: "m2" }), { image_id: image.image_id, name: "rails-dev", machine_id: "m2", dropped: true });
 });
 
+test("get resolves one image as list shows it; a failed holding carries why and a later report clears it", async () => {
+  const { agent, m1 } = await setup();
+  assert.deepEqual((await agent.query(ref("images:get"), { image: "linux" }) as any).holders.map((holder: any) => holder.machine_name), ["studio", "attic"]);
+  const image = await reserve(agent, { name: "rails-dev", createMutationId: "cli-get" });
+  const got = await agent.query(ref("images:get"), { image: "rails-dev" }) as any;
+  assert.deepEqual(got, (await list(agent)).find((row) => row.name === "rails-dev"));
+  assert.deepEqual(got.holders.map((holder: any) => [holder.machine_id, holder.state, holder.operation_id]), [["m1", "building", "cli-get"]]);
+  await assert.rejects(() => agent.query(ref("images:get"), { image: "nope" }), code("image_not_found"));
+  const failure = { code: "disk_full", message: "studio has 2 GiB free", nextStep: "free some disk on studio and create it again" };
+  await assert.rejects(() => m1.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "failed" }), code("invalid_input"), "a failure says why");
+  await assert.rejects(() => m1.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", error: failure }), code("invalid_input"));
+  await m1.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "failed", operationId: "cli-get", error: failure });
+  const failed = (await agent.query(ref("images:get"), { image: image.image_id }) as any).holders[0];
+  assert.deepEqual([failed.state, failed.error], ["failed", { code: "disk_full", message: "studio has 2 GiB free", next_step: "free some disk on studio and create it again" }]);
+  await m1.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", operationId: "cli-get-2" });
+  assert.equal((await agent.query(ref("images:get"), { image: image.image_id }) as any).holders[0].error, null);
+});
+
+test("a machine's mirror lists only the images held on it, with each holding's state", async () => {
+  const { agent, m1, m2 } = await setup();
+  const one = await reserve(agent, { name: "rails-dev" }); const two = await reserve(agent, { name: "node-dev", machineId: "m2" });
+  await m1.mutation(ref("images:setHolder"), { imageId: two.image_id, state: "copying" });
+  assert.deepEqual(await m1.query(ref("images:forMachine"), {}), [{ image_id: one.image_id, state: "building" }, { image_id: two.image_id, state: "copying" }].sort((a, b) => a.image_id.localeCompare(b.image_id)));
+  assert.deepEqual(await m2.query(ref("images:forMachine"), {}), [{ image_id: two.image_id, state: "building" }]);
+  await assert.rejects(() => agent.query(ref("images:forMachine"), {}), code("unauthorized"));
+});
+
 test("admin:wipe clears the image tables", async () => {
   const { t, agent } = await setup();
   await reserve(agent, { name: "rails-dev" });

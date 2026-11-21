@@ -141,3 +141,29 @@ public func privateBytes(_ url: URL) -> Int64? {
     guard getattrlist(url.path, &list, &buffer, buffer.count, UInt32(FSOPT_ATTR_CMN_EXTENDED)) == 0 else { return nil }
     return buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: Int64.self) }
 }
+
+/// `ImageStore` as the image host's view of the files: which images are here and which account listing last named
+/// them. The listing mark is a file beside the manifest (`listed-by`), per Mac, never part of the image itself.
+public struct StoredImageFiles: ImageFiles {
+    public let store: ImageStore
+    private static let listedBy = "listed-by"
+    public init(store: ImageStore) { self.store = store }
+
+    public func list() async throws -> [HeldImage] {
+        store.list().filter { $0.imageID != "linux" }.map { manifest in
+            let marker = store.root.appendingPathComponent(manifest.imageID).appendingPathComponent(Self.listedBy)
+            return HeldImage(imageID: manifest.imageID, listedBy: (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    public func markListed(_ imageID: String, by machineID: String) async throws {
+        _ = try store.manifest(imageID)
+        try Data(machineID.utf8).write(to: store.root.appendingPathComponent(imageID).appendingPathComponent(Self.listedBy), options: .atomic)
+    }
+
+    public func remove(_ imageID: String) async throws -> Bool {
+        guard (try? store.manifest(imageID)) != nil else { return false }
+        try store.remove(imageID)
+        return true
+    }
+}

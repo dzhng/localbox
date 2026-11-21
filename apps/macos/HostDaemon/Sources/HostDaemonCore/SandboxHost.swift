@@ -164,13 +164,15 @@ public actor SandboxHost {
     private let freeDiskBytes: @Sendable () -> UInt64?
     /// Sandboxes being laid down: provisioning runs off this actor, so a re-run create must not lay down a second copy.
     private var provisioning: Set<String> = []
+    /// Answers image operations and the connector's operation reports; nil answers them `unsupported`.
+    private let images: ImageHost?
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.freeDiskBytes = freeDiskBytes
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, images: ImageHost? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.images = images; self.freeDiskBytes = freeDiskBytes
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -315,6 +317,11 @@ public actor SandboxHost {
             return hostFailure([:], code: "invalid_input", message: "the request is not a JSON envelope with an operation")
         }
         let input = object["input"] as? [String: Any] ?? [:]
+        // Image operations and the connector's operation reports are ImageHost's; this actor only hands them over.
+        if ImageHost.answers(operation) {
+            guard let images else { return hostFailure(object, code: "unsupported", message: "this machine does not run \(operation) yet") }
+            return await images.request(envelope)
+        }
         // Machine-level operations for the connector; they are not in the public catalog and name no sandbox.
         switch operation {
         case "host.watch":
@@ -351,7 +358,6 @@ public actor SandboxHost {
         if host == .sandboxList { return hostSuccess(object, result: ["sandboxes": await snapshots().map(view)]) }
         if host == .relayStatus { return relayStatus(object) }
         if let host, host.isAgentSetup { return await runAgentSetup(object, operation: operation, input: input) }
-        if let host, host.isImage { return hostFailure(object, code: "unsupported", message: "this machine does not run \(operation) yet") }
         guard let sandboxID = object["sandbox_id"] as? String, !sandboxID.isEmpty else { return hostFailure(object, code: "invalid_input", message: "\(operation) needs a sandbox_id") }
         if host == .sandboxCreate { return await create(object, sandboxID: sandboxID, input: input) }
         guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else { return hostFailure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
@@ -379,7 +385,7 @@ public actor SandboxHost {
         switch host {
         case .sandboxCreate, .sandboxList, .relayStatus, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet,
              .imageCreate, .imageCopy, .imageDelete, .imageWait:
-            preconditionFailure("answered by request()")
+            preconditionFailure("answered by request() or ImageHost")
         case .systemInfo:
             return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
         case .sandboxStatus:
@@ -684,8 +690,6 @@ public actor SandboxHost {
 extension HostOperation {
     /// The skill, the CLI link and the agent setup setting: machine-level, answered by the installed CLI.
     var isAgentSetup: Bool { ["skill.", "cli.", "agents."].contains { rawValue.hasPrefix($0) } }
-    /// Account image operations the relay passes on to a machine holding, or about to hold, the image.
-    var isImage: Bool { rawValue.hasPrefix("image.") }
 }
 
 /// Lets runtimes tell the host their lifecycle changed, so `host.watch` answers.
