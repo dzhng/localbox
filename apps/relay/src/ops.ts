@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import {
-  catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateJson, validateRequest,
+  BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateInput, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place } from "../../../packages/placement/src/index.js";
@@ -93,7 +93,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
   const machine = typeof input.machine === "string" ? input.machine : undefined;
   try {
     if (!entry) throw new ContractError("invalid_input", `unsupported operation: ${operation}`);
-    validateJson(payload, entry.input_schema);
+    validateInput(entry.id, payload);
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
     if (!entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, sandbox, machine, deps), base, deps);
@@ -194,8 +194,10 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, named:
     return { id: row.machineId, name: row.name, reported: row.capacity !== undefined, roomBytes: row.capacity?.room_bytes ?? 0, totalBytes: row.capacity?.total_bytes ?? 0, lastReportAt };
   });
   const tried = new Set<string>();
+  // Every machine holds the built-in image, so placing it never plans a copy.
+  const image = { id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux" as const, sizeBytes: 0 };
   for (;;) {
-    const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes });
+    const placed = place({ machine: named, placement: asked.placement, callerMachineId, machines: machines.map((machine) => tried.has(machine.id) ? { ...machine, reported: false } : machine), neededBytes: asked.memory_bytes ?? DEFAULT_SIZE_MINIMUM.memory_bytes, image });
     if ("error" in placed) throw new ContractError(placed.error, placed.message, { machines: placed.machines as unknown as Json }, placed.error === "machine_offline");
     const machine = rows.find((row) => row.machineId === placed.machineId)!;
     const { cpus: hostCpus, total_bytes: hostMemory } = machine.capacity ?? {};

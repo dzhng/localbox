@@ -35,7 +35,7 @@ function sameFacts(label: string, envelope: any, text: string, volatile: string[
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "u") {
     return [await ctx.check("catalog executors and sandbox_id rule, Convex sandbox catalog, CLI text/JSON parity, regenerated snapshots", async () => {
-      const result = await ctx.exec("npx", ["tsx", "--test", "tests/contract-executor.test.ts", "tests/sandbox-catalog.test.ts", "tests/cli-output.test.ts", "tests/contract.test.ts"]);
+      const result = await ctx.exec("npx", ["tsx", "--test", "tests/catalog-routing.test.ts", "tests/sandbox-catalog.test.ts", "tests/cli-output.test.ts", "tests/contract.test.ts"]);
       assert.equal(result.code, 0, result.stdout.slice(-2000));
     })];
   }

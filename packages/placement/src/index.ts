@@ -1,4 +1,4 @@
-import { gibibytes as gib } from "../../contract/src/index.js";
+import { BUILT_IN_IMAGE, gibibytes as gib, type ImageOS } from "../../contract/src/index.js";
 
 /** Where `sandbox create` puts a sandbox. Pure; the create route in the agent API is its only caller. */
 
@@ -9,6 +9,23 @@ export interface PlacementMachine {
   roomBytes: number; totalBytes: number;
   /** When the machine last reported (ms), so an offline one can say how long it has been gone. */
   lastReportAt?: number;
+  /** It holds the image, ready (its holder row); the built-in image counts as held everywhere. */
+  holds?: boolean;
+  /** When its holding last changed (ms); a copy comes from the holder that changed most recently. */
+  heldAt?: number;
+  /** Free disk for a copy; absent until the machine reports it, and then no copy is planned to it. */
+  freeDiskBytes?: number;
+  /** The host's macOS version, e.g. "27.0.1"; absent until the machine reports it, and then no macOS image goes there. */
+  macOSVersion?: string;
+  /** macOS guests running now; Virtualization runs at most `MAC_VM_LIMIT` at once. */
+  macVMsRunning?: number;
+}
+export interface PlacementImage {
+  id: string; name: string; os: ImageOS;
+  /** The oldest host macOS a macOS image runs on. */
+  minMacOS?: string;
+  /** What a copy moves; the built-in image is never copied. */
+  sizeBytes: number;
 }
 export interface PlacementInput {
   /** The machine the request names (an id or a case-insensitive name). */
@@ -19,12 +36,19 @@ export interface PlacementInput {
   machines: PlacementMachine[];
   /** Memory the new sandbox reserves; machines with room for it come first. */
   neededBytes: number;
+  /** The image the sandbox starts from. */
+  image: PlacementImage;
 }
-export type PlacementErrorCode = "machine_offline" | "machine_full" | "machine_not_found" | "invalid_input";
+export type PlacementErrorCode = "machine_offline" | "machine_full" | "machine_not_found" | "invalid_input" | "disk_full" | "image_incompatible" | "image_not_found";
 export interface MachineRoom { machine_id: string; name: string; reported: boolean; room_bytes: number; total_bytes: number }
+/** A copy the create waits on: the image comes from `fromMachineId` first. */
+export interface PlannedCopy { fromMachineId: string; bytes: number }
 export type Placement =
-  | { machineId: string; reason: string }
+  | { machineId: string; reason: string; copy?: PlannedCopy }
   | { error: PlacementErrorCode; message: string; machines: MachineRoom[] };
+
+/** Apple's Virtualization runs at most two macOS guests per Mac at once. */
+export const MAC_VM_LIMIT = 2;
 
 const lastReport = (machine: PlacementMachine) => machine.lastReportAt === undefined ? "never reported" : `last report ${new Date(machine.lastReportAt).toISOString()}`;
 const room = (machine: PlacementMachine) => machine.reported ? `${machine.name} (${gib(machine.roomBytes)} free of ${gib(machine.totalBytes)})` : `${machine.name} (offline, ${lastReport(machine)})`;
@@ -36,44 +60,93 @@ export function byNameOrId<T extends { name: string }>(rows: readonly T[], wante
   return rows.find((row) => id(row) === wanted) ?? rows.find((row) => row.name.toLowerCase() === lower);
 }
 
+/** Whether dotted version `version` is at least `minimum` ("27.0.1" ≥ "27.0"). */
+export function atLeast(version: string, minimum: string): boolean {
+  const have = version.split(".").map(Number); const need = minimum.split(".").map(Number);
+  for (let index = 0; index < Math.max(have.length, need.length); index++) {
+    const difference = (have[index] ?? 0) - (need[index] ?? 0);
+    if (difference) return difference > 0;
+  }
+  return true;
+}
+
 /**
- * The named `machine` wins; `placement: auto` takes the online machine with the most room,
- * `remote` the same without the caller's machine; no flag means the caller's own machine. Ties go to the caller's
- * machine, then by name. A named or default machine is used even when full: its host makes room when it starts the
- * sandbox. A machine whose whole memory is smaller than the sandbox is never chosen.
+ * Machines that can't run the image are never chosen: a macOS image needs a host at least its `minMacOS`. Then the
+ * named `machine` wins, else `placement` (auto: the online machine with the most room, remote: the same without the
+ * caller's), else the caller's own machine. A named or own machine without the image gets a copy first, from the
+ * holder whose holding changed most recently. Auto and remote take a holder with room; only when none has room do they
+ * take the roomiest non-holder with disk for a copy. Ties go to the caller's machine, then by name. A named or default
+ * machine is used even when full: its host makes room when it starts the sandbox. A machine whose whole memory is
+ * smaller than the sandbox is never chosen.
  */
 export function place(input: PlacementInput): Placement {
-  const { machine: named, placement, callerMachineId, machines, neededBytes } = input;
+  const { machine: named, placement, callerMachineId, machines, neededBytes, image } = input;
   const all = [...machines].sort((a, b) => a.name.localeCompare(b.name));
   const fail = (error: PlacementErrorCode, message: string): Placement => ({ error, message, machines: rooms(all) });
   const listed = all.length ? all.map(room).join(", ") : "this account has no machines";
   const tooSmall = (machine: PlacementMachine) => machine.totalBytes > 0 && machine.totalBytes < neededBytes;
+  const builtIn = image.id === BUILT_IN_IMAGE;
+  const holds = (machine: PlacementMachine) => builtIn || machine.holds === true;
+  const runs = (machine: PlacementMachine) => image.os !== "macos" || (machine.macOSVersion !== undefined && atLeast(machine.macOSVersion, image.minMacOS ?? "0"));
+  const incompatible = (machine: PlacementMachine) => `${machine.name} ${machine.macOSVersion === undefined ? "has not reported its macOS version" : `runs macOS ${machine.macOSVersion}`}; ${image.name} needs ${image.minMacOS ? `macOS ${image.minMacOS} or later` : "a Mac that reports its macOS version"}`;
+  const fits = (machine: PlacementMachine) => machine.roomBytes >= neededBytes && (image.os !== "macos" || (machine.macVMsRunning ?? 0) < MAC_VM_LIMIT);
+  const hasDisk = (machine: PlacementMachine) => machine.freeDiskBytes !== undefined && machine.freeDiskBytes >= image.sizeBytes;
+  /** `target` as the answer, with the copy it needs when it doesn't hold the image. */
+  const onto = (target: PlacementMachine, reason: string): Placement => {
+    if (holds(target)) return { machineId: target.id, reason };
+    if (!hasDisk(target)) return fail("disk_full", `${target.name} ${target.freeDiskBytes === undefined ? "has not reported its free disk" : `has ${gib(target.freeDiskBytes)} of free disk`}, and copying ${image.name} there needs ${gib(image.sizeBytes)}`);
+    const holders = all.filter((machine) => machine.id !== target.id && holds(machine));
+    const [source] = holders.filter((machine) => machine.reported).sort((a, b) => (b.heldAt ?? 0) - (a.heldAt ?? 0) || a.name.localeCompare(b.name));
+    if (!source) return holders.length ? fail("machine_offline", `every machine holding ${image.name} is offline, so it can't be copied to ${target.name}; holders: ${holders.map(room).join(", ")}`)
+      : fail("image_not_found", `no machine holds ${image.name}, so there is nothing to copy to ${target.name}`);
+    return { machineId: target.id, reason: `${reason}; copying ${image.name} (${gib(image.sizeBytes)}) there from ${source.name} first`, copy: { fromMachineId: source.id, bytes: image.sizeBytes } };
+  };
 
   if (named !== undefined && placement !== undefined) return fail("invalid_input", "pass either a machine or a placement, not both");
   if (named !== undefined) {
     const machine = byNameOrId(all, named, (candidate) => candidate.id);
     if (!machine) return fail("machine_not_found", `no machine ${named} on this account; machines: ${listed}`);
     if (!machine.reported) return fail("machine_offline", `${machine.name} is offline (${lastReport(machine)}); machines: ${listed}`);
+    if (!runs(machine)) return fail("image_incompatible", incompatible(machine));
     if (tooSmall(machine)) return fail("machine_full", `${machine.name} has ${gib(machine.totalBytes)} in all, less than the ${gib(neededBytes)} this sandbox needs`);
-    return { machineId: machine.id, reason: `on ${machine.name}, as asked (${gib(machine.roomBytes)} free)` };
+    return onto(machine, `on ${machine.name}, as asked (${gib(machine.roomBytes)} free)`);
   }
   if (placement !== undefined) {
     const remote = placement === "remote";
     const pool = all.filter((machine) => !(remote && machine.id === callerMachineId));
     if (!pool.length) return fail("machine_not_found", remote ? "this account has no machine other than this one" : "this account has no machines");
-    const candidates = pool.filter((machine) => machine.reported && !tooSmall(machine));
+    const online = pool.filter((machine) => machine.reported);
+    const compatible = online.filter(runs);
+    const candidates = compatible.filter((machine) => !tooSmall(machine));
     if (!candidates.length) {
-      const offline = pool.filter((machine) => !machine.reported);
-      return offline.length === pool.length ? fail("machine_offline", `no ${remote ? "other " : ""}machine is online; machines: ${listed}`)
-        : fail("machine_full", `no online ${remote ? "other " : ""}machine has ${gib(neededBytes)} in all; machines: ${listed}`);
+      if (!online.length) return fail("machine_offline", `no ${remote ? "other " : ""}machine is online; machines: ${listed}`);
+      if (!compatible.length) return fail("image_incompatible", `no online ${remote ? "other " : ""}machine can run ${image.name}: ${online.map(incompatible).join("; ")}`);
+      return fail("machine_full", `no online ${remote ? "other " : ""}machine has ${gib(neededBytes)} in all; machines: ${listed}`);
     }
-    const [best] = candidates.sort((a, b) => b.roomBytes - a.roomBytes || Number(b.id === callerMachineId) - Number(a.id === callerMachineId) || a.name.localeCompare(b.name));
+    const roomiest = (rows: PlacementMachine[]): PlacementMachine | undefined => [...rows].sort((a, b) => b.roomBytes - a.roomBytes || Number(b.id === callerMachineId) - Number(a.id === callerMachineId) || a.name.localeCompare(b.name))[0];
     const skipped = pool.filter((machine) => !machine.reported).map((machine) => machine.name);
-    const fits = best.roomBytes >= neededBytes ? "" : `; none has ${gib(neededBytes)} free, so ${best.name} makes room`;
-    return { machineId: best.id, reason: `on ${best.name}, the ${remote ? "remote " : ""}machine with the most room (${gib(best.roomBytes)} free)${fits}${skipped.length ? `; skipped offline ${skipped.join(", ")}` : ""}` };
+    const skippedNote = skipped.length ? `; skipped offline ${skipped.join(", ")}` : "";
+    const which = `the ${remote ? "remote " : ""}machine with the most room`;
+    const roomNote = (machine: PlacementMachine) => fits(machine) ? "" : `; none has ${gib(neededBytes)} free, so ${machine.name} makes room`;
+    const holderAnswer = (best: PlacementMachine): Placement => {
+      const holding = builtIn ? "" : ` that holds ${image.name}`;
+      return { machineId: best.id, reason: `on ${best.name}, ${which}${holding} (${gib(best.roomBytes)} free)${roomNote(best)}${skippedNote}` };
+    };
+    const holders = candidates.filter(holds);
+    const fittingHolder = roomiest(holders.filter(fits));
+    if (fittingHolder) return holderAnswer(fittingHolder);
+    // No holder has room. A copy is worth it only to a machine that has room; otherwise a holder makes room.
+    const copyTargets = candidates.filter((machine) => !holds(machine) && hasDisk(machine));
+    const roomyTarget = roomiest(copyTargets.filter(fits));
+    if (roomyTarget) return onto(roomyTarget, `on ${roomyTarget.name}, ${which} (${gib(roomyTarget.roomBytes)} free), since no machine holding ${image.name} has room${skippedNote}`);
+    if (holders.length) return holderAnswer(roomiest(holders)!);
+    const target = roomiest(copyTargets);
+    if (!target) return fail("disk_full", `no online ${remote ? "other " : ""}machine has ${gib(image.sizeBytes)} of free disk to copy ${image.name} to; machines: ${listed}`);
+    return onto(target, `on ${target.name}, ${which} (${gib(target.roomBytes)} free)${roomNote(target)}${skippedNote}`);
   }
   const own = callerMachineId === undefined ? undefined : all.find((machine) => machine.id === callerMachineId);
   if (!own) return fail("invalid_input", `there is no machine to default to here; name a machine or use --placement auto: ${listed}`);
+  if (!runs(own)) return fail("image_incompatible", `${incompatible(own)}; name another machine or use --placement auto`);
   if (tooSmall(own)) return fail("machine_full", `${own.name} has ${gib(own.totalBytes)} in all, less than the ${gib(neededBytes)} this sandbox needs; name another machine or use --placement auto`);
-  return { machineId: own.id, reason: `on ${own.name}, this machine (${gib(own.roomBytes)} free)` };
+  return onto(own, `on ${own.name}, this machine (${gib(own.roomBytes)} free)`);
 }

@@ -164,9 +164,9 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
 test("removing or signing out a machine deletes its sandboxes' rows, and says how many", async () => {
   const { t, m1, m2, agent } = await setup();
   await create(m1, { machineId: "m1", name: "one" }); await create(m1, { machineId: "m1", name: "two" }); await create(m1, { machineId: "m2", name: "kept" });
-  assert.deepEqual(await agent.mutation(ref("machines:remove"), { machineId: "m1" }), { machine_id: "m1", removed: true, sandboxes_removed: 2 });
+  assert.deepEqual(await agent.mutation(ref("machines:remove"), { machineId: "m1" }), { machine_id: "m1", removed: true, sandboxes_removed: 2, image_holders_removed: 0 });
   assert.deepEqual((await rows(t)).map((row: any) => row.name), ["kept"]);
-  assert.deepEqual(await m2.mutation(ref("machines:revokeSelf"), {}), { revoked: true, sandboxes_removed: 1 });
+  assert.deepEqual(await m2.mutation(ref("machines:revokeSelf"), {}), { revoked: true, sandboxes_removed: 1, image_holders_removed: 0 });
   assert.deepEqual(await rows(t), []);
 });
 

@@ -19,7 +19,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "account.rename",
@@ -49,7 +50,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.list",
@@ -71,7 +73,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.rename",
@@ -106,7 +109,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.remove",
@@ -136,15 +140,20 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "sandbox.create",
-    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.",
+    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time. Its disk starts from `image` (a name or id), else the account's default image (initially `linux`).",
     "input_schema": {
       "type": "object",
       "properties": {
         "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
           "type": "string",
           "minLength": 1
         },
@@ -188,7 +197,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "sandbox.list",
@@ -210,7 +220,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "sandbox.rename",
@@ -240,7 +251,8 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.delete",
@@ -268,7 +280,244 @@
       "max_output_bytes": 921600
     },
     "executor": "account",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
+  },
+  {
+    "id": "image.create",
+    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers at once with the image's operation state; follow it with image.wait.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "macos": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "machine"
+  },
+  {
+    "id": "image.list",
+    "description": "List the account's images: OS, size, source, the machines holding each, and which is the default.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.rename",
+    "description": "Rename an image. The built-in `linux` can't be renamed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.copy",
+    "description": "Copy an image directly to machine `to` (a name or id): over the local network, else a direct connection between the two Macs. Answers at once with the copy's operation state; the finished copy reports size, duration and the path taken.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "machine"
+  },
+  {
+    "id": "image.default",
+    "description": "Make an image the account default, the one sandbox.create uses when it names none.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.delete",
+    "description": "Delete an image from every machine holding it, or only from the request's machine when it names one. Sandboxes made from it are unaffected. `confirm`, when given, must be its name. `linux` can't be deleted; deleting the default resets it to `linux`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "holders"
+  },
+  {
+    "id": "image.wait",
+    "description": "Wait up to `timeout_ms` (at most 120 s) for an image that is building or copying, and return its operation state; call again while it is neither ready nor failed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "limits": {
+      "deadline_ms": {
+        "min": 1,
+        "max": 120000
+      },
+      "max_input_bytes": 65536,
+      "max_output_bytes": 921600
+    },
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "holders"
   },
   {
     "id": "system.info",
@@ -290,7 +539,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.status",
@@ -312,7 +562,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.resize",
@@ -345,7 +596,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.start",
@@ -367,7 +619,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.stop",
@@ -389,7 +642,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.sleep",
@@ -411,7 +665,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.logs",
@@ -440,7 +695,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "network.egress",
@@ -462,7 +718,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "relay.status",
@@ -484,7 +741,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "shell.exec",
@@ -533,7 +791,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.status",
@@ -563,7 +822,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.wait",
@@ -598,7 +858,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.cancel",
@@ -628,7 +889,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.output",
@@ -665,7 +927,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "guest.activity",
@@ -687,7 +950,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.list",
@@ -717,7 +981,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.stat",
@@ -747,7 +1012,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.read",
@@ -784,7 +1050,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.write",
@@ -823,7 +1090,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.mkdir",
@@ -856,7 +1124,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.remove",
@@ -889,7 +1158,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.list_tabs",
@@ -911,7 +1181,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.open",
@@ -941,7 +1212,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.navigate",
@@ -976,7 +1248,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.focus",
@@ -1006,7 +1279,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.close",
@@ -1036,7 +1310,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.screenshot",
@@ -1066,7 +1341,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.click",
@@ -1104,7 +1380,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.type",
@@ -1138,7 +1415,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.key",
@@ -1173,7 +1451,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.status",
@@ -1195,7 +1474,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.screenshot",
@@ -1217,7 +1497,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.click",
@@ -1254,7 +1535,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.move",
@@ -1287,7 +1569,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.scroll",
@@ -1327,7 +1610,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.key",
@@ -1357,7 +1641,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.type",
@@ -1386,7 +1671,8 @@
       "max_output_bytes": 921600
     },
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "skill.status",
@@ -1408,7 +1694,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.install",
@@ -1430,7 +1717,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.update",
@@ -1452,7 +1740,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.uninstall",
@@ -1474,7 +1763,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "cli.status",
@@ -1496,7 +1786,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "agents.setup.status",
@@ -1518,7 +1809,8 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "agents.setup.set",
@@ -1547,6 +1839,7 @@
       "max_output_bytes": 921600
     },
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   }
 ]

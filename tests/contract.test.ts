@@ -12,7 +12,7 @@ const request = (overrides: Partial<RequestEnvelope> = {}): RequestEnvelope => (
 
 test("catalog has unique operation IDs", () => {
   assert.equal(new Set(operationCatalog.map((x) => x.id)).size, operationCatalog.length);
-  assert.equal(operationCatalog.length, 53);
+  assert.equal(operationCatalog.length, 60);
 });
 
 test("committed snapshots are generated from the same catalog", async () => {

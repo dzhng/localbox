@@ -13,5 +13,6 @@ export function createConvexTestHarness() {
     "./signin.ts": async () => import("./convex/signin.js"),
     "./accounts.ts": async () => import("./convex/accounts.js"),
     "./sandboxes.ts": async () => import("./convex/sandboxes.js"),
+    "./images.ts": async () => import("./convex/images.js"),
   }) as TestConvexForDataModelAndIdentity<any>;
 }

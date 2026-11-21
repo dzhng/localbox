@@ -11,7 +11,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "account.rename",
@@ -33,7 +34,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.list",
@@ -47,7 +49,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.rename",
@@ -74,7 +77,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "machine.remove",
@@ -96,15 +100,20 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "sandbox.create",
-    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time.",
+    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` idle (default 30 min) and, only when `delete_after_ms` is given, is deleted after that much idle time. Its disk starts from `image` (a name or id), else the account's default image (initially `linux`).",
     "input_schema": {
       "type": "object",
       "properties": {
         "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
           "type": "string",
           "minLength": 1
         },
@@ -140,7 +149,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "sandbox.list",
@@ -154,7 +164,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "account",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "account"
   },
   {
     "id": "sandbox.rename",
@@ -176,7 +187,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.delete",
@@ -196,7 +208,188 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "account",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
+  },
+  {
+    "id": "image.create",
+    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers at once with the image's operation state; follow it with image.wait.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "macos": {
+          "type": "boolean",
+          "enum": [
+            true
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "machine"
+  },
+  {
+    "id": "image.list",
+    "description": "List the account's images: OS, size, source, the machines holding each, and which is the default.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.rename",
+    "description": "Rename an image. The built-in `linux` can't be renamed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.copy",
+    "description": "Copy an image directly to machine `to` (a name or id): over the local network, else a direct connection between the two Macs. Answers at once with the copy's operation state; the finished copy reports size, duration and the path taken.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "machine"
+  },
+  {
+    "id": "image.default",
+    "description": "Make an image the account default, the one sandbox.create uses when it names none.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "account"
+  },
+  {
+    "id": "image.delete",
+    "description": "Delete an image from every machine holding it, or only from the request's machine when it names one. Sandboxes made from it are unaffected. `confirm`, when given, must be its name. `linux` can't be deleted; deleting the default resets it to `linux`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": false,
+    "mutation": true,
+    "idempotency": "required",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "holders"
+  },
+  {
+    "id": "image.wait",
+    "description": "Wait up to `timeout_ms` (at most 120 s) for an image that is building or copying, and return its operation state; call again while it is neither ready nor failed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "additionalProperties": false
+    },
+    "retryable": true,
+    "mutation": false,
+    "idempotency": "none",
+    "executor": "account",
+    "sandbox_scoped": false,
+    "routing": "holders"
   },
   {
     "id": "system.info",
@@ -210,7 +403,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.status",
@@ -224,7 +418,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.resize",
@@ -249,7 +444,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.start",
@@ -263,7 +459,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.stop",
@@ -277,7 +474,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.sleep",
@@ -291,7 +489,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "sandbox.logs",
@@ -312,7 +511,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "network.egress",
@@ -326,7 +526,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "relay.status",
@@ -340,7 +541,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "shell.exec",
@@ -381,7 +583,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.status",
@@ -403,7 +606,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.wait",
@@ -430,7 +634,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.cancel",
@@ -452,7 +657,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "job.output",
@@ -481,7 +687,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "guest.activity",
@@ -495,7 +702,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.list",
@@ -517,7 +725,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.stat",
@@ -539,7 +748,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.read",
@@ -568,7 +778,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.write",
@@ -599,7 +810,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.mkdir",
@@ -624,7 +836,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "fs.remove",
@@ -649,7 +862,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.list_tabs",
@@ -663,7 +877,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.open",
@@ -685,7 +900,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.navigate",
@@ -712,7 +928,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.focus",
@@ -734,7 +951,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.close",
@@ -756,7 +974,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.screenshot",
@@ -778,7 +997,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.click",
@@ -808,7 +1028,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.type",
@@ -834,7 +1055,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "browser.key",
@@ -861,7 +1083,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.status",
@@ -875,7 +1098,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.screenshot",
@@ -889,7 +1113,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.click",
@@ -918,7 +1143,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.move",
@@ -943,7 +1169,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.scroll",
@@ -975,7 +1202,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.key",
@@ -997,7 +1225,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "desktop.type",
@@ -1018,7 +1247,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "guest",
-    "sandbox_scoped": true
+    "sandbox_scoped": true,
+    "routing": "machine"
   },
   {
     "id": "skill.status",
@@ -1032,7 +1262,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.install",
@@ -1046,7 +1277,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.update",
@@ -1060,7 +1292,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "skill.uninstall",
@@ -1074,7 +1307,8 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "cli.status",
@@ -1088,7 +1322,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "agents.setup.status",
@@ -1102,7 +1337,8 @@
     "mutation": false,
     "idempotency": "none",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   },
   {
     "id": "agents.setup.set",
@@ -1123,6 +1359,7 @@
     "mutation": true,
     "idempotency": "required",
     "executor": "host",
-    "sandbox_scoped": false
+    "sandbox_scoped": false,
+    "routing": "machine"
   }
 ]
