@@ -36,7 +36,7 @@ test("guest service emits readiness and dispatches framed requests", async () =>
   const service = new GuestService({ input, output, gateway: new GuestGateway({ root }), channelEpoch: 7, inventoryNames: ["python3", "node"], readinessMarker: marker });
   await service.start();
   const ready = await waitForFrame(output, "ready");
-  assert.deepEqual(ready, { kind: "ready", channel_epoch: 7, inventory_digest: inventoryDigest(["node", "python3"]), readiness_marker: marker });
+  assert.deepEqual(ready, { kind: "ready", channel_epoch: 7, inventory_digest: inventoryDigest(["node", "python3"]), readiness_marker: marker, agent_version: "source", agent_os: process.platform });
   assert.equal((await readFile(marker, "utf8")).split("\n")[0], "7");
 
   input.write(encodeGuestFrame({ kind: "request", channel_epoch: 7, request: request("system.info", {}, "info") }));

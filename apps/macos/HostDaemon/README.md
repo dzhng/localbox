@@ -75,6 +75,17 @@ if the host never does. While it runs the sandbox is `.freezing`: requests,
 starts, stops, saves and resizes wait for the lock; admission never sleeps it
 for room and the idle policy passes it by; shutdown saves it once it thaws.
 
+`GuestAgentUpdater` holds every guest to the agent build this Mac ships
+(`LOCALBOX_GUEST_AGENT`: `agent-version.json` and one binary per guest OS,
+read again whenever the file changes). A guest whose ready frame names another
+version gets the host's binary over the control lane, on connect and on each
+idle tick, under the operation lock and only while it serves no request and
+runs no job. Once the guest answers `updated` its request lane's close is
+expected: the runtime dials it again instead of losing the guest, and the
+sandbox never stops. A version the guest refuses is not pushed again until the
+next boot; an agent that does not come back loses the guest like any other
+close.
+
 The `localbox-hostd` executable is the launchd process boundary. It reads
 the boot artifact paths, the sandboxes and operations directories and an
 owner-only IPC token file from environment variables, starts the same `SandboxHost` and

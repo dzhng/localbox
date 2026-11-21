@@ -197,6 +197,9 @@ export class GuestGateway {
     return { job_id: record.job_id, data: data.toString("utf8"), offset, next_offset: end, eof: end >= total && record.status !== "running", ...(requested < record.droppedBytes ? { dropped_bytes: record.droppedBytes } : {}) };
   }
 
+  /** Jobs still running; their tracking lives only in this process. */
+  runningJobs(): number { return [...this.jobs.values()].filter((job) => job.status === "running").length; }
+
   handlers(): Partial<Record<OperationId, Handler>> {
     const desktop = desktopHandlers(this.desktopRuntime) as unknown as Partial<Record<OperationId, Handler>>;
     return {
@@ -213,7 +216,7 @@ export class GuestGateway {
         return { job_id: j.job_id, status: j.status, exit_code: j.exit_code, signal: j.signal }; },
       "job.cancel": async (input) => { const j = this.job(input); if (j.status === "running" && j.child.pid) killTree(j.child); return { job_id: j.job_id, cancelled: true }; },
       "job.output": async (input) => this.jobOutput(input as { job_id: string; offset?: number; length?: number }),
-      "guest.activity": async () => ({ running_jobs: [...this.jobs.values()].filter((job) => job.status === "running").length }),
+      "guest.activity": async () => ({ running_jobs: this.runningJobs() }),
       "shell.exec": (input, context) => this.shellExec(input as { command: string; args?: string[]; cwd?: string; env?: Record<string, string>; background?: boolean }, context),
       "fs.list": async (input) => { const path = await this.existingPath(this.path((input as { path: string }).path)); const entries = await fs.readdir(path, { withFileTypes: true }); return { path: guestPath(this.root, path), entries: entries.map((e) => ({ name: e.name, kind: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other" })) }; },
       "fs.stat": async (input) => { const path = this.path((input as { path: string }).path); try { await this.existingPath(path); const stat = await fs.stat(path); return { path: guestPath(this.root, path), exists: true, kind: stat.isDirectory() ? "directory" : stat.isFile() ? "file" : "other", size: stat.size, mode: stat.mode & 0o777, modified_ms: stat.mtimeMs }; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path: guestPath(this.root, path), exists: false } as Json; throw error; } },
@@ -275,4 +278,4 @@ function guestAddress(): string | null {
 }
 
 export { GuestService, runGuestService, type GuestServiceOptions } from "./service.js";
-export { GuestControl, linuxFreezeCommands, syncOnlyCommands, type FreezeCommands, type GuestControlOptions } from "./control.js";
+export { GuestControl, linuxFreezeCommands, syncOnlyCommands, type AgentUpdateOptions, type FreezeCommands, type GuestControlOptions } from "./control.js";

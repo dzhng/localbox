@@ -8,6 +8,7 @@ import { GuestControl, GuestGateway, linuxFreezeCommands, runGuestService, syncO
 import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
 import { adoptSandboxIdentity } from "./identity.js";
+import { AGENT_VERSION } from "./version.js";
 
 const numberEnv = (name: string, fallback: number): number => {
   const value = process.env[name];
@@ -24,7 +25,9 @@ const numberEnv = (name: string, fallback: number): number => {
  * table or the processes it started. Without the variable it serves one connection on stdin/stdout (the
  * process-fixture backend and CI).
  *
- * `LOCALBOX_CONTROL_SOCKET` is the control lane (freeze, thaw), forwarded by a second socat unit from vsock port 1025.
+ * `LOCALBOX_CONTROL_SOCKET` is the control lane (freeze, thaw, agent update), forwarded by a second socat unit from
+ * vsock port 1025. A built agent (with an embedded version) can replace its own executable there; one run from source
+ * cannot.
  */
 export async function main(): Promise<void> {
   const root = process.env.LOCALBOX_ROOT ?? "/";
@@ -44,13 +47,17 @@ export async function main(): Promise<void> {
   // A restored VM gets a new NAT whose first packets are dropped for ~250 ms; a DNS query sent then costs glibc its
   // 5 s timeout. So after a new-epoch hello, requests wait (at most 3 s) until the DHCP-provided DNS server answers.
   const settle = ownsSystem ? () => dnsAnswers(3_000) : undefined;
-  const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, settle, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
+  const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, agentVersion: AGENT_VERSION, setClock, adoptIdentity, settle, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
   const socketPath = process.env.LOCALBOX_AGENT_SOCKET;
   if (!socketPath) { await serve(stdin, stdout, channelEpoch); return; }
   const controlPath = process.env.LOCALBOX_CONTROL_SOCKET;
   if (controlPath) {
     // Only a Linux guest that owns its root freezes it; darwin and a fixture guest flush only.
-    const control = new GuestControl({ commands: ownsSystem ? linuxFreezeCommands : syncOnlyCommands });
+    const update = AGENT_VERSION === undefined ? undefined : {
+      binary: process.execPath, runningJobs: () => gateway.runningJobs(), exit: () => process.exit(0),
+      afterSwap: process.platform === "darwin" ? rewriteDarwinTccGrantsAfterSwap : undefined,
+    };
+    const control = new GuestControl({ commands: ownsSystem ? linuxFreezeCommands : syncOnlyCommands, update });
     mkdirSync(dirname(controlPath), { recursive: true }); rmSync(controlPath, { force: true });
     createServer((socket) => { socket.on("error", () => socket.destroy()); void control.serve(socket, socket); }).listen(controlPath);
   }
@@ -66,6 +73,13 @@ export async function main(): Promise<void> {
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => { stderr.write(`[localbox-guest] ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`); process.exitCode = 1; });
 }
+
+/**
+ * P6: TCC rows name the agent by its install path. If spike 18 shows that a replaced binary loses its grants, the darwin
+ * agent rewrites its own rows here, as root, after every swap (SIP is off). Until spike 18 records its outcome this does
+ * nothing; slice 33 fills it in or deletes it.
+ */
+async function rewriteDarwinTccGrantsAfterSwap(_binary: string): Promise<void> {}
 
 /** Resolves once the nameserver in /etc/resolv.conf answers any query (an NXDOMAIN counts), or after `limitMs`. */
 async function dnsAnswers(limitMs: number): Promise<void> {

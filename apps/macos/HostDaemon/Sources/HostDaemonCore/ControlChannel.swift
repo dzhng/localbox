@@ -1,6 +1,6 @@
 import Foundation
 
-/// The guest's control lane (vsock port 1025): freeze and thaw, apart from the request lane, so they never queue
+/// The guest's control lane (vsock port 1025): freeze, thaw and agent updates, apart from the request lane, so they never queue
 /// behind a guest request (the request lane has no timeout) and never pass its mutation journal. Twin of
 /// `packages/guest-gateway/src/control.ts`.
 public protocol GuestControlChannel: Sendable {
@@ -8,6 +8,8 @@ public protocol GuestControlChannel: Sendable {
     func freeze(timeoutMs: Int) async throws
     /// Thaws a frozen guest; a no-op on one that is not frozen.
     func thaw() async throws
+    /// Sends `binary` in chunks; on `.updated` the guest swapped it in and its agent is exiting.
+    func updateAgent(_ binary: AgentBinary) async throws -> AgentUpdateOutcome
     func close() async
 }
 
@@ -34,15 +36,31 @@ public actor FramedControlChannel: GuestControlChannel {
 
     /// `sync` can take a while with much unwritten data, so a freeze waits longer for its answer than a thaw.
     public func freeze(timeoutMs: Int) async throws {
-        _ = try await exchange(["kind": "freeze", "timeout_ms": timeoutMs], expecting: "frozen", within: 60)
+        _ = try await exchange(["kind": "freeze", "timeout_ms": timeoutMs], expecting: ["frozen"], within: 60)
     }
 
     public func thaw() async throws {
-        _ = try await exchange(["kind": "thaw"], expecting: "thawed", within: 15)
+        _ = try await exchange(["kind": "thaw"], expecting: ["thawed"], within: 15)
     }
 
-    /// Sends one frame and returns the guest's answer, which must be `expecting` (a `control_error` says why not).
-    func exchange(_ frame: [String: Any], expecting kind: String, within seconds: TimeInterval) async throws -> [String: Any] {
+    /// The header, then each chunk as base64, every one answered before the next is sent. The last chunk's answer
+    /// comes after the guest verified, synced and renamed the binary, so it gets the longest deadline.
+    public func updateAgent(_ binary: AgentBinary) async throws -> AgentUpdateOutcome {
+        let header = try await exchange(["kind": "agent.update", "version": binary.version, "sha256": binary.sha256, "size": binary.size], expecting: ["agent.receiving", "deferred"], within: 15)
+        if header["kind"] as? String == "deferred" { return .deferred(runningJobs: (header["running_jobs"] as? NSNumber)?.intValue ?? 0) }
+        let file = try FileHandle(forReadingFrom: binary.url); defer { try? file.close() }
+        var offset = 0
+        while offset < binary.size {
+            guard let chunk = try file.read(upToCount: min(binary.chunkBytes, binary.size - offset)), !chunk.isEmpty else { throw HostDaemonError.unsupported("\(binary.url.path) is shorter than its \(binary.size) bytes") }
+            let last = offset + chunk.count == binary.size
+            _ = try await exchange(["kind": "agent.chunk", "offset": offset, "data": chunk.base64EncodedString()], expecting: [last ? "updated" : "agent.received"], within: last ? 60 : 30)
+            offset += chunk.count
+        }
+        return .updated
+    }
+
+    /// Sends one frame and returns the guest's answer, whose kind must be one of `kinds` (a `control_error` says why not).
+    func exchange(_ frame: [String: Any], expecting kinds: Set<String>, within seconds: TimeInterval) async throws -> [String: Any] {
         guard !closed, !reading else { throw HostDaemonError.guestUnavailable }
         try writer.write(contentsOf: try GuestFrameCodec.encode(frame, maxFrameBytes: maxFrameBytes))
         let reader = reader, maxFrameBytes = maxFrameBytes, deadline = Date().addingTimeInterval(seconds)
@@ -59,7 +77,7 @@ public actor FramedControlChannel: GuestControlChannel {
         }
         let answer = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         switch answer["kind"] as? String {
-        case kind: return answer
+        case let answered? where kinds.contains(answered): return answer
         case "control_error": throw HostDaemonError.invalidState("the guest refused \(sent): \(answer["message"] as? String ?? "no reason given")")
         default: throw HostDaemonError.unsupported("the guest answered \(sent) with \(answer["kind"] as? String ?? "no kind") on its control lane")
         }

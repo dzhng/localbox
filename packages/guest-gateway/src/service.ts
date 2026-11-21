@@ -32,6 +32,8 @@ export interface GuestServiceOptions {
   settle?: () => Promise<void>;
   inventoryNames?: readonly string[];
   readinessMarker?: string;
+  /** Announced in the ready frame, so the host can tell whether this agent is the build it ships. */
+  agentVersion?: string;
   maxPending?: number;
   maxFrameBytes?: number;
   maxBufferedBytes?: number;
@@ -59,6 +61,7 @@ export class GuestService {
   private settled: Promise<void> = Promise.resolve();
   private readonly inventoryNames: readonly string[];
   private readonly readinessMarker: string;
+  private readonly agentVersion: string;
   private readonly maxPending: number;
   private readonly maxFrameBytes: number;
   private readonly maxBufferedBytes: number;
@@ -84,6 +87,7 @@ export class GuestService {
     this.settle = options.settle ?? (async () => undefined);
     this.inventoryNames = [...(options.inventoryNames ?? [])].sort();
     this.readinessMarker = options.readinessMarker ?? "/run/localbox/ready";
+    this.agentVersion = options.agentVersion ?? "source";
     this.maxPending = options.maxPending ?? 32;
     this.maxFrameBytes = options.maxFrameBytes ?? 8 * 1024 * 1024;
     this.maxBufferedBytes = options.maxBufferedBytes ?? 16 * 1024 * 1024;
@@ -103,7 +107,7 @@ export class GuestService {
     this.started = true;
     await fs.mkdir(dirname(this.readinessMarker), { recursive: true });
     await fs.writeFile(this.readinessMarker, `${this.channelEpoch}\n${inventoryDigest(this.inventoryNames)}\n`, { mode: 0o644 });
-    await this.write({ kind: "ready", channel_epoch: this.channelEpoch, inventory_digest: inventoryDigest(this.inventoryNames), readiness_marker: this.readinessMarker });
+    await this.write({ kind: "ready", channel_epoch: this.channelEpoch, inventory_digest: inventoryDigest(this.inventoryNames), readiness_marker: this.readinessMarker, agent_version: this.agentVersion, agent_os: process.platform });
     this.input.on("data", (chunk: Buffer | string) => {
       this.inputChain = this.inputChain.then(() => this.consume(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))).catch((error) => this.protocolError(error));
     });

@@ -93,7 +93,7 @@ final class GuestStopObserver: NSObject, VZVirtualMachineDelegate, @unchecked Se
 }
 
 /// One sandbox's VM for one boot. A vsock connection carries GuestService frames.
-public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider, GuestControlDialer, GuestStopReporting {
+public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider, GuestControlDialer, GuestReconnecting, GuestStopReporting {
     private let record: SandboxRecord
     private let directory: SandboxDirectory
     private let artifacts: SandboxArtifacts
@@ -134,15 +134,23 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
         return made!
     }
 
-    private func attachGuest(_ vm: VZVirtualMachine) async throws {
+    private func attachGuest(_ vm: VZVirtualMachine, name: String? = nil) async throws {
         let connection = try await connect(vm, port: Self.guestPort, within: 120)
         guestConnection = connection
-        let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), sandboxID: record.sandboxID, name: record.name)
+        let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), sandboxID: record.sandboxID, name: name ?? record.name)
         // A channel is handed out only once the guest announced readiness and received its hello.
         try await channel.waitUntilReady()
         guestChannel = channel
     }
     public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
+    /// The request lane again, on the same running VM, after its agent restarted (an update): the old connection
+    /// goes, and the new channel is handed out once the restarted agent announced readiness.
+    public func reconnectGuest(name: String) async throws -> any GuestChannel {
+        guard let machine else { throw HostDaemonError.guestUnavailable }
+        await guestChannel?.close(); guestChannel = nil; guestConnection?.close(); guestConnection = nil
+        try await attachGuest(machine, name: name)
+        return try await makeGuestChannel()
+    }
     /// A new connection to the control lane; its forwarder listens once the guest is up, so a ready guest answers at once.
     public func dialControl() async throws -> any GuestControlChannel {
         guard let machine else { throw HostDaemonError.guestUnavailable }

@@ -128,7 +128,7 @@ final class FreezeLockTests: XCTestCase {
         XCTAssertEqual(sent[0]["kind"] as? String, "freeze"); XCTAssertEqual(sent[0]["timeout_ms"] as? Int, 5_000)
         XCTAssertEqual(sent[1]["kind"] as? String, "thaw")
         // A guest that never answers fails the exchange at its deadline instead of holding the operation lock.
-        do { _ = try await channel.exchange(["kind": "thaw"], expecting: "thawed", within: 0.2); XCTFail("no answer, no thaw") } catch HostDaemonError.unsupported(let message) {
+        do { _ = try await channel.exchange(["kind": "thaw"], expecting: ["thawed"], within: 0.2); XCTFail("no answer, no thaw") } catch HostDaemonError.unsupported(let message) {
             XCTAssertEqual(message, "the guest did not answer thaw on its control lane within 0 s")
         }
         await channel.close()

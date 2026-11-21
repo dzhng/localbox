@@ -163,13 +163,15 @@ public actor SandboxHost {
     private let allowsSimulatedPower: Bool
     /// The installed CLI, which answers agent setup for remote callers (`LOCALBOX_CLI`).
     private let agentSetup: AgentSetupCLI?
+    /// The guest agent build this Mac ships (`LOCALBOX_GUEST_AGENT`); every sandbox is kept at it.
+    private let agentUpdater: GuestAgentUpdater?
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -178,14 +180,14 @@ public actor SandboxHost {
         var found: [String: SandboxRuntime] = [:], strays: [String] = []
         for name in ((try? FileManager.default.contentsOfDirectory(atPath: sandboxesDirectory.path)) ?? []).sorted() where !name.hasPrefix(".") {
             let directory = SandboxDirectory(sandboxesDirectory.appendingPathComponent(name, isDirectory: true))
-            if let record = try? directory.load(), record.sandboxID == name { found[name] = SandboxRuntime(record: record, directory: directory, factory: factory, now: now, onChange: changes.fire) } else { strays.append(name) }
+            if let record = try? directory.load(), record.sandboxID == name { found[name] = SandboxRuntime(record: record, directory: directory, factory: factory, agentUpdater: agentUpdater, now: now, onChange: changes.fire) } else { strays.append(name) }
         }
         runtimes = found; self.strays = strays
         changes.host = self
     }
 
     private func makeRuntime(_ record: SandboxRecord, _ directory: SandboxDirectory) -> SandboxRuntime {
-        SandboxRuntime(record: record, directory: directory, factory: factory, now: now, onChange: changes.fire)
+        SandboxRuntime(record: record, directory: directory, factory: factory, agentUpdater: agentUpdater, now: now, onChange: changes.fire)
     }
 
     public func runtime(_ sandboxID: String) -> SandboxRuntime? { runtimes[sandboxID] }
@@ -255,6 +257,8 @@ public actor SandboxHost {
         idleBusy = true; defer { idleBusy = false }
         var done: [String: SandboxAction] = [:]
         for (id, runtime) in runtimes.sorted(by: { $0.key < $1.key }) {
+            // An agent update deferred by a running job (or a request) is tried again each tick.
+            if let updated = await runtime.updateAgentIfDue() { done[id] = updated; continue }
             let sandbox = await runtime.snapshot()
             guard let since = await runtime.idleSince(), ![.starting, .stopping, .freezing].contains(sandbox.status.lifecycle) else { continue }
             let idle = now().timeIntervalSince(since), policy = IdlePolicy(sandbox.record)
@@ -381,7 +385,7 @@ public actor SandboxHost {
              .imageCreate, .imageCopy, .imageDelete, .imageWait:
             preconditionFailure("answered by request()")
         case .systemInfo:
-            return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
+            return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host", "agent_version": sandbox.agentVersion as Any? ?? NSNull()])
         case .sandboxStatus:
             var result = view(sandbox); result["lifecycle"] = sandbox.status.lifecycle.rawValue; result["channel_epoch"] = sandbox.status.channelEpoch
             result["sleep_after_ms"] = sandbox.record.sleepAfterMs; result["delete_after_ms"] = sandbox.record.deleteAfterMs as Any? ?? NSNull()

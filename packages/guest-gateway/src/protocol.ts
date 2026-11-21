@@ -5,7 +5,7 @@ export type GuestFrame =
   | { kind: "hello"; channel_epoch: number; wall_clock_ms: number; sandbox_id: string; hostname: string }
   | { kind: "request"; request: RequestEnvelope; channel_epoch: number }
   | { kind: "response"; response: ResponseEnvelope; channel_epoch: number }
-  | { kind: "ready"; channel_epoch: number; inventory_digest: string; readiness_marker: string }
+  | { kind: "ready"; channel_epoch: number; inventory_digest: string; readiness_marker: string; agent_version: string; agent_os: string }
   | { kind: "cancel"; request_id: string; channel_epoch: number };
 
 /**
@@ -17,6 +17,16 @@ export type ControlFrame =
   | { kind: "frozen"; timeout_ms: number }
   | { kind: "thaw" }
   | { kind: "thawed" }
+  /** A new agent binary: this header, then `agent.chunk`s in order until `size` bytes arrived. */
+  | { kind: "agent.update"; version: string; sha256: string; size: number }
+  | { kind: "agent.receiving" }
+  /** `data` is base64; chunks stay under the frame limit. */
+  | { kind: "agent.chunk"; offset: number; data: string }
+  | { kind: "agent.received"; bytes: number }
+  /** The last chunk's answer: verified and swapped in; the agent exits once this is on the wire. */
+  | { kind: "updated"; version: string }
+  /** The agent runs jobs whose tracking would die with it, so the update waits. */
+  | { kind: "deferred"; running_jobs: number }
   | { kind: "control_error"; message: string };
 
 export function encodeGuestFrame(frame: GuestFrame | ControlFrame): Buffer {

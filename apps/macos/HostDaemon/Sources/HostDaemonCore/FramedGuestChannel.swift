@@ -4,7 +4,7 @@ import Foundation
 /// `{kind: "request", request, channel_epoch}` and replies as `{kind: "response", response, …}`; the epoch is
 /// the one the guest announced in its ready frame. One request at a time goes over the ordered stream; reads block
 /// on the channel's own queue, so a long request never holds a thread of the cooperative pool.
-public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider {
+public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider, GuestAgentReporting {
     private let reader: FileHandle
     private let readQueue = DispatchQueue(label: "org.localbox.guest-channel.read")
     /// A read is blocked on `readQueue`; `close` leaves the reader to it, so its descriptor is never closed under it.
@@ -22,6 +22,8 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
     private var name: String
     private let wallClock: () -> Int64
     private var helloSent = false
+    /// The agent build and OS its ready frame named.
+    private var agent: GuestAgentIdentity?
 
     public init(reader: FileHandle, writer: FileHandle, sandboxID: String, name: String, maxFrameBytes: UInt32 = 8 * 1024 * 1024, wallClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.reader = reader; self.writer = writer; self.sandboxID = sandboxID; self.name = name; self.maxFrameBytes = maxFrameBytes; self.wallClock = wallClock
@@ -65,7 +67,12 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
 
     /// The host owns the epoch: each (re)connection moves one past what the guest announced, and the hello
     /// frame tells the guest to adopt it, so frames from an earlier connection are stale on both sides.
-    private func adopt(_ ready: [String: Any]?) { self.ready = true; channelEpoch = max(channelEpoch, (ready?["channel_epoch"] as? Int ?? 0) + 1); helloSent = false }
+    private func adopt(_ ready: [String: Any]?) {
+        self.ready = true; channelEpoch = max(channelEpoch, (ready?["channel_epoch"] as? Int ?? 0) + 1); helloSent = false
+        if let version = ready?["agent_version"] as? String, let os = ready?["agent_os"] as? String { agent = GuestAgentIdentity(version: version, os: os) }
+    }
+
+    public func agentIdentity() -> GuestAgentIdentity? { agent }
 
     private func sendHello() throws {
         guard !helloSent else { return }
