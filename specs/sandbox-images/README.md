@@ -19,11 +19,10 @@ sandboxes. You already own them."
 
 ## Next Agent Prompt
 
-*Status 2026-11-21: every spike passed (20 with its throughput gate restated, choice
-20). Built and merged: 21–28, 30–33, 36. In flight on branches: 29, 34 (built, probe
-34 green at u, s, m), 37. Slice
-numbers start at 15 because `scripts/proof/run.ts` keys probes on a two-digit
-prefix.*
+*Status 2026-11-21: every slice is built (spike 20 with its throughput gate
+restated, choice 20); 35 waits only on its real-macOS run. The whole-spec
+review's docs findings are applied. Slice numbers start at 15 because
+`scripts/proof/run.ts` keys probes on a two-digit prefix.*
 
 You are picking up the sandbox-images plan. Where things stand:
 
@@ -32,25 +31,19 @@ You are picking up the sandbox-images plan. Where things stand:
   Recovery screen disable SIP with no human (spike 17). Recovery's `halt` leaves
   the VM on, so builds stop it after csrutil. The darwin forwarder works (19).
 - **Next pickup, in priority order:**
-  1. Integrate the in-flight branches as they land (merge, rerun gates, re-verify
-     any real-VM probe whose code moved).
-  2. **35 macOS sandboxes** (tier `m`) on slice 34's build. The desktop role
-     answers macOS 27's window-picker prompt through Accessibility (choice 34);
-     a macOS build needs about 47 GiB free plus any IPSW bytes not cached.
-  3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
-  4. **40 docs** is done on `t3/sandbox-images-docs-positioning` (README, site,
-     `llms.txt`, skill, SECURITY.md, positioning, runbook step 8). When 34 and the
-     copy transport land, check the docs against what they actually print (the
-     skill's `image create --macos` and `image copy` lines) and rerun
-     `tests/skill-commands.test.ts`.
-- **Warnings:**
-  - Run proof sweeps from a short worktree under `$HOME` (`git worktree add
-    ~/lbi`): tier `l` daemons fail with "socket path is too long" under a long
-    path, and Colima shares only `$HOME`, so Docker-backed checks (probe 32's
-    Linux agent binary, the image build) and probe 03's fixture fail under `/tmp`.
-    Sweep 2026-11-21 at `4c0fbdc`: 00, 03–09, 11, 13, 14, 24, 26–30, 32 green.
-  - The private VNC server listens on every interface; `RecoveryVNC` always uses
-    a one-time VNC password.
+  1. **35's real-macOS run** (tier `m`, in flight): tick 35 when it is green.
+  2. **The whole-spec review's Swift fixes**, including admission counting a
+     running macOS base build against the two-macOS-VM limit (the skill already
+     tells agents a build takes a slot).
+  3. **Ledger consolidation**, then
+     [close-spec](../../.agents/skills/close-spec/SKILL.md). The durable
+     single-owner rules already live in the
+     [host daemon README](../../apps/macos/HostDaemon/README.md) and
+     [DEVELOPMENT.md](../../DEVELOPMENT.md).
+- **Warnings:** how to run the tiers, the tier `m` cache and disk needs, and why
+  sweeps run from a short worktree under `$HOME` are in
+  [DEVELOPMENT.md's Proofs](../../DEVELOPMENT.md#proofs). The private VNC server
+  listens on every interface; `RecoveryVNC` always uses a one-time VNC password.
 
 Keep green on every pass: `npm run build`, `npm test`,
 `swift test --package-path apps/macos/HostDaemon`, `npm run generate:snapshots`
@@ -148,25 +141,16 @@ Lanes:
 | 35 | macOS sandbox: screenshot, browser, shell | every operation works; third Mac VM handled |
 | 36 | placement table cases | holders first, copy plan only when none fits |
 | 37 | loopback transfer with injected loss | resume and AEAD hold |
-| 38 | `image copy --to` between two fixture daemons | size, duration and path reported |
+| 38 | `image copy IMAGE MACHINE` between two fixture daemons | size, duration and path reported |
 | 39 | `sandbox create --image X --machine Y` | returns `copying`, then works |
 | 40 | README, site, skill, SECURITY.md | every named command passes `--help`; screenshot-critique on the site |
 
 ## Proof tiers
 
-Every slice is judged by `npm run proof -- <NN> [--tier …]`: one JSON verdict,
-exit 0 pass, 1 fail, 2 blocked (names the missing input). Tiers `u`, `s`, `l`,
-`v`, `x` are unchanged from the
-[durable-sandboxes plan](../durable-sandboxes/README.md#proof-tiers). Slice 16
-adds:
-
-| Tier | What runs | Budget |
-| --- | --- | --- |
-| m | real macOS guests on a macOS 27 host; IPSW and installed base cached under `LOCALBOX_VMLAB_DIR` | < 10 min cached; the first uncached build may take 45 min |
-
-A probe that needs a cached macOS base it doesn't have exits 2
-(`blocked: no cached macOS base; run npm run proof -- 16 --tier m`). A fixture is
-never evidence for a real-VM claim.
+Every slice is judged by `npm run proof -- <NN> [--tier …]`. The tiers, their
+budgets and what each needs are in
+[DEVELOPMENT.md's Proofs](../../DEVELOPMENT.md#proofs); this plan added tier `m`
+(P8) for real macOS guests.
 
 ## Plan decisions
 
@@ -192,7 +176,7 @@ Correct any row and the slices that cite it change.
 
 **Correction to the map:** confirm-before-coding item 3 says "from a signed,
 notarized daemon". Releases are signed with a self-signed Localbox identity and
-are not notarized (`SECURITY.md:160-161`). Private API use needs no
+are not notarized ([SECURITY.md](../../SECURITY.md#releases-and-updates)). Private API use needs no
 notarization; spike 17 proves `_VZVNCServer` from a release-signed build.
 
 ## Alternatives the drafts raised

@@ -200,7 +200,7 @@ With A and B on different networks, save an image on A and copy it to B. On A:
 localbox sandbox create --name copy-src
 localbox shell exec --sandbox copy-src -- sh -c 'echo copied-from-a > /var/tmp/marker'
 localbox image create --from copy-src --name netcopy
-localbox image copy netcopy --to mac-b
+localbox image copy netcopy mac-b
 localbox image wait netcopy      # repeat until it prints ready or failed
 ```
 
@@ -258,9 +258,9 @@ it names each side's STUN mapping and whether the punch connected.
 **Same network, for comparison.** Put B on A's network, then on A:
 
 ```sh
-localbox image copy netcopy2 --to mac-a      # already on mac-a: nothing to copy
+localbox image copy netcopy2 mac-a      # already on mac-a: nothing to copy
 localbox image delete netcopy --confirm netcopy --machine mac-b
-localbox image copy netcopy --to mac-b
+localbox image copy netcopy mac-b
 localbox image wait netcopy
 ```
 
