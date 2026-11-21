@@ -39,7 +39,7 @@ struct HostDaemonMain {
             await copy?.attach()
             let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { try? images.freeBytes() })
+                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
             await capture.attach(to: host)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
@@ -136,13 +136,14 @@ struct HostDaemonMain {
         return value
     }
 
-    /// Proof runs give fixture machines their own CPU and RAM sizes and cap the admission budget on real VMs; release
-    /// builds ignore all three and use this Mac's.
-    private static func devHost() -> (cpus: Int?, memoryBytes: UInt64?, admissionBytes: UInt64?) {
+    /// Proof runs give fixture machines their own CPU, RAM and free-disk sizes and cap the admission budget on real VMs
+    /// (a fixed free disk keeps the idle-Mac check independent of whatever else is writing to this Mac's disk); release
+    /// builds ignore all four and use this Mac's.
+    private static func devHost() -> (cpus: Int?, memoryBytes: UInt64?, admissionBytes: UInt64?, freeDiskBytes: UInt64?) {
         #if DEBUG
-        return (optionalInteger("LOCALBOX_DEV_HOST_CPUS"), optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init))
+        return (optionalInteger("LOCALBOX_DEV_HOST_CPUS"), optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_FREE_DISK_BYTES").map(UInt64.init))
         #else
-        return (nil, nil, nil)
+        return (nil, nil, nil, nil)
         #endif
     }
 
