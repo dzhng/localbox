@@ -1,10 +1,11 @@
 import CryptoKit
 import Foundation
-import Network
+import ImageTransfer
 
-/// Hole-punch and transfer lab for slice 20. Two Macs exchange candidates through pasted files, punch
-/// UDP through their NATs (local addresses first) and move a file or directory with per-chunk sha256,
-/// a resume bitmap and ChaChaPoly under a one-time key. Every line on stdout is one JSON event.
+/// The manual transfer tool on top of `ImageTransfer`, and probe 20's driver. Two Macs exchange candidates
+/// through pasted files, reach each other over UDP (local addresses first, then hole punching) and move a
+/// file or directory with per-chunk sha256, a resume bitmap and ChaChaPoly under a one-time key. Every line
+/// on stdout is one JSON event.
 ///
 ///   punchlab offer --send <file|dir> --offer <offer.json> --answer <answer.json>
 ///   punchlab answer <offer.json> --receive <dir> --answer <answer.json>
@@ -12,13 +13,16 @@ import Network
 ///   punchlab blast-send --rate <datagrams/s> [--flows 2] [--seconds 3]
 ///   punchlab blast-receive --to <ipv4> --port <p> [--flows 2] [--seconds 4]
 ///
-/// The blast pair moves bare datagrams over the same socket layer with no protocol, AEAD or disk: the
-/// ceiling Network.framework itself sets on a path, to compare a transfer against.
+/// The receiver writes into `<dir>` with its resume bitmap at `<dir>.resume`; a restart with the same `<dir>`
+/// resumes. The blast pair moves bare datagrams over the same socket layer with no protocol, AEAD or disk:
+/// the ceiling Network.framework itself sets on a path, to compare a transfer against.
 ///
 /// Shared flags: --candidate <ipv4> (repeatable; replaces this Mac's interface list), --no-stun,
 /// --datagram <bytes> (default 1400). Offer: --chunk-size <bytes> (default 1 MiB), --max-rate <pps>,
-/// --idle <s>, --tamper-datagram <n>, --corrupt-chunk <n>. Answer: --punch-timeout <s>, --key <base64>
-/// (overrides the offer's key; for the wrong-key check), --lanes <n> (flows on a local path, default 2).
+/// --idle <s>, --tamper-datagram <n> (flip a ciphertext byte of the nth data datagram: AEAD must refuse it),
+/// --corrupt-chunk <n> (flip a plaintext byte of chunk n of the first file, once: its sha256 must refuse it).
+/// Answer: --punch-timeout <s>, --key <base64> (overrides the offer's key; for the wrong-key check),
+/// --lanes <n> (flows on a local path, default 2).
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 func option(_ name: String) -> String? { arguments.firstIndex(of: name).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil } }
@@ -37,6 +41,26 @@ func emit(_ event: String, _ value: some Encodable) {
 
 struct Message: Encodable { var message: String }
 
+struct UsageError: Error, CustomStringConvertible { let description: String }
+
+/// The pasted file the sending side writes: candidates plus the one-time key. Whoever holds it can read the
+/// transfer, so it travels like a password.
+struct Offer: Codable {
+    var id: String
+    var key: String
+    var candidates: [Candidate]
+    var nat: NATReport?
+}
+
+/// The pasted reply. The sending side watches for it and punches toward its candidates; a new `id` (a
+/// restarted receiver) makes it punch again.
+struct Answer: Codable {
+    var id: String
+    var offer: String
+    var candidates: [Candidate]
+    var nat: NATReport?
+}
+
 func writeAtomically<T: Encodable>(_ value: T, to path: String) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -45,109 +69,167 @@ func writeAtomically<T: Encodable>(_ value: T, to path: String) throws {
 
 func randomID() -> String { (0..<8).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined() }
 
-/// The socket, plus the candidates a peer should try for it.
-func gather(queue: DispatchQueue) throws -> (UDPSocket, [Candidate], NATReport?) {
-    let socket = try UDPSocket(delivery: queue)
-    let nat = flag("--no-stun") ? nil : CandidateGatherer.stun(socket)
-    let addresses = options("--candidate").isEmpty ? CandidateGatherer.localAddresses() : options("--candidate")
-    var candidates = addresses.map { Candidate(kind: .local, address: $0, port: socket.port) }
-    if let reflexive = nat?.reflexive, !candidates.contains(reflexive) { candidates.append(reflexive) }
-    return (socket, candidates, nat)
+func selector() -> PathSelector {
+    let lan = LANTransport(addresses: options("--candidate").isEmpty ? nil : options("--candidate"), flows: option("--lanes").flatMap(Int.init) ?? 2)
+    return PathSelector(flag("--no-stun") ? [lan] : [lan, PunchedUDPTransport()])
 }
 
 /// A file sends as itself; a directory sends every regular file under it.
-func sendSet(_ path: String) throws -> (URL, [String]) {
+func manifest(for path: String, chunkSize: UInt32) throws -> (URL, TransferManifest) {
     let url = URL(fileURLWithPath: path).standardizedFileURL
     var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { throw PunchError("no such file: \(path)") }
-    guard isDirectory.boolValue else { return (url.deletingLastPathComponent(), [url.lastPathComponent]) }
-    let files = (FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey])?.compactMap { $0 as? URL } ?? [])
-        .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
-        .map { String($0.standardizedFileURL.path.dropFirst(url.path.count + 1)) }
-        .sorted()
-    return (url, files)
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { throw UsageError(description: "no such file: \(path)") }
+    if isDirectory.boolValue { return (url, try TransferManifest.build(directory: url, chunkSize: chunkSize)) }
+    let root = url.deletingLastPathComponent()
+    return (root, try TransferManifest.build(root: root, paths: [url.lastPathComponent], chunkSize: chunkSize))
 }
 
-func runOffer() throws -> Int32 {
-    guard let send = option("--send"), let offerPath = option("--offer"), let answerPath = option("--answer") else {
-        throw PunchError("usage: punchlab offer --send <file|dir> --offer <offer.json> --answer <answer.json>")
-    }
-    let datagramSize = Int(option("--datagram") ?? "") ?? 1400
-    let (root, paths) = try sendSet(send)
-    let started = Date()
-    let manifest = try TransferManifest.build(root: root, paths: paths, chunkSize: UInt32(option("--chunk-size") ?? "") ?? 1 << 20)
-    struct Built: Encodable { var files: Int; var chunks: Int; var zeroChunks: Int; var dataBytes: UInt64; var seconds: Double }
-    let chunks = manifest.chunks
-    emit("manifest", Built(files: paths.count, chunks: chunks.count, zeroChunks: chunks.filter(\.isZero).count, dataBytes: manifest.dataBytes, seconds: Date().timeIntervalSince(started)))
+/// The probe's integrity checks: damages outgoing data datagrams on their way to the port.
+final class TamperingPort: DatagramPort {
+    private let inner: any DatagramPort
+    private let cipher: PacketCipher
+    private let tamperDatagram: Int?
+    private let corruptChunk: UInt32?
+    private let lock = NSLock()
+    private var dataDatagrams = 0
+    private var corrupted = false
 
-    let queue = DispatchQueue(label: "punchlab.offer", qos: .userInteractive)
-    let (socket, candidates, nat) = try gather(queue: queue)
+    init(_ inner: any DatagramPort, cipher: PacketCipher, tamperDatagram: Int?, corruptChunk: UInt32?) {
+        self.inner = inner; self.cipher = cipher; self.tamperDatagram = tamperDatagram; self.corruptChunk = corruptChunk
+    }
+
+    var delivery: DispatchQueue { inner.delivery }
+    var localPort: UInt16 { inner.localPort }
+    var open: ((Data) -> (PacketHeader, Data)?)? { get { inner.open } set { inner.open = newValue } }
+    var onDatagrams: (([Datagram]) -> Void)? { get { inner.onDatagrams } set { inner.onDatagrams = newValue } }
+    func disconnect(_ remote: PeerAddress) { inner.disconnect(remote) }
+    func close() { inner.close() }
+    func sibling() throws -> any DatagramPort { try inner.sibling() }
+
+    func send(_ datagrams: [Data], to remote: PeerAddress) {
+        lock.lock()
+        let damaged = datagrams.map { datagram -> Data in
+            guard let header = PacketHeader(datagram), header.kind == .data else { return datagram }
+            dataDatagrams += 1
+            var out = datagram
+            if dataDatagrams == tamperDatagram { out[out.startIndex + PacketHeader.size + 3] ^= 0x01 }
+            if let corruptChunk, !corrupted, header.stream == 1, header.chunk == corruptChunk, let (_, plaintext) = cipher.open(datagram) {
+                var flipped = plaintext
+                flipped[flipped.startIndex] ^= 0xff
+                out = cipher.seal(header, flipped); corrupted = true
+            }
+            return out
+        }
+        lock.unlock()
+        inner.send(damaged, to: remote)
+    }
+}
+
+func runOffer() async throws -> Int32 {
+    guard let send = option("--send"), let offerPath = option("--offer"), let answerPath = option("--answer") else {
+        throw UsageError(description: "usage: punchlab offer --send <file|dir> --offer <offer.json> --answer <answer.json>")
+    }
+    let started = Date()
+    let (root, manifest) = try manifest(for: send, chunkSize: UInt32(option("--chunk-size") ?? "") ?? TransferManifest.defaultChunkSize)
+    struct Built: Encodable { var files: Int; var chunks: Int; var zeroChunks: Int; var dataBytes: UInt64; var seconds: Double }
+    emit("manifest", Built(files: manifest.files.count, chunks: manifest.chunkCount, zeroChunks: manifest.zeroChunkCount, dataBytes: manifest.dataBytes, seconds: Date().timeIntervalSince(started)))
+
     let key = SymmetricKey(size: .bits256)
-    let offer = Offer(id: randomID(), key: key.withUnsafeBytes { Data($0) }.base64EncodedString(), candidates: candidates, nat: nat)
+    let socket = try UDPSocket(delivery: DispatchQueue(label: "punchlab.offer", qos: .userInteractive))
+    let tamper = option("--tamper-datagram").flatMap(Int.init), corrupt = option("--corrupt-chunk").flatMap(UInt32.init)
+    let port: any DatagramPort = tamper == nil && corrupt == nil ? socket : TamperingPort(socket, cipher: PacketCipher(key: key), tamperDatagram: tamper, corruptChunk: corrupt)
+    let endpoint = TransferEndpoint(port: port, selector: selector())
+    let offer = Offer(id: randomID(), key: key.withUnsafeBytes { Data($0) }.base64EncodedString(), candidates: endpoint.candidates, nat: endpoint.nat)
     try? FileManager.default.removeItem(atPath: answerPath)
     try writeAtomically(offer, to: offerPath)
     struct Offered: Encodable { var id: String; var candidates: [Candidate]; var nat: NATReport? }
-    emit("offer", Offered(id: offer.id, candidates: candidates, nat: nat))
+    emit("offer", Offered(id: offer.id, candidates: offer.candidates, nat: offer.nat))
 
     var senderOptions = Sender.Options()
-    senderOptions.datagramSize = datagramSize
+    senderOptions.datagramSize = Int(option("--datagram") ?? "") ?? 1400
     if let rate = option("--max-rate").flatMap(Double.init) { senderOptions.maxRate = rate }
     if let idle = option("--idle").flatMap(Double.init) { senderOptions.idleTimeout = idle }
-    senderOptions.tamperDatagram = option("--tamper-datagram").flatMap(Int.init)
-    senderOptions.corruptChunk = option("--corrupt-chunk").flatMap(Int.init)
-    let sender = try Sender(socket: socket, key: PacketCipher(key: key), root: root, manifest: manifest, options: senderOptions)
 
     // The answer is a pasted file: poll for it, and punch again whenever a restarted receiver replaces it.
-    let watcher = Thread {
-        var seen: String?
-        while true {
-            if let data = FileManager.default.contents(atPath: answerPath), let answer = try? JSONDecoder().decode(Answer.self, from: data),
-               answer.offer == offer.id, answer.id != seen {
-                seen = answer.id
-                emit("answer", answer)
-                sender.punch(toward: answer.candidates)
+    let answers = AsyncStream<[Candidate]> { continuation in
+        Thread {
+            var seen: String?
+            while true {
+                if let data = FileManager.default.contents(atPath: answerPath), let answer = try? JSONDecoder().decode(Answer.self, from: data),
+                   answer.offer == offer.id, answer.id != seen {
+                    seen = answer.id
+                    emit("answer", answer)
+                    continuation.yield(answer.candidates)
+                }
+                Thread.sleep(forTimeInterval: 0.2)
             }
-            Thread.sleep(forTimeInterval: 0.2)
-        }
+        }.start()
     }
-    watcher.start()
-    let report = sender.run()
+    let report = try await Sender.send(directory: root, manifest: manifest, key: key, over: endpoint, answers: answers, options: senderOptions)
     emit(report.finished ? "done" : "idle", report)
-    socket.close()
+    endpoint.close()
     return report.finished ? 0 : 1
 }
 
-func runAnswer() throws -> Int32 {
-    guard arguments.count > 1, let destination = option("--receive"), let answerPath = option("--answer") else {
-        throw PunchError("usage: punchlab answer <offer.json> --receive <dir> --answer <answer.json>")
-    }
-    let offerData = try Data(contentsOf: URL(fileURLWithPath: arguments[1]))
-    let offer = try JSONDecoder().decode(Offer.self, from: offerData)
-    let keyText = option("--key") ?? offer.key
-    guard let keyData = Data(base64Encoded: keyText), keyData.count == 32 else { throw PunchError("the offer's key is not 32 bytes of base64") }
+/// The receiver's report, flat, as probe 20 reads it.
+struct Received: Encodable {
+    var bytes: UInt64
+    var duration: Double
+    var path: String
+    var pathKind: String
+    var lanes: Int
+    var dataBytes: UInt64
+    var files: Int
+    var chunks: Int
+    var zeroChunks: Int
+    var resumedChunks: Int
+    var resumedBytes: UInt64
+    var resumeRejectedChunks: Int
+    var receivedBytes: UInt64
+    var dataSeconds: Double
+    var throughputGbps: Double
+    var rejectedDatagrams: Int
+    var rejectedChunks: Int
+    var lostFragments: UInt64
+    var duplicateFragments: Int
 
-    let queue = DispatchQueue(label: "punchlab.answer", qos: .userInteractive)
-    let (socket, candidates, nat) = try gather(queue: queue)
-    let answer = Answer(id: randomID(), offer: offer.id, candidates: candidates, nat: nat)
+    init(_ report: TransferReport) {
+        let stats = report.stats
+        bytes = report.bytes; duration = report.duration
+        path = report.path.candidate.label; pathKind = report.path.kind.rawValue; lanes = report.path.flows
+        dataBytes = report.bytes; files = stats.files; chunks = stats.chunks; zeroChunks = stats.zeroChunks
+        resumedChunks = stats.resumedChunks; resumedBytes = stats.resumedBytes; resumeRejectedChunks = stats.resumeRejectedChunks
+        receivedBytes = stats.receivedBytes; dataSeconds = stats.dataSeconds; throughputGbps = stats.throughputGbps
+        rejectedDatagrams = stats.rejectedDatagrams; rejectedChunks = stats.rejectedChunks
+        lostFragments = stats.lostFragments; duplicateFragments = stats.duplicateFragments
+    }
+}
+
+func runAnswer() async throws -> Int32 {
+    guard arguments.count > 1, let destination = option("--receive"), let answerPath = option("--answer") else {
+        throw UsageError(description: "usage: punchlab answer <offer.json> --receive <dir> --answer <answer.json>")
+    }
+    let offer = try JSONDecoder().decode(Offer.self, from: Data(contentsOf: URL(fileURLWithPath: arguments[1])))
+    guard let keyData = Data(base64Encoded: option("--key") ?? offer.key), keyData.count == 32 else { throw UsageError(description: "the offer's key is not 32 bytes of base64") }
+
+    let endpoint = TransferEndpoint(port: try UDPSocket(delivery: DispatchQueue(label: "punchlab.answer", qos: .userInteractive)), selector: selector())
+    let answer = Answer(id: randomID(), offer: offer.id, candidates: endpoint.candidates, nat: endpoint.nat)
     try writeAtomically(answer, to: answerPath)
     emit("answer", answer)
 
     var receiverOptions = Receiver.Options()
     receiverOptions.datagramSize = Int(option("--datagram") ?? "") ?? 1400
     if let timeout = option("--punch-timeout").flatMap(Double.init) { receiverOptions.punchTimeout = timeout }
-    if let lanes = option("--lanes").flatMap(Int.init) { receiverOptions.localLanes = lanes }
     receiverOptions.progress = { emit("progress", $0) }
-    let receiver = Receiver(socket: socket, key: PacketCipher(key: SymmetricKey(data: keyData)), offer: offer.candidates,
-                            destination: URL(fileURLWithPath: destination).standardizedFileURL, options: receiverOptions)
-    let report = try receiver.run()
-    emit("done", report)
-    socket.close()
+    let report = try await Receiver.receive(into: URL(fileURLWithPath: destination), key: SymmetricKey(data: keyData), offer: offer.candidates, over: endpoint, options: receiverOptions)
+    emit("done", Received(report))
+    endpoint.close()
     return 0
 }
 
 func runStun() throws -> Int32 {
     let socket = try UDPSocket(delivery: DispatchQueue(label: "punchlab.stun"))
-    let report = CandidateGatherer.stun(socket)
+    let report = PunchedUDPTransport().stun(socket)
     emit("stun", report)
     socket.close()
     return report.reflexive == nil ? 1 : 0
@@ -157,11 +239,11 @@ func runStun() throws -> Int32 {
 /// said hello, paced like the sender (a 250 µs timer sending whatever is due), so the data arrives on the
 /// receiver's own outgoing flows exactly as a transfer's does.
 func runBlastSend() throws -> Int32 {
-    guard let rate = option("--rate").flatMap(Double.init) else { throw PunchError("usage: punchlab blast-send --rate <datagrams/s> [--flows 2] [--seconds 3]") }
+    guard let rate = option("--rate").flatMap(Double.init) else { throw UsageError(description: "usage: punchlab blast-send --rate <datagrams/s> [--flows 2] [--seconds 3]") }
     let queue = DispatchQueue(label: "punchlab.blast", qos: .userInteractive)
     let socket = try UDPSocket(delivery: queue)
     let flows = Int(option("--flows") ?? "") ?? 2
-    var targets: [NWEndpoint] = []
+    var targets: [PeerAddress] = []
     let ready = DispatchSemaphore(value: 0)
     socket.onDatagrams = { batch in
         for datagram in batch where !targets.contains(datagram.from) {
@@ -170,8 +252,8 @@ func runBlastSend() throws -> Int32 {
         }
     }
     struct Listening: Encodable { var port: UInt16 }
-    emit("listening", Listening(port: socket.port))
-    guard ready.wait(timeout: .now() + 10) == .success else { throw PunchError("no hello from \(flows) flows within 10 s") }
+    emit("listening", Listening(port: socket.localPort))
+    guard ready.wait(timeout: .now() + 10) == .success else { throw UsageError(description: "no hello from \(flows) flows within 10 s") }
     let datagram = Data(count: (Int(option("--datagram") ?? "") ?? 1400) - PacketHeader.size - PacketHeader.tagSize)
     let total = Int(rate * (Double(option("--seconds") ?? "") ?? 3))
     var sent = 0, next = 0
@@ -195,7 +277,7 @@ func runBlastSend() throws -> Int32 {
 
 /// Opens `--flows` local ports, says hello to the blast sender from each, and counts what comes back.
 func runBlastReceive() throws -> Int32 {
-    guard let host = option("--to"), let port = option("--port").flatMap(UInt16.init) else { throw PunchError("usage: punchlab blast-receive --to <ipv4> --port <p>") }
+    guard let host = option("--to"), let port = option("--port").flatMap(UInt16.init) else { throw UsageError(description: "usage: punchlab blast-receive --to <ipv4> --port <p>") }
     let queue = DispatchQueue(label: "punchlab.blast", qos: .userInteractive)
     let sockets = try (0..<(Int(option("--flows") ?? "") ?? 2)).map { _ in try UDPSocket(delivery: queue) }
     var count = 0, bytes = 0, first: Date?, last = Date()
@@ -204,7 +286,7 @@ func runBlastReceive() throws -> Int32 {
             if first == nil { first = Date() }
             count += batch.count; bytes += batch.reduce(0) { $0 + $1.data.count }; last = Date()
         }
-        socket.send([Data("hello".utf8)], to: UDPSocket.endpoint(host, port))
+        socket.send([Data("hello".utf8)], to: PeerAddress(host, port))
     }
     Thread.sleep(forTimeInterval: Double(option("--seconds") ?? "") ?? 4)
     struct Blast: Encodable { var datagrams: Int; var pps: Double; var gbps: Double }
@@ -219,12 +301,12 @@ func runBlastReceive() throws -> Int32 {
 
 do {
     switch arguments.first {
-    case "offer": exit(try runOffer())
-    case "answer": exit(try runAnswer())
+    case "offer": exit(try await runOffer())
+    case "answer": exit(try await runAnswer())
     case "stun": exit(try runStun())
     case "blast-receive": exit(try runBlastReceive())
     case "blast-send": exit(try runBlastSend())
-    default: throw PunchError("usage: punchlab offer|answer|stun|blast-receive|blast-send (see the header of main.swift)")
+    default: throw UsageError(description: "usage: punchlab offer|answer|stun|blast-receive|blast-send (see the header of main.swift)")
     }
 } catch {
     emit("error", Message(message: "\(error)"))

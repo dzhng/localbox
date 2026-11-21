@@ -21,8 +21,9 @@ const MIN_GBPS = 1;
 type Event = Record<string, any> & { event: string };
 
 /** Slice 20's go/no-go: candidate exchange, punching (local first), and a chunked, resumable, authenticated
- * transfer between two `localbox-punchlab` processes. Tier s runs over loopback, tier l over this Mac's LAN
- * address with STUN and the iperf3 comparison, tier x needs a second Mac on another network. */
+ * transfer between two `localbox-punchlab` processes, which run slice 37's ImageTransfer library. Tier s runs
+ * over loopback, tier l over this Mac's LAN address with STUN and the iperf3 comparison, tier x needs a second
+ * Mac on another network. */
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "x") {
     const check = await ctx.check("punch and transfer between this Mac and a second Mac on another network", () => {
@@ -248,7 +249,7 @@ class Lab {
         if (at.event !== "progress") throw new Error(`receiver finished before it could be killed: ${JSON.stringify(at)}`);
         receiver.child.kill("SIGKILL"); await receiver.exited;
         killedAt = at.fraction;
-        bitmapBytes = existsSync(`${output}.partial.resume`) ? statSync(`${output}.partial.resume`).size : 0;
+        bitmapBytes = existsSync(`${output}.resume`) ? statSync(`${output}.resume`).size : 0;
         receiver = new Proc(this.bin, receiverArgs);
       }
       const finished = await receiver.wait((e) => e.event === "done" || e.event === "error" || e.event === "exit", 180_000, "the receiver's report");

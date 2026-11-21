@@ -1,31 +1,45 @@
+import CryptoKit
 import Foundation
-import Network
+
+/// What the sender saw. `finished` is false when the receiver never reported done (idle timeout or cancel).
+public struct SenderReport: Codable, Equatable, Sendable {
+    public var dataDatagrams = 0
+    public var dataBytes = 0
+    public var rejectedDatagrams = 0
+    public var finalRate = 0.0
+    public var peers: [String] = []
+    public var finished = false
+}
 
 /// The offering side. It is deliberately simple: it answers HELLO with the manifest info and sends exactly
 /// the fragments each REQUEST names, in order, paced at a rate the receiver's loss feedback steers. All
-/// retransmission and resume decisions live in the receiver.
-final class Sender: @unchecked Sendable {
-    struct Options {
-        var datagramSize = 1400
-        var initialRate = 20_000.0  // datagrams per second
-        var maxRate = 1_000_000.0
-        var idleTimeout: TimeInterval = 60
-        /// Test hooks: flip one ciphertext byte of the Nth data datagram (AEAD must reject it), or one
-        /// plaintext byte of a global chunk's first send (the chunk sha256 must reject it).
-        var tamperDatagram: Int?
-        var corruptChunk: Int?
+/// retransmission and resume decisions live in the receiver, so a restarted receiver simply asks again.
+public final class Sender: @unchecked Sendable {
+    public struct Options: Sendable {
+        public var datagramSize = 1400
+        public var initialRate = 20_000.0  // datagrams per second
+        public var maxRate = 1_000_000.0
+        /// Gives up when nothing authenticated arrives for this long.
+        public var idleTimeout: TimeInterval = 60
+        public init() {}
     }
 
-    struct Report: Encodable {
-        var dataDatagrams = 0
-        var dataBytes = 0
-        var rejectedDatagrams = 0
-        var finalRate = 0.0
-        var peers: [String] = []
-        var finished = false
+    /// Serves `directory` as `manifest` until the receiver reports done, nothing authenticated arrives for
+    /// `idleTimeout`, or the task is cancelled. Each element of `answers` is a (new) receiver's candidate set:
+    /// the sender punches toward it so its own NAT opens a mapping for the receiver.
+    public static func send(directory: URL, manifest: TransferManifest, key: SymmetricKey, over endpoint: TransferEndpoint,
+                            answers: AsyncStream<[Candidate]> = AsyncStream { $0.finish() }, options: Options = Options()) async throws -> SenderReport {
+        let sender = try Sender(port: endpoint.port, key: PacketCipher(key: key), root: directory, manifest: manifest, options: options)
+        let watcher = Task { for await candidates in answers { sender.punch(toward: candidates) } }
+        defer { watcher.cancel() }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in sender.port.delivery.async { sender.start(continuation) } }
+        } onCancel: {
+            sender.port.delivery.async { sender.conclude() }
+        }
     }
 
-    private let socket: UDPSocket
+    private let port: any DatagramPort
     private let cipher: PacketCipher
     private let options: Options
     private let session = UInt32.random(in: 0...UInt32.max)
@@ -37,7 +51,8 @@ final class Sender: @unchecked Sendable {
     private let chunkCounts: [Int]
     private let files: [Int32]
 
-    private var queue: [(range: FragmentRange, peer: NWEndpoint)] = []
+    // State below is owned by `port.delivery`.
+    private var queue: [(range: FragmentRange, peer: PeerAddress)] = []
     private var queueHead = 0
     private var cursor: UInt16 = 0  // next fragment within queue[queueHead]
     private var rate: Double
@@ -50,17 +65,17 @@ final class Sender: @unchecked Sendable {
     private var cache: [Int: Data] = [:]
     private var cacheOrder: [Int] = []
     private var sequence: UInt64 = 0
-    private var probeTargets: [NWEndpoint] = []
+    private var probeTargets: [PeerAddress] = []
     private var probeUntil = Date.distantPast
     private var lastProbe = Date.distantPast
     private var lastHeard = Date()
-    private var corrupted = false
-    private var report = Report()
+    private var report = SenderReport()
     private var timer: DispatchSourceTimer?
-    private let finished = DispatchSemaphore(value: 0)
+    private var continuation: CheckedContinuation<SenderReport, Never>?
+    private var concluded = false
 
-    init(socket: UDPSocket, key: PacketCipher, root: URL, manifest: TransferManifest, options: Options) throws {
-        self.socket = socket; self.cipher = key; self.options = options
+    private init(port: any DatagramPort, key: PacketCipher, root: URL, manifest: TransferManifest, options: Options) throws {
+        self.port = port; self.cipher = key; self.options = options
         payloadSize = options.datagramSize - PacketHeader.size - PacketHeader.tagSize
         manifestBytes = manifest.encoded()
         manifestInfo = ManifestInfo(length: UInt32(manifestBytes.count), digest: sha256(manifestBytes))
@@ -69,42 +84,51 @@ final class Sender: @unchecked Sendable {
         for file in manifest.files { starts.append(total); total += file.chunkCount }
         firstGlobal = starts
         chunkCounts = manifest.files.map(\.chunkCount)
-        files = try manifest.files.map { file in
+        var opened: [Int32] = []
+        for file in manifest.files {
             let fd = open(root.appendingPathComponent(file.path).path, O_RDONLY)
-            guard fd >= 0 else { throw PunchError("cannot open \(file.path)") }
-            return fd
+            guard fd >= 0 else { opened.forEach { close($0) }; throw TransferError.failed("cannot open \(file.path)") }
+            opened.append(fd)
         }
+        files = opened
         rate = options.initialRate
     }
 
     deinit { files.forEach { close($0) } }
 
-    /// Serves until the receiver reports done or nothing authenticated arrives for `idleTimeout`.
-    func run() -> Report {
-        socket.delivery.sync {
-            socket.open = cipher.open
-            socket.onDatagrams = { [weak self] batch in batch.forEach { self?.handle($0) } }
-            let timer = DispatchSource.makeTimerSource(flags: .strict, queue: socket.delivery)
-            timer.schedule(deadline: .now(), repeating: .microseconds(250), leeway: .microseconds(50))
-            timer.setEventHandler { [weak self] in self?.tick() }
-            timer.resume()
-            self.timer = timer
-            lastHeard = Date()
-        }
-        finished.wait()
-        return socket.delivery.sync { timer?.cancel(); socket.onDatagrams = nil; report.finalRate = rate; return report }
+    private func start(_ continuation: CheckedContinuation<SenderReport, Never>) {
+        guard !concluded else { return continuation.resume(returning: report) }
+        self.continuation = continuation
+        port.open = cipher.open
+        port.onDatagrams = { [weak self] batch in batch.forEach { self?.handle($0) } }
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: port.delivery)
+        timer.schedule(deadline: .now(), repeating: .microseconds(250), leeway: .microseconds(50))
+        timer.setEventHandler { [weak self] in self?.tick() }
+        timer.resume()
+        self.timer = timer
+        lastHeard = Date()
+    }
+
+    /// On `port.delivery`, once: stops serving and hands the report back.
+    private func conclude() {
+        guard !concluded else { return }
+        concluded = true
+        timer?.cancel(); timer = nil
+        port.onDatagrams = nil
+        report.finalRate = rate
+        continuation?.resume(returning: report); continuation = nil
     }
 
     /// A (new) answer arrived: punch toward its candidates for a while so our NAT opens a mapping for it.
-    func punch(toward candidates: [Candidate]) {
-        socket.delivery.async { [self] in
-            probeTargets = candidates.map(\.endpoint)
+    private func punch(toward candidates: [Candidate]) {
+        port.delivery.async { [self] in
+            probeTargets = candidates.map(\.peer)
             probeUntil = Date().addingTimeInterval(20)
             sendProbes()
         }
     }
 
-    private func handle(_ datagram: UDPSocket.Datagram) {
+    private func handle(_ datagram: Datagram) {
         guard let (header, payload) = datagram.opened else { report.rejectedDatagrams += 1; return }
         let remote = datagram.from
         lastHeard = Date()
@@ -114,8 +138,7 @@ final class Sender: @unchecked Sendable {
             queue.removeAll(); queueHead = 0; cursor = 0
             epoch = (Date(), 0, 0)
             rate = max(options.initialRate, rate / 2)
-            let label = "\(remote)"
-            if !report.peers.contains(label) { report.peers.append(label) }
+            if !report.peers.contains(remote.description) { report.peers.append(remote.description) }
         }
         switch header.kind {
         case .hello:
@@ -127,7 +150,7 @@ final class Sender: @unchecked Sendable {
             for range in request.ranges where range.count > 0 { queue.append((range, remote)) }
         case .done:
             report.finished = true
-            finished.signal()
+            conclude()
         default: break
         }
     }
@@ -159,20 +182,22 @@ final class Sender: @unchecked Sendable {
         lastTick = now
         // A burst cap of 1 ms of sending keeps a late timer from dumping a socket buffer's worth at once.
         tokens = min(tokens + rate * elapsed, max(16, rate * 0.001))
-        var due: [NWEndpoint: [(PacketHeader, Data)]] = [:]
+        // Consecutive fragments almost always go to the same flow, so they are grouped by run, not hashed.
+        var due: [(peer: PeerAddress, pieces: [(PacketHeader, Data)])] = []
         while tokens >= 1, let (header, peer) = nextFragment() {
             tokens -= 1
-            if let piece = fragmentPlaintext(header) { due[peer, default: []].append((header, piece)) }
+            guard let piece = fragmentPlaintext(header) else { continue }
+            if let last = due.indices.last, due[last].peer == peer { due[last].pieces.append((header, piece)) } else { due.append((peer, [(header, piece)])) }
         }
         if queueHead < queue.count { rateLimited = true } else { tokens = min(tokens, 16) }
-        for (peer, pieces) in due { socket.send(sealFragments(pieces), to: peer) }
+        for (peer, pieces) in due { port.send(sealFragments(pieces), to: peer) }
         if queueHead > 4096 { queue.removeFirst(queueHead); queueHead = 0 }
         let wall = Date()
         if wall < probeUntil, wall.timeIntervalSince(lastProbe) >= 0.1 { sendProbes() }
-        if wall.timeIntervalSince(lastHeard) > options.idleTimeout { finished.signal() }
+        if wall.timeIntervalSince(lastHeard) > options.idleTimeout { conclude() }
     }
 
-    private func nextFragment() -> (PacketHeader, NWEndpoint)? {
+    private func nextFragment() -> (PacketHeader, PeerAddress)? {
         guard queueHead < queue.count else { return nil }
         let (range, peer) = queue[queueHead]
         let header = PacketHeader(session: session, kind: .data, stream: range.stream, chunk: range.chunk, fragment: range.first + cursor)
@@ -186,24 +211,15 @@ final class Sender: @unchecked Sendable {
         guard let chunk = plaintext(stream: header.stream, chunk: Int(header.chunk)) else { return nil }
         let start = Int(header.fragment) * payloadSize
         guard start < chunk.count else { return nil }
-        var piece = chunk.subdata(in: start..<min(chunk.count, start + payloadSize))
-        if let target = options.corruptChunk, !corrupted, header.stream > 0, globalIndex(header) == target {
-            piece[0] ^= 0xff; corrupted = true
-        }
-        return piece
+        return chunk.subdata(in: start..<min(chunk.count, start + payloadSize))
     }
 
     private func sealFragments(_ pieces: [(PacketHeader, Data)]) -> [Data] {
-        var datagrams = cipher.seal(pieces)
-        if let tamper = options.tamperDatagram, (report.dataDatagrams..<report.dataDatagrams + datagrams.count).contains(tamper - 1) {
-            datagrams[tamper - 1 - report.dataDatagrams][PacketHeader.size + 3] ^= 0x01
-        }
+        let datagrams = cipher.seal(pieces)
         report.dataDatagrams += datagrams.count
         report.dataBytes += pieces.reduce(0) { $0 + $1.1.count }
         return datagrams
     }
-
-    private func globalIndex(_ header: PacketHeader) -> Int { firstGlobal[Int(header.stream) - 1] + Int(header.chunk) }
 
     /// Stream 0 is the manifest itself; stream n is file n-1. A few recent chunks stay cached because
     /// requests walk chunks in order and retransmissions revisit recent ones.
@@ -226,8 +242,8 @@ final class Sender: @unchecked Sendable {
         for target in probeTargets { sendControl(.probe, Data(), to: target) }
     }
 
-    private func sendControl(_ kind: PacketKind, _ payload: Data, to remote: NWEndpoint) {
+    private func sendControl(_ kind: PacketKind, _ payload: Data, to remote: PeerAddress) {
         sequence += 1
-        socket.send([cipher.seal(PacketHeader(session: session, kind: kind, sequence: sequence), payload)], to: remote)
+        port.send([cipher.seal(PacketHeader(session: session, kind: kind, sequence: sequence), payload)], to: remote)
     }
 }

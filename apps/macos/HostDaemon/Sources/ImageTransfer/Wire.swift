@@ -12,7 +12,7 @@ import Foundation
 ///
 /// A retransmitted data fragment reuses its nonce with byte-identical plaintext, which is safe; kinds are
 /// direction-specific, so sender and receiver never collide even if their sessions match.
-enum PacketKind: UInt8 {
+public enum PacketKind: UInt8, Sendable {
     case hello = 0x01         // receiver → sender: punch packet and "send me the manifest info"
     case probe = 0x02         // sender → receiver: punch packet toward the answer's candidates
     case manifestInfo = 0x03  // sender → receiver: manifest length and digest
@@ -21,18 +21,18 @@ enum PacketKind: UInt8 {
     case data = 0x10          // sender → receiver: one fragment of one chunk
 }
 
-struct PacketHeader: Equatable {
-    static let size = 12
-    static let tagSize = 16
+public struct PacketHeader: Equatable, Sendable {
+    public static let size = 12
+    public static let tagSize = 16
 
-    var session: UInt32
-    var kind: PacketKind
-    var stream: UInt8 = 0
-    var chunk: UInt32 = 0
-    var fragment: UInt16 = 0
-    var sequence: UInt64 = 0
+    public var session: UInt32
+    public var kind: PacketKind
+    public var stream: UInt8 = 0
+    public var chunk: UInt32 = 0
+    public var fragment: UInt16 = 0
+    public var sequence: UInt64 = 0
 
-    var bytes: Data {
+    public var bytes: Data {
         var out = Data(capacity: Self.size)
         out.appendBE(session)
         out.append(kind.rawValue)
@@ -46,11 +46,11 @@ struct PacketHeader: Equatable {
         return out
     }
 
-    init(session: UInt32, kind: PacketKind, stream: UInt8 = 0, chunk: UInt32 = 0, fragment: UInt16 = 0, sequence: UInt64 = 0) {
+    public init(session: UInt32, kind: PacketKind, stream: UInt8 = 0, chunk: UInt32 = 0, fragment: UInt16 = 0, sequence: UInt64 = 0) {
         self.session = session; self.kind = kind; self.stream = stream; self.chunk = chunk; self.fragment = fragment; self.sequence = sequence
     }
 
-    init?(_ datagram: Data) {
+    public init?(_ datagram: Data) {
         guard datagram.count >= Self.size + Self.tagSize, let kind = PacketKind(rawValue: datagram.byte(4)) else { return nil }
         self.session = datagram.readBE(UInt32.self, at: 0)
         self.kind = kind
@@ -66,18 +66,20 @@ struct PacketHeader: Equatable {
     }
 }
 
-/// Seals and opens datagrams with the one-time key from the offer.
-struct PacketCipher {
-    let key: SymmetricKey
+/// Seals and opens datagrams with the one-time per-copy key.
+public struct PacketCipher: Sendable {
+    public let key: SymmetricKey
 
-    func seal(_ header: PacketHeader, _ plaintext: Data) -> Data {
+    public init(key: SymmetricKey) { self.key = key }
+
+    public func seal(_ header: PacketHeader, _ plaintext: Data) -> Data {
         // The header is a valid 12-byte nonce by construction, so neither call can throw.
         let nonce = try! ChaChaPoly.Nonce(data: header.bytes)
         return try! ChaChaPoly.seal(plaintext, using: key, nonce: nonce).combined
     }
 
     /// nil when the datagram is malformed or fails authentication (wrong key, tampered, or not ours).
-    func open(_ datagram: Data) -> (PacketHeader, Data)? {
+    public func open(_ datagram: Data) -> (PacketHeader, Data)? {
         guard let header = PacketHeader(datagram),
               let box = try? ChaChaPoly.SealedBox(combined: datagram),
               let plaintext = try? ChaChaPoly.open(box, using: key) else { return nil }
@@ -157,5 +159,5 @@ extension Data {
     }
 }
 
-/// `PUNCHLAB_DEBUG=1`: sender and receiver print their rate, window and loss on stderr as they adapt.
-let debug = ProcessInfo.processInfo.environment["PUNCHLAB_DEBUG"] != nil
+/// `LOCALBOX_TRANSFER_DEBUG=1`: sender and receiver print their rate, window and loss on stderr as they adapt.
+let debug = ProcessInfo.processInfo.environment["LOCALBOX_TRANSFER_DEBUG"] != nil
