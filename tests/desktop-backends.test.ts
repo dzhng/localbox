@@ -111,7 +111,7 @@ test("on macOS the browser is launched in the session when CDP doesn't answer, o
   const [first, second] = await Promise.all([handlers["browser.list_tabs"]!({}, context()), handlers["browser.list_tabs"]!({}, context())]);
   assert.deepEqual([first, second], [{ tabs: [] }, { tabs: [] }]);
   assert.deepEqual(opened, [["/usr/bin/open", "-n", "-a", "Google Chrome", "--args", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1",
-    "--user-data-dir=/Users/localbox/Library/Application Support/Localbox/Chrome", "--no-first-run", "--no-default-browser-check", "about:blank"]]);
+    "--user-data-dir=/Users/localbox/Library/Application Support/Localbox/Chrome", "--no-first-run", "--no-default-browser-check", "--no-startup-window"]]);
 });
 
 test("desktop status never starts a browser: with CDP down it reports no tabs", async () => {

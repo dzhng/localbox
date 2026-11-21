@@ -18,34 +18,6 @@ public struct MacProvisioningUser: Sendable {
     }
 }
 
-/// A macOS base build's working files, in its `ImageStore` build directory (`images/.<id>.build/`): the installed
-/// disk and auxiliary storage kept pristine, the hardware model and identity they were installed with, and the work
-/// copies (`disk.img`, `boot/aux.img`) laid out as an image's, so committing is one rename once the private files go.
-public struct MacBuildDirectory: Sendable {
-    public let root: URL
-    public init(root: URL) { self.root = root }
-    public var installedDisk: URL { root.appendingPathComponent("installed.img") }
-    public var installedAux: URL { root.appendingPathComponent("installed-aux.img") }
-    public var hardwareModel: URL { root.appendingPathComponent("hardware-model") }
-    public var machineIdentifier: URL { root.appendingPathComponent("machine-identifier") }
-    public var mac: URL { root.appendingPathComponent("mac") }
-    public var payload: URL { root.appendingPathComponent("payload.tgz") }
-    public var disk: URL { root.appendingPathComponent(ImageStore.diskName) }
-    public var aux: URL { root.appendingPathComponent("boot", isDirectory: true).appendingPathComponent("aux.img") }
-
-    /// Everything that is the build's own and not the image's.
-    var privateFiles: [URL] { [installedDisk, installedAux, hardwareModel, machineIdentifier, mac, payload] }
-
-    /// A fresh work copy of the installed guest: an APFS clone of its disk and a copy of its auxiliary storage. Each
-    /// provisioning boot starts from one, so a build that resumes never boots a half-provisioned disk.
-    func resetWorkCopy() throws {
-        for file in [disk, aux] { try? FileManager.default.removeItem(at: file) }
-        try FileManager.default.createDirectory(at: aux.deletingLastPathComponent(), withIntermediateDirectories: true)
-        _ = try cloneDisk(installedDisk, to: disk)
-        try FileManager.default.copyItem(at: installedAux, to: aux)
-    }
-}
-
 /// The VM side of a macOS base build. `AppleMacBuildDriver` boots real guests; tests pass a fake.
 public protocol MacBuildDriver: Sendable {
     /// Installs `ipsw` as the build's pristine guest: its installed disk of `diskBytes`, auxiliary storage, hardware
@@ -53,23 +25,30 @@ public protocol MacBuildDriver: Sendable {
     func install(ipsw: URL, into build: MacBuildDirectory, diskBytes: UInt64, progress: @escaping @Sendable (Double) -> Void) async throws
     /// Boots the work copy for the first time with `user` provisioned (auto-login, Remote Login on); the guest answers
     /// over SSH as that user.
-    func provision(_ build: MacBuildDirectory, user: MacProvisioningUser) async throws -> any MacBuildGuest
+    func provision(_ build: MacBuildDirectory, user: MacProvisioningUser) async throws -> any MacProvisionedGuest
     /// Boots the work copy normally; the guest answers through the Localbox agent's root shell over vsock.
-    func boot(_ build: MacBuildDirectory) async throws -> any MacBuildGuest
+    func boot(_ build: MacBuildDirectory) async throws -> any MacAgentGuest
 }
 
 /// A booted build guest.
 public protocol MacBuildGuest: Sendable {
     /// Runs `script` with `/bin/sh` as root; throws with its output unless it exits 0, else returns its stdout.
     func root(_ script: String, timeout: TimeInterval) async throws -> String
-    /// Copies a host file into the guest (SSH only).
-    func upload(_ local: URL, to remote: String) async throws
-    /// Shuts the guest down from inside and waits for it to power off.
-    func shutDown() async throws
-    /// Shuts down, boots Recovery and runs `csrutil disable` as `user` on its Terminal; ends powered off.
-    func disableSIP(as user: MacProvisioningUser) async throws
     /// Stops the VM at once (a failed phase leaves nothing running).
     func abandon() async
+}
+
+/// The first boot of a fresh install, over SSH as the provisioned user: the payload goes in, and SIP is disabled.
+public protocol MacProvisionedGuest: MacBuildGuest {
+    func upload(_ local: URL, to remote: String) async throws
+    /// Shuts down, boots Recovery and runs `csrutil disable` as `user` on its Terminal; ends powered off.
+    func disableSIP(as user: MacProvisioningUser) async throws
+}
+
+/// A normal boot, through the Localbox agent.
+public protocol MacAgentGuest: MacBuildGuest {
+    /// Shuts the guest down from inside and waits for it to power off.
+    func shutDown() async throws
 }
 
 /// Host operation kind `macos.build` (`image create --macos`): builds the account's macOS base on this Mac from
@@ -77,12 +56,13 @@ public protocol MacBuildGuest: Sendable {
 ///
 /// Phases, each journaled as the checkpoint's next phase before it runs: `download` (resumable, into the IPSW cache),
 /// `install`, `provision` (a fresh clone of the installed disk, first boot with a random password and Remote Login),
-/// `bootstrap` (over SSH: the darwin agent, its forwarder, helper and units, and Chrome from Google's installer, P12),
-/// `sip` (Recovery's Terminal, slice 17), `tcc` and `finish` (through the agent's root shell: grants, then Remote
-/// Login off, shut down, commit). The password lives only in this process's memory: a restart during `bootstrap` or
-/// `sip` resumes from `provision` on a fresh clone; `tcc` and `finish` need no password and resume where they were.
-/// The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint.
-public actor MacBaseBuilder {
+/// `bootstrap` (over SSH: the darwin agent, its forwarder, helper and units, and Chrome from Google's installer with its
+/// policies, P12), `sip` (Recovery's Terminal), `tcc` and `finish` (through the agent's root shell: grants and a quiet
+/// desktop, then Remote Login off, shut down, commit). The password lives only in this process's memory: a restart
+/// during `bootstrap` or `sip` resumes from `provision` on a fresh clone; `tcc` and `finish` need no password and resume
+/// where they were. The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint. From `install`
+/// on, a build runs a macOS VM, which takes one of the two this Mac may run; admission counts it (`runningVMs`).
+public actor MacBaseBuilder: HostOperationKind {
     public static let kind = "macos.build"
     /// The guest's disk: 50 GB, the low end of the 50–80 GB the spec delegates and the size the map's E14 measures; the
     /// built base holds about 30 GB of it (Chrome and the agent included).
@@ -107,23 +87,21 @@ public actor MacBaseBuilder {
     private let http: any RangedHTTP
     private let guestAgent: URL?
     private let hostVersion: @Sendable () -> String
-    private let freeBytes: @Sendable () throws -> UInt64
     private let cache: IPSWCache
+    /// Builds whose VM may be up (every phase after `download`), by operation key.
+    private var building: Set<String> = []
 
     /// `guestAgent` is the host's guest agent build (`LOCALBOX_GUEST_AGENT`: the darwin binary, `agent-version.json` and
-    /// `darwin/`); without it `begin` refuses. The rest default to the real Mac, Apple and the images volume.
+    /// `darwin/`); without it `begin` refuses. The rest default to the real Mac and Apple.
     public init(store: ImageStore, operations: HostOperationStore, driver: any MacBuildDriver, catalog: any IPSWCatalog, http: any RangedHTTP = URLSessionRangedHTTP(), guestAgent: URL?,
-                hostVersion: (@Sendable () -> String)? = nil, freeBytes: (@Sendable () throws -> UInt64)? = nil) {
+                hostVersion: (@Sendable () -> String)? = nil) {
         self.store = store; self.operations = operations; self.driver = driver; self.catalog = catalog; self.http = http; self.guestAgent = guestAgent
-        self.hostVersion = hostVersion ?? { let v = ProcessInfo.processInfo.operatingSystemVersion; return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)" }
-        self.freeBytes = freeBytes ?? { [store] in try store.freeBytes() }
+        self.hostVersion = hostVersion ?? { ProcessInfo.processInfo.operatingSystemVersion.dotted }
         cache = IPSWCache(directory: store.ipswDirectory)
     }
 
-    /// Registers the kind; before the operation store starts.
-    public func register() async {
-        await operations.register(kind: Self.kind) { [self] context in try await self.run(context) }
-    }
+    /// The macOS VMs builds run now: each holds one of this Mac's two macOS VM slots, which admission counts.
+    func runningVMs() -> Int { building.count }
 
     /// Starts building image `imageID` under `key` (the create's mutation id), or returns the operation already under
     /// that key. A host older than macOS 27 (`image_incompatible`), a Mac without room for the IPSW and the disk
@@ -145,31 +123,28 @@ public actor MacBaseBuilder {
             guard let cached = cache.newestCached() else { throw HostOperationFailure(code: "internal", message: "could not ask Apple for the latest macOS restore image: \(explain(error))", nextStep: "check this Mac's internet connection, then build again") }
             release = cached
         }
-        let needed = cache.missingBytes(release) + Self.diskBytes
-        let free: UInt64
-        do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }
-        guard free >= needed else {
-            let missing = cache.missingBytes(release)
-            let what = missing > 0 ? "the macOS \(release.version) IPSW (\(gibibytes(missing))) and a \(gibibytes(Self.diskBytes)) disk, \(gibibytes(needed)) free in all" : "\(gibibytes(needed)) free for its disk"
-            throw HostOperationFailure(code: "disk_full", message: "building a macOS image on this Mac needs \(what), and \(gibibytes(free)) is free",
-                                       nextStep: "free at least \(gibibytes(needed - free)) on this Mac (delete sandboxes or images it no longer needs), then build again")
-        }
-        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: try encode(Checkpoint(phase: .download, ipsw: release)))
+        let missing = cache.missingBytes(release)
+        try store.requireFree(missing + Self.diskBytes, for: "building a macOS image",
+                              because: missing > 0 ? "the macOS \(release.version) IPSW, \(gibibytes(missing)), and a \(gibibytes(Self.diskBytes)) disk" : "its \(gibibytes(Self.diskBytes)) disk",
+                              then: "build again")
+        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: try JSONValue(encoding: Checkpoint(phase: .download, ipsw: release)))
     }
 
-    private func run(_ context: HostOperationContext) async throws -> JSONValue {
+    func run(_ context: HostOperationContext) async throws -> JSONValue {
         var checkpoint: Checkpoint
-        do { checkpoint = try decode(context.checkpoint) } catch { throw HostOperationFailure(code: "invalid_input", message: "macos.build needs a checkpoint { phase, ipsw }") }
+        do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch { throw HostOperationFailure(code: "invalid_input", message: "macos.build needs a checkpoint { phase, ipsw }") }
         let imageID = context.subject
         if let manifest = try? store.manifest(imageID) { return result(manifest, checkpoint.ipsw, chrome: nil) }
-        let build = MacBuildDirectory(root: try store.buildDirectory(imageID))
+        let build = try store.buildDirectory(imageID)
+        defer { building.remove(context.key) }
         var chrome: String?
         func advance(to phase: Phase) async throws {
             checkpoint.phase = phase
-            try await context.report(HostOperationProgress(phase: phase.rawValue), checkpoint: try encode(checkpoint))
+            try await context.report(HostOperationProgress(phase: phase.rawValue), checkpoint: try JSONValue(encoding: checkpoint))
         }
         do {
             loop: while true {
+                if checkpoint.phase != .download { building.insert(context.key) }
                 switch checkpoint.phase {
                 case .download:
                     try await download(checkpoint, context)
@@ -188,7 +163,7 @@ public actor MacBaseBuilder {
                     let guest = try await driver.provision(build, user: user)
                     do {
                         try await advance(to: .bootstrap)
-                        try stagePayload(into: build)
+                        try await stagePayload(into: build)
                         try await guest.upload(build.payload, to: Self.remotePayload)
                         _ = try await guest.root(Self.bootstrapScript(user: user.name), timeout: 1_800)
                         try await advance(to: .sip)
@@ -226,8 +201,8 @@ public actor MacBaseBuilder {
 
     /// The IPSW into the cache, journaling bytes held about every 2 s.
     private func download(_ checkpoint: Checkpoint, _ context: HostOperationContext) async throws {
-        let release = checkpoint.ipsw, encoded = try encode(checkpoint)
-        let held = Held()
+        let release = checkpoint.ipsw, encoded = try JSONValue(encoding: checkpoint)
+        let held = Locked<UInt64>(0)
         try await context.report(HostOperationProgress(phase: Phase.download.rawValue, completed: Int(release.sizeBytes - cache.missingBytes(release)), total: Int(release.sizeBytes)), checkpoint: encoded)
         if cache.has(release) { return }
         let reporter = Task {
@@ -248,14 +223,14 @@ public actor MacBaseBuilder {
         }
     }
 
-    private func stagePayload(into build: MacBuildDirectory) throws {
+    private func stagePayload(into build: MacBuildDirectory) async throws {
         guard let guestAgent else { throw HostOperationFailure(code: "unsupported", message: "this Mac's Localbox has no guest agent build") }
-        try Self.packPayload(guestAgent: guestAgent, to: build.payload)
+        try await Self.packPayload(guestAgent: guestAgent, to: build.payload)
     }
 
     /// The darwin agent (as `localbox-agent`) with everything in the build's `darwin/` (helper, forwarder, units,
-    /// `install.sh`), as one tarball for the guest's `install.sh`.
-    public static func packPayload(guestAgent: URL, to tarball: URL) throws {
+    /// `install.sh`), as one tarball for the guest's `install.sh`. The macOS lab installs it the same way.
+    public static func packPayload(guestAgent: URL, to tarball: URL) async throws {
         let stage = tarball.deletingLastPathComponent().appendingPathComponent(".payload-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: stage) }
@@ -263,9 +238,8 @@ public actor MacBaseBuilder {
         let darwin = guestAgent.appendingPathComponent("darwin", isDirectory: true)
         for name in try FileManager.default.contentsOfDirectory(atPath: darwin.path) { try FileManager.default.copyItem(at: darwin.appendingPathComponent(name), to: stage.appendingPathComponent(name)) }
         try? FileManager.default.removeItem(at: tarball)
-        let tar = Process(); tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar"); tar.arguments = ["-czf", tarball.path, "-C", stage.path, "."]
-        try tar.run(); tar.waitUntilExit()
-        guard tar.terminationStatus == 0 else { throw HostDaemonError.unsupported("could not pack the guest agent for the macOS guest (tar exited \(tar.terminationStatus))") }
+        let tar = await runProcess(URL(fileURLWithPath: "/usr/bin/tar"), ["-czf", tarball.path, "-C", stage.path, "."], timeout: 120)
+        guard tar.status == 0 else { throw HostDaemonError.unsupported("could not pack the guest agent for the macOS guest (tar exited \(tar.status)): \(tar.stderr)") }
     }
 
     private func agentVersion() -> String {
@@ -299,10 +273,20 @@ public actor MacBaseBuilder {
         "n=0; until launchctl print gui/$(id -u \(user)) >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+2)); [ $n -lt \(seconds) ] || { echo \"the desktop session of \(user) never came up\" >&2; exit 1; }; sleep 2; done"
     }
 
+    /// Chrome's policies, as managed preferences (mandatory, read at every launch): no sign-in (and so no "Sign in to
+    /// Chrome?" prompt) or sync, no site asking to send notifications, no promotional or default-browser tabs, no
+    /// metrics or privacy-sandbox prompts. A sandbox's browser is driven by agents, so anything Chrome asks covers what
+    /// they look at.
+    static let chromePolicies: [(key: String, value: String)] = [
+        ("BrowserSignin", "-int 0"), ("SyncDisabled", "-bool true"), ("DefaultNotificationsSetting", "-int 2"), ("PromotionalTabsEnabled", "-bool false"),
+        ("DefaultBrowserSettingEnabled", "-bool false"), ("MetricsReportingEnabled", "-bool false"), ("PrivacySandboxPromptEnabled", "-bool false"),
+    ]
+
     /// Over SSH as root, on the first boot: wait for the auto-login session the agent's desktop role runs in, install
-    /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google.
+    /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google, and its policies.
     public static func bootstrapScript(user: String) -> String {
-        """
+        let policies = "/Library/Managed Preferences/com.google.Chrome"
+        return """
         set -eu
         \(waitForSession(user: user, seconds: 300))
         rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(remotePayload) -C /tmp/localbox-stage
@@ -312,20 +296,32 @@ public actor MacBaseBuilder {
         pkgutil --check-signature /tmp/GoogleChrome.pkg | grep -q 'Developer ID Installer: Google LLC' || { echo "the Chrome installer is not signed by Google" >&2; exit 1; }
         installer -pkg /tmp/GoogleChrome.pkg -target / >/dev/null
         test -d '/Applications/Google Chrome.app'
+        mkdir -p '/Library/Managed Preferences'
+        \(chromePolicies.map { "defaults write '\(policies)' \($0.key) \($0.value)" }.joined(separator: "\n"))
+        chmod 644 '\(policies).plist'
         rm -rf /tmp/GoogleChrome.pkg /tmp/localbox-stage \(remotePayload)
         """
     }
 
-    /// Through the agent's root shell: the desktop role's TCC rows (`--grant-tcc`), then the desktop role restarts so it
-    /// holds them (it answers macOS's window-picker bypass prompt itself, through Accessibility).
+    /// Through the agent's root shell: no notification banners in the session, the desktop role's TCC rows
+    /// (`--grant-tcc`), then the desktop role restarts so it holds them (it answers macOS's window-picker bypass prompt
+    /// itself, through Accessibility).
     public static func tccScript(user: String) -> String {
         """
         set -eu
         \(waitForSession(user: user, seconds: 90))
+        \(quietNotifications(user: user))
         /usr/local/localbox/localbox-agent --grant-tcc
         launchctl kickstart -k gui/$(id -u \(user))/sh.localbox.desktop
         \(waitForCaptureApproval(user: user, seconds: 25))
         """
+    }
+
+    /// Notification Center's banner agent off for good in `user`'s session: macOS's "App Background Activity" banners
+    /// (for the agent's and Google's updater's launch items) and Chrome's notification-permission banners would cover
+    /// the top right of every screenshot. Turning off a system agent needs SIP off, so it runs here, after `sip`.
+    static func quietNotifications(user: String) -> String {
+        "launchctl disable gui/$(id -u \(user))/com.apple.notificationcenterui.agent; launchctl bootout gui/$(id -u \(user))/com.apple.notificationcenterui.agent 2>/dev/null || true"
     }
 
     /// The restarted desktop role's first capture brings up macOS's window-picker prompt and presses Allow
@@ -345,17 +341,4 @@ public actor MacBaseBuilder {
         rm -f /var/db/localbox/sandbox-id
         /usr/bin/defaults read '/Applications/Google Chrome.app/Contents/Info' CFBundleShortVersionString
         """
-}
-
-private final class Held: @unchecked Sendable {
-    private let lock = NSLock(); private var bytes: UInt64 = 0
-    var value: UInt64 { get { lock.withLock { bytes } } set { lock.withLock { bytes = newValue } } }
-}
-
-private func encode<T: Encodable>(_ value: T) throws -> JSONValue {
-    try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
-}
-
-private func decode<T: Decodable>(_ value: JSONValue) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }

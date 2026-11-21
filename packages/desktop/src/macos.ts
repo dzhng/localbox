@@ -103,13 +103,14 @@ export interface MacChromeOptions {
 
 /**
  * Starts Google Chrome in the desktop role's session through Launch Services (`open`), so it is an ordinary app of the
- * logged-in user that outlives the agent; `CdpBrowser` calls this when CDP doesn't answer and waits for it to.
+ * logged-in user that outlives the agent; `CdpBrowser` calls this when CDP doesn't answer and waits for it to. It starts
+ * with no window, so the tab `browser.open` makes is the only one (no stray blank tab beside it).
  */
 export function macChromeLauncher(options: MacChromeOptions): () => Promise<void> {
   const runner = options.commandRunner ?? defaultCommandRunner, env = { ...process.env, ...(options.env ?? {}) };
   return async () => {
     await runDesktopCommand(runner, "/usr/bin/open", ["-n", "-a", options.app ?? "Google Chrome", "--args",
       `--remote-debugging-port=${options.port}`, "--remote-debugging-address=127.0.0.1", `--user-data-dir=${options.userDataDir}`,
-      "--no-first-run", "--no-default-browser-check", "about:blank"], env);
+      "--no-first-run", "--no-default-browser-check", "--no-startup-window"], env);
   };
 }
