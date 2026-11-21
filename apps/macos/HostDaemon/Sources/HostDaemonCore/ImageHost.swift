@@ -19,9 +19,10 @@ public protocol ImageFiles: Sendable {
     func remove(_ imageID: String) async throws -> Bool
 }
 
-/// The daemon's answers about images: `image.wait` from the host operation journal, the connector's `host.operations`
-/// long poll (each finished operation, to report to the account), and the image files themselves (`image.mirror`,
-/// `image.delete`). `SandboxHost` routes these requests here and never touches image work itself.
+/// The daemon's answers about images: `image.create` (a capture, run by `ImageCapture`), `image.wait` from the host
+/// operation journal, the connector's `host.operations` long poll (each finished operation, to report to the account),
+/// and the image files themselves (`image.mirror`, `image.delete`). `SandboxHost` routes these requests here and never
+/// touches image work itself.
 public actor ImageHost {
     private let operations: HostOperationStore
     /// Nil until this daemon has an image store: file operations then answer `unsupported`.
@@ -30,8 +31,11 @@ public actor ImageHost {
     /// catalog operations that begin real kinds belong to later slices.
     private let allowsDirectOperations: Bool
 
-    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, allowsDirectOperations: Bool = false) {
-        self.operations = operations; self.files = files; self.allowsDirectOperations = allowsDirectOperations
+    /// Saves sandboxes as images (`image.create { from }`); nil answers it `unsupported`.
+    private let capture: ImageCapture?
+
+    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, allowsDirectOperations: Bool = false) {
+        self.operations = operations; self.files = files; self.capture = capture; self.allowsDirectOperations = allowsDirectOperations
     }
 
     /// Operations answered here: the catalog's image operations a machine runs, and the connector's internal ones
@@ -48,14 +52,19 @@ public actor ImageHost {
         switch operation {
         case "image.wait":
             guard let image = input["image"] as? String, !image.isEmpty else { return failure(object, code: "invalid_input", message: "image.wait requires image") }
-            // As job.wait: without timeout_ms, wait as long as the request may run, leaving room to answer before its deadline.
-            let deadline = (object["deadline_ms"] as? NSNumber)?.intValue ?? 30_000
-            let waitMs = min((input["timeout_ms"] as? NSNumber)?.intValue ?? Int.max, max(0, deadline - 1_000))
             guard let latest = await operations.latest(subject: image) else {
                 return failure(object, code: "image_not_found", message: "this machine has no operation for image \(image)")
             }
-            let record = await operations.wait(latest.key, timeoutMs: waitMs) ?? latest
-            return success(object, result: view(record))
+            return success(object, result: view(await settled(latest, object, timeoutMs: (input["timeout_ms"] as? NSNumber)?.intValue)))
+        case "image.create":
+            if input["macos"] != nil { return failure(object, code: "unsupported", message: "this machine does not build macOS images yet") }
+            guard let from = input["from"] as? String, !from.isEmpty, let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
+                return failure(object, code: "invalid_input", message: "image.create takes from (the source sandbox's id), image (the reserved image's id) and a mutation id")
+            }
+            guard let capture else { return failure(object, code: "unsupported", message: "this machine has no image store yet") }
+            do { return success(object, result: view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from), object, timeoutMs: nil))) }
+            catch let refused as HostOperationFailure { return failure(object, code: refused.code, message: refused.message) }
+            catch { return failure(object, code: "invalid_input", message: explain(error)) }
         case "host.operations":
             let reported = input["reported"] as? [String] ?? []
             do { try await operations.markReported(reported) } catch { return failure(object, code: "internal", message: "could not record reported operations: \(explain(error))") }
@@ -104,6 +113,14 @@ public actor ImageHost {
             } else { unknown.append(held.imageID) }
         }
         return ["images": present.count, "missing": listed.subtracting(present).sorted(), "deleted": deleted, "unknown": unknown]
+    }
+
+    /// `record` once it finishes, or as it stands when the wait ends. As job.wait: without `timeoutMs`, the wait lasts as
+    /// long as the request may run, leaving a second to answer before its deadline. A capture usually finishes inside
+    /// that, so `image.create` mostly answers with the saved image rather than a pending one.
+    private func settled(_ record: HostOperationRecord, _ request: [String: Any], timeoutMs: Int?) async -> HostOperationRecord {
+        let deadline = (request["deadline_ms"] as? NSNumber)?.intValue ?? 30_000
+        return await operations.wait(record.key, timeoutMs: min(timeoutMs ?? Int.max, max(0, deadline - 1_000))) ?? record
     }
 
     /// A record as callers see it: everything but the checkpoint, which is the kind's private resume point.

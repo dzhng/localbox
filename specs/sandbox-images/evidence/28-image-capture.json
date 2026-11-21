@@ -1,0 +1,49 @@
+{
+  "checks": [
+    {
+      "name": "the minimal image, the host daemon and its signature are built",
+      "ok": true
+    },
+    {
+      "name": "a running sandbox writes a file; a second later image create saves it, stalling the sandbox under 2 s, and it keeps running",
+      "ok": true
+    },
+    {
+      "name": "a sandbox made from the image has the file, and a new machine-id",
+      "ok": true
+    }
+  ],
+  "stall_ms": 94,
+  "operation": {
+    "key": "p28-1795285933657-3",
+    "updated_at": 1795285933758,
+    "started_at": 1795285933658,
+    "subject": "image_p28",
+    "result": {
+      "disk": "cloned",
+      "os": "linux",
+      "stall_ms": 94,
+      "sandbox_id": "sandbox_p28_source",
+      "size_bytes": 916717568
+    },
+    "kind": "image.capture",
+    "progress": {
+      "phase": "committing"
+    },
+    "state": "succeeded"
+  },
+  "manifest": {
+    "agent_version": "0.1.1+a9360f0b3fb5",
+    "image_id": "image_p28",
+    "os": "linux",
+    "size_bytes": 916717568
+  },
+  "new_sandbox": {
+    "boot_ms": 2192,
+    "ok": true,
+    "ready": true,
+    "stdout": "written-before-capture\n13a545a9291244a1a52a8e503cd3c690\n",
+    "uname": "aarch64"
+  },
+  "source_machine_id": "948a952eb04a411a8dc875336603d8e4"
+}

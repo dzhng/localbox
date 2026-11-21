@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import {
-  BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, success, validateInput, validateRequest,
+  BUILT_IN_IMAGE, catalogById, ContractError, DEFAULT_SIZE_MINIMUM, ERROR_CODES, defaultSize, defaultSizeReason, failure, requestFromInvocation, sizeText, success, validateInput, validateRequest,
   type ActionReport, type CapacityReport, type ErrorBody, type ErrorCode, type ImageOperationState, type Json, type OperationId, type RequestEnvelope, type ResponseEnvelope,
 } from "../../../packages/contract/src/index.js";
 import { byNameOrId, place } from "../../../packages/placement/src/index.js";
@@ -51,6 +51,8 @@ interface ReservedCreate extends SandboxRow { create_input: Record<string, Json>
  * passed, a lost answer, a daily result limit) may still complete on the machine, so the reservation stays.
  */
 const DEFINITIVE_CREATE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "machine_full", "invalid_input", "name_conflict", "sandbox_not_ready"];
+/** The same for `image create --from`: the machine refused before journaling the capture, or never got it. */
+const DEFINITIVE_CAPTURE_FAILURES: ErrorCode[] = ["machine_offline", "machine_not_found", "sandbox_not_found", "invalid_input", "unsupported"];
 
 /** Operations that only read or change the account catalog; they are never relayed to a machine. */
 const ACCOUNT_OPERATIONS: Record<string, ["mutation" | "query", string]> = {
@@ -108,6 +110,7 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     validateInput(entry.id, payload);
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
+    if (entry.id === "image.create") return await createImage(principal, base, machine, deps);
     if (entry.id === "image.wait") return await waitForImage(principal, base, deps);
     if (entry.id === "image.list") return answer(success(base, { images: (await deps.accountCall(principal, "query", "images:list", {}) as ImageRow[]).map(imageListRow) } as unknown as Json));
     if (entry.id === "image.rename") return answer(success(base, await renameImage(principal, base, deps) as unknown as Json));
@@ -237,7 +240,7 @@ async function createSandbox(principal: Principal, base: RequestEnvelope, named:
 }
 
 /** A failed create that certainly made nothing: refused by the machine, never claimed, or never queued. */
-const definitive = (response: ResponseEnvelope & { ok: false }) => DEFINITIVE_CREATE_FAILURES.includes(response.error.code)
+const definitive = (response: ResponseEnvelope & { ok: false }, codes = DEFINITIVE_CREATE_FAILURES) => codes.includes(response.error.code)
   || (response.error.code === "rate_limited" && (response.error.details as { limit?: string } | undefined)?.limit === "requests");
 
 /**
@@ -299,6 +302,31 @@ async function deleteSandbox(principal: Principal, request: RequestEnvelope, tar
 }
 
 /**
+ * `image create --from`: reserve the image's row, with the source sandbox's machine as its first holder (`building`),
+ * then have that machine save the sandbox under the create's mutation id. The machine answers with the capture's
+ * operation state, usually already finished. A failure that certainly saved nothing releases the reservation; any
+ * other keeps it and says the save may still complete. A replay reserves nothing new and gets the first answer back.
+ */
+async function createImage(principal: Principal, base: RequestEnvelope, machine: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { from?: string; macos?: true; name?: string; image?: string };
+  if (asked.image !== undefined) throw new ContractError("invalid_input", "image is set by the agent API; leave it out");
+  if (asked.macos) throw new ContractError("unsupported", "building a macOS base is not available yet; save an image from a sandbox with from");
+  if (!base.mutation_id) throw new ContractError("invalid_input", "image.create requires mutation_id");
+  const source = await resolveSandbox(principal, asked.from, deps);
+  await requireSameMachine(principal, source, machine, deps);
+  // Sandbox rows carry no OS: every sandbox runs linux until macOS sandboxes land.
+  const image = await deps.accountCall(principal, "mutation", "images:reserve", { machineId: source.machine_id, ...(asked.name === undefined ? {} : { name: asked.name }), os: "linux", source: { kind: "sandbox", sandboxName: source.name }, createMutationId: base.mutation_id }) as ImageRow;
+  const relayed = await relay(principal, source.machine_id, { ...base, input: { from: source.sandbox_id, image: image.image_id } }, deps);
+  const response = (relayed.body as { response?: ResponseEnvelope }).response;
+  if (response && !response.ok) {
+    const where = source.machine_name ?? source.machine_id;
+    if (!definitive(response, DEFINITIVE_CAPTURE_FAILURES)) return answer({ ...response, error: { ...response.error, message: `${response.error.message}; the save may still complete on ${where}: image ${image.name} stays reserved (replay with mutation id ${base.mutation_id} to get its result)` } });
+    await deps.accountCall(principal, "mutation", "images:remove", { image: image.image_id }).catch((error: unknown) => { if (contractError(error).code !== "image_not_found") throw error; });
+  }
+  return await imageWaitAnswer(principal, relayed, deps, image);
+}
+
+/**
  * An image's operation state. While a Mac's holder row is `building` or `copying`, that Mac answers from its operation
  * journal, waiting up to `timeout_ms` (and within the request's deadline) for the work to finish; the answer comes back
  * inline or by continuation, a normal result either way. With no such holder, the catalog answers.
@@ -313,13 +341,13 @@ async function waitForImage(principal: Principal, base: RequestEnvelope, deps: O
 }
 
 /**
- * A machine's `image.wait` answer (its operation record) as the image's operation state, with the image's name and OS
+ * A machine's `image.wait` or `image.create` answer (its operation record) as the image's operation state, with the image's name and OS
  * from the catalog. Used on the first call and on every continuation, so a long wait reads the same either way; any
  * other answer passes through.
  */
 async function imageWaitAnswer(principal: Principal, relayed: OpsResponse, deps: OpsDeps, known?: ImageRow): Promise<OpsResponse> {
   const response = (relayed.body as { response?: ResponseEnvelope }).response;
-  if (!response?.ok || response.operation !== "image.wait") return relayed;
+  if (!response?.ok || (response.operation !== "image.wait" && response.operation !== "image.create")) return relayed;
   const record = response.result as unknown as HostOperationView;
   let image = known;
   if (!image) {
@@ -339,7 +367,30 @@ function operationState(image: ImageRow, record: HostOperationView): ImageOperat
     image: image.image_id, name: image.name, os: image.os, state,
     ...(record.progress ? { progress: { phase: record.progress.phase, done_bytes: record.progress.completed ?? 0, total_bytes: record.progress.total ?? 0 } } : {}),
     ...(record.error ? { error: { code: errorCode(record.error.code), message: record.error.message, next_step: record.error.next_step ?? nextStepFor(image) } } : {}),
+    ...(record.state === "succeeded" && record.kind === "image.capture" ? { report: captureReport(image, record.result as unknown as CaptureResult, holder) } : {}),
   };
+}
+
+/** What a finished `image.capture` reports: the image's size, and how the source got through it. */
+interface CaptureResult { size_bytes: number; stall_ms: number | null; woke?: string; made_room?: string[] }
+
+/**
+ * A saved sandbox, line by line (the map's output standard): what was saved, how long the sandbox froze for it, where
+ * the image lives, and the next command. A stopped source was saved without a freeze and says so; a sleeping one woke
+ * first, and anything slept to make room for it is named.
+ */
+export function captureReport(image: ImageRow, result: CaptureResult, holder: ImageRow["holders"][number] | undefined): string[] {
+  const source = image.source.sandboxName ?? "the sandbox";
+  const froze = result.stall_ms === null
+    ? `${source} was stopped, so its disk was saved as it lay, without a freeze`
+    : `${source} ${result.woke ? "woke from sleep, then " : ""}froze for ${(result.stall_ms / 1000).toFixed(1)} s while its disk was saved, and is running again`;
+  return [
+    `image ${image.name} saved from sandbox ${source} (${image.os}, ${sizeText(result.size_bytes)})`,
+    froze,
+    ...(result.made_room ?? []).map((detail) => `made room for it: ${detail}`),
+    `on machine ${holder?.machine_name ?? holder?.machine_id ?? "its source's Mac"}; copies to other Macs on first use`,
+    `start a sandbox from it: localbox sandbox create --image ${image.name}`,
+  ];
 }
 
 /** No Mac is building or copying the image, so the catalog's holder rows say how it stands. */

@@ -21,16 +21,19 @@ struct HostDaemonMain {
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
             let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
             for name in images.sweepTemps() { log("removed \(name), an image write or delete the last run left unfinished") }
-            // Kinds register before the store starts, as their slices land; dev daemons also run the proof's fixture kind.
+            // Kinds register before the store starts (image.capture once the sandboxes exist, below); dev daemons also run the
+            // proof's fixture kind.
             if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
             // The guest agent build this Mac ships; without it sandboxes keep the agent their image carries.
             let agentUpdater = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : GuestAgentUpdater(directory: URL(fileURLWithPath: expanded($0), isDirectory: true)) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
-            let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), allowsDirectOperations: isDev)
+            let capture = ImageCapture(store: images, operations: operations)
+            let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
                                    allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { try? images.freeBytes() })
+            await capture.attach(to: host)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)

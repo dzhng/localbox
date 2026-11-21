@@ -107,7 +107,7 @@ const definitions: Record<OperationId, [string, JsonSchema, boolean, boolean, Id
   "sandbox.list": ["List the account's sandboxes with their machine and last reported state.", empty(), true, false, "none", ACCOUNT],
   "sandbox.rename": ["Rename a sandbox.", object({ name: string() }, ["name"]), false, true, "required", ACCOUNT_THEN_SANDBOX],
   "sandbox.delete": ["Delete a sandbox; `confirm`, when given, must be its name.", object({ confirm: string() }), false, true, "required", ACCOUNT_THEN_SANDBOX],
-  "image.create": ["Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers at once with the image's operation state; follow it with image.wait.", object({ from: string(), macos: { type: "boolean", enum: [true] }, name: string() }), false, true, "required", ACCOUNT_THEN_MACHINE],
+  "image.create": ["Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers with the image's operation state, which for a saved sandbox is usually already ready, with what was done line by line; follow one still building with image.wait. `image` is set by the agent API (the reserved image's id, handed to the machine); callers leave it out.", object({ from: string(), macos: { type: "boolean", enum: [true] }, name: string(), image: string() }), false, true, "required", ACCOUNT_THEN_MACHINE],
   "image.list": ["List the account's images: OS, size, source, the machines holding each, and which is the default.", empty(), true, false, "none", ACCOUNT],
   "image.rename": ["Rename an image. The built-in `linux` can't be renamed.", object({ image: string(), name: string() }, ["image", "name"]), false, true, "required", ACCOUNT],
   "image.copy": ["Copy an image directly to machine `to` (a name or id): over the local network, else a direct connection between the two Macs. Answers at once with the copy's operation state; the finished copy reports size, duration and the path taken.", object({ image: string(), to: string() }, ["image", "to"]), false, true, "required", ACCOUNT_THEN_MACHINE],
@@ -341,6 +341,8 @@ export interface ImageOperationState {
   progress?: { phase: string; done_bytes: number; total_bytes: number };
   /** Set when `state` is `failed`: why, and what to try next. */
   error?: { code: ErrorCode; message: string; next_step: string };
+  /** Set when the operation's own answer says it is `ready`: what was done, one line each, as the CLI prints them. */
+  report?: string[];
 }
 
 /** What a request did: what was asked, what resulted, and every side effect taken on the way. */
@@ -358,6 +360,13 @@ export interface CapacityReport { cpus: number; total_bytes: number; reserved_by
 const GIB = 1024 ** 3;
 /** A size for a report, e.g. "2 GiB" or "1.5 GiB". */
 export const gibibytes = (bytes: number) => `${Math.round(bytes / GIB * 10) / 10} GiB`;
+/** A size that may be small (an image, a table cell): one decimal in GiB from 1 GiB, whole MiB below; `-` when not known yet. */
+export function sizeText(bytes: number | null): string {
+  if (bytes === null) return "-";
+  if (bytes >= GIB) return gibibytes(bytes);
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MiB`;
+  return `${bytes} B`;
+}
 /** The smallest size `defaultSize` gives; placement asks for room for this much when a create names no memory. */
 export const DEFAULT_SIZE_MINIMUM = { cpus: 2, memory_bytes: 2 * GIB } as const;
 /** A new sandbox's size when its create asks for none: half the host's cores and a quarter of its RAM in whole GiB, at least `DEFAULT_SIZE_MINIMUM`. */

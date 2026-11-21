@@ -66,6 +66,14 @@ final class ImageStoreTests: XCTestCase {
         XCTAssertEqual(store.list().map(\.imageID), ["linux"])
     }
 
+    /// A daemon whose images directory didn't exist yet (its root URL then has no trailing slash) commits all the same.
+    func testCommitWorksOnAStoreWhoseDirectoryItCreated() throws {
+        let fresh = URL(fileURLWithPath: scratch.appendingPathComponent("fresh-images").path)
+        let store = try ImageStore(imagesDirectory: fresh)
+        try committed(store, "brave-walrus")
+        XCTAssertEqual(store.list().map(\.imageID), ["brave-walrus"])
+    }
+
     /// On APFS a sandbox's disk shares every block with the image until written, and the result says so.
     func testClonesAreThinOnAPFS() throws {
         let store = try ImageStore(imagesDirectory: images)

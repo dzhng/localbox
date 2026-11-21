@@ -5,7 +5,7 @@ import Virtualization
 #endif
 
 /// Real-VM lab for the proof harness; `--image` is one image directory (`images/<id>/`):
-///   vmlab boot --image <dir> --json        boot a scratch sandbox and report `uname -m` and `uname -r` from the guest
+///   vmlab boot --image <dir> [--command <sh>] --json   boot a scratch sandbox, report `uname -m` and `uname -r` (and run the command)
 ///   vmlab hibernate --image <dir> --json   the hibernate scenario (save here, restore in a new process)
 ///   vmlab restore --image <dir> --scratch <dir> --json   phase 2 of hibernate, run by `hibernate` itself
 ///   vmlab efi-kernel --image <dir> --json  apt-install another kernel in the guest, reboot, compare `uname -r`
@@ -55,7 +55,7 @@ struct VMLabMain {
             let lab = try Lab(image: URL(fileURLWithPath: expanded(image), isDirectory: true))
             let output: [String: Any]
             switch arguments.first {
-            case "boot": output = try await lab.boot()
+            case "boot": output = try await lab.boot(command: option("--command", in: arguments))
             case "hibernate": output = try await lab.hibernate()
             case "restore":
                 guard let scratch = option("--scratch", in: arguments) else { throw LabError("restore needs --scratch") }
@@ -108,7 +108,8 @@ struct Lab {
         return scratch
     }
 
-    func boot() async throws -> [String: Any] {
+    /// `command`, when given, runs in the guest after `uname -m` and its output is reported as `stdout`.
+    func boot(command: String? = nil) async throws -> [String: Any] {
         let scratch = try await newScratch()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
         let backend = try backend(scratch)
@@ -117,8 +118,10 @@ struct Lab {
             try await backend.start()
             let bootMs = Int(Date().timeIntervalSince(started) * 1000)
             let lines = try await shell(backend, "uname -m; uname -r").stdout.split(separator: "\n").map(String.init)
+            var output: [String: Any] = ["ok": true, "ready": true, "uname": lines.first ?? "", "kernel": lines.dropFirst().first ?? "", "boot_ms": bootMs]
+            if let command { output["stdout"] = try await shell(backend, command).stdout }
             try await backend.stop()
-            return ["ok": true, "ready": true, "uname": lines.first ?? "", "kernel": lines.dropFirst().first ?? "", "boot_ms": bootMs]
+            return output
         } catch {
             let reason = await backend.stopReason()
             if let log = try? String(contentsOf: scratch.appendingPathComponent("console.log"), encoding: .utf8) { FileHandle.standardError.write(Data(String(log.suffix(6000)).utf8)) }
@@ -251,7 +254,7 @@ struct Lab {
         let cloned = try await runtime.freezeAndClone {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             return try cloneDisk(disk, to: clone)
-        }
+        }.value
         let cloneMs = Int(Date().timeIntervalSince(started) * 1000)
         let afterLifecycle = await runtime.status().lifecycle.rawValue
         try await Task.sleep(nanoseconds: 1_000_000_000)

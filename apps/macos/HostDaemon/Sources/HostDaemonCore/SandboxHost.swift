@@ -198,6 +198,12 @@ public actor SandboxHost {
 
     public func runtime(_ sandboxID: String) -> SandboxRuntime? { runtimes[sandboxID] }
 
+    /// `image.capture`'s source (P2): a sleeping sandbox wakes through admission like any start, so the disk it saves
+    /// holds what the sleep kept in memory or in its save file; a running one is left as it is. Returns what that took.
+    func wakeForCapture(_ runtime: SandboxRuntime) async throws -> [SandboxAction] {
+        try await start(runtime) { try await $0.bringUp() }
+    }
+
     /// The sandboxes the account catalog lists here, in id order.
     public func sandboxes() async -> [SandboxRecord] { await snapshots().map(\.record) }
 
