@@ -20,7 +20,9 @@ sandboxes. You already own them."
 ## Next Agent Prompt
 
 *Status 2026-11-21: every spike passed (20 with its throughput gate restated, choice
-20). Built and merged: 21–28, 30–33, 36. In flight on branches: 29, 34, 37. Slice
+20). Built and merged: 21–28, 30–33, 36. In flight on branches: 29, 34, 37, 38
+(`t3/image-copy-transport-resume`: copies go through `ImageTransfer` on every daemon and resume across a
+receiver restart; tier `l` copies about 2.4 Gbps between two daemons on one Mac). Slice
 numbers start at 15 because `scripts/proof/run.ts` keys probes on a two-digit
 prefix.*
 
@@ -37,7 +39,7 @@ You are picking up the sandbox-images plan. Where things stand:
      `localbox-agent --grant-tcc`, and must pre-approve ScreenCaptureKit's
      picker-bypass alert, see slice 33's outcome), then **35 macOS sandboxes**
      (tier `m`).
-  3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
+  3. **39 create with copy** (needs 29, 36, 38); 38's tier `x` waits on the user's second Mac.
   4. **40 docs** last.
 - **Warnings:**
   - Run proof sweeps from a short worktree under `$HOME` (`git worktree add
@@ -80,7 +82,7 @@ any blocker, and tick the TODO list.
 - [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
 - [x] [36 placement with images](slices/36-placement-images.md)
 - [x] [37 transfer library](slices/37-transfer-library.md)
-- [ ] [38 image copy](slices/38-image-copy.md)
+- [x] [38 image copy](slices/38-image-copy.md) (tier x waits on the user's second Mac)
 - [ ] [39 create with copy](slices/39-create-with-copy.md)
 - [ ] [40 positioning, docs and security](slices/40-docs-positioning.md)
 - [ ] Two-Mac different-network run (user; extends the [two-Mac runbook](../durable-sandboxes/two-mac-runbook.md))
