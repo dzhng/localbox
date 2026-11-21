@@ -177,6 +177,8 @@ private struct SSHBuildGuest: MacBuildGuest {
 private final class AgentBuildGuest: MacBuildGuest, @unchecked Sendable {
     let vm: MacVirtualMachine
     private let channel: FramedFileHandleGuestChannel
+    /// The longest deadline the agent accepts on a request (it refuses more than 120 s).
+    static let maxDeadlineMs = 120_000
 
     init(vm: MacVirtualMachine) async throws {
         self.vm = vm
@@ -194,7 +196,7 @@ private final class AgentBuildGuest: MacBuildGuest, @unchecked Sendable {
 
     func root(_ script: String, timeout: TimeInterval) async throws -> String {
         let envelope: [String: Any] = ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": "shell.exec", "sandbox_id": NSNull(),
-                                       "deadline_ms": Int(timeout * 1000), "mutation_id": UUID().uuidString, "input": ["command": script]]
+                                       "deadline_ms": min(Int(timeout * 1000), AgentBuildGuest.maxDeadlineMs), "mutation_id": UUID().uuidString, "input": ["command": script]]
         let answer = try JSONSerialization.jsonObject(with: try await channel.send(JSONSerialization.data(withJSONObject: envelope))) as? [String: Any] ?? [:]
         guard answer["ok"] as? Bool == true, let result = answer["result"] as? [String: Any] else {
             throw HostDaemonError.unsupported("the guest agent refused a build step: \(((answer["error"] as? [String: Any])?["message"] as? String) ?? "no answer")")

@@ -114,7 +114,7 @@ final class MacBaseBuilderTests: XCTestCase {
         let journals = await old.operations.state("m-1")
         XCTAssertNil(journals)
 
-        // 60 GiB of disk plus the 4 KiB IPSW: one byte short is refused; with the IPSW cached it fits.
+        // The 60 GB disk plus the 4 KiB IPSW: one byte short is refused; with the IPSW cached it fits.
         let tight = try await Rig(test: self, freeBytes: MacBaseBuilder.diskBytes + 4095)
         let full = try await tight.request(["macos": true, "image": "image_mac"], key: "m-1")
         let error = try XCTUnwrap(full["error"] as? [String: Any])
@@ -301,13 +301,16 @@ private final class FakeDriver: MacBuildDriver, @unchecked Sendable {
 
     func boot(_ build: MacBuildDirectory) async throws -> any MacBuildGuest {
         try await step("boot", build)
-        return FakeGuest(driver: self, build: build)
+        return FakeGuest(driver: self, build: build, throughAgent: true)
     }
 }
 
 private struct FakeGuest: MacBuildGuest {
     let driver: FakeDriver, build: MacBuildDirectory
+    /// Booted normally, so its steps go through the agent's request lane, which refuses deadlines over 120 s.
+    var throughAgent = false
     func root(_ script: String, timeout: TimeInterval) async throws -> String {
+        if throughAgent { XCTAssertLessThanOrEqual(timeout, 120, "a step through the agent must fit its 120 s request deadline") }
         let name = script.contains("install.sh") ? "bootstrap" : script.contains("--grant-tcc") ? "tcc" : script.contains("openssh") ? "finish" : "other"
         try await driver.step("root \(name)", build, script: script)
         return name == "finish" ? "142.0.7444.60\n" : ""

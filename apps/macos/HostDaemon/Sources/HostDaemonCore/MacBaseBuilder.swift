@@ -84,8 +84,8 @@ public protocol MacBuildGuest: Sendable {
 /// The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint.
 public actor MacBaseBuilder {
     public static let kind = "macos.build"
-    /// The guest's disk: inside the 50–80 GB the spec delegates; a fresh install allocates about 27 GB of it.
-    public static let diskBytes: UInt64 = 60 << 30
+    /// The guest's disk: the spec's 60 GB, inside the 50–80 GB it delegates; a fresh install allocates about 27 GB of it.
+    public static let diskBytes: UInt64 = 60_000_000_000
     /// How a building guest is named in the agent's hello (its host name until a sandbox renames it).
     static let guestName = "localbox-macos-base"
 
@@ -192,10 +192,10 @@ public actor MacBaseBuilder {
                     let guest = try await driver.boot(build)
                     do {
                         if checkpoint.phase == .tcc {
-                            _ = try await guest.root(Self.tccScript(user: MacProvisioningUser.defaultName), timeout: 300)
+                            _ = try await guest.root(Self.tccScript(user: MacProvisioningUser.defaultName), timeout: 120)
                             try await advance(to: .finish)
                         }
-                        chrome = try await guest.root(Self.finishScript, timeout: 300).trimmingCharacters(in: .whitespacesAndNewlines)
+                        chrome = try await guest.root(Self.finishScript, timeout: 120).trimmingCharacters(in: .whitespacesAndNewlines)
                         try await guest.shutDown()
                     } catch { await guest.abandon(); throw error }
                     break loop
@@ -286,10 +286,10 @@ public actor MacBaseBuilder {
     /// Google's own signed installer package for Chrome (P12); Localbox redistributes nothing macOS-side.
     static let chromeInstaller = "https://dl.google.com/chrome/mac/universal/stable/gcem/GoogleChrome.pkg"
 
-    /// Waits up to 5 minutes for `user`'s auto-login session (its launchd domain and Finder): SSH and the agent answer
+    /// Waits up to `seconds` for `user`'s auto-login session (its launchd domain and Finder): SSH and the agent answer
     /// before it exists, and the desktop role and its TCC database live in it.
-    static func waitForSession(user: String) -> String {
-        "n=0; until launchctl print gui/$(id -u \(user)) >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+1)); [ $n -lt 150 ] || { echo \"the desktop session of \(user) never came up\" >&2; exit 1; }; sleep 2; done"
+    static func waitForSession(user: String, seconds: Int) -> String {
+        "n=0; until launchctl print gui/$(id -u \(user)) >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+2)); [ $n -lt \(seconds) ] || { echo \"the desktop session of \(user) never came up\" >&2; exit 1; }; sleep 2; done"
     }
 
     /// Over SSH as root, on the first boot: wait for the auto-login session the agent's desktop role runs in, install
@@ -297,7 +297,7 @@ public actor MacBaseBuilder {
     public static func bootstrapScript(user: String) -> String {
         """
         set -eu
-        \(waitForSession(user: user))
+        \(waitForSession(user: user, seconds: 300))
         rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(remotePayload) -C /tmp/localbox-stage
         sh /tmp/localbox-stage/install.sh /tmp/localbox-stage
         rm -f /tmp/GoogleChrome.pkg
@@ -316,7 +316,7 @@ public actor MacBaseBuilder {
     public static func tccScript(user: String) -> String {
         """
         set -eu
-        \(waitForSession(user: user))
+        \(waitForSession(user: user, seconds: 90))
         /usr/local/localbox/localbox-agent --grant-tcc
         for dir in '/Library/Managed Preferences' '/Library/Managed Preferences/\(user)'; do
           mkdir -p "$dir"
