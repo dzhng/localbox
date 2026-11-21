@@ -104,7 +104,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       bin = await buildRealVMs(ctx); await start(bin);
     }));
     checks.push(await ctx.check("a running sandbox writes a file; a second later image create saves it, stalling the sandbox under 2 s, and it keeps running", async () => {
-      await ok("sandbox.create", sandboxId, { name: "bold-otter", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
+      await ok("sandbox.create", sandboxId, { name: "bold-otter", image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
       sourceMachineId = await sh(sandboxId, "cat /etc/machine-id");
       await sh(sandboxId, "echo written-before-capture > /root/p28-marker");
       await sleep(1_000);
