@@ -96,3 +96,13 @@ test("shell.exec reports the signal that killed its command", async () => {
   assert.equal(response.ok, true, JSON.stringify(response));
   assert.equal(response.ok && (response.result as { signal: string | null }).signal, "SIGTERM");
 });
+
+test("an applied mutation is answered even when its journal can't be written", async () => {
+  const root = await mkdtemp(join(tmpdir(), "localbox-journal-ro-"));
+  // A journal directory under a regular file can never be created: every journal write fails.
+  await writeFile(join(root, "blocker"), "");
+  const gateway = new GuestGateway({ root, journalDirectory: join(root, "blocker", "mutations") });
+  const response = await gateway.dispatch(request("fs.write", { path: "/note.txt", content: "applied" }, "m-ro"));
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(await readFile(join(root, "note.txt"), "utf8"), "applied");
+});

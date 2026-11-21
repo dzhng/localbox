@@ -79,7 +79,8 @@ export class GuestGateway {
   private async journalEntry(key: string): Promise<MutationJournalEntry | undefined> {
     let entry: MutationJournalEntry;
     try { entry = JSON.parse(await fs.readFile(this.journalFile(key), "utf8")) as MutationJournalEntry; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+    // Missing, unreadable or torn: no replayable result, so the mutation runs (and its answer still reaches the host).
+    catch { return undefined; }
     return entry.key === key && this.now() - entry.recorded_at < this.journalRetentionMs ? entry : undefined;
   }
   private async recordJournal(entry: MutationJournalEntry): Promise<void> {
@@ -250,7 +251,8 @@ export class GuestGateway {
       const prior = await this.journalEntry(key);
       if (prior) return prior.response;
       const response = await this.run(handler, request, context);
-      if (response.ok) await this.recordJournal({ mutation_id: request.mutation_id!, operation: request.operation, response, recorded_at: this.now(), key });
+      // The mutation is applied either way: a journal that can't be written costs only replay, never the answer.
+      if (response.ok) await this.recordJournal({ mutation_id: request.mutation_id!, operation: request.operation, response, recorded_at: this.now(), key }).catch(() => undefined);
       return response;
     })();
     this.inFlight.set(key, replay);
