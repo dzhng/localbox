@@ -23,9 +23,6 @@ logged-in sessions. Localbox hands it a sandbox, where it works with permission
 prompts off; your own files are out of reach unless you share a folder, and every
 access to a shared folder is logged.
 
-**Owned, not rented** is the headline: the cloud-sandbox bill and its throwaway
-sessions are what the pitch argues against first. **Reach** (every Mac you own,
-from wherever the agent runs) and the SSH comparison come right after it.
 **Sandbox** is the product word and the reason it's safe to say yes. Say "virtual
 machine" only where isolation is the question, and then name what it is: a full
 VM on Apple's own Virtualization framework. **Durable** is part of the subhead
@@ -36,8 +33,9 @@ running dev server, resumes on the next request. Disposable is an option (delete
 after an idle period), not the default.
 
 Every sandbox, machine, image and account gets a generated, renameable name like
-`quiet-otter` or `brave-walrus-482`. Names are friendly handles; they never grant
-access.
+`quiet-otter` or `brave-walrus-482`; the one fixed name is the built-in `linux`
+image, and `macos` is reserved for the account's macOS base. Names are friendly
+handles; they never grant access.
 
 The product is a tool *for* agents, not an agent. It has no built-in AI and makes
 no decisions about the work; the user's agent (Claude Code, Codex, any harness)
@@ -106,8 +104,6 @@ sandboxes from it on any of your Macs.
   network or a direct connection across the internet, never through anyone's
   cloud storage. A sandbox asked for on a Mac without its image copies it there
   first and says so.
-- "Any image" means any setup saved from a sandbox, Linux or macOS. It does not
-  mean arbitrary Docker or ISO images; don't imply it.
 
 ## 4. macOS sandboxes
 
@@ -115,15 +111,15 @@ Some work needs a Mac: building and testing iOS and Mac apps in Xcode, and
 using Mac apps through the desktop. A macOS sandbox is a whole Mac of its own,
 with every operation a Linux sandbox has, desktop and browser included.
 
-- The macOS base is built on your own Mac from Apple's restore image, with no
-  human step. Nothing macOS is downloaded from Localbox.
+- The macOS base is built on your own Mac, with no human step. macOS comes from
+  Apple's restore image and Chrome from Google; Localbox adds only its agent,
+  forwarder and desktop helper, shipped in the signed app.
 - Xcode isn't included (it needs an Apple ID). The agent installs it once in a
   macOS sandbox, with your Apple ID or an installer you share, and saves that as
   an image.
 - Apple's licence allows macOS VMs for your own development, testing and personal
-  use, at most two running per Mac. Localbox's macOS sandboxes are for the person
-  who owns the Mac. Never imply offering macOS sandboxes to other people, as a
-  service or otherwise.
+  use, at most two running per Mac, so macOS sandboxes are for the person who
+  owns the Mac.
 
 ## 5. A sandbox, not your whole computer
 
@@ -212,9 +208,10 @@ The agent never has to guess or ask a follow-up question.
   "durable" for the default, "computer" for what's inside one, "image" for a
   saved setup. Name the VM only to answer how sandboxes are isolated.
 - macOS sandboxes are for Xcode work and Mac apps through the desktop, on your own
-  Macs. Never imply offering them to other people (Apple's licence).
-- Images come from sandboxes. Don't promise Dockerfiles, arbitrary Docker images
-  or ISOs.
+  Macs. Never imply offering them to other people, as a service or otherwise
+  (Apple's licence).
+- "Any image" means any setup saved from a sandbox, Linux or macOS. Don't
+  promise Dockerfiles, arbitrary Docker images or ISOs.
 - Don't leave out the single-Mac user: it starts with the Mac you're on, and
   every Mac you add joins.
 - Keep "your files stay yours" visible: nothing shared unless you choose, and

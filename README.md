@@ -126,7 +126,7 @@ easier to set up, than SSH and Tailscale.
 A sandbox sees nothing on your Mac until you say so. Your agent shares exactly
 the folder it needs, read-only unless you say otherwise, and Localbox logs every
 file the sandbox reads or writes through it. Your processes, credentials and
-screen are never shared. The [security model](SECURITY.md) spells out the boundary.
+screen are never shared. The [security model](SECURITY.md#the-vm-is-the-boundary) spells out the boundary.
 
 ## Still there next week
 

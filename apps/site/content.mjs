@@ -100,9 +100,9 @@ export const features = [
 ];
 
 export const capabilities = [
-  { area: "Sandboxes", body: "Linux or macOS. Create, rename, resize, sleep, wake and delete. Sized to the machine, durable by default, optional idle deletion." },
+  { area: "Sandboxes", body: "Linux or macOS. Create, list, rename, resize, sleep, wake and delete. Sized to the machine, durable by default, optional idle deletion." },
   { area: "Images", body: "Save any sandbox as an image, make one the default, copy it straight between your Macs, and start new sandboxes from it." },
-  { area: "Machines", body: "Sign in with an email code. Place sandboxes locally, on a named machine, or automatically." },
+  { area: "Machines", body: "Sign in with an email code; list, rename and remove machines. Place sandboxes locally, on a named machine, or automatically." },
   { area: "Shell and files", body: "Run commands with a time limit, or long jobs you can wait on, check and cancel; list, read, write and remove files." },
   { area: "Browser and desktop", body: "Open and drive browser tabs; click, type, scroll and screenshot a 1440×900 desktop, Linux or macOS." },
   { area: "Shared folders", body: "Share a folder from your Mac, read-only or read-write, and read its access log." },
