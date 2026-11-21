@@ -345,7 +345,7 @@ export interface ImageOperationState {
 
 /** What a request did: what was asked, what resulted, and every side effect taken on the way. */
 export type ActionKind = "slept" | "woke" | "made_room" | "restarted" | "cold_booted" | "truncated" | "created" | "deleted" | "renamed"
-  | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "failed";
+  | "installed" | "replaced" | "reinstalled" | "uninstalled" | "linked" | "left_alone" | "turned_on" | "turned_off" | "made_default" | "failed";
 export interface ActionReport { requested: Json; produced: Json; actions: Array<{ kind: ActionKind; detail?: string; [key: string]: Json | undefined }> }
 
 /**

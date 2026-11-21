@@ -162,6 +162,16 @@ export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: h
   return { image_id: args.imageId, machine_id: machineId, state: args.state };
 } });
 
+/**
+ * The calling machine's holdings, for its daemon's image mirror: every image the account lists on it, with the
+ * holding's state so a change (building to ready) reaches the mirror too.
+ */
+export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
+  const { machineId } = await requireIdentity(ctx, "machine");
+  const rows = await ctx.db.query("imageHolders").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)).take(HOLDER_BATCH);
+  return rows.map((row: any) => ({ image_id: row.imageId, state: row.state })).sort((a: any, b: any) => a.image_id.localeCompare(b.image_id));
+} });
+
 /** One machine stops holding an image (`image delete --machine`, or a copy that failed); the image record stays. */
 export const dropHolder = mutationGeneric({ args: { image: v.string(), machineId: v.string() }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);

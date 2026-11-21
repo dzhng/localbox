@@ -31,11 +31,12 @@ class FakeConvex implements ConvexLike {
   async close(): Promise<void> { this.closed = true; }
   push(rows: PendingRow[]): void { this.listeners.get("relay:pendingForMachine")?.(rows); }
   pushSandboxes(rows: unknown[]): void { this.listeners.get("sandboxes:forMachine")?.(rows); }
+  pushImages(rows: unknown): void { this.listeners.get("images:forMachine")?.(rows); }
   fail(name: string, error: Error): void { this.errorListeners.get(name)?.(error); }
   named(name: string) { return this.calls.filter((call) => call.name === name); }
 }
 
-const INTERNAL = ["connector.report", "sandbox.mirror", "host.operations"];
+const INTERNAL = ["connector.report", "sandbox.mirror", "image.mirror", "host.operations"];
 
 class FakeDaemon {
   requests: RequestEnvelope[] = [];
@@ -46,6 +47,7 @@ class FakeDaemon {
   async dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> {
     this.requests.push(request);
     if (request.operation === "connector.report" || request.operation === "sandbox.mirror") return success(request, { recorded: true });
+    if (request.operation === "image.mirror") return success(request, { deleted: (request.input as { images: string[] }).images.length ? [] : [{ image: "image_old", detail: "deleted image image_old: the account catalog no longer lists it here" }] });
     if (request.operation === "host.operations") {
       if (!this.outcomes.length) await new Promise<void>((resolve) => { this.polling = resolve; });
       return success(request, { operations: this.outcomes.shift() as any });
@@ -227,7 +229,7 @@ test("an idle connector makes no Convex calls", async () => {
   await new Promise((resolve) => setTimeout(resolve, 200));
   await settle();
   assert.equal(convex.calls.length, before);
-  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "sandboxes:forMachine", "relay:reportCapacity"]);
+  assert.deepEqual(convex.calls.map((call) => call.name), ["relay:pendingForMachine", "sandboxes:forMachine", "images:forMachine", "relay:reportCapacity"]);
   await connector.stop();
 });
 
@@ -354,5 +356,17 @@ test("a finished host operation becomes its image's holder state, reported once 
   await settle();
   assert.deepEqual(daemon.polls().at(-1), ["m-4"]);
   assert.equal(convex.named("images:setHolder").filter((call) => call.args.operationId === "m-4").length, 1, "the retry went through");
+  await connector.stop();
+});
+
+test("the daemon's image files follow the catalog's list of images on this machine; a failed read pushes nothing", async () => {
+  const { convex, daemon, logs, connector } = harness();
+  convex.pushImages([{ image_id: "image_1", state: "ready" }, { image_id: "image_2", state: "building" }]);
+  convex.pushImages(undefined);
+  convex.pushImages([]);
+  await settle();
+  const mirrors = daemon.requests.filter((request) => request.operation === "image.mirror").map((request) => request.input);
+  assert.deepEqual(mirrors, [{ machine_id: "machine_1", images: ["image_1", "image_2"] }, { machine_id: "machine_1", images: [] }]);
+  assert.ok(logs.includes("deleted image image_old: the account catalog no longer lists it here"));
   await connector.stop();
 });

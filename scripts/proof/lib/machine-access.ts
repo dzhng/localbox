@@ -23,7 +23,7 @@ export async function machineAccess(root: string, machine: string) {
   const daemon = new LocalIPCTransport({ socketPath: paths.socket, tokenFile: paths.ipcToken });
   let calls = 0;
   return {
-    machineId: credentials.machine_id, paths,
+    machineId: credentials.machine_id, machineName: credentials.machine_name, paths,
     mutation: async (name: string, args: Record<string, unknown>): Promise<any> => await convex().mutation(makeFunctionReference<"mutation">(name) as any, args),
     query: async (name: string, args: Record<string, unknown>): Promise<any> => await convex().query(makeFunctionReference<"query">(name) as any, args),
     /** One request on the daemon's socket, as the connector sends its own (machine-level, no mutation id). */

@@ -47,4 +47,5 @@ export const calls: Call[] = [
   { name: "images:remove", kind: "account", mutation: true, args: { image: "i1" } },
   { name: "images:setHolder", kind: "machine", mutation: true, args: { imageId: "i1", state: "ready" } },
   { name: "images:dropHolder", kind: "account", mutation: true, args: { image: "i1", machineId: "m1" } },
+  { name: "images:forMachine", kind: "machine", args: {} },
 ];

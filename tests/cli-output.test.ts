@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { render } from "../apps/cli/src/render.js";
+import { render, size } from "../apps/cli/src/render.js";
 import { failure, requestFromInvocation, success, type Json, type ResponseEnvelope } from "../packages/contract/src/index.js";
 import { FakeDispatcher } from "../packages/runtime/src/index.js";
 
@@ -65,4 +65,24 @@ test("errors go to stderr with the code first and exit 1; unauthorized exits 2",
   assert.equal(ambiguous.stdout, ""); assert.match(ambiguous.stderr, /^sandbox_ambiguous: 2 sandboxes/); assert.equal(ambiguous.exitCode, 1);
   const signedOut = failure(requestFromInvocation({ operation: "sandbox.list", input: {} }), { code: "unauthorized", message: "run localbox login", retryable: false });
   assert.equal(render(signedOut, { json: true }).exitCode, 2);
+});
+
+test("image list prints one row per image under NAME OS SIZE FROM ON DEFAULT, carrying every fact --json does", () => {
+  const images = [
+    { name: "linux", os: "linux", size_bytes: null, from: "release", on: ["every Mac"], default: false },
+    { name: "rails-dev", os: "linux", size_bytes: Math.round(4.2 * GIB), from: "sandbox bold-otter", on: ["studio", "attic (copying)"], default: true },
+    { name: "mac-base", os: "macos", size_bytes: 300 * 1024 ** 2, from: "macOS 27.0.1 IPSW", on: [], default: false },
+  ];
+  const response = envelope("image.list", { images });
+  const [header, ...rows] = render(response, { json: false }).stdout.trimEnd().split("\n");
+  assert.match(header, /^NAME\s+OS\s+SIZE\s+FROM\s+ON\s+DEFAULT$/);
+  const at = (column: string) => header.indexOf(column);
+  for (const [index, image] of images.entries()) {
+    const row = rows[index];
+    const cell = (column: string, next?: string) => row.slice(at(column), next ? at(next) : undefined).trim();
+    assert.deepEqual([cell("NAME", "OS"), cell("OS", "SIZE"), cell("SIZE", "FROM"), cell("FROM", "ON"), cell("ON", "DEFAULT"), cell("DEFAULT")],
+      [image.name, image.os, size(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""], row);
+  }
+  assert.deepEqual([size(null), size(Math.round(4.2 * GIB)), size(300 * 1024 ** 2)], ["-", "4.2 GiB", "300 MiB"]);
+  assert.deepEqual(JSON.parse(render(response, { json: true }).stdout), response, "--json prints the whole envelope");
 });

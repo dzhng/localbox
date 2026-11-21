@@ -23,7 +23,7 @@ struct HostDaemonMain {
             if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
-            let images = ImageHost(operations: operations, allowsDirectOperations: isDev)
+            let images = ImageHost(operations: operations, files: try imageFiles(isDev: isDev), allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
                                    allowsSimulatedPower: isDev, agentSetup: agentSetup, images: images)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
@@ -71,6 +71,13 @@ struct HostDaemonMain {
         case let other:
             throw HostDaemonError.unsupported("unknown LOCALBOX_SANDBOX_BACKEND \(other); expected apple or process-fixture")
         }
+    }
+
+    /// The image files `image.mirror` and `image.delete` act on. Slice 24's `ImageStore` is the real one; until it is
+    /// wired in, only dev daemons given `LOCALBOX_DEV_IMAGE_FILES` have any (the proof's fixture directories).
+    private static func imageFiles(isDev: Bool) throws -> (any ImageFiles)? {
+        guard isDev, let root = ProcessInfo.processInfo.environment["LOCALBOX_DEV_IMAGE_FILES"], !root.isEmpty else { return nil }
+        return try FixtureImageFiles(root: URL(fileURLWithPath: expanded(root)))
     }
 
     /// SIGTERM (launchd stop, update, `kickstart -k`) hibernates every running sandbox before exiting;

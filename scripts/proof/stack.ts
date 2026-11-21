@@ -3,7 +3,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { publicJwks } from "../../packages/tokens/src/index.js";
 import { machinePaths } from "../../packages/config/src/machine-paths.js";
-import { fixtureHome } from "./lib/login.js";
+import { fixtureHome, fixtureImages } from "./lib/login.js";
 import { join, resolve } from "node:path";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -96,12 +96,12 @@ async function startDaemons(machines: MachineSpec[], options: { fresh: boolean }
     rmSync(paths.socket, { force: true });
     if (options.fresh) {
       // `up` wipes local Convex, so a machine's old credential, sandboxes and operations would belong to an account that no longer exists.
-      rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true }); rmSync(paths.operations, { recursive: true, force: true });
+      rmSync(paths.credentials, { force: true }); rmSync(paths.sandboxes, { recursive: true, force: true }); rmSync(paths.operations, { recursive: true, force: true }); rmSync(fixtureImages(paths.root), { recursive: true, force: true });
       rmSync(fixtureHome(paths.root), { recursive: true, force: true }); rmSync(join(paths.root, "agent-setup.json"), { force: true }); mkdirSync(fixtureHome(paths.root));
     }
     mkdirSync(paths.logs, { recursive: true }); mkdirSync(paths.sandboxes, { recursive: true });
     const log = join(paths.logs, "hostd.log"); writeFileSync(log, "", { flag: options.fresh ? "w" : "a" });
-    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_OPERATIONS: paths.operations, LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
+    const child = spawnLogged(join(bin, "localbox-hostd"), [], log, { ...process.env, LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: root, HOME: fixtureHome(paths.root), LOCALBOX_MACHINE_ROOT: paths.root, LOCALBOX_CLI: join(root, "bin/localbox.js"), LOCALBOX_SANDBOXES: paths.sandboxes, LOCALBOX_OPERATIONS: paths.operations, LOCALBOX_DEV_IMAGE_FILES: fixtureImages(paths.root), LOCALBOX_SOCKET: paths.socket, LOCALBOX_IPC_TOKEN_PATH: paths.ipcToken, ...(memoryBytes ? { LOCALBOX_DEV_HOST_MEMORY_BYTES: String(memoryBytes) } : {}), ...(cpus ? { LOCALBOX_DEV_HOST_CPUS: String(cpus) } : {}) });
     writeFileSync(hostdPid(machine), String(child.pid));
     for (let attempt = 0; attempt < 120 && !existsSync(paths.socket); attempt++) { if (!alive(child.pid)) break; await sleep(250); }
     if (!existsSync(paths.socket)) throw new Error(`machine ${machine}'s HostDaemon did not open ${paths.socket}; ${readFileSafe(log).trim() || "no diagnostic output"}`);

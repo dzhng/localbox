@@ -49,6 +49,7 @@ export const relay = {
   reportState: makeFunctionReference<"mutation">("sandboxes:reportState"),
   removeIdle: makeFunctionReference<"mutation">("sandboxes:removeIdle"),
   setHolder: makeFunctionReference<"mutation">("images:setHolder"),
+  imagesForMachine: makeFunctionReference<"query">("images:forMachine"),
 };
 
 const TOKEN_RETRY_DELAYS_MS = [1_000, 3_000, 10_000];
@@ -71,6 +72,7 @@ export class Connector {
   private readonly sleep: (ms: number) => Promise<void>;
   private unsubscribe?: () => void;
   private unsubscribeMirror?: () => void;
+  private unsubscribeImageMirror?: () => void;
   private mirrorSeq = 0;
   /** Mirror pushes go to the daemon one at a time, in the order Convex sent them, so an older list never lands last. */
   private mirrorQueue: Promise<void> = Promise.resolve();
@@ -99,6 +101,9 @@ export class Connector {
     // A missing result is a failed read, not an empty catalog: mirroring it would delete every sandbox this Mac listed.
     this.unsubscribeMirror = this.deps.convex.onUpdate(relay.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
+    // Image files follow the catalog the same way: an image deleted while this Mac was offline goes when it reconnects.
+    this.unsubscribeImageMirror = this.deps.convex.onUpdate(relay.imagesForMachine, {}, (rows: Array<{ image_id: string }> | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map((row) => row.image_id))); },
+      (error) => { if (!this.ended) { this.deps.log(`image mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     void this.watch();
     void this.reportOutcomes();
   }
@@ -110,7 +115,7 @@ export class Connector {
   private async end(state: "revoked" | "stopped", error?: Error): Promise<void> {
     if (this.ended) return;
     this.setState(state, error?.message);
-    this.unsubscribe?.(); this.unsubscribeMirror?.();
+    this.unsubscribe?.(); this.unsubscribeMirror?.(); this.unsubscribeImageMirror?.();
     try { await this.deps.convex.close(); } catch (closeError) { this.deps.log(`close failed: ${message(closeError)}`); }
     if (error && !(error instanceof RevokedError)) this.settle.reject(error); else this.settle.resolve(state);
   }
@@ -186,6 +191,16 @@ export class Connector {
       if (!response.ok) { this.deps.log(`sandbox mirror refused: ${response.error.code}: ${response.error.message}`); return; }
       for (const deleted of (response.result as { deleted?: Array<{ sandbox_id: string; detail: string }> }).deleted ?? []) this.deps.log(`sandbox ${deleted.sandbox_id} is no longer in the catalog: ${deleted.detail}`);
     } catch (error) { this.deps.log(`sandbox mirror failed: ${message(error)}`); }
+  }
+
+  /** Pushes the image ids the catalog lists on this machine; the daemon removes the files of any its catalog listed before and no longer does. */
+  private async mirrorImages(images: string[]): Promise<void> {
+    if (this.ended) return;
+    try {
+      const response = await this.deps.daemon.dispatch(hostRequest("image.mirror", { machine_id: this.deps.machineId, images }, `image-mirror-${++this.mirrorSeq}`));
+      if (!response.ok) { this.deps.log(`image mirror refused: ${response.error.code}: ${response.error.message}`); return; }
+      for (const deleted of (response.result as { deleted?: Array<{ image: string; detail: string }> }).deleted ?? []) this.deps.log(deleted.detail);
+    } catch (error) { this.deps.log(`image mirror failed: ${message(error)}`); }
   }
 
   private async watch(): Promise<void> {

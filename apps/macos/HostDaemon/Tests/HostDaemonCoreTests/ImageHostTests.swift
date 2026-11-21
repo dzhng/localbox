@@ -92,9 +92,52 @@ final class ImageHostTests: XCTestCase {
         XCTAssertEqual(unsupported["code"] as? String, "unsupported")
     }
 
-    private func daemon(_ directory: URL? = nil) async throws -> (SandboxHost, HostOperationStore) {
+    func testTheCatalogMirrorRemovesOnlyImagesThatSameMachinesCatalogListedBefore() async throws {
+        let files = FakeImageFiles(["image_kept": "m1", "image_dropped": "m1", "image_other_sign_in": "m0", "image_never_listed": nil, "image_building": "m1"])
+        let (host, operations) = try await daemon(files: files)
+        let gate = Gate()
+        await operations.register(kind: "build") { _ in await gate.wait(); return .null }
+        _ = try await operations.begin(kind: "build", key: "m-b", subject: "image_building", checkpoint: .null)
+
+        let mirrored = try await result(host, "image.mirror", ["machine_id": "m1", "images": ["image_kept", "image_new", "image_absent"]])
+        XCTAssertEqual((mirrored["deleted"] as? [[String: String]])?.map { $0["image"] }, ["image_dropped"])
+        XCTAssertEqual(mirrored["unknown"] as? [String], ["image_building", "image_never_listed", "image_other_sign_in"], "running work, never listed, or listed by another sign-in: left alone")
+        XCTAssertEqual(mirrored["missing"] as? [String], ["image_absent", "image_new"])
+        let left = await files.held()
+        XCTAssertEqual(left.keys.sorted(), ["image_building", "image_kept", "image_never_listed", "image_other_sign_in"])
+
+        // A listed image is marked as this machine's, so a later push without it removes it.
+        _ = try await result(host, "image.mirror", ["machine_id": "m1", "images": ["image_kept", "image_never_listed"]])
+        let afterListing = await files.held()
+        XCTAssertEqual(afterListing["image_never_listed"], "m1")
+        let dropped = try await result(host, "image.mirror", ["machine_id": "m1", "images": []])
+        XCTAssertEqual(Set((dropped["deleted"] as? [[String: String]])?.compactMap { $0["image"] } ?? []), ["image_kept", "image_never_listed"])
+        let remaining = await files.held()
+        XCTAssertEqual(remaining.keys.sorted(), ["image_building", "image_other_sign_in"])
+        await gate.open()
+    }
+
+    func testDeleteRemovesTheFilesUnlessWorkOnTheImageIsRunning() async throws {
+        let files = FakeImageFiles(["image_1": "m1", "image_2": "m1"])
+        let (host, operations) = try await daemon(files: files)
+        let removed = try await result(host, "image.delete", ["image": "image_1"])
+        XCTAssertEqual(removed["removed"] as? Bool, true)
+        let again = try await result(host, "image.delete", ["image": "image_1"])
+        XCTAssertEqual(again["removed"] as? Bool, false, "deleting what is gone is not an error")
+        let gate = Gate()
+        await operations.register(kind: "copy") { _ in await gate.wait(); return .null }
+        _ = try await operations.begin(kind: "copy", key: "m-c", subject: "image_2", checkpoint: .null)
+        let busy = try await failure(host, "image.delete", ["image": "image_2"])
+        XCTAssertEqual(busy["code"] as? String, "conflict")
+        await gate.open()
+        let (bare, _) = try await daemon()
+        let unsupported = try await failure(bare, "image.mirror", ["machine_id": "m1", "images": []])
+        XCTAssertEqual(unsupported["code"] as? String, "unsupported", "no image store yet")
+    }
+
+    private func daemon(_ directory: URL? = nil, files: (any ImageFiles)? = nil) async throws -> (SandboxHost, HostOperationStore) {
         let operations = try HostOperationStore(operationsDirectory: try directory ?? scratch())
-        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), images: ImageHost(operations: operations))
+        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory(), images: ImageHost(operations: operations, files: files))
         return (host, operations)
     }
 
@@ -120,4 +163,14 @@ final class ImageHostTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return directory
     }
+}
+
+/// Image files in memory: image id to the machine whose catalog listed it.
+actor FakeImageFiles: ImageFiles {
+    private var images: [String: String?]
+    init(_ images: [String: String?]) { self.images = images }
+    func held() -> [String: String?] { images }
+    func list() -> [HeldImage] { images.map { HeldImage(imageID: $0.key, listedBy: $0.value) } }
+    func markListed(_ imageID: String, by machineID: String) { if images[imageID] != nil { images[imageID] = machineID } }
+    func remove(_ imageID: String) -> Bool { images.removeValue(forKey: imageID) != nil }
 }

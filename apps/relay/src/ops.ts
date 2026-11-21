@@ -109,6 +109,10 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     if (ACCOUNT_OPERATIONS[entry.id]) return answer(success(base, await accountOperation(principal, entry.id, payload, deps)));
     if (entry.id === "sandbox.create") return await createSandbox(principal, base, machine, typeof input.caller_machine_id === "string" ? input.caller_machine_id : undefined, deps);
     if (entry.id === "image.wait") return await waitForImage(principal, base, deps);
+    if (entry.id === "image.list") return answer(success(base, { images: (await deps.accountCall(principal, "query", "images:list", {}) as ImageRow[]).map(imageListRow) } as unknown as Json));
+    if (entry.id === "image.rename") return answer(success(base, await renameImage(principal, base, deps) as unknown as Json));
+    if (entry.id === "image.default") return answer(success(base, await defaultImage(principal, base, deps) as unknown as Json));
+    if (entry.id === "image.delete") return await deleteImage(principal, base, machine, deps);
     if (!entry.sandbox_scoped) return await relay(principal, await resolveMachine(principal, sandbox, machine, deps), base, deps);
     const target = await resolveSandbox(principal, sandbox, deps).catch((error) => {
       // A delete of a sandbox that is already gone has nothing left to do.
@@ -351,6 +355,83 @@ function catalogState(image: ImageRow): ImageOperationState {
 }
 
 const errorCode = (code: string): ErrorCode => (ERROR_CODES as readonly string[]).includes(code) ? code as ErrorCode : "internal";
+
+const imageSource = (source: ImageRow["source"]) => source.kind === "release" ? "release" : source.kind === "ipsw" ? `macOS ${source.ipswVersion ?? ""} IPSW`.replace("  ", " ") : `sandbox ${source.sandboxName ?? "(unknown)"}`;
+const holderName = (holder: ImageRow["holders"][number]) => `${holder.machine_name ?? holder.machine_id}${holder.state === "ready" ? "" : ` (${holder.state})`}`;
+
+/**
+ * One `image list` row: the facts its table shows (`NAME OS SIZE FROM ON DEFAULT`) and nothing else, so text and JSON
+ * carry the same. `on` names the Macs holding the image, with any holding not yet ready marked; `linux` is on every Mac.
+ */
+function imageListRow(image: ImageRow): Json {
+  return { name: image.name, os: image.os, size_bytes: image.size_bytes, from: imageSource(image.source), on: image.image_id === BUILT_IN_IMAGE ? ["every Mac"] : image.holders.map(holderName), default: image.default };
+}
+
+async function renameImage(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<ActionReport> {
+  const asked = base.input as { image: string; name: string };
+  const renamed = await deps.accountCall(principal, "mutation", "images:rename", asked) as { image_id: string; name: string; previous_name: string };
+  const changed = renamed.name !== renamed.previous_name;
+  return { requested: base.input, produced: renamed, actions: [changed ? { kind: "renamed", detail: `renamed image ${renamed.previous_name} to ${renamed.name}; sandboxes made from it are unaffected` } : { kind: "left_alone", detail: `image ${renamed.name} already has that name` }] };
+}
+
+async function defaultImage(principal: Principal, base: RequestEnvelope, deps: OpsDeps): Promise<ActionReport> {
+  const previous = (await deps.accountCall(principal, "query", "images:list", {}) as ImageRow[]).find((row) => row.default)?.name ?? BUILT_IN_IMAGE;
+  const made = await deps.accountCall(principal, "mutation", "images:setDefault", base.input as { image: string }) as { image_id: string; name: string };
+  const action = made.name === previous
+    ? { kind: "left_alone" as const, detail: `${made.name} is already the default image` }
+    : { kind: "made_default" as const, detail: `${made.name} is now the default image (was ${previous}); sandbox create uses it when it names no image` };
+  return { requested: base.input, produced: { ...made, previous_default: previous }, actions: [action] };
+}
+
+/**
+ * The catalog row (and its holder rows) goes first, then every holder machine is told to remove its files; with
+ * `--machine M`, only M's holding and files go and the image stays on the account. A machine that does not answer
+ * removes the files when its connector next mirrors the catalog. Sandboxes made from the image keep their own disks.
+ */
+async function deleteImage(principal: Principal, base: RequestEnvelope, machine: string | undefined, deps: OpsDeps): Promise<OpsResponse> {
+  const asked = base.input as { image: string; confirm?: string };
+  let image: ImageRow;
+  try { image = await deps.accountCall(principal, "query", "images:get", { image: asked.image }) as ImageRow; }
+  catch (error) {
+    // A delete of an image that is already gone (a replay, or a delete from another caller) has nothing left to do.
+    if (contractError(error).code !== "image_not_found") throw error;
+    const report: ActionReport = { requested: base.input, produced: { image: asked.image, removed: [] }, actions: [{ kind: "left_alone", detail: `${asked.image} is already deleted: this account has no image by that name or id` }] };
+    return answer(success(base, report as unknown as Json));
+  }
+  if (asked.confirm !== undefined && asked.confirm !== image.name) throw new ContractError("invalid_input", `confirm must be the image's name, ${image.name}`);
+  const named = machine ? await findMachine(principal, machine, deps) : undefined;
+  let holders: string[]; let defaultReset = false;
+  if (named) {
+    await deps.accountCall(principal, "mutation", "images:dropHolder", { image: image.image_id, machineId: named.machineId });
+    holders = [named.machineId];
+  } else {
+    const removed = await deps.accountCall(principal, "mutation", "images:remove", { image: image.image_id }) as { holders: string[]; default_reset_to: string | null };
+    holders = removed.holders; defaultReset = removed.default_reset_to !== null;
+  }
+  const nameOf = (machineId: string) => named?.machineId === machineId ? named.name : image.holders.find((holder) => holder.machine_id === machineId)?.machine_name ?? machineId;
+  const told = await Promise.all(holders.map(async (machineId, index) => [machineId, await relayedResponse(principal, machineId, { ...base, request_id: `${base.request_id}-${index}`, input: { image: image.image_id } }, deps)] as const));
+  const removed = named ? [] : ["account catalog entry"]; const later: string[] = [];
+  for (const [machineId, response] of told) {
+    if (response?.ok) removed.push(`files on ${nameOf(machineId)}`);
+    else if (response?.error.code === "machine_not_found") later.push(`${nameOf(machineId)} is gone from the account, so there is nothing to remove on it`);
+    else if (!response || response.error.code === "machine_offline") later.push(`${nameOf(machineId)} did not answer and removes its files when it reconnects`);
+    else later.push(`${nameOf(machineId)} did not remove its files (${response.error.code}: ${response.error.message}); they go when its connector next mirrors the catalog`);
+  }
+  const remaining = image.holders.filter((holder) => holder.machine_id !== named?.machineId).map(holderName);
+  const facts = [
+    `deleted ${image.name}${named ? ` from ${named.name}` : ""}: removed ${removed.length ? removed.join(", ") : "nothing yet"}`,
+    ...later,
+    ...(named ? [`the image stays on the account${remaining.length ? `, on ${remaining.join(", ")}` : " with no Mac holding it"}`] : []),
+    ...(defaultReset ? [`it was the default image, so the default is now ${BUILT_IN_IMAGE}`] : []),
+    `sandboxes made from ${image.name} are unaffected: each has its own copy of the disk`,
+  ];
+  const report: ActionReport = {
+    requested: base.input,
+    produced: { image_id: image.image_id, name: image.name, ...(named ? { machine: named.name } : {}), removed, default_reset_to: defaultReset ? BUILT_IN_IMAGE : null },
+    actions: [{ kind: "deleted", detail: facts.join("; ") }],
+  };
+  return answer(success(base, report as unknown as Json));
+}
 
 /** The machine's answer (`machine_not_found` when the machine was removed), or undefined while it is still running past this call's wait. */
 async function relayedResponse(principal: Principal, machineId: string, request: RequestEnvelope, deps: OpsDeps): Promise<ResponseEnvelope | undefined> {
