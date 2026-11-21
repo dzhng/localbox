@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { createServer } from "node:net";
 import { Resolver } from "node:dns/promises";
-import { GuestGateway, runGuestService } from "../../../packages/guest-gateway/src/index.js";
+import { GuestControl, GuestGateway, linuxFreezeCommands, runGuestService, syncOnlyCommands } from "../../../packages/guest-gateway/src/index.js";
 import { productionDesktopHandlers } from "../../../packages/desktop/src/index.js";
 import { DUET_REQUIRED_TOOL_NAMES } from "../../../packages/vm-image/src/duet-inventory.js";
 import { adoptSandboxIdentity } from "./identity.js";
@@ -23,6 +23,8 @@ const numberEnv = (name: string, fallback: number): number => {
  * connection (a daemon restart, a restore from hibernation) ends only that connection, never the agent, its job
  * table or the processes it started. Without the variable it serves one connection on stdin/stdout (the
  * process-fixture backend and CI).
+ *
+ * `LOCALBOX_CONTROL_SOCKET` is the control lane (freeze, thaw), forwarded by a second socat unit from vsock port 1025.
  */
 export async function main(): Promise<void> {
   const root = process.env.LOCALBOX_ROOT ?? "/";
@@ -45,6 +47,13 @@ export async function main(): Promise<void> {
   const serve = (input: NodeJS.ReadableStream, output: NodeJS.WritableStream, epoch: number) => runGuestService({ input: input as never, output: output as never, gateway, channelEpoch: epoch, inventoryNames: inventory, readinessMarker, setClock, adoptIdentity, settle, onProtocolError: (error) => stderr.write(`[localbox-guest] ${error.message}\n`) });
   const socketPath = process.env.LOCALBOX_AGENT_SOCKET;
   if (!socketPath) { await serve(stdin, stdout, channelEpoch); return; }
+  const controlPath = process.env.LOCALBOX_CONTROL_SOCKET;
+  if (controlPath) {
+    // Only a Linux guest that owns its root freezes it; darwin and a fixture guest flush only.
+    const control = new GuestControl({ commands: ownsSystem ? linuxFreezeCommands : syncOnlyCommands });
+    mkdirSync(dirname(controlPath), { recursive: true }); rmSync(controlPath, { force: true });
+    createServer((socket) => { socket.on("error", () => socket.destroy()); void control.serve(socket, socket); }).listen(controlPath);
+  }
   // One connection at a time carries the host's frames; each starts at the epoch the last one ended on.
   let epoch = channelEpoch;
   mkdirSync(dirname(socketPath), { recursive: true }); rmSync(socketPath, { force: true });

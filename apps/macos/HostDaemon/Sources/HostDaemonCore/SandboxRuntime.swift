@@ -38,6 +38,10 @@ public actor SandboxRuntime {
     private var bootCount = 0
     /// Deleted: nothing boots it again and its record is never written, so its directory stays gone.
     private var discarded = false
+    /// Held by an exclusive operation on the running guest (`freezeAndClone`). Requests, bring-ups, stops, saves and
+    /// resizes wait for it to be free before they look at the lifecycle.
+    private var operationHeld = false
+    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
     private let onChange: @Sendable () -> Void
     private let now: @Sendable () -> Date
 
@@ -57,6 +61,7 @@ public actor SandboxRuntime {
     /// Runs the sandbox and says what that took: nothing, a wake, a restore from saved state, or a cold boot. One
     /// bring-up runs at a time; a caller that finds one in flight (or a sleep or stop settling) waits for it.
     public func bringUp() async throws -> SandboxAction? {
+        await operationsSettled()
         while true {
             if let booting { _ = try await booting.value; return nil }
             guard statusValue.lifecycle == .stopping else { break }
@@ -162,7 +167,7 @@ public actor SandboxRuntime {
     /// The guest went away on its own (powered off, panicked, or its agent closed the channel): the sandbox is down,
     /// not running, until it is started again.
     private func guestLost(_ reason: String, boot: Int) async {
-        guard boot == bootCount, let lost = backend, [.ready, .paused].contains(statusValue.lifecycle) else { return }
+        guard boot == bootCount, let lost = backend, [.ready, .paused, .freezing].contains(statusValue.lifecycle) else { return }
         backend = nil; setStatus(.stopping)
         await channel?.close(); channel = nil
         try? await lost.stop()
@@ -182,6 +187,7 @@ public actor SandboxRuntime {
     /// Stops it, cancelling a boot in flight, and ends stopped; where the backend cannot stop it, it ends in error
     /// and keeps the backend, so the next stop or start tries again.
     public func stop() async throws {
+        await operationsSettled()
         if let booting { booting.cancel(); _ = try? await booting.value }
         if statusValue.lifecycle == .stopping { _ = await settled() }
         guard statusValue.lifecycle != .stopped else { return }
@@ -219,6 +225,7 @@ public actor SandboxRuntime {
     /// fails or the backend cannot save, stop it and owe it a cold boot that reports why. Returns why it was not
     /// saved, or nil when it was.
     @discardableResult func hibernate() async -> String? {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { return nil }
         let failure: String, reason: String
         if let saver = backend as? any HibernateBackend {
@@ -327,6 +334,7 @@ public actor SandboxRuntime {
     }
 
     public func forward(_ envelope: Data) async throws -> Data {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
         record.lastActivityAt = now()
         inFlight += 1; defer { inFlight -= 1 }
@@ -340,6 +348,55 @@ public actor SandboxRuntime {
             if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch { await guestLost("the guest agent closed its channel", boot: boot) }
             throw HostDaemonError.guestUnavailable
         }
+    }
+
+    /// Freezes the guest's filesystem and pauses the VM around `body` (a disk clone), so the clone holds everything
+    /// written before it and nothing half-written. Lock, freeze, pause, body, resume, thaw, unlock: resume, thaw and
+    /// unlock run on every path, and a thaw the guest never receives is covered by its own self-thaw after `timeoutMs`.
+    /// While it runs the sandbox is `.freezing`. `body` must not call back into this runtime's lifecycle, which waits
+    /// for the lock `body` runs under.
+    public func freezeAndClone<T: Sendable>(timeoutMs: Int = 10_000, _ body: @Sendable () async throws -> T) async throws -> T {
+        await lockOperation(); defer { unlockOperation() }
+        guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
+        guard let dialer = backend as? any GuestControlDialer else { throw HostDaemonError.unsupported("\(record.name) has no control lane to freeze it on (the process fixture)") }
+        setStatus(.freezing)
+        var control: (any GuestControlChannel)?, paused = false
+        do {
+            let lane = try await dialer.dialControl(); control = lane
+            try await lane.freeze(timeoutMs: timeoutMs)
+            try await backend.pause(); paused = true
+            let value = try await body()
+            try await backend.resume(); paused = false
+            let unconfirmed = await thaw(lane, timeoutMs: timeoutMs)
+            if statusValue.lifecycle == .freezing { setStatus(.ready, detail: unconfirmed) }
+            return value
+        } catch {
+            var stuck: String?
+            if paused { do { try await backend.resume() } catch { stuck = "paused in memory: could not resume after a disk clone: \(explain(error))" } }
+            if let control { _ = await thaw(control, timeoutMs: timeoutMs) }
+            // A guest lost meanwhile already left `.freezing`; a VM that would not resume sleeps paused, and its next use resumes it.
+            if statusValue.lifecycle == .freezing { setStatus(stuck == nil ? .ready : .paused, detail: stuck) }
+            throw error
+        }
+    }
+
+    /// Thaws and closes the lane. Returns why the thaw is unconfirmed, or nil.
+    private func thaw(_ control: any GuestControlChannel, timeoutMs: Int) async -> String? {
+        defer { Task { await control.close() } }
+        do { try await control.thaw(); return nil } catch { return "the guest did not confirm its thaw (\(explain(error))); it thaws itself within \(spoken(TimeInterval(timeoutMs) / 1000))" }
+    }
+
+    private func lockOperation() async { await operationsSettled(); operationHeld = true }
+
+    private func unlockOperation() {
+        operationHeld = false
+        let waiting = operationWaiters; operationWaiters = []
+        for waiter in waiting { waiter.resume() }
+    }
+
+    /// Returns once no exclusive operation holds the lock.
+    private func operationsSettled() async {
+        while operationHeld { await withCheckedContinuation { operationWaiters.append($0) } }
     }
 
     /// A running guest takes the new name as its hostname at once, through a new hello.
@@ -362,6 +419,7 @@ public actor SandboxRuntime {
 
     /// A size takes effect at boot, so a running sandbox restarts; the action names the processes that ended.
     func resize(cpus: Int?, memoryBytes: UInt64?) async throws -> SandboxAction? {
+        await operationsSettled()
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes
         guard cpus != record.cpus || memory != record.memoryBytes else { return nil }
         guard cpus > 0, memory > 0 else { throw HostDaemonError.invalidState("a sandbox needs at least one CPU and some memory") }
@@ -439,5 +497,5 @@ struct RuntimeSnapshot: Sendable {
     /// A paused VM keeps its RAM; a paused process fixture (SIGSTOP) counts as freed.
     let pauseKeepsMemory: Bool
     /// Admission counts a sandbox's memory while it starts or runs, and while a VM sleeps paused in memory.
-    var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
+    var reservesMemory: Bool { [.starting, .ready, .freezing].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
 }

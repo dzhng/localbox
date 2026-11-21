@@ -18,6 +18,17 @@ processes it started. Do not fold the two units into one: an agent run as
 socat's child dies with the connection, and systemd then kills every process it
 started.
 
+A third unit (`localbox-control-vsock.service`) forwards vsock port 1025 to
+the agent's control socket (`LOCALBOX_CONTROL_SOCKET`): the control lane, which
+carries only freeze and thaw. It is a separate port, not frames on the request
+lane, because the request lane serializes requests with no timeout and journals
+mutations to disk; a freeze must answer while a request is in flight and must
+not write to the filesystem it freezes. Nothing on the control path writes to
+disk or logs. A freeze always arms a self-thaw (10 s unless the host asks for
+another, at most 30 s), so a host that dies mid-clone never leaves the guest
+frozen; dropping the control connection alone does not thaw. Only a Linux guest
+that owns its root runs `fsfreeze`; darwin and a fixture guest only `sync`.
+
 Each new connection starts at the channel epoch the last one ended on; the
 host's `hello` frame raises it and carries the sandbox's identity (the agent
 then sets the hostname and steps the clock after a restore). Requests with a

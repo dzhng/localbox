@@ -11,13 +11,14 @@ import Virtualization
 ///   --efi                                     boot the artifacts' template.img as a GPT disk through EFI firmware
 ///   vmlab efi-kernel --artifacts <dir> --efi --json   apt-install another kernel in the guest, reboot, compare `uname -r`
 ///   vmlab efi-clones --artifacts <dir> --efi --json   two clones, each with a copy of one variable store, booted at once
+///   vmlab freeze --artifacts <dir> --json     freezeAndClone under a guest writer, then a freeze whose host never thaws
 @main
 struct VMLabMain {
     static func main() async {
         #if os(macOS)
         let arguments = Array(CommandLine.arguments.dropFirst())
         do {
-            guard let artifacts = option("--artifacts", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore|efi-kernel|efi-clones --artifacts <dir> [--scratch <dir>] [--efi] --json") }
+            guard let artifacts = option("--artifacts", in: arguments), arguments.contains("--json") else { throw LabError("usage: localbox-vmlab boot|hibernate|restore|efi-kernel|efi-clones|freeze --artifacts <dir> [--scratch <dir>] [--efi] --json") }
             let lab = Lab(artifacts: SandboxArtifacts(directory: URL(fileURLWithPath: expanded(artifacts), isDirectory: true), extraKernelArguments: option("--kernel-args", in: arguments) ?? ""), efi: arguments.contains("--efi"))
             let output: [String: Any]
             switch arguments.first {
@@ -28,6 +29,7 @@ struct VMLabMain {
                 output = try await lab.restorePhase(scratch: URL(fileURLWithPath: scratch, isDirectory: true))
             case "efi-kernel": output = try await lab.efiKernel()
             case "efi-clones": output = try await lab.efiClones()
+            case "freeze": output = try await lab.freeze()
             default: throw LabError("unknown vmlab command")
             }
             emit(output)
@@ -196,6 +198,72 @@ struct Lab {
         for backend in backends { ids.append(try await shell(backend, "cat /etc/machine-id; uname -r").stdout.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)) }
         for backend in backends { try await backend.stop() }
         return ["ok": ids.count == 2 && ids[0] != ids[1], "both_booted_ms": bootMs, "guests": ids]
+    }
+
+    /// Slice 27's control lane on a real guest. Phase 1: a sandbox run by `SandboxHost` writes a tick every 50 ms while
+    /// `freezeAndClone` clones its disk with a body that also sleeps 1 s; the writer stalls, then continues. Phase 2: the
+    /// same disk booted on a bare backend, frozen with a 3 s timeout over a lane that then drops without a thaw (what the
+    /// guest sees when its host dies mid-clone); a write request completes only once the guest thawed itself.
+    func freeze() async throws -> [String: Any] {
+        let base = try newScratch()
+        defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: base) } }
+        let sandboxes = base.appendingPathComponent("sandboxes", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
+        let host = SandboxHost(sandboxesDirectory: sandboxes, factory: AppleSandboxFactory(artifacts: artifacts))
+        let id = "sandbox_vmlab"
+        _ = try await hostResult(host, "sandbox.create", id, ["name": "vmlab", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": Int(Int32.max)])
+        _ = try await hostResult(host, "shell.exec", id, ["command": "while :; do date +%s%3N >> /var/tmp/ticks; sleep 0.05; done", "background": true])
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        guard let runtime = await host.runtime(id) else { throw LabError("the sandbox has no runtime") }
+        let disk = SandboxDirectory(sandboxes.appendingPathComponent(id)).disk, clone = base.appendingPathComponent("clone.img")
+        let ticksBefore = Int(try await hostShell(host, id, "wc -l < /var/tmp/ticks")) ?? 0
+        let windowStart = Date(), started = Date()
+        let cloned = try await runtime.freezeAndClone {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            return try cloneDisk(disk, to: clone)
+        }
+        let cloneMs = Int(Date().timeIntervalSince(started) * 1000)
+        let afterLifecycle = await runtime.status().lifecycle.rawValue
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        let windowMs = Int(Date().timeIntervalSince(windowStart) * 1000)
+        let ticks = try await hostShell(host, id, "cat /var/tmp/ticks").split(separator: "\n").compactMap { Int64($0) }
+        // The guest's clock does not run while the VM is paused, so its own tick times hide most of the stall. Measured on
+        // the host's clock instead: the window's length less the time the ticks written in it account for.
+        let gaps = zip(ticks.dropFirst(), ticks).map { $0 - $1 }
+        let median = gaps.isEmpty ? 0 : Int(gaps.sorted()[gaps.count / 2])
+        let ticksInWindow = ticks.count - ticksBefore
+        let stallMs = windowMs - ticksInWindow * median
+        let phase1: [String: Any] = ["freeze_and_clone_ms": cloneMs, "clone": cloned, "clone_bytes": (try? FileManager.default.attributesOfItem(atPath: clone.path)[.size] as? Int) ?? 0, "lifecycle_after": afterLifecycle, "window_ms": windowMs, "ticks_in_window": ticksInWindow, "median_tick_ms": median, "host_measured_stall_ms": stallMs, "guest_clock_max_gap_ms": Int(gaps.max() ?? 0), "ticks_after_clone_s": ticks.filter { $0 > (ticks.last ?? 0) - 1_000 }.count]
+        _ = try await hostResult(host, "sandbox.stop", id, [:])
+
+        let backend = try backend(sandboxes.appendingPathComponent(id))
+        try await backend.start()
+        let lane = try await backend.dialControl()
+        try await lane.freeze(timeoutMs: 3_000)
+        let frozenAt = Date()
+        await lane.close()
+        _ = try await shell(backend, "echo after >> /var/tmp/after")
+        let writeBlockedMs = Int(Date().timeIntervalSince(frozenAt) * 1000)
+        let thawed = try await shell(backend, "cat /var/tmp/after").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await backend.stop()
+        let phase2: [String: Any] = ["self_thaw_timeout_ms": 3_000, "write_blocked_ms": writeBlockedMs, "write_landed": thawed == "after"]
+        // The body sleeps 1 s; freeze, pause, resume and thaw add to it.
+        let stalled = stallMs >= 900
+        let continued = (phase1["ticks_after_clone_s"] as? Int ?? 0) >= 10
+        let selfThawed = writeBlockedMs >= 2_500 && writeBlockedMs <= 8_000 && thawed == "after"
+        return ["ok": stalled && continued && afterLifecycle == "ready" && cloned == "cloned" && selfThawed, "writer_continued": continued, "phase1": phase1, "phase2": phase2, "writer_stalled": stalled, "self_thawed": selfThawed]
+    }
+
+    func hostResult(_ host: SandboxHost, _ operation: String, _ sandboxID: String, _ input: [String: Any]) async throws -> [String: Any] {
+        let id = UUID().uuidString
+        let envelope = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": operation, "sandbox_id": sandboxID, "deadline_ms": 60_000, "mutation_id": id, "input": input])
+        let response = try JSONSerialization.jsonObject(with: try await host.request(envelope)) as? [String: Any]
+        guard response?["ok"] as? Bool == true else { throw LabError("\(operation) failed: \(response ?? [:])") }
+        return response?["result"] as? [String: Any] ?? [:]
+    }
+
+    func hostShell(_ host: SandboxHost, _ sandboxID: String, _ command: String) async throws -> String {
+        (try await hostResult(host, "shell.exec", sandboxID, ["command": command])["stdout"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// "restored" when restore accepted that change (and the VM is stopped again); otherwise the refusal.

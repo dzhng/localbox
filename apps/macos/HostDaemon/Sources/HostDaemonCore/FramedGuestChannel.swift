@@ -31,11 +31,7 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
         await acquire(); defer { release() }
         guard !closed else { throw HostDaemonError.guestUnavailable }
         guard let request = try JSONSerialization.jsonObject(with: envelope) as? [String: Any] else { throw HostDaemonError.unsupported("guest request is not a JSON object") }
-        let frame = try JSONSerialization.data(withJSONObject: ["kind": "request", "request": request, "channel_epoch": channelEpoch])
-        guard frame.count <= Int(maxFrameBytes) else { throw HostDaemonError.unsupported("guest envelope exceeds the configured frame limit") }
-        var length = UInt32(frame.count).bigEndian
-        let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-        try writer.write(contentsOf: header); try writer.write(contentsOf: frame)
+        try writer.write(contentsOf: try GuestFrameCodec.encode(["kind": "request", "request": request, "channel_epoch": channelEpoch], maxFrameBytes: maxFrameBytes))
         while true {
             let object = try JSONSerialization.jsonObject(with: try await readFrame()) as? [String: Any]
             switch object?["kind"] as? String {
@@ -73,11 +69,7 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
 
     private func sendHello() throws {
         guard !helloSent else { return }
-        let frame: [String: Any] = ["kind": "hello", "channel_epoch": channelEpoch, "wall_clock_ms": wallClock(), "sandbox_id": sandboxID, "hostname": name]
-        let encoded = try JSONSerialization.data(withJSONObject: frame)
-        guard encoded.count <= Int(maxFrameBytes) else { throw HostDaemonError.unsupported("guest hello exceeds the configured frame limit") }
-        var length = UInt32(encoded.count).bigEndian
-        try writer.write(contentsOf: Data(bytes: &length, count: 4)); try writer.write(contentsOf: encoded)
+        try writer.write(contentsOf: try GuestFrameCodec.encode(["kind": "hello", "channel_epoch": channelEpoch, "wall_clock_ms": wallClock(), "sandbox_id": sandboxID, "hostname": name], maxFrameBytes: maxFrameBytes))
         helloSent = true
     }
 
@@ -100,28 +92,54 @@ public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider 
         let reader = reader, maxFrameBytes = maxFrameBytes
         reading = true
         let frame = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Data, Error>, Never>) in
-            readQueue.async { continuation.resume(returning: Result { try Self.readFrame(from: reader, maxFrameBytes: maxFrameBytes) }) }
+            readQueue.async { continuation.resume(returning: Result { try GuestFrameCodec.read(from: reader, maxFrameBytes: maxFrameBytes) }) }
         }
         reading = false
         // Closed while the read was blocked: the reader was left to it, so it closes here.
         if closed { try? reader.close(); throw HostDaemonError.guestUnavailable }
         return try frame.get()
     }
+}
 
-    private static func readFrame(from reader: FileHandle, maxFrameBytes: UInt32) throws -> Data {
-        let header = try readExactly(4, from: reader); let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-        guard length <= maxFrameBytes else { throw HostDaemonError.unsupported("guest frame exceeds the configured frame limit") }
-        return try readExactly(Int(length), from: reader)
+/// The guest wire format both lanes share: a big-endian uint32 length, then one JSON object.
+enum GuestFrameCodec {
+    static func encode(_ frame: [String: Any], maxFrameBytes: UInt32) throws -> Data {
+        let body = try JSONSerialization.data(withJSONObject: frame)
+        guard body.count <= Int(maxFrameBytes) else { throw HostDaemonError.unsupported("a \(frame["kind"] as? String ?? "guest") frame exceeds the configured frame limit") }
+        var length = UInt32(body.count).bigEndian
+        return Data(bytes: &length, count: 4) + body
     }
 
-    private static func readExactly(_ count: Int, from reader: FileHandle) throws -> Data {
+    /// Blocks until one whole frame arrives; `deadline` bounds the wait (a guest that never answers), else it waits forever.
+    static func read(from reader: FileHandle, maxFrameBytes: UInt32, deadline: Date? = nil) throws -> Data {
+        let header = try readExactly(4, from: reader, deadline: deadline); let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        guard length <= maxFrameBytes else { throw HostDaemonError.unsupported("guest frame exceeds the configured frame limit") }
+        return try readExactly(Int(length), from: reader, deadline: deadline)
+    }
+
+    private static func readExactly(_ count: Int, from reader: FileHandle, deadline: Date?) throws -> Data {
         var result = Data(); result.reserveCapacity(count)
         while result.count < count {
+            if let deadline { try waitReadable(reader.fileDescriptor, until: deadline) }
             let chunk = try reader.read(upToCount: count - result.count) ?? Data()
             if chunk.isEmpty { throw HostDaemonError.guestUnavailable }
             result.append(chunk)
         }
         return result
     }
+
+    private static func waitReadable(_ descriptor: Int32, until deadline: Date) throws {
+        while true {
+            let remaining = Int32(max(0, min(Double(Int32.max), deadline.timeIntervalSinceNow * 1000)).rounded(.up))
+            var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&poller, 1, remaining)
+            if ready > 0 { return }
+            if ready < 0, errno == EINTR { continue }
+            if ready < 0 { throw HostDaemonError.unsupported("could not wait on the guest channel: errno \(errno)") }
+            throw GuestFrameTimeout()
+        }
+    }
 }
 
+/// The guest did not answer before the deadline.
+struct GuestFrameTimeout: Error {}

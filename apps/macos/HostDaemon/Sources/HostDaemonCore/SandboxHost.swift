@@ -7,6 +7,9 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
     case paused
     /// Asleep and down: a saved state to restore, or a cold boot owed, at the next use.
     case asleep
+    /// Running, with its filesystem frozen and the VM paused for a disk clone (`SandboxRuntime.freezeAndClone`).
+    /// Requests wait for it, and admission and the idle policy pass it by.
+    case freezing
     case stopping
     case stopped
     case error
@@ -14,7 +17,7 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
     /// The runtime state reported for the sandbox.
     var sandboxState: String {
         switch self {
-        case .ready: return "running"
+        case .ready, .freezing: return "running"
         case .paused, .asleep: return "sleeping"
         default: return rawValue
         }
@@ -27,7 +30,7 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
         case .ready: return .running
         case .paused: return .sleeping
         case .stopped, .error: return .stopped
-        case .starting, .stopping, .asleep: return nil
+        case .starting, .stopping, .asleep, .freezing: return nil
         }
     }
 }
@@ -211,7 +214,8 @@ public actor SandboxHost {
     /// SIGTERM and power-off: hibernate every running sandbox, all at once; one that cannot be saved stops and
     /// owes a cold boot. Returns what each did.
     @discardableResult public func shutdown() async -> [String: SandboxAction] {
-        await concurrently(await runtimes(in: [.ready, .paused])) { runtime in
+        // A freezing sandbox is saved once its clone ends and it thaws (`hibernate` waits for the operation).
+        await concurrently(await runtimes(in: [.ready, .paused, .freezing])) { runtime in
             let name = await runtime.record.name
             if let failure = await runtime.hibernate() { return ["kind": "stopped", "detail": "stopped \(name), which cold-boots at the next start: \(failure)"] }
             return ["kind": "slept", "detail": "hibernated \(name)"]
@@ -252,7 +256,7 @@ public actor SandboxHost {
         var done: [String: SandboxAction] = [:]
         for (id, runtime) in runtimes.sorted(by: { $0.key < $1.key }) {
             let sandbox = await runtime.snapshot()
-            guard let since = await runtime.idleSince(), ![.starting, .stopping].contains(sandbox.status.lifecycle) else { continue }
+            guard let since = await runtime.idleSince(), ![.starting, .stopping, .freezing].contains(sandbox.status.lifecycle) else { continue }
             let idle = now().timeIntervalSince(since), policy = IdlePolicy(sandbox.record)
             let running = sandbox.status.lifecycle == .ready
             var step = policy.step(idleFor: idle, running: running)
@@ -573,7 +577,7 @@ public actor SandboxHost {
             let holders = holding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
             let listed = holding.map { held -> String in
                 let jobs = jobs[held.record.sandboxID] ?? nil
-                let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
+                let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle == .freezing ? "frozen for a disk clone" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
                 return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
             }
             let total = holding.map(\.record.memoryBytes).reduce(0, +)

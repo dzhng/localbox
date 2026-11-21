@@ -275,3 +275,4 @@ function guestAddress(): string | null {
 }
 
 export { GuestService, runGuestService, type GuestServiceOptions } from "./service.js";
+export { GuestControl, linuxFreezeCommands, syncOnlyCommands, type FreezeCommands, type GuestControlOptions } from "./control.js";
