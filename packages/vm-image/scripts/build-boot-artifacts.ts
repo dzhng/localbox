@@ -11,8 +11,13 @@ const profileArg = process.argv.slice(2).find((arg) => arg === "minimal" || arg 
 const profile = profileArg as Profile;
 const baseImage = process.env.LOCALBOX_BASE_IMAGE ?? "ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55";
 if (!/@sha256:[0-9a-f]{64}$/i.test(baseImage)) throw new Error("LOCALBOX_BASE_IMAGE must be an immutable @sha256:… reference");
+// `--boot efi` writes a GPT disk (EFI system partition plus the ext4 root) that boots through GRUB, so the kernel lives
+// on the disk; the default writes the bare ext4 root the host boots with its own kernel and initrd.
+const bootArg = process.argv[process.argv.indexOf("--boot") + 1];
+const boot = process.argv.includes("--boot") ? bootArg : "direct";
+if (boot !== "direct" && boot !== "efi") throw new Error(`--boot must be direct or efi, not ${bootArg}`);
 const outputRoot = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
-const output = join(outputRoot, profile);
+const output = join(outputRoot, boot === "efi" ? `${profile}-efi` : profile);
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
 const substitutions = [
   { from: "x86_64 release downloads", to: "ARM64 release downloads", reason: "Bun, static-web-server, KasmVNC, and Google Chrome are fetched from their native ARM64 release assets at the Duet versions." },
@@ -44,6 +49,7 @@ async function inputDigest(): Promise<string> {
     ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/") && !path.startsWith("dist/release/"))];
   for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
+  hash.update(boot);
   hash.update(baseImage);
   return `sha256:${hash.digest("hex")}`;
 }
@@ -81,6 +87,37 @@ const TEMPLATE_SCRIPT = [
   "truncate -s 8G /out/template.img && mke2fs -q -t ext4 -L localbox -d /rootfs /out/template.img",
 ].join("; ");
 
+// The EFI layout: GRUB on the EFI system partition at the removable path (the variable store starts empty, so firmware
+// boots /EFI/BOOT/BOOTAA64.EFI) finds the root by its label and loads /boot/vmlinuz and /boot/initrd.img. Those are the
+// symlinks the kernel packages repoint on every install, so `apt install` of a kernel takes effect on the next boot
+// without regenerating any GRUB config; update-grub is disabled because grub-mkconfig would replace this file.
+// The root is partition 2 at 101 MiB, written into the GPT disk sparsely; the disk is assembled in the container and
+// copied out with its holes. sgdisk has no quiet flag: an unknown one makes it exit 0 having written an empty table,
+// hence the EF00 check.
+const GRUB_CONFIG = "set timeout=0\\nlinux /boot/vmlinuz root=LABEL=localbox rw console=hvc0\\ninitrd /boot/initrd.img\\nboot\\n";
+// No `$` anywhere: the script reaches bash inside an outer double-quoted `sh -c`, which would expand it.
+const GRUB_EMBEDDED = "search --no-floppy --label localbox --set root\\nconfigfile /boot/grub/grub.cfg\\n";
+const EFI_TEMPLATE_SCRIPT = [
+  "set -euo pipefail",
+  "apt-get update >/dev/null </dev/null && apt-get install -y --no-install-recommends e2fsprogs dosfstools mtools gdisk grub-efi-arm64-bin >/dev/null </dev/null",
+  "mkdir /rootfs && tar -xpf - -C /rootfs --numeric-owner",
+  "rm -rf /rootfs/var/lib/snapd /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run /rootfs/.dockerenv /rootfs/usr/lib/firmware",
+  "mkdir -p /rootfs/dev /rootfs/proc /rootfs/sys /rootfs/run /rootfs/usr/lib/firmware /rootfs/boot/grub",
+  "rm -f /rootfs/etc/resolv.conf && ln -s ../run/systemd/resolve/resolv.conf /rootfs/etc/resolv.conf",
+  `printf '${GRUB_CONFIG}' > /rootfs/boot/grub/grub.cfg`,
+  "if [ -e /rootfs/usr/sbin/update-grub ]; then ln -sf /bin/true /rootfs/usr/sbin/update-grub; fi",
+  `printf '${GRUB_EMBEDDED}' > /tmp/embed.cfg`,
+  "grub-mkimage -O arm64-efi -o /tmp/BOOTAA64.EFI -c /tmp/embed.cfg -p /boot/grub part_gpt ext2 fat normal linux search search_label configfile echo gzio boot",
+  "truncate -s 100M /tmp/esp.img && mkfs.vfat -F 32 -n EFI /tmp/esp.img >/dev/null && mmd -i /tmp/esp.img ::/EFI ::/EFI/BOOT && mcopy -i /tmp/esp.img /tmp/BOOTAA64.EFI ::/EFI/BOOT/BOOTAA64.EFI",
+  "truncate -s 8G /tmp/root.img && mke2fs -q -t ext4 -L localbox -d /rootfs /tmp/root.img",
+  "truncate -s 8294M /tmp/disk.img",
+  "sgdisk -n1:2048:+100M -t1:ef00 -c1:esp -n2:206848:+8192M -t2:8300 -c2:root /tmp/disk.img >/dev/null",
+  "dd if=/tmp/esp.img of=/tmp/disk.img bs=1M seek=1 conv=notrunc status=none",
+  "dd if=/tmp/root.img of=/tmp/disk.img bs=1M seek=101 conv=notrunc,sparse status=none",
+  "sgdisk -p /tmp/disk.img | grep -q ' EF00 '",
+  "cp --sparse=always /tmp/disk.img /out/template.img",
+].join("; ");
+
 const digest = await inputDigest();
 const existing = join(output, "manifest.json");
 try {
@@ -106,7 +143,7 @@ try {
   const template = join(staging, "template.img");
   // The root filesystem is unpacked inside Linux, never on the Mac: a macOS checkout is case-insensitive and
   // unprivileged, so it would merge case-distinct paths (kernel headers have them) and drop ownership and setuid bits.
-  await run("sh", ["-c", `docker export ${container} | docker run -i --rm --platform linux/arm64 -v ${JSON.stringify(`${staging}:/out`)} ${baseImage} bash -c ${JSON.stringify(TEMPLATE_SCRIPT)}`]);
+  await run("sh", ["-c", `docker export ${container} | docker run -i --rm --platform linux/arm64 -v ${JSON.stringify(`${staging}:/out`)} ${baseImage} bash -c ${JSON.stringify(boot === "efi" ? EFI_TEMPLATE_SCRIPT : TEMPLATE_SCRIPT)}`]);
   await mkdir(output, { recursive: true });
   await cp(join(staging, "vmlinuz"), join(output, "kernel"));
   await cp(join(staging, "initrd.img"), join(output, "initrd"));

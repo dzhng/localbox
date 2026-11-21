@@ -1,0 +1,81 @@
+{
+  "checks": [
+    {
+      "name": "minimal EFI disk exists",
+      "ok": true
+    },
+    {
+      "name": "EFI configuration validates for save/restore and boots to the guest agent",
+      "ok": true
+    },
+    {
+      "name": "hibernate, restore in a new process: same PID, counter running, NAT",
+      "ok": true
+    },
+    {
+      "name": "apt-installing another kernel takes effect on reboot and vsock still answers",
+      "ok": true
+    },
+    {
+      "name": "two clones with copies of one variable store boot at once",
+      "ok": true
+    }
+  ],
+  "boot": {
+    "boot_ms": 2924,
+    "ok": true,
+    "ready": true,
+    "uname": "aarch64"
+  },
+  "hibernate": {
+    "mac_matches": true,
+    "nat_ok": true,
+    "ok": true,
+    "phase1": {
+      "counter_before": [
+        "0",
+        "1"
+      ],
+      "guest_mac": "3e:e5:9d:ad:80:bb",
+      "nat_http_code": "200",
+      "persisted_mac": "3e:e5:9d:ad:80:bb",
+      "pid": "310",
+      "save_ms": 549,
+      "state_file_bytes": 171970560,
+      "vm_memory_kb_after_save": 3385616,
+      "vm_memory_kb_running": 4052240
+    },
+    "phase2": {
+      "clock_skew_ms": -2,
+      "counter_after": 2,
+      "identity_sweep": {
+        "cpu_count": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”.",
+        "kernel_command_line": "restored",
+        "mac_address": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”.",
+        "machine_identifier": "refused: An error occurred while restoring the virtual machine. The virtual machine failed to restore with error “invalid argument”."
+      },
+      "nat_http_code_after": "200",
+      "nat_ready_ms": 65,
+      "pid_alive": true,
+      "restore_ms": 355
+    },
+    "process_survived": true
+  },
+  "efi-kernel": {
+    "apt_exit": "0",
+    "kernel_after": "7.0.0-43-generic",
+    "kernel_before": "6.8.0-151-generic",
+    "ok": true,
+    "reboot_ms": 1698,
+    "vmlinuz_target": "vmlinuz-7.0.0-43-generic",
+    "vsock_modules": "3"
+  },
+  "efi-clones": {
+    "both_booted_ms": 2187,
+    "guests": [
+      "608d83cfc1944ccab30ce8eea63d942b 6.8.0-151-generic",
+      "9a7c52d9298043838a418c1cfcddac67 6.8.0-151-generic"
+    ],
+    "ok": true
+  }
+}

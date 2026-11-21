@@ -1,12 +1,34 @@
 # 15 EFI Linux boot and save/restore spike (go/no-go)
 
+**Outcome 2026-11-21: go.** L1 holds; the fallback is not needed, and slices 23, 25
+and 28 take their EFI branch. Evidence: [15-efi.json](../evidence/15-efi.json).
+
+- EFI configuration passes `validateSaveRestoreSupport()`; cold boot to the guest
+  agent's ready frame 2.9 s.
+- Hibernate: save 0.55 s, restore 0.36 s in a new process, same PID, counter
+  running, NAT. Restore still refuses a changed CPU count, MAC or machine
+  identifier, as with direct boot; a changed kernel command line no longer matters
+  (there is none).
+- `apt-get install linux-image-generic-hwe-24.04` moved `/boot/vmlinuz` to
+  7.0.0-43 and the next boot ran it (6.8.0-151 before), reboot 1.7 s, vsock up.
+- Two clones, each with a copy of one fresh variable store, booted together in
+  2.2 s with distinct machine-ids.
+- The layout that worked: GRUB built with `grub-mkimage` at the removable path,
+  finding the root by label and reading a fixed `grub.cfg` that loads the
+  `/boot/vmlinuz` and `/boot/initrd.img` symlinks; `update-grub` replaced by
+  `true`. No GRUB regeneration is ever needed.
+- The Swift gate `VMLabEFIConfigurationTests` was not written: the EFI
+  configuration lives in vmlab for the spike and moves into the production
+  translator in slice 23, whose `VMSpecTests` assert it. The tier `v` probe
+  proves validation here.
+
 **Unlocks:** L1. A Linux guest boots from its own disk under `VZEFIBootLoader`,
 hibernates and restores, and picks up an `apt` kernel upgrade. Confirm item 1.
 
 ## Seam
 
-- `localbox-vmlab efi --disk <dir> --json` and `localbox-vmlab efi-hibernate`,
-  reusing the hibernate scenario in
+- `localbox-vmlab boot|hibernate --efi`, `efi-kernel` and `efi-clones`, reusing
+  the hibernate scenario in
   `apps/macos/HostDaemon/Sources/localbox-vmlab/main.swift`. A lab-only
   configuration: `VZEFIBootLoader` with a `VZEFIVariableStore` created at
   `<dir>/efi-vars`, `VZGenericPlatformConfiguration`, the same devices as

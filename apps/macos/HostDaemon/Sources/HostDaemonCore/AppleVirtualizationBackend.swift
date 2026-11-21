@@ -36,7 +36,7 @@ public struct AppleSandboxFactory: SandboxBackendFactory {
     }
 }
 
-/// The only place a VM configuration is made, so a saved state always restores into the configuration it was saved
+/// The only place a sandbox's VM configuration is made (vmlab's experiments pass their own), so a saved state always restores into the configuration it was saved
 /// under: everything comes from the record and the shared artifacts, and nothing names the sandbox: its identity reaches the guest only in the host's hello.
 public enum SandboxConfigurationBuilder {
     public static func build(_ record: SandboxRecord, in directory: SandboxDirectory, artifacts: SandboxArtifacts) throws -> VZVirtualMachineConfiguration {
@@ -97,6 +97,7 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
     private let record: SandboxRecord
     private let directory: SandboxDirectory
     private let artifacts: SandboxArtifacts
+    private let configure: ConfigurationMaker
     private var machine: VZVirtualMachine?
     private var guestChannel: FramedFileHandleGuestChannel?
     private var guestConnection: VZVirtioSocketConnection?
@@ -108,8 +109,11 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
     /// Why the guest stopped, if it has.
     public func stopReason() -> String? { stopObserver.stopReason }
     public func onGuestStop(_ handler: @escaping @Sendable (String) -> Void) { stopObserver.onStop(handler) }
-    public init(record: SandboxRecord, directory: SandboxDirectory, artifacts: SandboxArtifacts) {
+    /// Builds the VM configuration for one boot; `SandboxConfigurationBuilder` unless a lab passes its own.
+    public typealias ConfigurationMaker = @Sendable (SandboxRecord, SandboxDirectory) throws -> VZVirtualMachineConfiguration
+    public init(record: SandboxRecord, directory: SandboxDirectory, artifacts: SandboxArtifacts, configure: ConfigurationMaker? = nil) {
         self.record = record; self.directory = directory; self.artifacts = artifacts
+        self.configure = configure ?? { record, directory in try SandboxConfigurationBuilder.build(record, in: directory, artifacts: artifacts) }
         queue = DispatchQueue(label: "org.localbox.vm.\(record.sandboxID)")
     }
 
@@ -121,7 +125,7 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
     }
 
     private func makeMachine() throws -> VZVirtualMachine {
-        nonisolated(unsafe) let configuration = try SandboxConfigurationBuilder.build(record, in: directory, artifacts: artifacts)
+        nonisolated(unsafe) let configuration = try configure(record, directory)
         let observer = stopObserver, queue = queue
         nonisolated(unsafe) var made: VZVirtualMachine?
         queue.sync { made = VZVirtualMachine(configuration: configuration, queue: queue); made?.delegate = observer }
