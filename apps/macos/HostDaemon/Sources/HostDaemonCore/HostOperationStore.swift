@@ -44,6 +44,15 @@ extension JSONValue {
         guard let data = try? JSONEncoder().encode(self) else { return nil }
         return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
+
+    /// A kind's own `Codable` checkpoint or result, as the journal keeps it.
+    init<Value: Encodable>(encoding value: Value) throws {
+        self = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
+    }
+
+    func decoded<Value: Decodable>(as type: Value.Type) throws -> Value {
+        try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
+    }
 }
 
 public enum HostOperationState: String, Codable, Sendable {
@@ -111,6 +120,12 @@ public struct HostOperationContext: Sendable {
 /// A kind's work, for a fresh `begin` and for a resume alike: it reads `context.checkpoint` to know where to start.
 public typealias HostOperationWork = @Sendable (HostOperationContext) async throws -> JSONValue
 
+/// One kind of long host work: its name in the journal and the work that runs a record of it, fresh or resumed.
+protocol HostOperationKind: Sendable {
+    static var kind: String { get }
+    func run(_ context: HostOperationContext) async throws -> JSONValue
+}
+
 /// The single owner of long host work (image build, copy, capture, create-with-copy). Separate from `SandboxHost` so an
 /// hour-long build never queues behind, or holds up, a sandbox request; each work runs detached, off every actor.
 /// Keys are mutation ids: a replayed mutation gets the same record and never a second run.
@@ -122,11 +137,10 @@ public actor HostOperationStore {
     private var records: [String: HostOperationRecord] = [:]
     private var resumers: [String: HostOperationWork] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    private var waiters: [String: [UUID: Waiter]] = [:]
-    /// A caller of `wait`; `phase` is set (to the phase it started in) when a phase change should wake it.
-    private struct Waiter { let continuation: CheckedContinuation<Void, Never>; let phase: String?? }
+    /// Callers of `wait`, by key; `phase` is set (to the phase it started in) when a phase change should wake it.
+    private let waiters = WaitList<(key: String, phase: String??)>()
     /// Callers of `unreported`, woken when an operation finishes.
-    private var outcomeWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private let outcomeWaiters = WaitList<Void>()
     private var stopped = false
     /// The last `startedAt` given out: each begin takes a later one, so "the most recent operation" never ties.
     private var lastStartedAt = 0
@@ -144,10 +158,14 @@ public actor HostOperationStore {
         lastStartedAt = records.values.map(\.startedAt).max() ?? 0
     }
 
-    /// Kinds register before `start()`, by their owning slice; `begin` refuses a kind with no resumer, so every record
-    /// the journal holds can be continued after a restart.
+    /// Kinds register before `start()`; `begin` refuses a kind with no resumer, so every record the journal holds can be
+    /// continued after a restart.
     public func register(kind: String, resume: @escaping HostOperationWork) {
         resumers[kind] = resume
+    }
+
+    func register<Kind: HostOperationKind>(_ kind: Kind) {
+        register(kind: Kind.kind) { context in try await kind.run(context) }
     }
 
     /// Resumes every record the last run left `running` from its checkpoint; returns their keys. A kind this build no
@@ -168,7 +186,7 @@ public actor HostOperationStore {
         guard !stopped else { throw HostDaemonError.invalidState("the operation store has stopped") }
         guard resumers[kind] != nil else { throw HostDaemonError.invalidState("operation kind \(kind) has no resumer registered") }
         guard !key.isEmpty, !key.contains("/"), !key.hasPrefix(".") else { throw HostDaemonError.invalidState("operation key \(key) is not a file name") }
-        let now = max(epochMs(), lastStartedAt + 1)
+        let now = max(Date().epochMs, lastStartedAt + 1)
         lastStartedAt = now
         let record = HostOperationRecord(key: key, kind: kind, subject: subject, state: .running, checkpoint: checkpoint, startedAt: now, updatedAt: now)
         // Journaled before the work starts: a crash right after this still finds the record and resumes it.
@@ -192,7 +210,6 @@ public actor HostOperationStore {
         records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
     }
 
-
     /// Whether any operation on `subject` is still running.
     public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
 
@@ -202,16 +219,7 @@ public actor HostOperationStore {
     /// Finished operations whose outcome the connector has not yet reported, oldest first. With none, waits up to
     /// `timeoutMs` (capped at `maxWaitMs`) for one to finish.
     public func unreported(timeoutMs: Int) async -> [HostOperationRecord] {
-        if outcomes().isEmpty, !stopped {
-            let id = UUID()
-            let timeout = UInt64(min(max(timeoutMs, 0), Self.maxWaitMs)) * 1_000_000
-            let timer = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: timeout)
-                await self?.wakeOutcome(id)
-            }
-            await withCheckedContinuation { outcomeWaiters[id] = $0 }
-            timer.cancel()
-        }
+        if outcomes().isEmpty, !stopped { await outcomeWaiters.wait(for: (), timeout: Self.waitSeconds(timeoutMs)) }
         return outcomes()
     }
 
@@ -220,7 +228,7 @@ public actor HostOperationStore {
     public func markReported(_ keys: [String]) throws {
         for key in keys {
             guard var record = records[key], record.state != .running, record.reportedAt == nil else { continue }
-            record.reportedAt = epochMs()
+            record.reportedAt = Date().epochMs
             try save(record)
             records[key] = record
         }
@@ -235,26 +243,19 @@ public actor HostOperationStore {
     /// caller can follow a long build phase by phase.
     public func wait(_ key: String, timeoutMs: Int, untilPhaseChanges: Bool = false) async -> HostOperationRecord? {
         guard let record = records[key] else { return nil }
-        guard record.state == .running else { return record }
-        let id = UUID()
-        let timeout = UInt64(min(max(timeoutMs, 0), Self.maxWaitMs)) * 1_000_000
-        let timer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: timeout)
-            await self?.wake(key, id)
-        }
-        await withCheckedContinuation { continuation in
-            waiters[key, default: [:]][id] = Waiter(continuation: continuation, phase: untilPhaseChanges ? .some(record.progress?.phase) : nil)
-        }
-        timer.cancel()
+        guard record.state == .running, !stopped else { return record }
+        await waiters.wait(for: (key, untilPhaseChanges ? .some(record.progress?.phase) : nil), timeout: Self.waitSeconds(timeoutMs))
         return records[key]
     }
+
+    /// A caller's timeout, held to `0...maxWaitMs`.
+    private static func waitSeconds(_ timeoutMs: Int) -> TimeInterval { TimeInterval(min(max(timeoutMs, 0), maxWaitMs)) / 1000 }
 
     /// Cancels running work without touching its records, as a daemon exit would: they stay `running` for the next
     /// start to resume.
     public func stop() async {
         stopped = true
-        for continuation in outcomeWaiters.values { continuation.resume() }
-        outcomeWaiters = [:]
+        waiters.wakeAll(); outcomeWaiters.wakeAll()
         let running = Array(tasks.values)
         for task in running { task.cancel() }
         for task in running { await task.value }
@@ -283,11 +284,12 @@ public actor HostOperationStore {
 
     fileprivate func report(_ key: String, progress: HostOperationProgress, checkpoint: JSONValue) throws {
         guard !stopped, var record = records[key], record.state == .running else { throw CancellationError() }
-        record.progress = progress; record.checkpoint = checkpoint; record.updatedAt = epochMs()
+        record.progress = progress; record.checkpoint = checkpoint; record.updatedAt = Date().epochMs
         try save(record)
         records[key] = record
-        for (id, waiter) in waiters[key] ?? [:] {
-            if case .some(let phase) = waiter.phase, phase != progress.phase { waiters[key]?.removeValue(forKey: id)?.continuation.resume() }
+        waiters.wake { waiting in
+            guard waiting.key == key, case .some(let phase) = waiting.phase else { return false }
+            return phase != progress.phase
         }
     }
 
@@ -297,21 +299,12 @@ public actor HostOperationStore {
         case .success(let result): record.state = .succeeded; record.result = result
         case .failure(let failure): record.state = .failed; record.error = failure
         }
-        record.updatedAt = epochMs()
+        record.updatedAt = Date().epochMs
         // The in-memory record is the answer either way; a failed write means the next start resumes the work again.
         try? save(record)
         records[key] = record
-        for waiter in (waiters.removeValue(forKey: key) ?? [:]).values { waiter.continuation.resume() }
-        for continuation in outcomeWaiters.values { continuation.resume() }
-        outcomeWaiters = [:]
-    }
-
-    private func wake(_ key: String, _ id: UUID) {
-        waiters[key]?.removeValue(forKey: id)?.continuation.resume()
-    }
-
-    private func wakeOutcome(_ id: UUID) {
-        outcomeWaiters.removeValue(forKey: id)?.resume()
+        waiters.wake { $0.key == key }
+        outcomeWaiters.wakeAll()
     }
 
     private func save(_ record: HostOperationRecord) throws {
@@ -320,4 +313,3 @@ public actor HostOperationStore {
     }
 }
 
-private func epochMs() -> Int { Int((Date().timeIntervalSince1970 * 1000).rounded()) }

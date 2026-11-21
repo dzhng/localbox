@@ -19,34 +19,23 @@ struct HostDaemonMain {
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
             let isDev = ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1"
+            let dev = devHost()
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
-            let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
+            let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"), freeBytesOverride: dev.freeDiskBytes.map { bytes in { @Sendable in bytes } })
             // A running operation's temporaries (a macOS build directory, a copy's partial files and resume bitmap) stay for its resume.
             for name in images.sweepTemps(keeping: await operations.runningSubjects()) { log("removed \(name), an image write or delete the last run left unfinished") }
-            // Kinds register before the store starts (macos.build, image.capture and sandbox.create_after_copy below); dev daemons also run the
-            // proof's fixture kind.
-            if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
-            let dev = devHost()
             // The guest agent build this Mac ships; without it sandboxes keep the agent their image carries.
             let guestAgent = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: expanded($0), isDirectory: true) }
             let agentUpdater = guestAgent.map { GuestAgentUpdater(directory: $0) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
-            let capture = ImageCapture(store: images, operations: operations)
-            // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
-            let copy = ImageCopy(store: images, operations: operations, transport: ImageTransferCopyTransport())
-            await copy.attach()
             let macBuilder = MacBaseBuilder(store: images, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
-            await macBuilder.register()
-            let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, macBuilder: macBuilder, allowsDirectOperations: isDev)
-            // A sandbox whose image is still copying here is created once the copy lands.
-            let afterCopy = SandboxCreateAfterCopy(operations: operations)
-            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, afterCopy: afterCopy, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
-            await capture.attach(to: host)
-            await afterCopy.attach(to: host)
+            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), operations: operations, store: images, macBuilds: macBuilder, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
+                                   admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater)
+            // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
+            let daemon = await HostDaemon(sandboxes: host, macBuilder: macBuilder, transport: ImageTransferCopyTransport(), dev: isDev)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
-            let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
+            let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
             try await server.start()
             // Every start (including the relaunch after an update) matches the skill and CLI link to the installed
@@ -141,8 +130,8 @@ struct HostDaemonMain {
     }
 
     /// Proof runs give fixture machines their own CPU, RAM and free-disk sizes and cap the admission budget on real VMs
-    /// (a fixed free disk keeps the idle-Mac check independent of whatever else is writing to this Mac's disk); release
-    /// builds ignore all four and use this Mac's.
+    /// (a fixed free disk keeps capacity and every image write's disk check independent of whatever else is writing to
+    /// this Mac's disk); release builds ignore all four and use this Mac's.
     private static func devHost() -> (cpus: Int?, memoryBytes: UInt64?, admissionBytes: UInt64?, freeDiskBytes: UInt64?) {
         #if DEBUG
         return (optionalInteger("LOCALBOX_DEV_HOST_CPUS"), optionalInteger("LOCALBOX_DEV_HOST_MEMORY_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_ADMISSION_BYTES").map(UInt64.init), optionalInteger("LOCALBOX_DEV_FREE_DISK_BYTES").map(UInt64.init))

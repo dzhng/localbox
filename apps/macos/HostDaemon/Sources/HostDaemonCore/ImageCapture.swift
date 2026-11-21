@@ -8,7 +8,7 @@ import Foundation
 /// Checkpoint: `{ sandbox_id }`, plus what the clone did (`stall_ms`, `disk`, `woke`, `made_room`) once it is taken. A
 /// resume finds the image committed (only the result was left to record) or starts over: it removes the half-written
 /// temporary, and the sandbox's disk has moved on since, so the clone is retaken.
-public actor ImageCapture {
+public actor ImageCapture: HostOperationKind {
     public static let kind = "image.capture"
     /// Free disk a capture leaves beyond the source disk's allocated bytes, which the clone may come to hold in full
     /// as the sandbox writes on.
@@ -16,38 +16,29 @@ public actor ImageCapture {
 
     private let store: ImageStore
     private let operations: HostOperationStore
-    private let freeBytes: @Sendable () throws -> UInt64
-    private var sandboxes: SandboxHost?
+    private let sandboxes: SandboxHost
 
-    /// `freeBytes` defaults to the images volume's; tests pass a smaller one.
-    public init(store: ImageStore, operations: HostOperationStore, freeBytes: (@Sendable () throws -> UInt64)? = nil) {
-        self.store = store; self.operations = operations
-        self.freeBytes = freeBytes ?? { [store] in try store.freeBytes() }
-    }
-
-    /// Registers the kind, capturing from `sandboxes`; before the operation store starts.
-    public func attach(to sandboxes: SandboxHost) async {
-        self.sandboxes = sandboxes
-        await operations.register(kind: Self.kind) { [self] context in try await self.run(context) }
+    public init(store: ImageStore, operations: HostOperationStore, sandboxes: SandboxHost) {
+        self.store = store; self.operations = operations; self.sandboxes = sandboxes
     }
 
     /// Starts saving sandbox `sandboxID` as image `imageID` under `key` (the create's mutation id), or returns the
     /// operation already under that key. A sandbox this machine doesn't have is refused before anything is journaled.
     public func begin(key: String, imageID: String, sandboxID: String) async throws -> HostOperationRecord {
         if let existing = await operations.state(key) { return existing }
-        guard let sandboxes, let runtime = await sandboxes.runtime(sandboxID), await runtime.record.inCatalog else {
+        guard let runtime = await sandboxes.runtime(sandboxID), await runtime.record.inCatalog else {
             throw HostOperationFailure(code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine")
         }
         return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: .object(["sandbox_id": .string(sandboxID)]))
     }
 
-    private func run(_ context: HostOperationContext) async throws -> JSONValue {
+    func run(_ context: HostOperationContext) async throws -> JSONValue {
         guard case .object(var checkpoint) = context.checkpoint, case .string(let sandboxID)? = checkpoint["sandbox_id"] else {
             throw HostOperationFailure(code: "invalid_input", message: "image.capture needs a checkpoint { sandbox_id }")
         }
         let imageID = context.subject
         if let manifest = try? store.manifest(imageID) { return Self.result(manifest, checkpoint) }
-        guard let sandboxes, let runtime = await sandboxes.runtime(sandboxID) else {
+        guard let runtime = await sandboxes.runtime(sandboxID) else {
             throw HostOperationFailure(code: "sandbox_not_found", message: "sandbox \(sandboxID) is no longer on this machine", nextStep: "delete the failed image; there is nothing left to save it from")
         }
         let record = await runtime.record, directory = runtime.directory
@@ -55,13 +46,8 @@ public actor ImageCapture {
 
         // 1. Room for the clone to grow into, before anything is frozen (E3).
         try await context.report(HostOperationProgress(phase: "checking_disk"), checkpoint: .object(checkpoint))
-        let needed = allocatedBytes(disk) + allocatedBytes(boot) + Self.marginBytes
-        let free: UInt64
-        do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }
-        guard free >= needed else {
-            throw HostOperationFailure(code: "disk_full", message: "saving \(record.name) needs \(gibibytes(needed)) free on this Mac (its disk plus a \(gibibytes(Self.marginBytes)) margin), and \(gibibytes(free)) is free",
-                                       nextStep: "free at least \(gibibytes(needed - free)) on this Mac (delete sandboxes or images it no longer needs), then delete the failed image and save it again")
-        }
+        try store.requireFree(allocatedBytes(disk) + allocatedBytes(boot) + Self.marginBytes, for: "saving \(record.name)",
+                              because: "its disk plus a \(gibibytes(Self.marginBytes)) margin", then: "delete the failed image and save it again")
 
         // 2–4. Clone as it lies when down; otherwise wake it if it sleeps, then freeze around the clone.
         try await context.report(HostOperationProgress(phase: "saving"), checkpoint: .object(checkpoint))

@@ -47,24 +47,23 @@ public struct LocalIPCEndpoint: Sendable, Equatable {
     public init(socketPath: String = "~/Library/Application Support/Localbox/agent.sock") { self.socketPath = socketPath }
 }
 
-/// Authenticates before forwarding to `SandboxHost`, the single owner of this Mac's sandboxes.
+/// Authenticates before forwarding to `HostDaemon`, which routes each request to its one owner.
 public actor AuthenticatedLocalIPC {
-    private let host: SandboxHost
+    private let daemon: HostDaemon
     private let token: String
     public let endpoint: LocalIPCEndpoint
-    public init(host: SandboxHost, token: String, endpoint: LocalIPCEndpoint = LocalIPCEndpoint()) { self.host = host; self.token = token; self.endpoint = endpoint }
+    public init(daemon: HostDaemon, token: String, endpoint: LocalIPCEndpoint = LocalIPCEndpoint()) { self.daemon = daemon; self.token = token; self.endpoint = endpoint }
     public func handle(_ request: LocalIPCRequest) async throws -> Data {
         guard !request.token.isEmpty, constantTimeEqual(request.token, token) else { throw LocalIPCError.unauthorized }
         guard !request.envelope.isEmpty else { throw LocalIPCError.malformed }
-        return try await host.request(request.envelope)
+        return try await daemon.request(request.envelope)
     }
 }
 
 /// The Unix-domain socket listener for `AuthenticatedLocalIPC`, one request per connection.
 ///
-/// The adapter owns only the listener and connection tasks. `SandboxHost` remains
-/// the sole owner of sandbox lifecycle, and all request authentication/forwarding
-/// goes through `AuthenticatedLocalIPC`.
+/// The adapter owns only the listener and connection tasks; all request authentication and forwarding goes through
+/// `AuthenticatedLocalIPC`.
 public actor UnixDomainSocketServer {
     public let endpoint: LocalIPCEndpoint
     private let ipc: AuthenticatedLocalIPC

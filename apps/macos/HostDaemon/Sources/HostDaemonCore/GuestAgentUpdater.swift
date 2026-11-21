@@ -45,7 +45,8 @@ public enum AgentUpdateOutcome: Equatable, Sendable {
 public actor GuestAgentUpdater {
     public let directory: URL
     let chunkBytes: Int
-    /// How long the restarted agent has to answer on the request lane: the forwarder's own retry (socat, 60 s).
+    /// How long the restarted agent has to answer on the request lane: as long as the guest's forwarder (socat on Linux,
+    /// `localbox-vsock` on darwin) keeps retrying the agent's socket, 60 s.
     let restartWindow: TimeInterval
     private var cached: (modified: Date, release: Release)?
 
@@ -63,9 +64,6 @@ public actor GuestAgentUpdater {
         guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue else { return nil }
         return AgentBinary(version: release.version, sha256: sha256, url: url, size: size, chunkBytes: chunkBytes)
     }
-
-    /// The version this host ships, or nil when `agent-version.json` is missing or unreadable.
-    public func version() -> String? { release()?.version }
 
     private func release() -> Release? {
         let file = directory.appendingPathComponent("agent-version.json")

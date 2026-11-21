@@ -1,18 +1,5 @@
 import Foundation
 
-private let gib: UInt64 = 1024 * 1024 * 1024
-
-/// A size for a report, e.g. "2 GiB" or "1.5 GiB".
-func gibibytes(_ bytes: UInt64) -> String { "\(String(format: "%g", (Double(bytes) / Double(gib) * 10).rounded() / 10)) GiB" }
-
-/// A duration for a report, in the largest whole unit: "5 s", "10 min", "2 h".
-func spoken(_ seconds: TimeInterval) -> String {
-    let whole = Int(seconds.rounded())
-    if whole >= 3_600, whole % 3_600 == 0 { return "\(whole / 3_600) h" }
-    if whole >= 60, whole % 60 == 0 { return "\(whole / 60) min" }
-    return "\(whole) s"
-}
-
 /// What a sandbox was doing when its record was last written, so the next daemon start knows what to bring back:
 /// `running` and `hibernated` (taken down by SIGTERM or the host's power) come back at start; `sleeping` (asleep in
 /// memory, lost with the daemon) and `asleep` (down until used: a saved state, or a cold boot owed) wait for a request.
@@ -73,7 +60,7 @@ public struct SandboxDirectory: Sendable {
     public var savedState: URL { url.appendingPathComponent("state.vzsave") }
     public var consoleLog: URL { url.appendingPathComponent("console.log") }
     /// The sandbox's own copy of its image's boot store: the EFI variable store, or a macOS guest's auxiliary storage.
-    public func bootStore(for os: GuestOS) -> URL { url.appendingPathComponent(os == .linux ? "efi-vars" : "aux.img") }
+    public func bootStore(for os: GuestOS) -> URL { url.appendingPathComponent(os.bootStoreName) }
     /// The process fixture's filesystem root.
     public var guestRoot: URL { url.appendingPathComponent("root", isDirectory: true) }
 

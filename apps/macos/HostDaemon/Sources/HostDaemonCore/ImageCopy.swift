@@ -1,6 +1,6 @@
 import Foundation
 
-/// Host operation kind `image.copy` (`image copy NAME --to M`), on both ends: the sender serves its `ImageStore` files
+/// Host operation kind `image.copy` (`image copy IMAGE MACHINE`), on both ends: the sender serves its `ImageStore` files
 /// and the receiver writes them into a resumable temporary, checks the manifest and commits. Both journal their side
 /// under the copy's mutation id with the image as subject; which side a Mac is, and the copy's one-time key, come from
 /// the copy's Convex row, which the connector hands over (`absorb`). Where each end can be reached goes the other way:
@@ -8,8 +8,10 @@ import Foundation
 ///
 /// Checkpoint: `{ role, copy_id }` once the rendezvous arrived, plus `bytes`, `duration_ms`, `path` once the receiver has
 /// everything. A resume waits for the rendezvous again (the key is never journaled); a receiver that committed only
-/// records the result, and one that didn't resumes the transfer into the temporary the daemon's start kept.
-public actor ImageCopy {
+/// records the result, and one that didn't resumes the transfer into the temporary the daemon's start kept. What this
+/// actor holds for a copy goes when its work ends (its row, its progress clock) or once the account stops listing it
+/// (its unacknowledged candidates).
+public actor ImageCopy: HostOperationKind {
     public static let kind = "image.copy"
     /// Free disk a receiver leaves beyond the image, so a copy never fills the Mac.
     public static let marginBytes: UInt64 = 1 << 30
@@ -27,29 +29,24 @@ public actor ImageCopy {
     private let store: ImageStore
     private let operations: HostOperationStore
     private let transport: any ImageCopyTransport
-    private let freeBytes: @Sendable () throws -> UInt64
     /// How long a side waits for the copy's row or for the peer before failing `copy_unreachable`.
     private let peerWaitMs: Int
 
+    /// The account's rows for this Mac's copies, by operation key.
     private var rows: [String: Rendezvous] = [:]
-    private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    /// Works waiting for their row to arrive or change, by operation key.
+    private let rowWaiters = WaitList<String>()
     /// Candidates this Mac's sides published and the connector has not yet acknowledged, by copy id.
     private var offers: [String: (candidates: [ImageCopyCandidate], generation: Int)] = [:]
     private var generation = 0
     /// Operations whose work waits for a row it has not been given, and those `outbox` already named.
     private var awaiting: Set<String> = [], named: Set<String> = []
-    private var outboxWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private let outboxWaiters = WaitList<Void>()
     private var lastProgress: [String: Date] = [:]
 
-    /// `freeBytes` defaults to the images volume's; tests pass a smaller one and a shorter `peerWaitMs`.
-    public init(store: ImageStore, operations: HostOperationStore, transport: any ImageCopyTransport, freeBytes: (@Sendable () throws -> UInt64)? = nil, peerWaitMs: Int = 120_000) {
+    /// Tests pass a shorter `peerWaitMs`.
+    public init(store: ImageStore, operations: HostOperationStore, transport: any ImageCopyTransport, peerWaitMs: Int = 120_000) {
         self.store = store; self.operations = operations; self.transport = transport; self.peerWaitMs = peerWaitMs
-        self.freeBytes = freeBytes ?? { [store] in try store.freeBytes() }
-    }
-
-    /// Registers the kind; before the operation store starts.
-    public func attach() async {
-        await operations.register(kind: Self.kind) { [self] context in try await self.run(context) }
     }
 
     /// Starts this Mac's side of copying `imageID` under `key` (the copy's mutation id), or returns the side already
@@ -58,8 +55,12 @@ public actor ImageCopy {
         try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: .object([:]))
     }
 
-    /// This Mac's copies as the account lists them (`images:copiesForMachine`), from the connector.
+    /// This Mac's copies as the account lists them (`images:copiesForMachine`), from the connector: the whole list each
+    /// time, so a row it no longer holds is dropped.
     public func absorb(_ listed: [[String: Any]]) {
+        let keys = Set(listed.compactMap { $0["operation_id"] as? String }), copies = Set(listed.compactMap { $0["copy_id"] as? String })
+        rows = rows.filter { keys.contains($0.key) }
+        offers = offers.filter { copies.contains($0.key) }
         for row in listed {
             guard let key = row["operation_id"] as? String, let copyID = row["copy_id"] as? String, let role = row["role"] as? String,
                   let keyText = row["key"] as? String, let secret = Data(base64Encoded: keyText) else { continue }
@@ -67,7 +68,7 @@ public actor ImageCopy {
             let peer = (row["peer_candidates"] as? [[String: Any]]).map { $0.compactMap(Self.candidate) }
             rows[key] = Rendezvous(copyID: copyID, role: role, key: secret, sizeBytes: (row["size_bytes"] as? NSNumber)?.uint64Value, state: row["state"] as? String ?? "waiting", peerCandidates: peer, error: error)
             awaiting.remove(key); named.remove(key)
-            for continuation in (waiters.removeValue(forKey: key) ?? [:]).values { continuation.resume() }
+            rowWaiters.wake(key)
         }
     }
 
@@ -76,10 +77,7 @@ public actor ImageCopy {
     public func outbox(published: [(copyID: String, generation: Int)], timeoutMs: Int) async -> [String: Any] {
         for (copyID, acked) in published where (offers[copyID]?.generation ?? .max) <= acked { offers[copyID] = nil }
         if offers.isEmpty, awaiting.subtracting(named).isEmpty {
-            let id = UUID(), timeout = UInt64(min(max(timeoutMs, 0), HostOperationStore.maxWaitMs)) * 1_000_000
-            let timer = Task { [weak self] in try? await Task.sleep(nanoseconds: timeout); await self?.wakeOutbox(id) }
-            await withCheckedContinuation { outboxWaiters[id] = $0 }
-            timer.cancel()
+            await outboxWaiters.wait(for: (), timeout: TimeInterval(min(max(timeoutMs, 0), HostOperationStore.maxWaitMs)) / 1000)
         }
         named.formUnion(awaiting)
         let listed = offers.sorted { $0.key < $1.key }.map { copyID, offer -> [String: Any] in
@@ -90,9 +88,10 @@ public actor ImageCopy {
 
     // MARK: - Work
 
-    private func run(_ context: HostOperationContext) async throws -> JSONValue {
+    func run(_ context: HostOperationContext) async throws -> JSONValue {
         guard case .object(var checkpoint) = context.checkpoint else { throw HostOperationFailure(code: "invalid_input", message: "image.copy needs an object checkpoint") }
         let imageID = context.subject
+        defer { forget(context.key) }
         try await context.report(HostOperationProgress(phase: "waiting_for_peer"), checkpoint: .object(checkpoint))
         let row = try await rendezvous(context.key)
         checkpoint["role"] = .string(row.role); checkpoint["copy_id"] = .string(row.copyID)
@@ -105,9 +104,8 @@ public actor ImageCopy {
                 throw HostOperationFailure(code: "image_not_found", message: "image \(imageID) is no longer on this Mac", nextStep: "copy it from another Mac that holds it")
             }
             try await context.report(HostOperationProgress(phase: "sending"), checkpoint: .object(checkpoint))
-            let journaled = checkpoint
             do {
-                let sent = try await transfer { [self] in try await transport.send(source, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "sending")) }
+                let sent = try await transfer { [self] in try await transport.send(source, key: row.key, rendezvous: link) }
                 return Self.result(["role": .string("sender")], sent)
             } catch is ReceiverFinished {
                 return .object(["role": .string("sender")])
@@ -118,20 +116,14 @@ public actor ImageCopy {
             return .object(checkpoint.merging(["size_bytes": .number(Double(manifest.sizeBytes))]) { $1 })
         }
         try await context.report(HostOperationProgress(phase: "checking_disk"), checkpoint: .object(checkpoint))
-        let needed = (row.sizeBytes ?? 0) + Self.marginBytes
-        let free: UInt64
-        do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }
-        guard free >= needed else {
-            throw HostOperationFailure(code: "disk_full", message: "copying image \(imageID) here needs \(gibibytes(needed)) free (the image plus a \(gibibytes(Self.marginBytes)) margin), and \(gibibytes(free)) is free",
-                                       nextStep: "free at least \(gibibytes(needed - free)) on this Mac (delete sandboxes or images it no longer needs), then copy again")
-        }
+        try store.requireFree((row.sizeBytes ?? 0) + Self.marginBytes, for: "copying image \(imageID) here", because: "the image plus a \(gibibytes(Self.marginBytes)) margin", then: "copy again")
         let temp = try store.resumableTemp(imageID, key: context.key)
         do {
             try await context.report(HostOperationProgress(phase: "receiving", completed: 0, total: row.sizeBytes.map(Int.init)), checkpoint: .object(checkpoint))
             let journaled = checkpoint
             let report = try await transfer { [self] in try await transport.receive(into: temp, key: row.key, rendezvous: link, progress: progress(context, journaled, phase: "receiving")) }
             // The copy's duration is what the person waited, from the request on, across any restart of this daemon.
-            let received = ImageCopyReport(bytes: report.bytes, durationMs: max(report.durationMs, Int(Date().timeIntervalSince1970 * 1000) - context.startedAt), path: report.path)
+            let received = ImageCopyReport(bytes: report.bytes, durationMs: max(report.durationMs, Date().epochMs - context.startedAt), path: report.path)
             guard case .object(let done) = Self.result(checkpoint, received) else { throw HostOperationFailure(code: "internal", message: "unreachable") }
             checkpoint = done
             try await context.report(HostOperationProgress(phase: "committing"), checkpoint: .object(checkpoint))
@@ -157,6 +149,12 @@ public actor ImageCopy {
 
     private static func result(_ base: [String: JSONValue], _ report: ImageCopyReport) -> JSONValue {
         .object(base.merging(["bytes": .number(Double(report.bytes)), "duration_ms": .number(Double(report.durationMs)), "path": .string(report.path.rawValue)]) { $1 })
+    }
+
+    /// What this actor holds for operation `key`, once its work ends. Its last candidates stay until the connector
+    /// publishes them (the peer may be waiting on them) or the account stops listing the copy.
+    private func forget(_ key: String) {
+        rows[key] = nil; lastProgress[key] = nil; awaiting.remove(key); named.remove(key)
     }
 
     /// Journals byte progress at most every `progressIntervalMs`; throws once the store stopped, ending the transfer.
@@ -224,22 +222,12 @@ public actor ImageCopy {
     private func changed(_ key: String, until deadline: Date) async throws -> Bool {
         let remaining = deadline.timeIntervalSinceNow
         guard remaining > 0 else { return false }
-        let id = UUID()
-        // A day at most per wait, so a distant deadline never overflows; the caller waits again.
-        let timer = Task { [weak self] in try? await Task.sleep(nanoseconds: UInt64(min(remaining, 86_400) * 1_000_000_000)); await self?.wake(key, id) }
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if Task.isCancelled { continuation.resume() } else { waiters[key, default: [:]][id] = continuation }
-            }
-        } onCancel: { Task { [weak self] in await self?.wake(key, id) } }
-        timer.cancel()
+        await rowWaiters.wait(for: key, timeout: deadline == .distantFuture ? nil : remaining)
         try Task.checkCancellation()
         return Date() < deadline
     }
 
-    private func wake(_ key: String, _ id: UUID) { waiters[key]?.removeValue(forKey: id)?.resume() }
-    private func wakeOutbox(_ id: UUID) { outboxWaiters.removeValue(forKey: id)?.resume() }
-    private func wakeOutboxAll() { for continuation in outboxWaiters.values { continuation.resume() }; outboxWaiters = [:] }
+    private func wakeOutboxAll() { outboxWaiters.wakeAll() }
 
     private static func candidate(_ object: [String: Any]) -> ImageCopyCandidate? {
         guard let kind = object["kind"] as? String, let address = object["address"] as? String, let port = (object["port"] as? NSNumber)?.intValue else { return nil }

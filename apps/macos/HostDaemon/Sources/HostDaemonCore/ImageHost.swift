@@ -1,57 +1,34 @@
 import Foundation
 
-/// An image with files on this Mac. `listedBy` is the machine whose account catalog last listed it here, so a catalog
-/// push deletes only what that same machine's catalog listed before (as `sandbox.mirror` does for sandboxes).
-public struct HeldImage: Sendable, Equatable {
-    public let imageID: String
-    public let listedBy: String?
-    public init(imageID: String, listedBy: String?) { self.imageID = imageID; self.listedBy = listedBy }
-}
-
-/// The image files on this Mac, as `ImageHost` needs them: what is here, which catalog listed it, and removing one.
-/// Slice 24's `ImageStore` owns the files and conforms; nothing else touches them.
-public protocol ImageFiles: Sendable {
-    /// Every image with files here, except the built-in `linux`.
-    func list() async throws -> [HeldImage]
-    /// Records that machine `machineID`'s catalog lists `imageID` here.
-    func markListed(_ imageID: String, by machineID: String) async throws
-    /// Removes every file of `imageID`; false when it had none.
-    func remove(_ imageID: String) async throws -> Bool
-}
-
-/// The daemon's answers about images: `image.create` (a capture, run by `ImageCapture`), `image.wait` from the host
-/// operation journal, the connector's `host.operations` long poll (each finished operation, to report to the account),
-/// and the image files themselves (`image.mirror`, `image.delete`). `SandboxHost` routes these requests here and never
-/// touches image work itself.
+/// The daemon's answers about images: `image.create` (a capture, run by `ImageCapture`, or a macOS base build, run by
+/// `MacBaseBuilder`), `image.copy` and its rendezvous (`ImageCopy`), `image.wait` from the host operation journal, the
+/// connector's `host.operations` long poll (each finished operation, to report to the account), and the image files
+/// themselves through `ImageStore` (`image.mirror`, `image.delete`). `HostDaemon` routes these requests here; nothing
+/// else answers them.
 public actor ImageHost {
     private let operations: HostOperationStore
-    /// Nil until this daemon has an image store: file operations then answer `unsupported`.
-    private let files: (any ImageFiles)?
-    /// `host.begin_operation` starts any registered kind directly: a dev tool (`LOCALBOX_DEV=1`) for proofs, since the
-    /// catalog operations that begin real kinds belong to later slices.
+    private let store: ImageStore
+    private let capture: ImageCapture
+    private let copy: ImageCopy
+    private let macBuilder: MacBaseBuilder
+    /// `host.begin_operation` starts any registered kind directly: a dev tool (`LOCALBOX_DEV=1`) for proofs.
     private let allowsDirectOperations: Bool
 
-    /// Saves sandboxes as images (`image.create { from }`); nil answers it `unsupported`.
-    private let capture: ImageCapture?
-    /// Copies images between Macs (`image.copy` and its rendezvous); nil, on a daemon without a transport, answers the
-    /// copy `unsupported` and the connector's rendezvous calls with nothing.
-    private let copy: ImageCopy?
-    /// Builds the macOS base (`image.create { macos }`); nil answers it `unsupported`.
-    private let macBuilder: MacBaseBuilder?
-
-    public init(operations: HostOperationStore, files: (any ImageFiles)? = nil, capture: ImageCapture? = nil, copy: ImageCopy? = nil, macBuilder: MacBaseBuilder? = nil, allowsDirectOperations: Bool = false) {
-        self.operations = operations; self.files = files; self.capture = capture; self.copy = copy; self.macBuilder = macBuilder; self.allowsDirectOperations = allowsDirectOperations
+    public init(operations: HostOperationStore, store: ImageStore, capture: ImageCapture, copy: ImageCopy, macBuilder: MacBaseBuilder, allowsDirectOperations: Bool = false) {
+        self.operations = operations; self.store = store; self.capture = capture; self.copy = copy; self.macBuilder = macBuilder; self.allowsDirectOperations = allowsDirectOperations
     }
 
-    /// Operations answered here: the catalog's image operations a machine runs, and the connector's internal ones
-    /// (`image.mirror` among them).
+    /// The connector's image operations, outside the public catalog.
+    static let internalOperations: Set<String> = ["image.mirror", "image.copy_rendezvous", "image.copy_outbox", "host.operations", "host.begin_operation"]
+
+    /// Whether this actor answers `operation`: the catalog's image operations and the connector's internal ones.
     public static func answers(_ operation: String) -> Bool {
-        operation.hasPrefix("image.") || ["host.operations", "host.begin_operation"].contains(operation)
+        HostOperation(rawValue: operation)?.isImage ?? internalOperations.contains(operation)
     }
 
     public func request(_ envelope: Data) async -> Data {
         guard let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any], let operation = object["operation"] as? String else {
-            return failure([:], code: "invalid_input", message: "the request is not a JSON envelope with an operation")
+            return Reply.failure([:], code: "invalid_input", message: "the request is not a JSON envelope with an operation")
         }
         let input = object["input"] as? [String: Any] ?? [:]
         switch operation {
@@ -66,29 +43,26 @@ public actor ImageHost {
                 guard let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                     return failure(object, code: "invalid_input", message: "image.create { macos } takes image (the reserved image's id) and a mutation id")
                 }
-                guard let macBuilder else { return failure(object, code: "unsupported", message: "this machine does not build macOS images") }
-                do { return success(object, result: view(await settled(try await macBuilder.begin(key: key, imageID: image), object, timeoutMs: nil))) }
-                catch let refused as HostOperationFailure { return failure(object, code: refused.code, message: refused.message, nextStep: refused.nextStep) }
-                catch { return failure(object, code: "invalid_input", message: explain(error)) }
+                do { return Reply.success(object, view(await settled(try await macBuilder.begin(key: key, imageID: image), object, timeoutMs: nil))) }
+                catch let refused as HostOperationFailure { return Reply.failure(object, refused) }
+                catch { return Reply.failure(object, code: "invalid_input", message: explain(error)) }
             }
             guard let from = input["from"] as? String, !from.isEmpty, let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                 return failure(object, code: "invalid_input", message: "image.create takes from (the source sandbox's id), image (the reserved image's id) and a mutation id")
             }
-            guard let capture else { return failure(object, code: "unsupported", message: "this machine has no image store yet") }
-            do { return success(object, result: view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from), object, timeoutMs: nil))) }
-            catch let refused as HostOperationFailure { return failure(object, code: refused.code, message: refused.message) }
-            catch { return failure(object, code: "invalid_input", message: explain(error)) }
+            do { return Reply.success(object, view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from), object, timeoutMs: nil))) }
+            catch let refused as HostOperationFailure { return Reply.failure(object, refused) }
+            catch { return Reply.failure(object, code: "invalid_input", message: explain(error)) }
         case "image.copy":
             guard let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                 return failure(object, code: "invalid_input", message: "image.copy takes image (the image's id) and a mutation id")
             }
-            guard let copy else { return failure(object, code: "unsupported", message: "this Mac can't copy images yet: its daemon has no image transfer") }
             // Answers at once: a copy takes as long as its bytes, and image.wait follows it.
             do { return success(object, result: view(try await copy.begin(key: key, imageID: image))) }
             catch { return failure(object, code: "invalid_input", message: explain(error)) }
         case "image.copy_rendezvous":
             guard let listed = input["copies"] as? [[String: Any]] else { return failure(object, code: "invalid_input", message: "image.copy_rendezvous takes copies (this machine's copies as the account lists them)") }
-            await copy?.absorb(listed)
+            await copy.absorb(listed)
             return success(object, result: ["copies": listed.count])
         case "image.copy_outbox":
             let published = (input["published"] as? [[String: Any]] ?? []).compactMap { entry -> (copyID: String, generation: Int)? in
@@ -96,10 +70,6 @@ public actor ImageHost {
                 return (copyID, generation)
             }
             let timeout = (input["timeout_ms"] as? NSNumber)?.intValue ?? 25_000
-            guard let copy else {
-                try? await Task.sleep(nanoseconds: UInt64(min(max(timeout, 0), HostOperationStore.maxWaitMs)) * 1_000_000)
-                return success(object, result: ["offers": [Any](), "missing": [String]()])
-            }
             return success(object, result: await copy.outbox(published: published, timeoutMs: timeout))
         case "host.operations":
             let reported = input["reported"] as? [String] ?? []
@@ -116,19 +86,17 @@ public actor ImageHost {
             } catch { return failure(object, code: "invalid_input", message: explain(error)) }
         case "image.delete":
             guard let image = input["image"] as? String, !image.isEmpty else { return failure(object, code: "invalid_input", message: "image.delete requires image") }
-            guard let files else { return failure(object, code: "unsupported", message: "this machine has no image store yet") }
             if await operations.isRunning(subject: image) { return failure(object, code: "conflict", message: "an operation on image \(image) is still running on this machine") }
-            do { return success(object, result: ["image": image, "removed": try await files.remove(image)]) }
+            do { return success(object, result: ["image": image, "removed": try store.removeIfPresent(image)]) }
             catch { return failure(object, code: "internal", message: "could not remove image \(image): \(explain(error))") }
         case "image.mirror":
             guard let machineID = input["machine_id"] as? String, !machineID.isEmpty, let listed = input["images"] as? [String] else {
                 return failure(object, code: "invalid_input", message: "image.mirror takes machine_id (the signed-in connector's machine) and images (the image ids its catalog lists here)")
             }
-            guard let files else { return failure(object, code: "unsupported", message: "this machine has no image store yet") }
-            do { return success(object, result: try await mirror(files, machineID: machineID, listed: Set(listed))) }
+            do { return success(object, result: try await mirror(machineID: machineID, listed: Set(listed))) }
             catch { return failure(object, code: "internal", message: "image mirror failed: \(explain(error))") }
         default:
-            return failure(object, code: "unsupported", message: "this machine does not run \(operation) yet")
+            return failure(object, code: "unsupported", message: "\(operation) is not an image operation")
         }
     }
 
@@ -136,14 +104,14 @@ public actor ImageHost {
     /// machine. An image it no longer lists that the same machine's catalog listed before (deleted while this Mac was
     /// offline) is removed, unless an operation on it is still running; anything else (never listed, or listed by an
     /// earlier sign-in) stays and is reported `unknown`.
-    private func mirror(_ files: any ImageFiles, machineID: String, listed: Set<String>) async throws -> [String: Any] {
+    private func mirror(machineID: String, listed: Set<String>) async throws -> [String: Any] {
         var deleted: [[String: String]] = [], unknown: [String] = [], present: Set<String> = []
-        for held in try await files.list().sorted(by: { $0.imageID < $1.imageID }) {
+        for held in store.held() {
             if listed.contains(held.imageID) {
                 present.insert(held.imageID)
-                if held.listedBy != machineID { try await files.markListed(held.imageID, by: machineID) }
+                if held.listedBy != machineID { try store.markListed(held.imageID, by: machineID) }
             } else if held.listedBy == machineID, !(await operations.isRunning(subject: held.imageID)) {
-                _ = try await files.remove(held.imageID)
+                _ = try store.removeIfPresent(held.imageID)
                 deleted.append(["image": held.imageID, "detail": "deleted image \(held.imageID): the account catalog no longer lists it here"])
             } else { unknown.append(held.imageID) }
         }
@@ -167,23 +135,17 @@ public actor ImageHost {
         return object
     }
 
-    private func success(_ request: [String: Any], result: Any) -> Data { envelope(request, ["ok": true, "result": result]) }
+    private func success(_ request: [String: Any], result: Any) -> Data { Reply.success(request, result) }
+    private func failure(_ request: [String: Any], code: String, message: String) -> Data { Reply.failure(request, code: code, message: message) }
+}
 
-    private func failure(_ request: [String: Any], code: String, message: String, nextStep: String? = nil) -> Data {
-        var error: [String: Any] = ["code": code, "message": message, "retryable": false]
-        if let nextStep { error["details"] = ["next_step": nextStep] }
-        return envelope(request, ["ok": false, "error": error])
-    }
-
-    /// The same envelope identity `SandboxHost` answers with.
-    private func envelope(_ request: [String: Any], _ values: [String: Any]) -> Data {
-        let identity: [String: Any] = [
-            "protocol_version": request["protocol_version"] as? String ?? protocolVersion,
-            "request_id": request["request_id"] as? String ?? "unknown",
-            "operation": request["operation"] as? String ?? "unknown",
-            "sandbox_id": NSNull(),
-            "release_id": releaseID,
-        ]
-        return (try? JSONSerialization.data(withJSONObject: identity.merging(values) { _, latest in latest })) ?? Data("{}".utf8)
+extension HostOperation {
+    /// The catalog's image operations, which `ImageHost` answers; every other catalog operation is `SandboxHost`'s.
+    var isImage: Bool {
+        switch self {
+        case .imageCreate, .imageCopy, .imageDelete, .imageWait: return true
+        case .sandboxCreate, .sandboxList, .sandboxRename, .sandboxDelete, .systemInfo, .sandboxStatus, .sandboxResize, .sandboxStart, .sandboxStop, .sandboxSleep, .sandboxLogs,
+             .relayStatus, .skillStatus, .skillInstall, .skillUpdate, .skillUninstall, .cliStatus, .agentsSetupStatus, .agentsSetupSet: return false
+        }
     }
 }

@@ -3,6 +3,9 @@ import Foundation
 /// The operating system a sandbox's image runs. It picks the platform, the boot store and the devices.
 public enum GuestOS: String, Codable, Sendable {
     case linux, macos
+
+    /// The boot store's file name, in an image's `boot/` and in a sandbox's directory alike.
+    public var bootStoreName: String { self == .linux ? "efi-vars" : "aux.img" }
 }
 
 /// What a VM boots from besides its disk. Each sandbox has its own copy, made at create from its image, because a
@@ -35,7 +38,7 @@ public enum GuestDevice: String, Sendable {
 }
 
 /// The devices each guest OS gets. macOS has no entropy device or virtio console and gets Mac graphics (no window),
-/// keyboard and trackpad instead, which a suspendable macOS guest needs (slice 16); neither OS gets audio.
+/// keyboard and trackpad instead, which a suspendable macOS guest needs; neither OS gets audio.
 public enum GuestPlatform {
     public static func devices(for os: GuestOS) -> [GuestDevice] {
         switch os {

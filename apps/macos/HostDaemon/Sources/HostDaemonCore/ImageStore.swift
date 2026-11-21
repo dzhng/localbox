@@ -28,23 +28,32 @@ public struct ImageNotHere: Error, CustomStringConvertible, Sendable {
     public var description: String { "image \(imageID) is not on this Mac" }
 }
 
+/// An image with files on this Mac. `listedBy` is the machine whose account catalog last listed it here, so a catalog
+/// push deletes only what that same machine's catalog listed before (as `sandbox.mirror` does for sandboxes).
+public struct HeldImage: Sendable, Equatable {
+    public let imageID: String
+    public let listedBy: String?
+}
+
 /// What `cloneForSandbox` laid down in a sandbox's directory.
 public struct ClonedImage: Sendable {
     public let manifest: ImageManifest
-    /// The sandbox's own copy of the image's boot store.
-    public let boot: BootStore
     /// "cloned" (APFS clone, sharing every block until written) or "copied" (cloning unsupported), so a report never
     /// claims a thin clone it didn't get.
     public let disk: String
 }
 
-/// The only code that touches `images/<id>/`: `image.json`, `disk.img` and `boot/` (`efi-vars`, or `aux.img` for macOS).
-/// An image is written into a dot-prefixed temporary directory and committed by one rename, so a reader never sees
-/// half an image and a crash leaves only a temporary that the next start sweeps.
+/// The only code that touches `images/<id>/`: `image.json`, `disk.img`, `boot/` (`efi-vars`, or `aux.img` for macOS)
+/// and this Mac's own `listed-by` mark. An image is written into a dot-prefixed temporary directory and committed by one
+/// rename, so a reader never sees half an image and a crash leaves only a temporary that the next start sweeps. It also
+/// answers how much the images volume has free, for capacity and for every operation that writes an image.
 public struct ImageStore: Sendable {
     public let root: URL
-    public init(imagesDirectory: URL) throws {
-        root = imagesDirectory
+    /// A free-disk figure in place of the volume's: proof runs fix it (`LOCALBOX_DEV_FREE_DISK_BYTES`), tests script it.
+    private let freeBytesOverride: (@Sendable () -> UInt64)?
+
+    public init(imagesDirectory: URL, freeBytesOverride: (@Sendable () -> UInt64)? = nil) throws {
+        root = imagesDirectory; self.freeBytesOverride = freeBytesOverride
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
@@ -84,7 +93,7 @@ public struct ImageStore: Sendable {
     /// Image `id`'s files as a copy sends them: the manifest, the disk and the boot store, never this Mac's own marks.
     public func copySource(_ id: String) throws -> ImageCopySource {
         let manifest = try manifest(id)
-        return ImageCopySource(directory: try imageDirectory(id), files: [Self.manifestName, Self.diskName, "boot/\(bootStore(in: root, os: manifest.os).lastPathComponent)"])
+        return ImageCopySource(directory: try imageDirectory(id), files: [Self.manifestName, Self.diskName, "boot/\(manifest.os.bootStoreName)"])
     }
 
     /// Makes a complete temporary directory image `id` with one rename; refuses one that is incomplete, names another
@@ -95,7 +104,7 @@ public struct ImageStore: Sendable {
         guard temp.deletingLastPathComponent().standardizedFileURL.path == root.standardizedFileURL.path, temp.lastPathComponent.hasPrefix(".") else { throw HostDaemonError.invalidState("\(temp.path) is not a temporary directory of \(root.path)") }
         let manifest = try JSONDecoder().decode(ImageManifest.self, from: Data(contentsOf: temp.appendingPathComponent(Self.manifestName)))
         guard manifest.imageID == id else { throw HostDaemonError.invalidState("the image being committed as \(id) names \(manifest.imageID)") }
-        for file in [temp.appendingPathComponent(Self.diskName), bootStore(in: temp, os: manifest.os)] where !FileManager.default.fileExists(atPath: file.path) {
+        for file in [temp.appendingPathComponent(Self.diskName), Self.bootStore(in: temp, os: manifest.os)] where !FileManager.default.fileExists(atPath: file.path) {
             throw HostDaemonError.invalidState("image \(id) is incomplete: \(file.lastPathComponent) is missing")
         }
         guard renamex_np(temp.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
@@ -118,15 +127,15 @@ public struct ImageStore: Sendable {
         let manifest = try manifest(id)
         let image = try imageDirectory(id)
         let disk = try cloneDisk(image.appendingPathComponent(Self.diskName), to: directory.disk)
-        try FileManager.default.copyItem(at: bootStore(in: image, os: manifest.os), to: directory.bootStore(for: manifest.os))
-        return ClonedImage(manifest: manifest, boot: BootStore(os: manifest.os, in: directory), disk: disk)
+        try FileManager.default.copyItem(at: Self.bootStore(in: image, os: manifest.os), to: directory.bootStore(for: manifest.os))
+        return ClonedImage(manifest: manifest, disk: disk)
     }
 
     /// Lays a sandbox's files into temporary `temp` as an image's: an APFS clone of `disk` and a copy of `bootStore`.
     /// Quick enough to run while the sandbox is frozen; the manifest comes after (`seal`). Returns "cloned" or "copied".
     public func layDown(disk: URL, bootStore source: URL, os: GuestOS, into temp: URL) throws -> String {
         let cloned = try cloneDisk(disk, to: temp.appendingPathComponent(Self.diskName))
-        let boot = bootStore(in: temp, os: os)
+        let boot = Self.bootStore(in: temp, os: os)
         try FileManager.default.createDirectory(at: boot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: source, to: boot)
         return cloned
@@ -134,37 +143,74 @@ public struct ImageStore: Sendable {
 
     /// Writes the manifest of the image laid down in `temp`, sized from its files, ready for `commit`.
     public func seal(_ temp: URL, imageID: String, os: GuestOS, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
-        let size = allocatedBytes(temp.appendingPathComponent(Self.diskName)) + allocatedBytes(bootStore(in: temp, os: os))
+        let size = allocatedBytes(temp.appendingPathComponent(Self.diskName)) + allocatedBytes(Self.bootStore(in: temp, os: os))
         let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: temp.appendingPathComponent(Self.manifestName), options: .atomic)
         return manifest
     }
 
-    /// Bytes free to an unprivileged writer on the images volume (`statfs` `f_bavail`).
+    /// Bytes free to an unprivileged writer on the images volume (`statfs` `f_bavail`), or the override.
     public func freeBytes() throws -> UInt64 {
+        if let freeBytesOverride { return freeBytesOverride() }
         var stats = statfs()
         guard statfs(root.path, &stats) == 0 else { throw HostDaemonError.unsupported("could not read free space at \(root.path): errno \(errno)") }
         return UInt64(stats.f_bavail) * UInt64(stats.f_bsize)
     }
+
+    /// Refuses `task` (`disk_full`) unless `needed` bytes are free; `why` says what they are for and `retry` how to try
+    /// again once room is made.
+    public func requireFree(_ needed: UInt64, for task: String, because why: String, then retry: String) throws {
+        let free: UInt64
+        do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }
+        guard free < needed else { return }
+        throw HostOperationFailure(code: "disk_full", message: "\(task) needs \(gibibytes(needed)) free on this Mac (\(why)), and \(gibibytes(free)) is free",
+                                   nextStep: "free at least \(gibibytes(needed - free)) on this Mac (delete sandboxes or images it no longer needs), then \(retry)")
+    }
+
+    // MARK: - This Mac's listing marks
+
+    /// Every image with files here except the built-in one, with the machine whose catalog last listed it.
+    public func held() -> [HeldImage] {
+        list().filter { $0.imageID != builtInImage }.map { manifest in
+            HeldImage(imageID: manifest.imageID, listedBy: (try? String(contentsOf: listingMark(manifest.imageID), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    /// Records that machine `machineID`'s catalog lists image `id` here. The mark is this Mac's account state, beside the
+    /// manifest and never sent with a copy.
+    public func markListed(_ id: String, by machineID: String) throws {
+        _ = try manifest(id)
+        try Data(machineID.utf8).write(to: listingMark(id), options: .atomic)
+    }
+
+    /// Removes image `id` when it is here; false when it was not.
+    public func removeIfPresent(_ id: String) throws -> Bool {
+        guard (try? manifest(id)) != nil else { return false }
+        try remove(id)
+        return true
+    }
+
+    private func listingMark(_ id: String) throws -> URL { try imageDirectory(id).appendingPathComponent("listed-by") }
 
     /// The IPSW cache (`.ipsw/`): kept across starts and never swept, since it holds downloads that took an hour.
     public var ipswDirectory: URL { root.appendingPathComponent(".ipsw", isDirectory: true) }
 
     /// The directory a macOS base build of image `id` works in (`.<id>.build/`), made if missing. Its name is fixed, so a
     /// resumed build finds what the last run installed; it is committed like any temporary once it holds an image.
-    public func buildDirectory(_ id: String) throws -> URL {
-        _ = try imageDirectory(id)
-        let directory = root.appendingPathComponent(".\(id).build", isDirectory: true)
+    public func buildDirectory(_ id: String) throws -> MacBuildDirectory {
+        let directory = try buildRoot(id)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+        return MacBuildDirectory(root: directory)
     }
 
     /// Removes image `id`'s build directory, if any.
     public func discardBuild(_ id: String) throws {
-        let directory = root.appendingPathComponent(".\(try imageDirectory(id).lastPathComponent).build", isDirectory: true)
+        let directory = try buildRoot(id)
         if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
     }
+
+    private func buildRoot(_ id: String) throws -> URL { root.appendingPathComponent(".\(try imageDirectory(id).lastPathComponent).build", isDirectory: true) }
 
     /// Removes every temporary of image `id` (`.<id>.*`): a resumed operation that starts over clears what its last run
     /// left before writing anew.
@@ -200,8 +246,36 @@ public struct ImageStore: Sendable {
         return root.appendingPathComponent(id, isDirectory: true)
     }
 
-    private func bootStore(in image: URL, os: GuestOS) -> URL {
-        image.appendingPathComponent("boot", isDirectory: true).appendingPathComponent(os == .linux ? "efi-vars" : "aux.img")
+    /// An image's boot store, in its directory or a temporary laid out like one.
+    static func bootStore(in image: URL, os: GuestOS) -> URL {
+        image.appendingPathComponent("boot", isDirectory: true).appendingPathComponent(os.bootStoreName)
+    }
+}
+
+/// A macOS base build's working files, in its `ImageStore` build directory (`images/.<id>.build/`): the installed
+/// disk and auxiliary storage kept pristine, the hardware model and identity they were installed with, and the work
+/// copies laid out as an image's, so committing is one rename once the build's own files go.
+public struct MacBuildDirectory: Sendable {
+    public let root: URL
+    public var installedDisk: URL { root.appendingPathComponent("installed.img") }
+    public var installedAux: URL { root.appendingPathComponent("installed-aux.img") }
+    public var hardwareModel: URL { root.appendingPathComponent("hardware-model") }
+    public var machineIdentifier: URL { root.appendingPathComponent("machine-identifier") }
+    public var mac: URL { root.appendingPathComponent("mac") }
+    public var payload: URL { root.appendingPathComponent("payload.tgz") }
+    public var disk: URL { root.appendingPathComponent(ImageStore.diskName) }
+    public var aux: URL { ImageStore.bootStore(in: root, os: .macos) }
+
+    /// Everything that is the build's own and not the image's.
+    var privateFiles: [URL] { [installedDisk, installedAux, hardwareModel, machineIdentifier, mac, payload] }
+
+    /// A fresh work copy of the installed guest: an APFS clone of its disk and a copy of its auxiliary storage. Each
+    /// provisioning boot starts from one, so a build that resumes never boots a half-provisioned disk.
+    func resetWorkCopy() throws {
+        for file in [disk, aux] { try? FileManager.default.removeItem(at: file) }
+        try FileManager.default.createDirectory(at: aux.deletingLastPathComponent(), withIntermediateDirectories: true)
+        _ = try cloneDisk(installedDisk, to: disk)
+        try FileManager.default.copyItem(at: installedAux, to: aux)
     }
 }
 
@@ -228,30 +302,4 @@ public func privateBytes(_ url: URL) -> Int64? {
     var buffer = [UInt8](repeating: 0, count: 16)
     guard getattrlist(url.path, &list, &buffer, buffer.count, UInt32(FSOPT_ATTR_CMN_EXTENDED)) == 0 else { return nil }
     return buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: Int64.self) }
-}
-
-/// `ImageStore` as the image host's view of the files: which images are here and which account listing last named
-/// them. The listing mark is a file beside the manifest (`listed-by`), per Mac, never part of the image itself.
-public struct StoredImageFiles: ImageFiles {
-    public let store: ImageStore
-    private static let listedBy = "listed-by"
-    public init(store: ImageStore) { self.store = store }
-
-    public func list() async throws -> [HeldImage] {
-        store.list().filter { $0.imageID != "linux" }.map { manifest in
-            let marker = store.root.appendingPathComponent(manifest.imageID).appendingPathComponent(Self.listedBy)
-            return HeldImage(imageID: manifest.imageID, listedBy: (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-    }
-
-    public func markListed(_ imageID: String, by machineID: String) async throws {
-        _ = try store.manifest(imageID)
-        try Data(machineID.utf8).write(to: store.root.appendingPathComponent(imageID).appendingPathComponent(Self.listedBy), options: .atomic)
-    }
-
-    public func remove(_ imageID: String) async throws -> Bool {
-        guard (try? store.manifest(imageID)) != nil else { return false }
-        try store.remove(imageID)
-        return true
-    }
 }

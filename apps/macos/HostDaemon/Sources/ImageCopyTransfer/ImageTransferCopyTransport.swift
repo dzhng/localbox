@@ -26,7 +26,7 @@ public struct ImageTransferCopyTransport: ImageCopyTransport {
         self.sender = sender ?? { var options = Sender.Options(); options.idleTimeout = Self.senderIdleSeconds; return options }()
     }
 
-    public func send(_ image: ImageCopySource, key: Data, rendezvous: any ImageCopyRendezvous, progress: @escaping ImageCopyProgress) async throws -> ImageCopyReport {
+    public func send(_ image: ImageCopySource, key: Data, rendezvous: any ImageCopyRendezvous) async throws -> ImageCopyReport {
         let started = Date()
         let secret = try Self.secret(key)
         let manifest = try await blocking { try TransferManifest.build(root: image.directory, paths: image.files) }
@@ -90,10 +90,10 @@ public struct ImageTransferCopyTransport: ImageCopyTransport {
     /// One `Receiver.receive` toward `offer`, raced against the sender publishing new candidates and against a stall.
     /// Ends with the first; the receive is cancelled (its bitmap saved) before the next attempt starts on the same port.
     private func attempt(into temp: URL, key: SymmetricKey, offer: [ImageCopyCandidate], endpoint: TransferEndpoint, rendezvous: any ImageCopyRendezvous, progress: @escaping ImageCopyProgress) async throws -> Attempt {
-        let meter = Meter()
+        let meter = Locked<TransferProgress?>(nil)
         var options = Receiver.Options()
         options.punchTimeout = punchTimeout
-        options.progress = { meter.latest = $0 }
+        options.progress = { meter.value = $0 }
         let candidates = offer.compactMap(Self.candidate)
         let stallSeconds = stallSeconds
         return try await withThrowingTaskGroup(of: Attempt.self) { group in
@@ -109,7 +109,7 @@ public struct ImageTransferCopyTransport: ImageCopyTransport {
                 var last: UInt64?, moved = Date()
                 while true {
                     try await Task.sleep(nanoseconds: 250_000_000)
-                    guard let now = meter.latest else { continue }
+                    guard let now = meter.value else { continue }
                     if now.doneBytes != last { last = now.doneBytes; moved = Date() }
                     try await progress(now.doneBytes, now.dataBytes)
                     if Date().timeIntervalSince(moved) > stallSeconds { return .stalled(done: now.doneBytes) }
@@ -145,23 +145,12 @@ public struct ImageTransferCopyTransport: ImageCopyTransport {
     static func ms(since start: Date) -> Int { Int(Date().timeIntervalSince(start) * 1000) }
 }
 
-/// The receive's latest progress, written on its delivery queue and read by the progress task.
-private final class Meter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: TransferProgress?
-    var latest: TransferProgress? {
-        get { lock.withLock { value } }
-        set { lock.withLock { value = newValue } }
-    }
-}
-
 /// Every candidate the receivers published, to name the path the sender's last peer came in on.
-private final class Receivers: @unchecked Sendable {
-    private let lock = NSLock()
-    private var local: Set<String> = []
-    func add(_ candidates: [Candidate]) { lock.withLock { for candidate in candidates where candidate.kind == .local { local.insert(candidate.peer.description) } } }
+private struct Receivers: Sendable {
+    private let local = Locked<Set<String>>([])
+    func add(_ candidates: [Candidate]) { local.withLock { for candidate in candidates where candidate.kind == .local { $0.insert(candidate.peer.description) } } }
     /// A peer that came from one of a receiver's interface addresses is on the local network; anything else crossed a NAT.
-    func path(of peer: String?) -> ImageCopyPath { lock.withLock { peer.map { local.contains($0) } ?? true ? .localNetwork : .internet } }
+    func path(of peer: String?) -> ImageCopyPath { peer.map { local.value.contains($0) } ?? true ? .localNetwork : .internet }
 }
 
 /// Runs blocking work (hashing a whole image, binding a socket, STUN) on a thread of its own instead of the pool.
