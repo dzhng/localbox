@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- vsock ports to the system role's sockets, as socat does on Linux; it accepts only the host (CID 2). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sh.localbox.vsock</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/local/localbox/localbox-vsock</string>
+    <string>1024=/var/run/localbox/agent.sock</string>
+    <string>1025=/var/run/localbox/control.sock</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>

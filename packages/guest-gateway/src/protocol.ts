@@ -29,7 +29,10 @@ export type ControlFrame =
   | { kind: "deferred"; running_jobs: number }
   | { kind: "control_error"; message: string };
 
-export function encodeGuestFrame(frame: GuestFrame | ControlFrame): Buffer {
+/** Length-prefixed JSON: the request lane, the control lane and the darwin desktop link all frame this way. */
+export function encodeGuestFrame(frame: GuestFrame | ControlFrame): Buffer;
+export function encodeGuestFrame<F extends { kind: string }>(frame: F): Buffer;
+export function encodeGuestFrame(frame: { kind: string }): Buffer {
   const body = Buffer.from(JSON.stringify(frame), "utf8");
   const prefix = Buffer.allocUnsafe(4);
   prefix.writeUInt32BE(body.byteLength, 0);

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The darwin guest agent's desktop role, in the auto-login user's GUI session: screen capture, input and Chrome. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sh.localbox.desktop</string>
+  <key>ProgramArguments</key><array><string>/usr/local/localbox/localbox-agent</string><string>--desktop</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCALBOX_DESKTOP_SOCKET</key><string>/var/run/localbox/desktop.sock</string>
+  </dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>AbandonProcessGroup</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/localbox-desktop.log</string>
+</dict>
+</plist>

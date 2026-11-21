@@ -26,6 +26,10 @@ public struct AgentBinary: Equatable, Sendable {
     public let size: Int
     /// Raw bytes per `agent.chunk`; base64 grows them by a third, which must stay under the 8 MiB frame limit.
     public let chunkBytes: Int
+
+    public init(version: String, sha256: String, url: URL, size: Int, chunkBytes: Int) {
+        self.version = version; self.sha256 = sha256; self.url = url; self.size = size; self.chunkBytes = chunkBytes
+    }
 }
 
 public enum AgentUpdateOutcome: Equatable, Sendable {

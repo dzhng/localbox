@@ -1,5 +1,29 @@
 # 33 darwin guest agent
 
+**Outcome 2026-11-21: built; tier `u` green; smoked in a real macOS 27 guest.**
+Evidence: [33-darwin-agent-smoke.json](../evidence/33-darwin-agent-smoke.json),
+[capture with the Apple menu open](../evidence/33-menu-open.jpg).
+
+- Native calls go through the `localbox-desktop` Swift helper the desktop role
+  spawns per call (`localbox-tccprobe` is gone); `packages/desktop` has `x11`
+  and `macos` surfaces behind one handler set. launchd units and `install.sh`
+  are in `apps/guest-agent/darwin`; `localbox-agent --grant-tcc` writes the rows.
+- vmlab `macos-tcc` now installs the real agent, helper and forwarder and drives
+  everything over vsock: shell as root, identity from the hello (`scutil`
+  names, marker), capture before the grant refused, capture after it, a click
+  that opens the Apple menu (one retry while the fresh grant settles), a
+  capture **with the menu open** (one-frame `SCStream`), key and type. A binary
+  replaced behind the agent's back loses capture; an `agent.update` keeps it
+  (the swap hook rewrites the rows, the desktop role restarts itself). TCC holds
+  the agent responsible for the helper it spawns.
+- Found on the way: the gateway's journal default `/.localbox` is on macOS's
+  read-only system volume; darwin keeps its state under `/var/db/localbox`.
+- **Open for 34/35:** with the rows written, macOS 27 still puts up "localbox-agent
+  is requesting to bypass the system private window picker" (also visible in
+  spike 18's evidence). Captures work while it is up, but it covers the screen
+  and catches clicks; the base build has to pre-approve it (not attempted here).
+  Browser operations were not run: the provisioned base has no Chrome (34).
+
 **Unlocks:** Q12 in code. The darwin agent answers every catalog operation the
 Linux one does, in the two roles of P4.
 

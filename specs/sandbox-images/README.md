@@ -21,7 +21,8 @@ sandboxes. You already own them."
 
 *Status 2026-11-21: spikes 15, 16, 17, 19 passed (go); 18's grants work and its
 rerun records P6's fallback. Built and merged: 21, 22, 23, 24, 26, 27, 30, 31,
-32, 36. In flight on branches: 20 → 37, 25, 28, 29. Slice numbers start at 15
+32, 36. Built on `t3/darwin-guest-agent`: 33 (smoked in a real macOS guest). In
+flight on branches: 20 → 37, 25, 28, 29. Slice numbers start at 15
 because `scripts/proof/run.ts` keys probes on a two-digit prefix.*
 
 You are picking up the sandbox-images plan. Where things stand:
@@ -33,8 +34,10 @@ You are picking up the sandbox-images plan. Where things stand:
 - **Next pickup, in priority order:**
   1. Integrate the in-flight branches as they land (merge, rerun gates, re-verify
      any real-VM probe whose code moved).
-  2. **33 darwin agent** once 18 is recorded (P4, P6), then **34 macOS base
-     build** and **35 macOS sandboxes** (tier `m`).
+  2. **34 macOS base build** (runs `apps/guest-agent/darwin/install.sh`, then
+     `localbox-agent --grant-tcc`, and must pre-approve ScreenCaptureKit's
+     picker-bypass alert, see slice 33's outcome), then **35 macOS sandboxes**
+     (tier `m`).
   3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
   4. **40 docs** last.
 - **Warnings:**
@@ -70,7 +73,7 @@ any blocker, and tick the TODO list.
 - [x] [30 image catalog commands](slices/30-image-catalog-commands.md)
 - [x] [31 single-binary guest agent](slices/31-agent-binary.md)
 - [x] [32 guest agent self-update](slices/32-agent-self-update.md)
-- [ ] [33 darwin guest agent](slices/33-darwin-agent.md)
+- [x] [33 darwin guest agent](slices/33-darwin-agent.md)
 - [ ] [34 macOS base build](slices/34-macos-base-build.md)
 - [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
 - [x] [36 placement with images](slices/36-placement-images.md)

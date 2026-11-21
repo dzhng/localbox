@@ -38,7 +38,7 @@ test("production desktop handlers use CDP and bounded desktop commands", async (
     if (url.includes("/json/activate/") || url.includes("/json/close/")) return new Response("Target activated", { status: 200 });
     throw new Error(`unexpected fetch ${init?.method ?? "GET"} ${url}`);
   };
-  const handlers = productionDesktopHandlers({ fetchImpl, commandRunner, webSocketFactory: () => new FakeCdpSocket() });
+  const handlers = productionDesktopHandlers({ backend: "x11", fetchImpl, commandRunner, webSocketFactory: () => new FakeCdpSocket() });
   const status = await handlers["desktop.status"]!({}, {} as any);
   assert.deepEqual((status as any).width, 1440);
   const opened = await handlers["browser.open"]!({ url: "https://new.test" }, {} as any) as any;
