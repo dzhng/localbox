@@ -160,13 +160,19 @@ public actor AppleVirtualizationBackend: HibernateBackend, GuestChannelProvider,
         return made!
     }
 
+    /// How long a boot or restore waits for the guest agent's request lane: a macOS first boot answers in 10–20 s.
+    static let guestWait: TimeInterval = 120
+
     private func attachGuest(_ vm: VZVirtualMachine, name: String? = nil) async throws {
-        let connection = try await connect(vm, port: Self.guestPort, within: 120)
-        guestConnection = connection
-        let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), sandboxID: sandboxID, name: name ?? self.name)
+        let deadline = Date().addingTimeInterval(Self.guestWait)
         // A channel is handed out only once the guest announced readiness and received its hello.
-        try await channel.waitUntilReady()
-        guestChannel = channel
+        let (connection, channel) = try await GuestLane.open(until: deadline) {
+            let connection = try await connect(vm, port: Self.guestPort, within: max(deadline.timeIntervalSinceNow, 1))
+            let channel = FramedFileHandleGuestChannel(reader: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), writer: FileHandle(fileDescriptor: dup(connection.fileDescriptor), closeOnDealloc: true), sandboxID: sandboxID, name: name ?? self.name)
+            do { try await channel.waitUntilReady() } catch { await channel.close(); connection.close(); throw error }
+            return (connection, channel)
+        }
+        guestConnection = connection; guestChannel = channel
     }
     public func makeGuestChannel() async throws -> any GuestChannel { guard let guestChannel else { throw HostDaemonError.guestUnavailable }; return guestChannel }
     /// The request lane again, on the same running VM, after its agent restarted (an update): the old connection

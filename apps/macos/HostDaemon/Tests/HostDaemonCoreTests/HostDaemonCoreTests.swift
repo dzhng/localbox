@@ -590,6 +590,41 @@ final class HostDaemonCoreTests: XCTestCase {
         XCTAssertEqual(renamed["channel_epoch"] as? Int, 9, "a rename is a hello under the next epoch"); XCTAssertEqual(renamed["hostname"] as? String, "calm-heron")
         await channel.close()
     }
+
+    /// A restored macOS guest closes the first request-lane connection before its ready frame; the next dial attaches.
+    func testGuestLaneDialsAgainWhenTheGuestClosesBeforeReady() async throws {
+        var pipes: [Pipe] = []
+        func lane(closingAtOnce: Bool) -> FramedFileHandleGuestChannel {
+            // Kept open for the test, so the hello the channel writes after ready has a reader.
+            let toGuest = Pipe(), fromGuest = Pipe(); pipes += [toGuest, fromGuest]
+            if closingAtOnce { try? fromGuest.fileHandleForWriting.close() } else {
+                let ready = Data(#"{"kind":"ready","channel_epoch":3}"#.utf8); var size = UInt32(ready.count).bigEndian
+                fromGuest.fileHandleForWriting.write(Data(bytes: &size, count: 4) + ready)
+            }
+            return FramedFileHandleGuestChannel(reader: fromGuest.fileHandleForReading, writer: toGuest.fileHandleForWriting, sandboxID: "sandbox_1", name: "restored")
+        }
+        var dials = 0
+        let opened = try await GuestLane.open(until: Date().addingTimeInterval(5), retryAfter: 0.01) { () async throws -> FramedFileHandleGuestChannel in
+            dials += 1
+            let channel = lane(closingAtOnce: dials == 1)
+            try await channel.waitUntilReady()
+            return channel
+        }
+        XCTAssertEqual(dials, 2, "the lane closed before ready is dialled again")
+        await opened.close()
+
+        var late = 0
+        do {
+            _ = try await GuestLane.open(until: Date().addingTimeInterval(0.05), retryAfter: 0.01) { () async throws -> Int in late += 1; try await lane(closingAtOnce: true).waitUntilReady(); return 0 }
+            XCTFail("a guest that never gets ready ends at the deadline")
+        } catch HostDaemonError.guestUnavailable { XCTAssertGreaterThan(late, 1) }
+
+        var refused = 0
+        do {
+            _ = try await GuestLane.open(until: Date().addingTimeInterval(5), retryAfter: 0.01) { () async throws -> Int in refused += 1; throw HostDaemonError.unsupported("no vsock device") }
+            XCTFail("another failure is not retried")
+        } catch HostDaemonError.unsupported { XCTAssertEqual(refused, 1) }
+    }
 }
 
 extension HostDaemonCoreTests {
