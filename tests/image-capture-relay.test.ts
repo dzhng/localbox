@@ -1,46 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeFunctionReference } from "convex/server";
-import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { runOps } from "../apps/relay/src/ops.js";
 import { render } from "../apps/cli/src/render.js";
-import { failure, success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { HOST_OPERATION_KINDS, failure, type Json, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { runOps } from "../apps/relay/src/ops.js";
+import { GIB, hostRecord, relayOverConvex, STUDIO, type Machine } from "./fixtures/relay-over-convex.js";
 
-const ref = (name: string) => makeFunctionReference(name) as any;
-const GIB = 1024 ** 3;
 const machines = [{ machineId: "m1", name: "studio" }, { machineId: "m2", name: "attic" }];
-type Machine = (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>;
 
 /**
  * Account a1 with machines studio (m1) and attic (m2) and sandbox bold-otter on attic, its catalog answered by the real
- * Convex functions and its relayed requests by `connectors`. `op` runs one agent API call as studio.
+ * Convex functions and its relayed requests by `connectors`. `op` runs `image create` as studio.
  */
 async function setup(connectors: Record<string, Machine> = {}) {
-  const t = createConvexTestHarness();
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "brave-walrus-100", createdAt: now });
-    for (const { machineId, name } of machines) await ctx.db.insert("machines", { machineId, accountId: "a1", credentialHash: `h-${machineId}`, name, createdAt: now, lastSeenAt: now });
-    await ctx.db.insert("sandboxes", { sandboxId: "sandbox_otter", accountId: "a1", machineId: "m2", name: "bold-otter", imageId: "linux", os: "linux", cpus: 2, memoryBytes: 2 * GIB, sleepAfterMs: 1_800_000, createdAt: now });
-  });
-  const studio = t.withIdentity({ subject: "machine:m1", account: "a1" });
-  const { deps } = memoryMailbox({ machines, connectors });
-  deps.accountCall = async (_principal, kind, name, args) => await (studio as any)[kind](ref(name), args);
-  let calls = 0;
-  const op = async (input: Record<string, unknown>, mutationId = `mut-${++calls}`): Promise<any> => {
-    const result = await runOps({ accountId: "a1", machineId: "m1" }, { operation: "image.create", input, request_id: `req-${++calls}`, mutation_id: mutationId }, deps);
-    return (result.body as { response: ResponseEnvelope }).response;
-  };
-  const images = async () => (await studio.query(ref("images:list"), {}) as any[]).filter((row) => row.image_id !== "linux");
-  return { op, images };
+  const { op: run, images, deps } = await relayOverConvex({ machines, sandboxes: [{ sandboxId: "sandbox_otter", machineId: "m2", name: "bold-otter" }, { sandboxId: "sandbox_mac", machineId: "m2", name: "mac-box", os: "macos", minMacOS: "27.0" }], connectors });
+  const op = async (input: Record<string, unknown>, mutationId?: string, deadlineMs?: number) => await run("image.create", { input, ...(mutationId ? { mutation_id: mutationId } : {}), ...(deadlineMs ? { deadline_ms: deadlineMs } : {}) });
+  return { op, images, deps };
 }
 
 /** A machine whose capture finished with `result`, recording each request it was told. */
 const capturing = (told: RequestEnvelope[], result: Json, state: "succeeded" | "running" = "succeeded"): Machine => async (request) => {
   told.push(request);
-  const input = request.input as { image: string };
-  return success(request, { key: request.mutation_id, kind: "image.capture", subject: input.image, state, ...(state === "succeeded" ? { result } : { progress: { phase: "saving" } }), started_at: 1, updated_at: 2 });
+  return hostRecord(request, { kind: HOST_OPERATION_KINDS.capture, state, ...(state === "succeeded" ? { result } : { progress: { phase: "saving" } }) });
 };
 
 test("image create --from routes to the source sandbox's machine, reserves the image there, and reports in the map's four lines", async () => {
@@ -97,20 +77,58 @@ test("a capture still running answers building with its phase; the client follow
   assert.equal(created.result.report, undefined);
 });
 
-test("a machine that refused or never got the capture releases the reservation; an uncertain one keeps it and says so", async () => {
-  const refusing: Machine = async (request) => failure(request, { code: "sandbox_not_found", message: "no sandbox sandbox_otter on this machine", retryable: false });
-  const refused = await setup({ m2: refusing });
+test("a capture the machine refused, failed or never got releases the reservation; a lost answer keeps it and says so", async () => {
+  const refused = await setup({ m2: async (request) => failure(request, { code: "sandbox_not_found", message: "no sandbox sandbox_otter on this machine", retryable: false }) });
   assert.equal((await refused.op({ from: "bold-otter", name: "gone" })).error.code, "sandbox_not_found");
   assert.equal((await refused.images()).length, 0);
+
+  const failed = await setup({ m2: async (request) => failure(request, { code: "internal", message: "the daemon lost track", retryable: false }) });
+  assert.equal((await failed.op({ from: "bold-otter", name: "broken" })).error.message, "the daemon lost track");
+  assert.equal((await failed.images()).length, 0, "the relay keeps that answer for the mutation id, so a replay could never finish it");
 
   const offline = await setup();
   assert.equal((await offline.op({ from: "bold-otter", name: "offline" })).error.code, "machine_offline");
   assert.equal((await offline.images()).length, 0, "attic never claimed it, so nothing was saved");
 
-  const uncertain = await setup({ m2: async (request) => failure(request, { code: "internal", message: "the daemon lost track", retryable: false }) });
-  const kept = await uncertain.op({ from: "bold-otter", name: "maybe" }, "cli-create-3");
+  const lost = await setup({ m2: async () => undefined });
+  const kept = await lost.op({ from: "bold-otter", name: "maybe" }, "cli-create-3", 100);
+  assert.equal(kept.error.code, "operation_uncertain");
   assert.match(kept.error.message, /the save may still complete on attic: image maybe stays reserved \(replay with mutation id cli-create-3 to get its result\)$/);
-  assert.equal((await uncertain.images()).length, 1);
+  assert.equal((await lost.images()).length, 1);
+});
+
+test("a capture answered after the first call's wait is finished on the continuation as the first call would have", async () => {
+  const gate = () => { let open!: () => void; const opened = new Promise<void>((resolve) => { open = resolve; }); return { open: () => open(), opened }; };
+  const saved = gate(); const refused = gate();
+  const { images, deps } = await setup({ m2: async (request) => {
+    const name = (request.input as { image: string }).image;
+    const row = (await images()).find((image) => image.image_id === name);
+    if (row.name === "late") { await saved.opened; return hostRecord(request, { kind: HOST_OPERATION_KINDS.capture, state: "succeeded", result: { size_bytes: GIB, stall_ms: 400 } }); }
+    await refused.opened; return failure(request, { code: "sandbox_not_found", message: "no sandbox sandbox_otter on this machine", retryable: false });
+  } });
+  deps.maxWaitMs = 50;
+  const started = async (name: string, mutationId: string) => (await runOps(STUDIO, { operation: "image.create", mutation_id: mutationId, input: { from: "bold-otter", name } }, deps)).body as { status: string; request_id: string; deadline_at: number };
+  const resume = async (pending: { request_id: string; deadline_at: number }) => ((await runOps(STUDIO, { continue: pending.request_id, deadline_at: pending.deadline_at }, deps)).body as any).response;
+
+  const late = await started("late", "cli-late-1");
+  assert.equal(late.status, "pending");
+  saved.open();
+  const done = await resume(late);
+  assert.deepEqual([done.ok, done.result.state, done.result.report[0]], [true, "ready", "image late saved from sandbox bold-otter (linux, 1 GiB)"], "the continuation reads as an operation state with its report");
+
+  const gone = await started("gone", "cli-late-2");
+  assert.equal(gone.status, "pending");
+  refused.open();
+  assert.equal((await resume(gone)).error.code, "sandbox_not_found");
+  assert.deepEqual((await images()).map((image) => image.name), ["late"], "the refused capture's reservation was released on the continuation");
+});
+
+test("a saved macOS sandbox makes a macOS image that needs what its source needed", async () => {
+  const { op, images } = await setup({ m2: capturing([], { size_bytes: 30 * GIB, stall_ms: 900 }) });
+  const created = await op({ from: "mac-box", name: "mac-dev" });
+  assert.equal(created.result.os, "macos");
+  const [row] = await images();
+  assert.deepEqual([row.os, row.min_macos], ["macos", "27.0"]);
 });
 
 test("image create refuses what it can't do before reserving anything", async () => {

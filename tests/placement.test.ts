@@ -71,11 +71,11 @@ test("auto placement moves on when the roomiest machine does not answer, and say
   const removed: string[] = [];
   const accountCall = deps.accountCall;
   deps.accountCall = async (principal, kind, name, args) => {
-    if (name === "sandboxes:create") return { sandbox_id: `sandbox_${args.machineId}`, name: "brisk-otter", machine_id: args.machineId, sleep_after_ms: 1_800_000, delete_after_ms: null };
+    if (name === "sandboxes:create") return { sandbox_id: `sandbox_${args.machineId}`, name: "brisk-otter", machine_id: args.machineId, image_id: args.imageId, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: 1_800_000, delete_after_ms: null };
     if (name === "sandboxes:remove") { removed.push(String(args.sandboxId)); return null; }
     return accountCall(principal, kind, name, args);
   };
-  const result = await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "sandbox.create", input: { placement: "auto", cpus: 1, memory_bytes: 2 ** 31 } }, deps);
+  const result = await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "sandbox.create", mutation_id: "cli-auto", input: { placement: "auto", cpus: 1, memory_bytes: 2 ** 31 } }, deps);
   const response = (result.body as any).response;
   assert.equal(response.ok, true, JSON.stringify(response));
   assert.equal(response.result.produced.machine, "studio");

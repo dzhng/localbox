@@ -1,6 +1,8 @@
 import { ConvexError } from "convex/values";
 import type { CapacityReport, RequestEnvelope, ResponseEnvelope } from "../../packages/contract/src/index.js";
-import type { ImageRow, OpsDeps, Principal, RelayResult, SandboxRow } from "../../apps/relay/src/ops.js";
+import type { ImageRow } from "../../apps/relay/src/image-state.js";
+import type { OpsDeps, Principal, RelayResult } from "../../apps/relay/src/relay-wait.js";
+import type { SandboxRow } from "../../apps/relay/src/resolve.js";
 
 type Row = RelayResult & { requestId: string; accountId: string; machineId: string; mutationKey?: string; payload: RequestEnvelope };
 
@@ -10,10 +12,10 @@ type Row = RelayResult & { requestId: string; accountId: string; machineId: stri
  * a machine with no connector never claims, so its requests go offline; one not in `machines` (removed) is refused.
  */
 export function memoryMailbox(options: { machines: Array<{ machineId: string; name: string; lastSeenAt?: number; capacity?: CapacityReport }>; sandboxes?: Array<Partial<SandboxRow> & { sandbox_id: string; name: string; machine_id: string }>; images?: ImageRow[]; connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>>; claimWindowMs?: number; maxWaitMs?: number }) {
-  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, image_id: "linux", cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
+  const sandboxes = (options.sandboxes ?? []).map((row) => ({ machine_name: null, image_id: "linux", os: "linux", min_macos: null, cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running", ...row })) as SandboxRow[];
   const reservations = new Map<string, string>(); // create mutation id -> sandbox id
   const rows = new Map<string, Row>(); const watchers = new Map<string, Set<(result: RelayResult | null) => void>>();
-  const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, response: row.response }); };
+  const publish = (row: Row) => { for (const watcher of watchers.get(row.requestId) ?? []) watcher({ accountId: row.accountId, status: row.status, request: row.payload, response: row.response }); };
   const deps: OpsDeps = {
     claimWindowMs: options.claimWindowMs ?? 50, maxWaitMs: options.maxWaitMs,
     async accountCall(_principal: Principal, _kind, name, args: any) {
@@ -30,7 +32,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       }
       if (name === "sandboxes:create") {
         if (sandboxes.some((row) => row.name === args.name)) throw new ConvexError({ code: "name_conflict", message: `${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}` });
-        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, image_id: args.imageId, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
+        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, image_id: args.imageId, os: "linux", min_macos: null, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? 1_800_000, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
         const reserved = args.createMutationId && sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.createMutationId));
         if (reserved) return reserved;
         if (args.createMutationId) reservations.set(args.createMutationId, row.sandbox_id);
@@ -64,7 +66,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
     },
     watchResult(requestId, onChange) {
       const set = watchers.get(requestId) ?? new Set(); set.add(onChange); watchers.set(requestId, set);
-      const row = rows.get(requestId); queueMicrotask(() => onChange(row ? { accountId: row.accountId, status: row.status, response: row.response } : null));
+      const row = rows.get(requestId); queueMicrotask(() => onChange(row ? { accountId: row.accountId, status: row.status, request: row.payload, response: row.response } : null));
       return () => set.delete(onChange);
     },
   };

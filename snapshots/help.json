@@ -397,7 +397,7 @@
     "idempotency": "none",
     "executor": "account",
     "sandbox_scoped": false,
-    "routing": "holders"
+    "routing": "machine"
   },
   {
     "id": "system.info",

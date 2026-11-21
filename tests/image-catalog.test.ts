@@ -1,42 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeFunctionReference } from "convex/server";
-import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { runOps, type Principal } from "../apps/relay/src/ops.js";
-import { success, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { success, type OperationId, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { GIB, ref, relayOverConvex, type Machine } from "./fixtures/relay-over-convex.js";
 
-const ref = (name: string) => makeFunctionReference(name) as any;
-const GIB = 1024 ** 3;
 const machines = [{ machineId: "m1", name: "studio" }, { machineId: "m2", name: "attic" }];
 
 /**
  * Account a1 with machines m1 ("studio") and m2 ("attic"), its image calls answered by the real Convex functions and
  * its relayed requests by `connectors` (a machine with none is offline). `op` runs one agent API call as studio.
  */
-async function setup(connectors: Record<string, (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>> = {}) {
-  const t = createConvexTestHarness();
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "brave-walrus-100", createdAt: now });
-    for (const { machineId, name } of machines) await ctx.db.insert("machines", { machineId, accountId: "a1", credentialHash: `h-${machineId}`, name, createdAt: now, lastSeenAt: now });
-  });
-  const as = (principal: Principal) => t.withIdentity({ subject: `machine:${principal.machineId}`, account: principal.accountId });
-  const { deps } = memoryMailbox({ machines, connectors });
-  deps.accountCall = async (principal, kind, name, args) => await (as(principal) as any)[kind](ref(name), args);
-  let calls = 0;
-  const op = async (operation: string, input: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<any> => {
-    const result = await runOps({ accountId: "a1", machineId: "m1" }, { operation, input, request_id: `req-${++calls}`, mutation_id: `mut-${calls}`, ...extra }, deps);
-    return (result.body as { response: ResponseEnvelope }).response;
-  };
-  const m1 = as({ accountId: "a1", machineId: "m1" }); const m2 = as({ accountId: "a1", machineId: "m2" });
+async function setup(connectors: Record<string, Machine> = {}) {
+  const { t, op: run, as, readyImage } = await relayOverConvex({ machines, connectors });
+  const op = async (operation: OperationId, input: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<any> => await run(operation, { input, ...extra });
+  const m2 = as({ accountId: "a1", machineId: "m2" });
   /** An image built on m1 and copied to m2, both ready. */
-  const image = async (name: string) => {
-    const reserved = await m1.mutation(ref("images:reserve"), { machineId: "m1", name, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: `cli-${name}` }) as any;
-    await m1.mutation(ref("images:setHolder"), { imageId: reserved.image_id, state: "ready", sizeBytes: 4 * GIB });
-    await m2.mutation(ref("images:setHolder"), { imageId: reserved.image_id, state: "ready" });
-    return reserved.image_id as string;
-  };
+  const image = async (name: string) => (await readyImage(name, ["m1", "m2"], 4 * GIB)).image_id as string;
   return { t, op, image, m2 };
 }
 

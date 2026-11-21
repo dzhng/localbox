@@ -3,7 +3,7 @@ import { makeFunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { ConvexOAuthRepository, type ServiceCall } from "../../../packages/state/src/index.js";
 import { signAgentToken, signMachineToken, signServiceToken } from "../../../packages/tokens/src/index.js";
-import type { OpsDeps, Principal } from "./ops.js";
+import type { OpsDeps, Principal } from "./relay-wait.js";
 
 /** A fresh client per call: function instances serve concurrent requests, and auth is per client. */
 export const convexAs = (token: string): ConvexHttpClient => {

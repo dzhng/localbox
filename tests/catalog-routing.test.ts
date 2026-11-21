@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ContractError, hostOperationIds, operationCatalog, operationIds, PROTOCOL_VERSION, validateRequest, type Executor, type OperationId, type RequestEnvelope, type Routing } from "../packages/contract/src/index.js";
 import { sampleInput } from "../packages/runtime/src/index.js";
+import { ACCOUNT_HANDLERS } from "../apps/relay/src/ops.js";
 
 /** Every operation's executor, whether it names a sandbox, and where the relay sends it, written out so a new operation has to state all three. */
 const routes: Record<OperationId, [Executor, boolean, Routing]> = {
@@ -11,7 +12,7 @@ const routes: Record<OperationId, [Executor, boolean, Routing]> = {
   "sandbox.rename": ["account", true, "machine"], "sandbox.delete": ["account", true, "machine"],
   "image.create": ["account", false, "machine"], "image.list": ["account", false, "account"], "image.rename": ["account", false, "account"],
   "image.copy": ["account", false, "machine"], "image.default": ["account", false, "account"],
-  "image.delete": ["account", false, "holders"], "image.wait": ["account", false, "holders"],
+  "image.delete": ["account", false, "holders"], "image.wait": ["account", false, "machine"],
   "system.info": ["host", true, "machine"], "sandbox.status": ["host", true, "machine"], "sandbox.resize": ["host", true, "machine"],
   "sandbox.start": ["host", true, "machine"], "sandbox.stop": ["host", true, "machine"], "sandbox.sleep": ["host", true, "machine"], "sandbox.logs": ["host", true, "machine"],
   "relay.status": ["host", false, "machine"],
@@ -34,6 +35,10 @@ test("every operation states its executor, sandbox scope and routing", () => {
   assert.deepEqual(new Set(Object.keys(routes)), new Set(operationIds));
   for (const entry of operationCatalog) assert.deepEqual([entry.executor, entry.sandbox_scoped, entry.routing], routes[entry.id], entry.id);
   assert.ok(!operationCatalog.some((entry) => entry.id.startsWith("vm.")), "no vm.* operation survives");
+});
+
+test("the agent API answers every account operation itself and relays the rest as they are", () => {
+  assert.deepEqual(new Set(Object.keys(ACCOUNT_HANDLERS)), new Set(operationIds.filter((id) => routes[id][0] === "account")));
 });
 
 test("a sandbox-scoped operation needs a sandbox_id; every other operation carries sandbox_id null", () => {

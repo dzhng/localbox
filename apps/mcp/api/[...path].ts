@@ -1,7 +1,8 @@
 import { selectMailer } from "../../../packages/mail/src/index.js";
 import { PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 import { RepositoryOAuthServer } from "../../relay/src/repository-oauth.js";
-import { runOps, type OpsResponse, type Principal } from "../../relay/src/ops.js";
+import { runOps } from "../../relay/src/ops.js";
+import type { OpsResponse, Principal } from "../../relay/src/relay-wait.js";
 import { oauthRepository, opsDeps } from "../../relay/src/convex-deps.js";
 import { json } from "../../relay/src/http.js";
 import { McpAdapter } from "../src/index.js";

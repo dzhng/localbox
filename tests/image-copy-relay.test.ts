@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { makeFunctionReference } from "convex/server";
-import { createConvexTestHarness } from "../packages/state/src/index.js";
-import { durationText, runOps } from "../apps/relay/src/ops.js";
+import { durationText } from "../apps/relay/src/image-state.js";
 import { render } from "../apps/cli/src/render.js";
-import { success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
-import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { HOST_OPERATION_KINDS, type Json, type RequestEnvelope } from "../packages/contract/src/index.js";
+import { GIB, hostRecord, ref, relayOverConvex, STUDIO, type Machine } from "./fixtures/relay-over-convex.js";
 
-const ref = (name: string) => makeFunctionReference(name) as any;
-const GIB = 1024 ** 3;
 const capacity = (freeDisk: number | null) => ({ cpus: 8, total_bytes: 16 * GIB, reserved_bytes: 0, room_bytes: 12 * GIB, running: 0, revision: 1, free_disk_bytes: freeDisk, macos_version: "27.0.1" });
-type Machine = (request: RequestEnvelope) => Promise<ResponseEnvelope | undefined>;
 
 /**
  * Account a1 with studio (m1, holds rails-dev ready), attic (m2, 100 GiB free), den (m3, never reported) and loft (m4,
@@ -18,23 +13,11 @@ type Machine = (request: RequestEnvelope) => Promise<ResponseEnvelope | undefine
  * `connectors`. `copy` runs `image copy` as studio.
  */
 async function setup(connectors: Record<string, Machine>) {
-  const t = createConvexTestHarness();
   const machines = [{ machineId: "m1", name: "studio", capacity: capacity(100 * GIB) }, { machineId: "m2", name: "attic", capacity: capacity(100 * GIB) }, { machineId: "m3", name: "den" }, { machineId: "m4", name: "loft", capacity: capacity(null) }];
-  await t.run(async (ctx) => {
-    const now = Date.now();
-    await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "a1", createdAt: now });
-    for (const machine of machines) await ctx.db.insert("machines", { ...machine, accountId: "a1", credentialHash: `h-${machine.machineId}`, createdAt: now, lastSeenAt: now, ...(machine.capacity ? { capacityAt: now } : {}) });
-  });
-  const studio = t.withIdentity({ subject: "machine:m1", account: "a1" }); const attic = t.withIdentity({ subject: "machine:m2", account: "a1" });
-  const image = await studio.mutation(ref("images:reserve"), { machineId: "m1", name: "rails-dev", os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: "capture-1" }) as any;
-  await studio.mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", sizeBytes: 3 * GIB });
-  const { deps } = memoryMailbox({ machines, connectors });
-  deps.accountCall = async (_principal, kind, name, args) => await (studio as any)[kind](ref(name), args);
-  let calls = 0;
-  const copy = async (input: Record<string, unknown>, mutationId: string): Promise<any> => {
-    const result = await runOps({ accountId: "a1", machineId: "m1" }, { operation: "image.copy", input, request_id: `req-${++calls}`, mutation_id: mutationId }, deps);
-    return (result.body as { response: ResponseEnvelope }).response;
-  };
+  const { op, as, readyImage } = await relayOverConvex({ machines, connectors });
+  const studio = as(STUDIO); const attic = as({ accountId: "a1", machineId: "m2" });
+  const image = await readyImage("rails-dev", ["m1"], 3 * GIB);
+  const copy = async (input: Record<string, unknown>, mutationId: string): Promise<any> => await op("image.copy", { input, mutation_id: mutationId });
   const holders = async () => ((await studio.query(ref("images:get"), { image: "rails-dev" })) as any).holders.map((holder: any) => [holder.machine_name, holder.state]).sort();
   return { copy, holders, image, attic, studio };
 }
@@ -42,8 +25,7 @@ async function setup(connectors: Record<string, Machine>) {
 /** A machine that took its side of the copy, recording what it was told; it answers with its record, `record` merged in. */
 const side = (told: RequestEnvelope[], record: Record<string, Json> = {}): Machine => async (request) => {
   told.push(request);
-  const input = request.input as { image: string };
-  return success(request, { key: request.mutation_id, kind: "image.copy", subject: input.image, state: "running", progress: { phase: "waiting_for_peer" }, started_at: 1, updated_at: 2, ...record });
+  return hostRecord(request, { kind: HOST_OPERATION_KINDS.copy, state: "running", progress: { phase: "waiting_for_peer" }, ...record });
 };
 
 test("image copy tells both Macs under the copy's mutation id and answers copying at once; once copied, it reports size, duration and path", async () => {
