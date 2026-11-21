@@ -1,6 +1,6 @@
 // Renders the static website into dist/ from content.mjs. No dependencies.
 // Run `node apps/site/build.mjs`; Vercel runs it with apps/site as the root.
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as content from "./content.mjs";
@@ -8,7 +8,6 @@ import * as content from "./content.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const artwork = join(here, "../../.github/readme");
 const staticFiles = ["style.css", "main.js", "favicon.svg", "og.png"];
-const heroMobile = "header-mobile.png";
 
 /** Production origin: explicit SITE_URL, else Vercel's production domain, else local preview. */
 function defaultSiteUrl() {
@@ -20,8 +19,11 @@ function defaultSiteUrl() {
 const escape = (text) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
-/** Inline `code` in copy becomes <code>; everything else is escaped. */
-const prose = (text) => escape(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+/** Page copy: apostrophes typeset curly, `code` becomes <code>, [label](url) a link; everything else is escaped. */
+const prose = (text) =>
+  escape(text.replaceAll("'", "\u2019"))
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
 
 /** The README owns the human-facing prompt too; refuse to publish a different one. */
 function checkPromptMatchesReadme(readme) {
@@ -39,16 +41,20 @@ function pngSize(file) {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
+/** A drawing too wide to read on a phone has a stacked `<name>-mobile.png` cut beside it. */
+const mobileCut = (name) => {
+  const cut = name.replace(/\.png$/, "-mobile.png");
+  return existsSync(join(artwork, cut)) ? cut : null;
+};
+
 function illustration(name, alt, { eager = false } = {}) {
   const { width, height } = pngSize(join(artwork, name));
   const loading = eager ? `fetchpriority="high"` : `loading="lazy"`;
-  return `<img src="/art/${name}" alt="${escape(alt)}" width="${width}" height="${height}" ${loading} decoding="async">`;
-}
-
-/** A phone gets the stacked cut of the hero art, so its labels stay readable at 390 px. */
-function heroArt(alt) {
-  const { width, height } = pngSize(join(artwork, heroMobile));
-  return `<picture><source media="(max-width: 520px)" srcset="/art/${heroMobile}" width="${width}" height="${height}">${illustration("header.png", alt, { eager: true })}</picture>`;
+  const img = `<img src="/art/${name}" alt="${escape(alt)}" width="${width}" height="${height}" ${loading} decoding="async">`;
+  const cut = mobileCut(name);
+  if (!cut) return img;
+  const size = pngSize(join(artwork, cut));
+  return `<picture><source media="(max-width: 520px)" srcset="/art/${cut}" width="${size.width}" height="${size.height}">${img}</picture>`;
 }
 
 const blob = (id) => `<svg class="blob" id="${id}" viewBox="0 0 120 130" aria-hidden="true">
@@ -144,10 +150,10 @@ ${bar()}
 
 <main class="human-view" id="main">
   <section class="hero">
-    <p class="kicker hand">${escape(hero.kicker)}</p>
-    <h1>${escape(hero.title)}<br><span>${escape(hero.accent)}</span></h1>
+    <p class="kicker hand">${prose(hero.kicker)}</p>
+    <h1>${prose(hero.title)}<br><span>${prose(hero.accent)}</span></h1>
     <p class="lede">${prose(hero.lede)}</p>
-    <figure class="hero-art">${heroArt(meta.imageAlt)}</figure>
+    <figure class="hero-art">${illustration("header.png", meta.imageAlt, { eager: true })}</figure>
 
     <div class="cta">
       <p class="hand cta-label">tell your agent to install it</p>
@@ -156,25 +162,25 @@ ${bar()}
         ${content.openIn.map((link) => `<a class="open" href="${escape(link.href)}">${escape(link.label)}</a>`).join("\n        ")}
         ${copyButton("Copy prompt", "agent-prompt")}
       </div>
-      <p class="fine">The open buttons type the prompt into your agent without sending it.</p>
-      <p class="fine req">${requirements} · free</p>
+      <p class="fine">The Open buttons fill in the prompt in your agent without sending it.</p>
+      <p class="fine req">${requirements.replace("macOS 27", "macOS\u00a027")} · free</p>
     </div>
   </section>
 
   <section class="compare" aria-labelledby="compare-title">
-    <h2 id="compare-title">${escape(compare.title)}</h2>
+    <h2 id="compare-title">${prose(compare.title)}</h2>
     <p class="section-lede">${prose(compare.body)}</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th scope="col"><span class="sr">Capability</span></th>${compare.columns.map((column, i) => `<th scope="col"${i === compare.columns.length - 1 ? ' class="us"' : ""}>${escape(column)}</th>`).join("")}</tr></thead>
-        <tbody>${compare.rows.map((row) => `<tr><th scope="row">${escape(row.label)}</th>${row.values.map((value, i) => `<td${i === row.values.length - 1 ? ' class="us"' : ""}>${mark(value)}</td>`).join("")}</tr>`).join("")}</tbody>
+        <thead><tr><th scope="col"><span class="sr">Capability</span></th>${compare.columns.map((column, i) => `<th scope="col"${i === compare.columns.length - 1 ? ' class="us"' : ""}>${prose(column)}</th>`).join("")}</tr></thead>
+        <tbody>${compare.rows.map((row) => `<tr><th scope="row">${prose(row.label)}</th>${row.values.map((value, i) => `<td${i === row.values.length - 1 ? ' class="us"' : ""}>${mark(value)}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>
     </div>
   </section>
 
   <section class="asks" aria-labelledby="asks-title">
     <h2 id="asks-title">Things you can just ask</h2>
-    <ul>${content.asks.map((ask) => `<li>“${escape(ask)}”</li>`).join("")}</ul>
+    <ul>${content.asks.map((ask) => `<li>“${prose(ask)}”</li>`).join("")}</ul>
   </section>
 
   <section class="features" id="how" aria-labelledby="how-title">
@@ -183,7 +189,7 @@ ${bar()}
       .map(
         (item) => `<article>
       <figure>${illustration(item.image, item.alt)}</figure>
-      <div class="feature-copy"><p class="hand feature-kicker">${escape(item.kicker)}</p><h3>${escape(item.title)}</h3><p>${prose(item.body)}</p></div>
+      <div class="feature-copy"><p class="hand feature-kicker">${prose(item.kicker)}</p><h3>${prose(item.title)}</h3><p>${prose(item.body)}</p></div>
     </article>`,
       )
       .join("\n    ")}
@@ -191,8 +197,8 @@ ${bar()}
 
   <section class="catalog" aria-labelledby="catalog-title">
     <h2 id="catalog-title">What your agent can use</h2>
-    <p class="section-lede">One operation catalog, the same from the CLI and from MCP.</p>
-    <dl>${content.capabilities.map((item) => `<div><dt>${escape(item.area)}</dt><dd>${prose(item.body)}</dd></div>`).join("")}</dl>
+    <p class="section-lede">The same operations from the command line or over MCP.</p>
+    <dl>${content.capabilities.map((item) => `<div><dt>${prose(item.area)}</dt><dd>${prose(item.body)}</dd></div>`).join("")}</dl>
   </section>
 
   <section class="setup" id="setup" aria-labelledby="setup-title">
@@ -212,12 +218,12 @@ ${bar()}
 
   <section class="faq" id="faq" aria-labelledby="faq-title">
     <h2 id="faq-title">Questions</h2>
-    ${content.faq.map((item) => `<details><summary>${escape(item.q)}</summary><p>${prose(item.a)}</p></details>`).join("\n    ")}
+    ${content.faq.map((item) => `<details><summary>${prose(item.q)}</summary><p>${prose(item.a)}</p></details>`).join("\n    ")}
   </section>
 </main>
 
 <main class="agent-view">
-  <p class="agent-banner"><span># You're reading the agent view. Same words as <a href="/llms.txt">/llms.txt</a></span> ${copyButton("Copy all", "agent-text")}</p>
+  <p class="agent-banner"><span># You're reading the agent view, the same words as <a href="/llms.txt">/llms.txt</a>.</span> ${copyButton("Copy all", "agent-text")}</p>
   <pre id="agent-text">${escape(content.llmsText())}</pre>
 </main>
 
@@ -251,7 +257,8 @@ ${footer()}
 export function build({ out = join(here, "dist"), siteUrl = defaultSiteUrl(), readme = readFileSync(join(here, "../../README.md"), "utf8") } = {}) {
   checkPromptMatchesReadme(readme);
   const origin = siteUrl.replace(/\/$/, "");
-  const images = ["header.png", heroMobile, ...content.features.map((item) => item.image)];
+  const drawings = ["header.png", ...content.features.map((item) => item.image)];
+  const images = [...drawings, ...drawings.map(mobileCut).filter(Boolean)];
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "art"), { recursive: true });
   writeFileSync(join(out, "index.html"), renderPage(origin));

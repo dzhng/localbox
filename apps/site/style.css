@@ -337,6 +337,10 @@ tbody th {
 thead .us {
   color: var(--blue);
 }
+/* The three answer columns share the width evenly, Localbox's included. */
+thead th:not(:first-child) {
+  width: 19%;
+}
 .yes,
 .no {
   font-size: 1.35rem;
@@ -517,7 +521,7 @@ td.us .yes {
   content: "";
   position: absolute;
   right: 6px;
-  top: 27px;
+  top: 23px;
   width: 16px;
   height: 16px;
   background:
@@ -602,6 +606,9 @@ td.us .yes {
   .features article:nth-of-type(even) figure {
     order: 0;
   }
+  .feature-copy p {
+    max-width: 40em;
+  }
 }
 @media (max-width: 520px) {
   body {
@@ -617,6 +624,12 @@ td.us .yes {
   .actions > * {
     flex: 1 1 100%;
     justify-content: center;
+  }
+  /* Drawings use the full phone width so their hand-lettered labels stay readable. */
+  .hero-art,
+  .features figure {
+    margin-left: -20px;
+    margin-right: -20px;
   }
   /* Keep all three columns on screen; the Localbox column is the point. */
   table {

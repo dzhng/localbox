@@ -52,7 +52,7 @@ export const compare = {
 };
 
 export const asks = [
-  "Use the Mac mini in the closet for tonight\u2019s full build.",
+  "Use the Mac mini in the closet for tonight's full build.",
   "Set up a sandbox with our toolchain and make it my default image.",
   "Give each of these three branches its own sandbox, on whichever Macs have room.",
   "Open a macOS sandbox, install Xcode with my Apple ID, and run the iOS tests.",
@@ -67,7 +67,7 @@ export const features = [
     alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent",
     kicker: "owned, not rented",
     title: "Every Mac you own, already paid for",
-    body: "A cloud sandbox is someone else's computer by the minute, wiped when the session ends. Sign in on each Mac you own with your email and it joins, even from another country. Your agent works on the machine it's on, names another, or asks Localbox for the roomiest. Start with the Mac you have; every Mac you add joins. No per-minute billing, no session limit.",
+    body: "A cloud sandbox is someone else's computer by the minute, wiped when the session ends. Sign in on each Mac you own with your email and it joins, even from another country. Your agent works on the Mac it's on, names another, or lets Localbox pick the one with the most room. Start with the Mac you have; every Mac you add joins. No per-minute billing, no session limit.",
   },
   {
     image: "01-still-there-next-week.png",
@@ -81,7 +81,7 @@ export const features = [
     alt: "Xiaohei builds freely inside a glass jar while your files sit untouched outside it",
     kicker: "Linux or macOS",
     title: "A sandbox, not your whole computer",
-    body: "Each sandbox is a whole computer, Linux or macOS, with a shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps: Localbox builds the base on your own Mac from Apple's restore image. SSH would hand your agent your own computer; a sandbox lets it run with permission prompts off, and the worst case is deleting the sandbox.",
+    body: "Each sandbox is a computer of its own, Linux or macOS, with a shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps: Localbox builds the base on your own Mac from Apple's restore image. SSH would hand your agent yours; a sandbox lets it run with permission prompts off, and the worst case is deleting the sandbox.",
   },
   {
     image: "03-outbound-only.png",
@@ -103,9 +103,9 @@ export const capabilities = [
   { area: "Sandboxes", body: "Linux or macOS. Create, rename, resize, sleep, wake and delete. Sized to the machine, durable by default, optional idle deletion." },
   { area: "Images", body: "Save any sandbox as an image, make one the default, copy it straight between your Macs, and start new sandboxes from it." },
   { area: "Machines", body: "Sign in with an email code. Place sandboxes locally, on a named machine, or automatically." },
-  { area: "Shell and files", body: "Run bounded commands or long jobs you can wait on, poll and cancel; list, read, write and remove files." },
+  { area: "Shell and files", body: "Run commands with a time limit, or long jobs you can wait on, check and cancel; list, read, write and remove files." },
   { area: "Browser and desktop", body: "Open and drive browser tabs; click, type, scroll and screenshot a 1440×900 desktop, Linux or macOS." },
-  { area: "Shared folders", body: "Share a host folder read-only or read-write, and read its access log." },
+  { area: "Shared folders", body: "Share a folder from your Mac, read-only or read-write, and read its access log." },
 ];
 
 export const humanSteps = [
@@ -125,7 +125,7 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and a full Mac makes room from its least recently used idle sandboxes, telling your agent which. Asleep, it saves its memory to disk and gives the RAM back; the installer checks your Mac is set up for it.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and when a Mac is full it puts the idle sandboxes used longest ago to sleep to make room, and tells your agent which. Asleep, it saves its memory to disk and gives the RAM back; the installer checks your Mac is set up for it.",
   },
   {
     q: "How do I sign in?",
@@ -133,7 +133,7 @@ export const faq = [
   },
   {
     q: "How are sandboxes isolated?",
-    a: "Each sandbox is a full Linux or macOS virtual machine run by Apple's own Virtualization framework, the one built into macOS, not a container, an emulator or a third-party hypervisor. It has its own kernel, disk and network, so nothing inside it can reach your Mac.",
+    a: "Each sandbox is a full Linux or macOS virtual machine run by Apple's own Virtualization framework, the one built into macOS, not a container, an emulator or a third-party hypervisor. It has its own kernel, disk and network, so nothing inside it reaches your Mac except a folder you choose to share.",
   },
   {
     q: "Can a sandbox run macOS?",
@@ -157,7 +157,7 @@ export const faq = [
   },
   {
     q: "What can the relay see?",
-    a: "The relay only matters when your agent runs somewhere other than your Macs. It authenticates, bounds and forwards requests, and it can observe their contents. The security model states that trust explicitly.",
+    a: `The relay only matters when your agent runs somewhere other than your Macs. It checks who is asking and passes the request to your Mac; like any relay, it could read what passes through it. The [security model](${links.security}) spells out exactly what it is trusted with.`,
   },
 ];
 
@@ -170,8 +170,8 @@ export function llmsText() {
 ## Why use it
 
 - **The user's hardware, not a rented cloud sandbox.** No per-minute bill, no session limit, nothing wiped when the session ends, and the code stays on machines the user owns.
-- **All the user's computers.** Wherever you run, on the user's laptop or in the cloud, work on the Mac you're on, name another, or let Localbox pick the roomiest. Cloud agents reach the user's Macs through an outbound relay, with no open port, VPN or SSH key.
-- **A whole computer, Linux or macOS.** A shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps, on the user's own Macs.
+- **All the user's computers.** Wherever you run, on the user's laptop or in the cloud, work on the Mac you're on, name another, or let Localbox pick the Mac with the most room. Cloud agents reach the user's Macs through an outbound relay, with no open port, VPN or SSH key.
+- **A computer of its own, Linux or macOS.** A shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps, on the user's own Macs.
 - **Set up once.** Save any sandbox as an image and start new sandboxes from it; images copy directly between the user's Macs.
 - **A sandbox, not the user's whole computer.** Safe to run with permissions off: the sandbox is the boundary, and the user's own files, credentials and screen are not shared with it.
 - **Durable.** Installed packages, files and browser profiles survive across sessions. Idle sandboxes sleep and wake with every process intact.
