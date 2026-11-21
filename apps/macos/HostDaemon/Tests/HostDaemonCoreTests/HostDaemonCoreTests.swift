@@ -129,7 +129,7 @@ final class HostDaemonCoreTests: XCTestCase {
     }
 
     func testResizeReportsRestart() async throws {
-        let ps = #"{"ok":true,"result":{"stdout":"40\n1 0 /sbin/init\n2 0 [kthreadd]\n80 1 /usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\n90 1 /usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock\n120 1 node server.js\n121 120 /usr/bin/python3 -m http.server\n41 40 ps -eo pid=,ppid=,args=\n"}}"#
+        let ps = #"{"ok":true,"result":{"stdout":"40\n1 0 /sbin/init\n2 0 [kthreadd]\n80 1 /usr/local/localbox/localbox-agent\n90 1 /usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock\n120 1 node server.js\n121 120 /usr/bin/python3 -m http.server\n41 40 ps -eo pid=,ppid=,args=\n"}}"#
         let factory = FakeBackendFactory { request in
             let operation = (try JSONSerialization.jsonObject(with: request) as? [String: Any])?["operation"] as? String
             return operation == "shell.exec" ? Data(ps.utf8) : request

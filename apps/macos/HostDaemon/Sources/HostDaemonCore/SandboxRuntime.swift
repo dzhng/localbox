@@ -412,7 +412,7 @@ public actor SandboxRuntime {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true).map(String.init)
             guard fields.count == 3, fields[0] != shell, fields[1] != shell, !fields[2].hasPrefix("[") else { return nil }
             let args = fields[2]
-            if args.contains("guest-agent") || args.contains("VSOCK-LISTEN") { return nil }
+            if args.contains("/usr/local/localbox/localbox-agent") || args.contains("VSOCK-LISTEN") { return nil } // Localbox's own agent and forwarder
             return URL(fileURLWithPath: String(args.split(separator: " ").first ?? "")).lastPathComponent
         }
     }
