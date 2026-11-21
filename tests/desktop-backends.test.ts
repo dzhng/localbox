@@ -115,7 +115,7 @@ test("on macOS the browser is launched in the session when CDP doesn't answer, o
   assert.deepEqual([first, second], [{ tabs: [] }, { tabs: [] }]);
   assert.deepEqual(opened, [["/usr/bin/open", "-n", "-a", "Google Chrome", "--args", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1",
     `--user-data-dir=${userDataDir}`, "--no-first-run", "--no-default-browser-check", "--no-startup-window"]]);
-  assert.deepEqual(JSON.parse(readFileSync(join(userDataDir, "Default", "Preferences"), "utf8")).signin, { allowed: false }, "a new profile starts with sign-in off");
+  assert.deepEqual(JSON.parse(readFileSync(join(userDataDir, "Default", "Preferences"), "utf8")).signin, { allowed: false, allowed_on_next_startup: false }, "a new profile starts with sign-in off");
 });
 
 test("desktop status never starts a browser: with CDP down it reports no tabs", async () => {

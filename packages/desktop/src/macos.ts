@@ -106,9 +106,10 @@ export interface MacChromeOptions {
 /**
  * What a new profile starts with: no sign-in (so no "Sign in to Chrome?" button) and no site asking to send
  * notifications. A sandbox's browser is driven by agents, so anything Chrome asks covers what they look at; an unmanaged
- * Mac ignores Chrome's managed policies, so the profile itself carries these.
+ * Mac ignores Chrome's managed policies, so the profile itself carries these. Chrome sets `allowed` from
+ * `allowed_on_next_startup` at every start, so both are off.
  */
-export const MAC_CHROME_PROFILE = { signin: { allowed: false }, profile: { default_content_setting_values: { notifications: 2 } } };
+export const MAC_CHROME_PROFILE = { signin: { allowed: false, allowed_on_next_startup: false }, profile: { default_content_setting_values: { notifications: 2 } } };
 
 /**
  * Starts Google Chrome in the desktop role's session through Launch Services (`open`), so it is an ordinary app of the
