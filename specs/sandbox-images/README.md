@@ -19,59 +19,65 @@ sandboxes. You already own them."
 
 ## Next Agent Prompt
 
-*Status 2026-11-21: planned, nothing built. Slice numbers start at 15 because
-`scripts/proof/run.ts` keys probes on a two-digit prefix and 00–14 belong to the
-durable-sandboxes probes.*
+*Status 2026-11-21: spikes 15, 16, 17, 19 passed (go); 18's grants work and its
+rerun records P6's fallback. Built and merged: 21, 22, 23, 24, 26, 27, 30, 31,
+32, 36. In flight on branches: 20 → 37, 25, 28, 29. Slice numbers start at 15
+because `scripts/proof/run.ts` keys probes on a two-digit prefix.*
 
-You are picking up the sandbox-images plan. Start with the spikes, in this order
-of priority, because each one can reopen a decision:
+You are picking up the sandbox-images plan. Where things stand:
 
-1. **[15 EFI spike](slices/15-efi-spike.md)** first. If it fails, stop and tell the
-   user: L1 falls back to a per-image kernel and initrd (the fork is written into
-   slices 23, 25 and 28), and the user decides whether to accept it.
-2. **macOS spikes 16 → 17 → 18 and 19** on tier `m` (macOS 27 host). A failure in
-   17's provisioning reopens L2 (agent decision; pick the fallback written there
-   and record it). A failure in 17's `csrutil` step or in 18 reopens Q3/Q12 (user
-   decision: stop and ask).
-3. **[20 hole-punch spike](slices/20-punch-spike.md)**: its tier `x` part is
-   blocked until the user has a second Mac on another network. That is exit 2,
-   never a reason to stop; the loopback and LAN parts gate the slice.
-
-Lane L (21, 22, 26, 31, 36, 37) needs no VM and no spike result except the boot
-store shape, so it may run in parallel with the spikes.
+- **Decisions the spikes settled:** L1 (EFI boot) holds, so no slice takes the
+  `linuxDirect` fork. L2 and Q3 hold: provisioning options plus one scripted
+  Recovery screen disable SIP with no human (spike 17). Recovery's `halt` leaves
+  the VM on, so builds stop it after csrutil. The darwin forwarder works (19).
+- **Next pickup, in priority order:**
+  1. Integrate the in-flight branches as they land (merge, rerun gates, re-verify
+     any real-VM probe whose code moved).
+  2. **33 darwin agent** once 18 is recorded (P4, P6), then **34 macOS base
+     build** and **35 macOS sandboxes** (tier `m`).
+  3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
+  4. **40 docs** last.
+- **Warnings:**
+  - Releases can't create sandboxes until slice 25 lands (the installer still
+    lays down the old template).
+  - Releases don't push agent updates until `LOCALBOX_GUEST_AGENT` is wired to
+    the app's `Contents/Resources/guest-agent/` (slice 25's installer work).
+  - Tier `l` daemons can fail with "socket path is too long" under a long
+    worktree path; run those probes from a short `git worktree add /tmp/<x>`.
+  - The private VNC server listens on every interface; `RecoveryVNC` always uses
+    a one-time VNC password.
 
 Keep green on every pass: `npm run build`, `npm test`,
 `swift test --package-path apps/macos/HostDaemon`, `npm run generate:snapshots`
-with no diff, and `npm run proof -- --through 14 --tier u,l` until slice 25
-rewrites probes 01, 02 and 10 for the image layout.
+with no diff, and the probes of every slice already done at the tiers it names.
 
 Before ending any pass, update this section: status line, the next pickup point,
 any blocker, and tick the TODO list.
 
 **TODO**
 
-- [ ] [15 EFI Linux boot and save/restore spike](slices/15-efi-spike.md)
-- [ ] [16 macOS install, clone identity and suspend spike](slices/16-macos-install-spike.md)
-- [ ] [17 macOS provisioning, bootstrap and SIP spike](slices/17-macos-provision-spike.md)
+- [x] [15 EFI Linux boot and save/restore spike](slices/15-efi-spike.md)
+- [x] [16 macOS install, clone identity and suspend spike](slices/16-macos-install-spike.md)
+- [x] [17 macOS provisioning, bootstrap and SIP spike](slices/17-macos-provision-spike.md)
 - [ ] [18 macOS TCC and desktop helper spike](slices/18-macos-tcc-spike.md)
-- [ ] [19 darwin vsock forwarder spike](slices/19-darwin-vsock-spike.md)
+- [x] [19 darwin vsock forwarder spike](slices/19-darwin-vsock-spike.md)
 - [ ] [20 hole-punch and transfer spike](slices/20-punch-spike.md) (tier x waits on the user's second Mac)
-- [ ] [21 catalog routing and image operations](slices/21-catalog-routing.md)
-- [ ] [22 Convex image records](slices/22-convex-images.md)
+- [x] [21 catalog routing and image operations](slices/21-catalog-routing.md)
+- [x] [22 Convex image records](slices/22-convex-images.md)
 - [x] [23 VM spec and boot store](slices/23-vmspec-bootstore.md)
 - [x] [24 image store on the Mac](slices/24-image-store.md)
 - [ ] [25 the built-in linux image ships as an image](slices/25-linux-image-bundle.md)
-- [ ] [26 durable host operations](slices/26-host-operations.md)
-- [ ] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
+- [x] [26 durable host operations](slices/26-host-operations.md)
+- [x] [27 control lane and freeze lifecycle](slices/27-control-lane-freeze.md)
 - [ ] [28 image create --from](slices/28-image-capture.md)
 - [ ] [29 sandbox create --image (image already here)](slices/29-create-from-image.md)
-- [ ] [30 image catalog commands](slices/30-image-catalog-commands.md)
-- [ ] [31 single-binary guest agent](slices/31-agent-binary.md)
-- [ ] [32 guest agent self-update](slices/32-agent-self-update.md)
+- [x] [30 image catalog commands](slices/30-image-catalog-commands.md)
+- [x] [31 single-binary guest agent](slices/31-agent-binary.md)
+- [x] [32 guest agent self-update](slices/32-agent-self-update.md)
 - [ ] [33 darwin guest agent](slices/33-darwin-agent.md)
 - [ ] [34 macOS base build](slices/34-macos-base-build.md)
 - [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
-- [ ] [36 placement with images](slices/36-placement-images.md)
+- [x] [36 placement with images](slices/36-placement-images.md)
 - [ ] [37 transfer library](slices/37-transfer-library.md)
 - [ ] [38 image copy](slices/38-image-copy.md)
 - [ ] [39 create with copy](slices/39-create-with-copy.md)
