@@ -66,39 +66,48 @@ step 8. The header art and social card lost the old drawn tagline. Choices: the
 `40 —` entries in [choices](../choices.md).
 
 **Visual gate.** Shots in [evidence/40-site](../evidence/40-site/): `before/` is the
-site built at `dfa1d49`, `after/` this slice, `crops/` the features read up close,
-`compare-metrics.json` the pair metrics. Dark-scheme captures were pixel-identical
-to light (the site has no dark theme), so only light is kept.
+site built at `dfa1d49`, `pre-critique/` this slice's first rewrite (what the
+critique below started from), `after/` the final site, `crops/` the zooms the
+critique read, `compare-metrics.json` before→pre-critique and
+`compare-metrics-critique.json` pre-critique→after. Dark-scheme captures were
+pixel-identical to light (the site has no dark theme), so only light is kept.
+Shots are taken after fonts, every image decode and transitions settle; `after/`
+adds features at mobile and tablet and a mixed open/closed FAQ.
 
-- compare-screenshots: every pair moves by copy only (parity distance 0.05–0.21,
-  largest on the mobile hero, where the headline is two lines longer). No layout
-  regressions: the table keeps its columns, the catalog stays a 3×2 grid, the
-  art's painted-out tagline leaves no residue. The new headline holds at 390,
-  820, 1024 and 1440 px; on mobile "own them" is kept together. Verdict: candidate
-  accepted.
-- screenshot-critique (no-subagent fallback; this pass was told not to start
-  subagents). The case against each, then the call:
-  - Hero: the art now has an empty band under the wordmark. It is about the gap
-    the tagline had, and the card follows it at the same rhythm. Pass.
-  - Hero, mobile: the headline takes four lines and pushes the art down. The lede
-    and the CTA card still sit above 1010 px, as before (1031 px). Pass.
-  - Compare: the column headers wrap on mobile. They did before; all six rows
-    read. Pass.
-  - Features: "A whole computer, not your whole computer" could read as a
-    contradiction. The kicker "Linux or macOS" and the body's SSH sentence settle
-    it. Pass, copy note for human review.
-  - Catalog: "Shell and files" packs two areas in one card. Its height matches its
-    row. Pass.
-  - FAQ (open) and the agent view: long answers wrap within the column; the
-    agent view shows the new `llms.txt` text. Pass.
-  Rerun with a fresh agent when one is allowed.
+- compare-screenshots, before→pre-critique: every pair moved by copy only
+  (distance 0.05–0.21); no layout regressions. Pre-critique→after: movement sits
+  where the fixes are: the mobile hero (stacked art, 0.19), desktop features
+  (trimmed drawings, new headings, 0.12), mobile compare and FAQ (copy, icon,
+  0.07–0.08); everything else under 0.04. Edge density rises wherever a drawing
+  got larger and no frame is empty. Verdict: candidate accepted.
+- screenshot-critique, by one fresh agent that saw only the shots and the
+  intended message (re-run on each recapture through the same agent):
+  - Round 1 failed. Should-fix: "A sandbox, not your whole computer" over a
+    body opening "Each sandbox is a whole computer"; feature-drawing labels at
+    4–6 px on phones; FAQ answers that contradicted shared folders or pointed at
+    an unlinked security model; jargon (bounded, host folder, operation catalog,
+    roomiest, least recently used). All fixed.
+  - Round 2 failed on the share-a-folder drawing's labels on phones (5–6 px).
+    Fixed with a phone cut.
+  - Round 3: **pass with nits only** for layout and copy. Its remaining nits:
+    mobile drawings run within about 10 px of the screen edge, a one-word last
+    line in two FAQ answers, "MCP" unexplained, the relay answer's honesty
+    "may worry", the bare "Free." bullet in `llms.txt`, "already own" four
+    times, the asks cards' speech-bubble corner, tight mobile table headers.
+    Left as is.
+  - Its two should-fix items are **art direction**, open for human review: the
+    black character plays a different role in each drawing (digger, courier,
+    the agent in the jar, the relay climber, two of them in share-a-folder)
+    and the agent is drawn three ways; the hero's sandbox is a tray of sand
+    beside the computers rather than one of them, with the wordmark under the
+    curve possibly reading as its label. Both need new drawings, not edits.
 - Human review: not held for (this pass was told not to stop); the shots are in
   the evidence folder.
 
-**Gates.** See the pass report: `tests/skill-commands.test.ts`,
-`apps/site/build.test.mjs`, `npm run site:build`, `npm run build`, `npm test`.
-`npm run proof -- --through 39 --tier u,l` was not run in this pass (no code
-changed).
+**Gates.** Green after the critique fixes: `tests/skill-commands.test.ts` (3),
+`apps/site/build.test.mjs` (8), `npm run site:build`, `npm run build`, `npm test`
+(277). `npm run proof -- --through 39 --tier u,l` was not run (no product code
+changed; only the site, docs and art).
 
 **Spec gaps.**
 
