@@ -21,7 +21,7 @@ sandboxes. You already own them."
 
 *Status 2026-11-21: every spike passed (20 with its throughput gate restated, choice
 20). Built and merged: 21–28, 30–33, 36. In flight on branches: 29, 34 (built, probe
-34 green at u, s, m), 37. Slice
+34 green at u, s, m), 35 (built on 34, probe 35 green at s, m), 37. Slice
 numbers start at 15 because `scripts/proof/run.ts` keys probes on a two-digit
 prefix.*
 
@@ -34,9 +34,11 @@ You are picking up the sandbox-images plan. Where things stand:
 - **Next pickup, in priority order:**
   1. Integrate the in-flight branches as they land (merge, rerun gates, re-verify
      any real-VM probe whose code moved).
-  2. **35 macOS sandboxes** (tier `m`) on slice 34's build. The desktop role
-     answers macOS 27's window-picker prompt through Accessibility (choice 34);
-     a macOS build needs about 47 GiB free plus any IPSW bytes not cached.
+  2. **35 macOS sandboxes** is built on `t3/macos-sandboxes-e2e-proof` (on 34). The base
+     image's desktop still shows macOS's background-activity and Chrome notification
+     banners and a stray `about:blank` tab (slice 35's review); tidy them in the
+     build when convenient. A macOS build needs about 47 GiB free plus any IPSW
+     bytes not cached; a helper change needs a new image (choice 33).
   3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
   4. **40 docs** is done on `t3/sandbox-images-docs-positioning` (README, site,
      `llms.txt`, skill, SECURITY.md, positioning, runbook step 8). When 34 and the
@@ -81,7 +83,7 @@ any blocker, and tick the TODO list.
 - [x] [32 guest agent self-update](slices/32-agent-self-update.md)
 - [x] [33 darwin guest agent](slices/33-darwin-agent.md)
 - [x] [34 macOS base build](slices/34-macos-base-build.md)
-- [ ] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
+- [x] [35 macOS sandboxes](slices/35-macos-sandboxes.md)
 - [x] [36 placement with images](slices/36-placement-images.md)
 - [x] [37 transfer library](slices/37-transfer-library.md)
 - [ ] [38 image copy](slices/38-image-copy.md)

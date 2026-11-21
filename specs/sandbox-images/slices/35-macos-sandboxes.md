@@ -1,5 +1,41 @@
 # 35 macOS sandboxes
 
+**Outcome 2026-11-21: built; probe 35 green at tiers s and m.** Evidence:
+[35-macos-sandboxes.json](../evidence/35-macos-sandboxes.json), [the desktop](../evidence/35-desktop.jpg),
+[with the Apple menu open](../evidence/35-menu-open.jpg), [the browser](../evidence/35-browser.jpg).
+
+- A real daemon on this Mac built macOS 27.2.1 to `ready` in 286 s (IPSW cached), then ran every operation on a
+  sandbox from it: `sw_vers`, desktop screenshots (real frames, no window-picker prompt, also with a menu open:
+  slice 33's one-frame `SCStream`), `browser.open` + a screenshot of the page, sleep (hibernate) and wake with a PID
+  surviving, `image create --from` (sync-only freeze, stall 25–71 ms across runs, 30 GB image by clone), a second
+  sandbox from it with a new `VZMacMachineIdentifier` and a different platform UUID in the guest, and a third macOS
+  sandbox: with two idle it sleeps the least recently used (`made_room`); with both busy, waking it answers
+  `machine_full` "… already runs 2 macOS sandboxes, the most macOS allows" and never a Virtualization error. Once one
+  is idle again, the wake sleeps it and restores the slept one from its state. A sandbox answers 17–28 s after create.
+  The probe deletes everything it made.
+- Tier s: `AdmissionMacCapTests` is `testThirdMacOSSandboxSleepsOneOrIsRefused` and
+  `testResizeOnDarwinReportsOnlyUserProcesses` in `HostDaemonCoreTests` (choice 35).
+- **The real run found two bugs the fakes couldn't:**
+  1. A wake after sleep cold-booted every macOS sandbox ("could not restore its saved state: guest channel is
+     unavailable"), losing every process. A restored macOS guest closes the first vsock connection at once; a dial a
+     second later attaches. Opening the request lane now dials again when it closes before the ready frame, within
+     the same 120 s (`GuestLane.open`, `testGuestLaneDialsAgainWhenTheGuestClosesBeforeReady`).
+  2. The first screenshot of a fresh sandbox could show macOS's window-picker prompt: macOS draws it over the
+     session's first captured frame, before the guard (once a second) presses Allow. The desktop role now makes that
+     first capture itself at start and screenshots wait for it (`settle-capture-prompt`, `tests/capture-prompt.test.ts`).
+     macOS records the approval for 30 days (`ScreenCaptureApprovals.plist`), so the build's `tcc` step waits for
+     the record and every image carries it; each sandbox's settle covers it after that.
+  Also found: `nohup` exits at once under the darwin agent (no console session), so `(cmd &)` starts a process
+  that survives; not a product change.
+- **Human review (non-blocking): accepted, with follow-ups.** The three shots were opened in Preview; nobody answered,
+  and the decision was made on the evidence. An unprimed critique judged all three real, complete captures (sharp,
+  1440x900, menu fully captured, example.com loaded, no prompt). Its two crop findings were the reviewer's crop
+  offsets, not the captures. Left for the base image (slice 34) to tidy, none blocking: macOS "App Background
+  Activity" banners (localbox-agent, GoogleUpdater) and two "Google Chrome Notifications" banners cover the top right,
+  over Chrome's toolbar end in the browser shot; Chrome opens on a stray `about:blank` tab with its "Sign in to Chrome?"
+  first-run button; the screen-recording indicator dot shows beside the clock.
+- Not done here: the margin on the first-boot wait (delegated) stays at 120 s; measured boots answer in 17–28 s.
+
 **Unlocks:** Q2 and Q12 end to end. `localbox sandbox create --image macos` gives a
 sandbox where every operation works, it sleeps and wakes, saving it as an image
 works, and a third running macOS VM is handled by admission (E9–E12).

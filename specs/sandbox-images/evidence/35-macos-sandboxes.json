@@ -1,0 +1,242 @@
+{
+  "checks": [
+    {
+      "name": "the daemon starts and builds a macOS image (image create --macos, the IPSW cache seeded by APFS clone)",
+      "ok": true
+    },
+    {
+      "name": "sandbox create from the macOS image boots; shell exec -- sw_vers says macOS 27",
+      "ok": true
+    },
+    {
+      "name": "desktop screenshot is a real frame (not blank) with no window-picker prompt, then and for 15 s after",
+      "ok": true
+    },
+    {
+      "name": "with the Apple menu open, desktop screenshot still captures (one SCStream frame) and shows the menu",
+      "ok": true
+    },
+    {
+      "name": "browser open https://example.com, then a desktop screenshot shows the page, and browser screenshot answers",
+      "ok": true
+    },
+    {
+      "name": "sandbox sleep hibernates it; sandbox start restores it and a process started before is still running",
+      "ok": true
+    },
+    {
+      "name": "image create --from the running macOS sandbox saves it (sync-only freeze), the stall reported, and it keeps running",
+      "ok": true
+    },
+    {
+      "name": "a second sandbox from the captured image boots with the file, a different machine identifier and its own identity",
+      "ok": true
+    },
+    {
+      "name": "a third macOS sandbox, with two running and idle, sleeps the least recently used one; never more than two macOS VMs run",
+      "ok": true
+    },
+    {
+      "name": "with both running sandboxes busy, waking the third answers machine_full with macOS's limit as the reason, not a Virtualization error",
+      "ok": true
+    },
+    {
+      "name": "once mac-two is idle again, waking mac-one sleeps mac-two and restores mac-one from the state it was slept with",
+      "ok": true
+    },
+    {
+      "name": "everything the probe made is removed: sandboxes, the captured image, the base",
+      "ok": true
+    }
+  ],
+  "host_macos": "27.0.1",
+  "ipsw": {
+    "build": "26B131",
+    "file_name": "UniversalMac_27.2.1_26B131_Restore.ipsw",
+    "ok": true,
+    "size_bytes": 25595954706,
+    "url": "https://updates.cdn-apple.com/2026FallFCS/c202a724-db7e-4d56-917b-110aa0226507/UniversalMac_27.2.1_26B131_Restore.ipsw",
+    "version": "27.2.1"
+  },
+  "build_seconds": 286,
+  "base": {
+    "reused": false,
+    "min_macos": "27.0",
+    "size_bytes": 29733359616,
+    "agent_version": "0.1.1+a927b25b1002"
+  },
+  "first_sandbox": {
+    "create_seconds": 18,
+    "sw_vers": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2.1\nBuildVersion:\t\t26B131",
+    "actions": [
+      {
+        "kind": "created",
+        "detail": "created mac-one with 4 CPUs and 4 GiB; disk cloned"
+      },
+      {
+        "detail": "cold-booted mac-one",
+        "kind": "cold_booted"
+      }
+    ],
+    "hostname": "mac-one",
+    "sandbox_id_marker": "sandbox_p35_a"
+  },
+  "desktop_status": {
+    "phase": "ready",
+    "work": 0,
+    "browser_tabs": [],
+    "width": 1440,
+    "height": 900,
+    "viewers": 0
+  },
+  "desktop": {
+    "first": {
+      "file": "specs/sandbox-images/evidence/35-desktop.jpg",
+      "distinct_colours": 2199,
+      "height": 900,
+      "luminance_mean": 123,
+      "luminance_stddev": 60.8,
+      "ok": true,
+      "picker_prompt": false,
+      "text": "Finder File Edit View Go Window Help Q B Sat Nov 21 1:59PM • NOVEMBER Los Angeles 68° App Background Activity \"GoogleUpdater\" can run in the background. You can manage background activity in Login Items & Extensions. 12 13 15 16 17 18 19 20 22 23 24 25 26 27 28 29 30 Mostly Cloudy H:68° L:47° App Background Activity \"localbox-agent\" can run in the background. You can manage background activity in Login Items & Extensions. Photos will appear here when they are finished processing 21 9 #tv",
+      "width": 1440
+    },
+    "later": [
+      {
+        "picker_prompt": false,
+        "luminance_stddev": 60.8
+      },
+      {
+        "picker_prompt": false,
+        "luminance_stddev": 60.8
+      },
+      {
+        "picker_prompt": false,
+        "luminance_stddev": 60.8
+      }
+    ],
+    "prompts_answered": [],
+    "capture_approval": "\"/usr/local/localbox/localbox-agent\" => {\n    \"kScreenCaptureAlertableUsageCount\" => 10\n    \"kScreenCaptureApprovalLastAlerted\" => 2026-11-21 21:59:13 +0000\n    \"kScreenCaptureApprovalLastUsed\" => 2026-11-21 22:00:04 +0000\n    \"kScreenCapturePrivacyHintDate\" => 2026-12-21 21:59:13 +0000\n    \"kScreenCapturePrivacyHintPolicy\" => 2592000\n  }"
+  },
+  "menu_open": {
+    "clicks": 1,
+    "file": "specs/sandbox-images/evidence/35-menu-open.jpg",
+    "distinct_colours": 1975,
+    "height": 900,
+    "luminance_mean": 123,
+    "luminance_stddev": 61.2,
+    "ok": true,
+    "picker_prompt": false,
+    "text": "Finder File About This Mac • System Settings... A App Store Recent Items Force Quit... Sleep Restart... Shut Down... Lock Screen Log Out Localbox... Edit View Go Window Help Q B Sat Nov 21 2:00PM o : Angeles App Background Activity \"GoogleUpdater\" can run in the background. You can manage background activity in Login Items & Extensions. Stly Cloudy 8° L:47° App Background Activity \"localbox-agent\" can run in the background. You can manage background activity in Login Items & Extensions. ẠỌ¿3Q ‹en they are finished processing 21 9 #tv",
+    "width": 1440
+  },
+  "browser": {
+    "opened": {
+      "generation": 1,
+      "tab_id": "84D95B19B94226EE5433F2F5C435B6A4",
+      "title": "",
+      "url": "https://example.com/",
+      "focused": true
+    },
+    "desktop": {
+      "file": "specs/sandbox-images/evidence/35-browser.jpg",
+      "distinct_colours": 2064,
+      "height": 900,
+      "luminance_mean": 193,
+      "luminance_stddev": 70.9,
+      "ok": true,
+      "picker_prompt": false,
+      "text": "Chrome File Edit View History Bookmarks Profiles Tab Window Help Q Sat Nov 21 2:00PM o < →G about:blank example.com • Example Domain + g Sign In w \"Google Chrome\" Notifications Notifications may include alerts, sounds, and icon badges. \"Google Chrome\" Notifications Notifications may include alerts, sounds, and icon badges. App Background Activity \"GoogleUpdater\" can run in the background. You can manage background activity in Login Items & Extensions. This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes. App Background Activity \"localbox-agent\" can run in the background. You can manage background activity in Login Items & Extensions. L'usage de ce domaine est réservé à des exemples de documentation, sans autorisation préalable. Il ne s'agit pas d'un service ; son utilisation à des fins de test ou de surveillance est à éviter. Данный домен предназначен для использования в примерах документации без необходимости получения предварительного разрешения. Это не сервис; не рекомендуется его использование для тестирования и мониторинга. Este dominio está destinado al uso en ejemplos de aaaeada donesaa ae aarica 21 9 stV",
+      "width": 1440
+    },
+    "browser_screenshot": {
+      "mime": "data:image/png;base64,",
+      "bytes": 96246
+    }
+  },
+  "sleep_wake": {
+    "pid": "776",
+    "slept": [
+      {
+        "kind": "slept",
+        "detail": "hibernated mac-one: saved its state and released its 4 GiB"
+      }
+    ],
+    "woke": [
+      {
+        "kind": "woke",
+        "detail": "restored mac-one from its saved state"
+      }
+    ],
+    "alive": "alive"
+  },
+  "capture": {
+    "stall_ms": 66,
+    "result": {
+      "disk": "cloned",
+      "os": "macos",
+      "stall_ms": 66,
+      "sandbox_id": "sandbox_p35_a",
+      "size_bytes": 30428164096
+    },
+    "size_bytes": 30428164096,
+    "freeze": "sync only on darwin (slice 27): the guest flushes, the host pauses the VM around the clone"
+  },
+  "second_sandbox": {
+    "create_seconds": 24,
+    "platform_uuid_differs": true,
+    "identifier_differs": true,
+    "identity": "sandbox_p35_b\nmac-two"
+  },
+  "third": {
+    "create_seconds": 22,
+    "response": [
+      {
+        "detail": "created mac-three with 4 CPUs and 4 GiB; disk cloned",
+        "kind": "created"
+      },
+      {
+        "kind": "made_room",
+        "detail": "slept mac-one (4 GiB) to make room"
+      },
+      {
+        "kind": "cold_booted",
+        "detail": "cold-booted mac-three"
+      }
+    ]
+  },
+  "refused": {
+    "retryable": false,
+    "code": "machine_full",
+    "details": {
+      "needed_bytes": 4294967296,
+      "budget_bytes": 19327352832,
+      "sandboxes": [
+        {
+          "name": "mac-two",
+          "sandbox_id": "sandbox_p35_b",
+          "memory_bytes": 4294967296,
+          "running_jobs": 1
+        },
+        {
+          "sandbox_id": "sandbox_p35_c",
+          "name": "mac-three",
+          "memory_bytes": 4294967296,
+          "running_jobs": 1
+        }
+      ],
+      "reserved_bytes": 8589934592
+    },
+    "message": "mac-one is a macOS sandbox, and this Mac already runs 2 macOS sandboxes, the most macOS allows; none of them can sleep: mac-two (4 GiB, 1 running job), mac-three (4 GiB, 1 running job)"
+  },
+  "woke_after_room": [
+    {
+      "detail": "slept mac-two (4 GiB) to make room",
+      "kind": "made_room"
+    },
+    {
+      "kind": "woke",
+      "detail": "restored mac-one from its saved state"
+    }
+  ]
+}

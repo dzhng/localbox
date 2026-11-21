@@ -13,37 +13,38 @@
       "ok": true
     }
   ],
-  "stall_ms": 94,
+  "stall_ms": 96,
   "operation": {
-    "key": "p28-1795285933657-3",
-    "updated_at": 1795285933758,
-    "started_at": 1795285933658,
-    "subject": "image_p28",
+    "kind": "image.capture",
     "result": {
       "disk": "cloned",
       "os": "linux",
-      "stall_ms": 94,
+      "stall_ms": 96,
       "sandbox_id": "sandbox_p28_source",
-      "size_bytes": 916717568
+      "size_bytes": 790110208
     },
-    "kind": "image.capture",
+    "started_at": 1795299534827,
+    "updated_at": 1795299534934,
+    "state": "succeeded",
+    "subject": "image_p28",
+    "key": "p28-1795299534825-3",
     "progress": {
       "phase": "committing"
-    },
-    "state": "succeeded"
+    }
   },
   "manifest": {
-    "agent_version": "0.1.1+a9360f0b3fb5",
+    "agent_version": "0.1.1+a927b25b1002",
     "image_id": "image_p28",
     "os": "linux",
-    "size_bytes": 916717568
+    "size_bytes": 790110208
   },
   "new_sandbox": {
-    "boot_ms": 2192,
+    "boot_ms": 1679,
+    "kernel": "6.8.0-151-generic",
     "ok": true,
     "ready": true,
-    "stdout": "written-before-capture\n13a545a9291244a1a52a8e503cd3c690\n",
+    "stdout": "written-before-capture\na854a21bc7da49708a90f45c33cb2464\n",
     "uname": "aarch64"
   },
-  "source_machine_id": "948a952eb04a411a8dc875336603d8e4"
+  "source_machine_id": "8b3052831c764d2da1d85222c81b81e8"
 }
