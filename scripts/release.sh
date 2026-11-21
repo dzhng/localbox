@@ -124,10 +124,11 @@ PY
 fi
 
 npm --prefix "$ROOT" run build
+npm --prefix "$ROOT" run build:guest-agent -- --release-version "$VERSION"
 swift build --package-path "$ROOT/apps/macos/HostDaemon" -c release
 
 APP="$STAGE/Localbox.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/vm"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/vm" "$APP/Contents/Resources/guest-agent"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -160,6 +161,10 @@ cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.connector.plist" "$APP/Co
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
 cp "$LOCALBOX_KERNEL" "$APP/Contents/Resources/vm/vmlinuz"
 cp "$LOCALBOX_INITRD" "$APP/Contents/Resources/vm/initrd"
+# The host is the authority on the guest agent; images only carry a copy. Signing the app seals these as resources
+# without rewriting their bytes, so the digests in agent-version.json stay true.
+cp "$ROOT/dist/guest-agent/localbox-agent-linux-arm64" "$ROOT/dist/guest-agent/localbox-agent-darwin-arm64" \
+  "$ROOT/dist/guest-agent/agent-version.json" "$APP/Contents/Resources/guest-agent/"
 
 CLI="$STAGE/localbox-cli"
 mkdir -p "$CLI/dist" "$CLI/bin"

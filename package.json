@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:workspaces": "turbo run build",
+    "build:guest-agent": "tsx scripts/build-guest-agent.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "test:workspaces": "turbo run test",
     "contract:probe": "tsx apps/cli/src/index.ts contract probe",

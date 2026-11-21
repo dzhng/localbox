@@ -1,6 +1,7 @@
-dist/vm-image
+# Of dist/, the image needs only the guest agent binary.
+dist/*
+!dist/guest-agent
 apps/macos/**/.build
 node_modules
 .git
-dist/release
 .release-signing

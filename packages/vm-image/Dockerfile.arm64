@@ -125,10 +125,12 @@ RUN if [ "$PROFILE" = full ]; then \
 # guest agent establishes each sandbox's identity from the host's hello.
 # IgnoreCarrierLoss: a restore drops the NIC's carrier for ~50 ms; without it
 # networkd discards the DHCP config (and the DNS server) until DHCP reruns.
-COPY dist/ /opt/localbox/dist/
+# The agent is the self-contained binary from `npm run build:guest-agent`: it carries its own runtime, so the
+# image's Node is a user tool, not something the agent depends on.
+COPY dist/guest-agent/localbox-agent-linux-arm64 /usr/local/localbox/localbox-agent
 RUN install -d -m 0755 /run/localbox /var/lib/localbox \
   && install -d -m 0755 /etc/systemd/system \
-  && printf '[Unit]\nDescription=Localbox guest agent (persistent; outlives host connections)\n\n[Service]\nType=simple\nExecStart=/usr/bin/node /opt/localbox/dist/apps/guest-agent/src/index.js\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nKillMode=process\nRuntimeDirectory=localbox\nRuntimeDirectoryPreserve=yes\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\nEnvironment=LOCALBOX_AGENT_SOCKET=/run/localbox/agent.sock\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
+  && printf '[Unit]\nDescription=Localbox guest agent (persistent; outlives host connections)\n\n[Service]\nType=simple\nExecStart=/usr/local/localbox/localbox-agent\nStandardOutput=journal+console\nStandardError=journal+console\nRestart=always\nRestartSec=0\nKillMode=process\nRuntimeDirectory=localbox\nRuntimeDirectoryPreserve=yes\nEnvironment=LOCALBOX_ROOT=/\nEnvironment=LOCALBOX_READINESS_MARKER=/run/localbox/ready\nEnvironment=LOCALBOX_AGENT_SOCKET=/run/localbox/agent.sock\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-guest.service \
   && printf '[Unit]\nDescription=Forward vsock port 1024 to the Localbox guest agent\nAfter=localbox-guest.service\nWants=localbox-guest.service\n\n[Service]\nType=simple\nExecStart=/usr/bin/socat VSOCK-LISTEN:1024,reuseaddr,fork UNIX-CONNECT:/run/localbox/agent.sock,retry=600,interval=0.1\nRestart=always\nRestartSec=0\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/localbox-vsock.service \
   && systemctl enable localbox-guest.service localbox-vsock.service \
   && printf '[Match]\nName=en*\n\n[Network]\nDHCP=yes\nIgnoreCarrierLoss=yes\n' > /etc/systemd/network/20-nat.network \
