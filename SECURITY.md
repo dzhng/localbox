@@ -26,9 +26,9 @@ Authorization grants access to the VM as a whole. The CLI and MCP enforce the
 same authorization decision and the same operation permissions, because both
 come from one operation catalog.
 
-The host keeps the guest agent inside every VM current: when a guest connects
-with an older agent, the host pushes its own build over the VM's private
-channel and the agent replaces itself.
+The host keeps the guest agent inside every VM current: when a guest's agent
+build differs from the one the host ships, older or newer, the host pushes its
+own build over the VM's private channel and the agent replaces itself.
 
 ## macOS guests run with SIP off
 
@@ -47,9 +47,10 @@ Virtualization framework between the guest and the Mac, are untouched.
 Building the macOS base is the one time a macOS guest is reachable other than
 through its agent:
 
-- The base is installed on the Mac from Apple's restore image, downloaded from
-  Apple. Nothing macOS-side comes from Localbox; Chrome comes from Google's own
-  installer.
+- macOS comes from Apple: the base is installed on the Mac from Apple's restore
+  image, downloaded from Apple. Chrome comes from Google's own installer.
+  Localbox adds only its guest agent, its vsock forwarder and its desktop
+  helper, shipped inside the signed app.
 - The build turns on Remote Login in the guest with a random password that lives
   only in the building process's memory, installs the agent over SSH, then turns
   Remote Login off and discards the password before the image is saved. The

@@ -3,7 +3,11 @@
 The service inside every sandbox that answers the host's requests. It speaks
 the length-prefixed JSON frame protocol of
 [`packages/guest-gateway`](../../packages/guest-gateway/src), which owns
-dispatch, jobs and activity; this app only wires that gateway to a transport.
+dispatch, jobs and activity. This app owns what is specific to running as the
+agent of one VM: wiring the gateway to its sockets, the sandbox's identity on
+the guest system, its own version and self-update, and on darwin the TCC
+grants, the link between its two roles and the guard for macOS's capture
+prompt ([`src`](src), one file each).
 
 ## Why it is a persistent socket service
 
@@ -42,8 +46,9 @@ and exits, and its supervisor starts the new one. The VM keeps running, and so
 does every process the agent started. An update waits while a job runs
 (`deferred`): the job table lives in this process and would not survive it.
 An agent run from source has no binary of its own and refuses updates. On
-darwin a replaced binary loses its screen-capture grant (spike 18), so after
-every swap the system role rewrites its TCC rows before answering `updated`.
+darwin a replaced binary loses its screen-capture grant (measured; its
+Accessibility and input-posting grants survive), so after every swap the system
+role rewrites its TCC rows before answering `updated`.
 
 ## darwin: two roles
 
@@ -67,7 +72,11 @@ post input, so the darwin binary runs twice
   was replaced when it redials and exits for launchd to start the new one.
 
 `localbox-agent --grant-tcc` (as root, with the desktop user logged in)
-writes the TCC rows; an image build runs it once after `install.sh`. The build
+writes the TCC rows; an image build runs it once after `install.sh`. macOS 27
+still puts a "bypass the private window picker" prompt over a granted capture,
+and no setting an unmanaged Mac keeps across a reboot turns it off, so the
+desktop role keeps the helper's prompt guard running, which presses Allow
+whenever the prompt appears. The build
 output's `darwin/` holds everything else the build installs (`install.sh`, the
 units, the helper and the forwarder), so the host app ships all of it.
 

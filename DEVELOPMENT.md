@@ -71,7 +71,9 @@ automatic placement. Failures leave the prior state intact.
 ## Destructive actions are explicit
 
 Deleting a sandbox is the one way to discard its disk; `sandbox delete` takes an
-optional `--confirm NAME` that must match. Update, rollback and uninstall
+optional `--confirm NAME` that must match. Deleting an image is the one way to
+discard an image's files; `image delete` takes the same `--confirm NAME`, and
+never touches a sandbox made from the image. Update, rollback and uninstall
 preserve every sandbox's disk. Project-local skills are never touched; a global
 skill copy Localbox did not write is backed up before agent setup replaces it.
 
@@ -115,6 +117,36 @@ are smoke entry points; set
 `LOCALBOX_LOCAL_TRANSPORT=fixture` to run them against the in-process fixture
 sandbox instead of a daemon. The [website](apps/site/README.md) has its own build and checks.
 
+## Proofs
+
+A spec's slices are judged by probes (`scripts/proof/probes`), run with
+`npm run proof -- NN --tier …` ([`run.ts`](scripts/proof/run.ts)): one JSON
+verdict line each, exit 0 pass, 1 fail, 2 blocked on a missing input it names.
+A probe implements the tiers its claims need:
+
+| Tier | What runs | Budget |
+| --- | --- | --- |
+| u | `node:test` and `convex-test`, in process | < 30 s |
+| s | `swift test --package-path apps/macos/HostDaemon` | < 60 s |
+| l | local Convex, `dev:local` and fixture machines | < 2 min |
+| v | real Apple Virtualization on this Mac | < 6 min |
+| m | real macOS guests | < 10 min with the base cached; the first build up to 45 min |
+| x | Resend, the deployed stack and a real second Mac | manual |
+
+A fixture is never evidence for a real-VM claim: hibernation, NAT, cloning and
+guest identity are proven only at tier `v` or `m`.
+
+- **Tier `m`** needs a macOS 27 host and about 47 GiB free (a macOS build's disk)
+  plus any IPSW bytes not yet cached. It keeps the IPSW and the installed macOS
+  base under `LOCALBOX_VMLAB_DIR` (default `~/.cache/localbox-vmlab`), so only the
+  first run downloads and installs; a probe that needs the base and finds none
+  exits 2 naming the probe that builds it.
+- **Run sweeps from a short worktree under `$HOME`** (`git worktree add ~/lbi`).
+  A tier `l` daemon's socket path must fit the Unix socket limit, so a long
+  checkout fails with "socket path is too long"; Colima shares only `$HOME` with
+  Docker, so Docker-backed checks fail from `/tmp`; and tier `l` stacks share
+  fixed ports, so run one sweep at a time.
+
 ## Local control-plane smoke
 
 Start an isolated Convex deployment and the same Web Request handlers the Vercel
@@ -136,8 +168,9 @@ plus one fixture HostDaemon per simulated machine
 (`.localbox/proof/machines/<name>`), via `scripts/proof/stack.ts up --machines a,b`
 (`a:8G,b:16G` gives each fixture daemon that much RAM instead of this Mac's).
 `npm run proof -- 13 --tier l` runs the whole two-machine scenario; `--tier v`
-makes machine A a real daemon with real VMs. Real-VM proofs (tier `v` of 01, 02,
-10, 11, 12 and 13) need this Mac's screen lock to ask for no password ([why](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
+makes machine A a real daemon with real VMs. Every tier `v` or `m` probe needs
+this Mac's screen lock to ask for no password ([why](skills/localbox/references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate));
+[Proofs](#proofs) covers the rest of what the tiers need.
 
 ### A simulated second machine
 
@@ -167,7 +200,10 @@ Sandboxes are an account catalog in Convex (`sandboxes`): `localbox sandbox
 create` reserves a generated name there, then asks the machine that
 `packages/placement` chose (the machine the request names with `--machine NAME`,
 else `--placement auto|remote` by the room each machine last reported, else this
-one) to create it. `--machine` and `--sandbox` are request selectors, never
+one) to create it. Its `place()` does no I/O: the agent API hands it the
+machines, their reports and the image, so every placement rule (image holders,
+macOS compatibility, the copy a target needs) lives and is tested in one pure
+function. `--machine` and `--sandbox` are request selectors, never
 operation input: on the wire they travel beside the operation as `machine` and
 `sandbox`, and when both are given they must agree.
 The daemon admits each start against 75% of its RAM, sleeping its least recently
@@ -177,18 +213,28 @@ README covers its layout and lifecycle). `--sandbox NAME` is looked up on this
 Mac's daemon first, then in the account; it may be left out when the account has
 exactly one sandbox.
 
-A sandbox on this Mac is reached through the daemon socket. A sandbox on another
-machine is reached through the agent API, which finds its machine: the CLI posts
-to `POST /api/v1/ops` (`apps/relay/src/ops.ts`), which enqueues a row in Convex's
-`relay` module for that machine and waits on a Convex subscription for up to
-min(deadline, 50 s); longer requests come back as a continuation the client
-resumes. On each Mac, `localbox connector run` (launchd job
+Each operation's route (which executor answers it, and whether it goes to one
+machine, the account or the image's holders) is in the contract's routing table
+([`packages/contract`](packages/contract/src/index.ts)); nothing falls back to a
+default by name. A sandbox on this Mac is reached through the daemon socket.
+Everything else goes through the agent API (`apps/relay/src/`): the CLI posts to
+`POST /api/v1/ops`, which runs the account side of an operation itself (every
+`image` command's, against
+[`packages/state/convex/images.ts`](packages/state/convex/images.ts)) and sends a
+machine's part as a row in Convex's `relay` module for that machine, waiting on
+a Convex subscription for up to min(deadline, 50 s); longer requests come back
+as a continuation the client resumes. `sandbox create` resolves its image there
+before placing it; a Mac without that image answers at once in state `copying`
+and creates the sandbox once the copy lands. On each Mac, `localbox connector run` (launchd job
 `com.localbox.connector`) is the only process that talks to Convex: it exchanges
 the machine credential for a machine token at `POST /api/relay/machine-token`,
 subscribes to `relay:pendingForMachine`, claims each row and forwards it to the
-daemon's socket. A row nobody claims in time is abandoned and the caller gets
-`machine_offline`; abandoned rows never run. Without a sign-in, only this Mac's
-sandboxes are reachable, and none can be created. The
+daemon's socket. It also reports what the daemon's long work finished (the
+images this Mac now holds), pushes the account's image ids so a deletion made
+elsewhere reaches this Mac, and meets the other Mac of an image copy at that
+copy's row in `copies`. A row nobody claims in time is abandoned and the caller
+gets `machine_offline`; abandoned rows never run. Without a sign-in, only this
+Mac's sandboxes are reachable, and none can be created. The
 [security model](SECURITY.md) owns the token lifetimes, the claim window, the
 relay's limits and retention, and what each boundary holds.
 
@@ -206,7 +252,7 @@ The relay and MCP endpoint deploy from `apps/relay/api/[...path].ts` and
 | Setting | Purpose |
 | --- | --- |
 | `LOCALBOX_API_ORIGIN` | Public API origin, normally `https://api.localbox.sh`. The MCP resource and relay URLs derive from it. |
-| `CONVEX_URL` | Durable Convex deployment: accounts, machines, relay rows and OAuth state. |
+| `CONVEX_URL` | The Convex deployment holding the account's durable state ([`schema.ts`](packages/state/convex/schema.ts)). |
 | `LOCALBOX_JWT_PRIVATE_KEY` | ES256 (P-256) private key, PEM. Vercel signs short-lived Convex tokens with it; deployed functions refuse to start without it. |
 | `RESEND_API_KEY` | Resend API key for sign-in codes, sent from `login@mail.localbox.sh`. Without it (and outside local dev) sign-in fails with "email delivery is not configured". |
 
@@ -221,7 +267,8 @@ On each Mac:
 
 | Setting | Purpose |
 | --- | --- |
-| `LOCALBOX_MACHINE_ROOT` | Relocates the whole machine state (credentials, IPC token, socket, sandboxes, logs); used for simulated machines and fixture installs. |
+| `LOCALBOX_MACHINE_ROOT` | Relocates the whole machine state, everything [`machinePaths()`](packages/config/src/machine-paths.ts) names; used for simulated machines and fixture installs. |
+| `LOCALBOX_GUEST_AGENT` | The guest agent build the HostDaemon holds every guest to (set in its launchd plist by the installer). Without it the daemon pushes no agent and each sandbox keeps the one its image carries. |
 | `LOCALBOX_CLI` | The installed CLI the HostDaemon runs for agent setup (set in its launchd plist by the installer). Without it the daemon does not reconcile the skill and refuses `skill.*`. |
 | `LOCALBOX_API_ORIGIN` | The API the CLI and connector talk to; defaults to `https://api.localbox.sh`. |
 
@@ -237,7 +284,14 @@ Convex environment variables (`npx convex env set`):
 Which Convex functions are public, how they authenticate, and the operator-only
 functions are in the [security model](SECURITY.md#convex-is-an-authenticated-boundary).
 
-## VM image
+## Images
+
+The guest agent builds with one pinned Bun (`BUN_VERSION` in
+[`scripts/build-guest-agent.ts`](scripts/build-guest-agent.ts)), which refuses any
+other; `npm run build:guest-agent`, `image:boot` and `scripts/release.sh` all run
+that build, so install that Bun first.
+
+### The built-in linux image
 
 `npm run image:boot -- --profile minimal|full` builds the linux image's disk
 (a GPT disk: an EFI system partition with GRUB, and the ext4 root carrying the
@@ -259,13 +313,23 @@ Chrome (Google's arm64 package, at Duet's version) with CDP on
 `127.0.0.1:9222`. Chrome's sandbox needs unprivileged
 user namespaces, so the image turns off Ubuntu's AppArmor restriction on them.
 
-The [guest agent](apps/guest-agent/README.md) is a persistent service on a Unix
-socket, with socat forwarding vsock port 1024 to it. Kernel and boot output go
-to a separate console, which `localbox-vmlab` keeps beside a scratch clone of the disk. To boot an image by
-hand: `swift build --package-path apps/macos/HostDaemon`, sign the binaries with
-the virtualization entitlement (`sh scripts/proof/lib/sign-dev.sh`), then run
-`localbox-vmlab boot --image dist/vm-image/images/linux --json` on an image
-directory written with `--out`.
+How the [guest agent](apps/guest-agent/README.md) runs in the image is its
+README's. To boot an image by hand: `swift build --package-path
+apps/macos/HostDaemon`, sign the binaries with the virtualization entitlement
+(`sh scripts/proof/lib/sign-dev.sh`), then run `localbox-vmlab boot --image
+dist/vm-image/images/linux --json` on an image directory written with `--out`;
+vmlab keeps the kernel and boot console beside a scratch clone of the disk.
+
+### The macOS base
+
+No script builds a macOS image: the daemon does, as host operation
+`MacBaseBuilder` behind `localbox image create --macos` ([host
+daemon](apps/macos/HostDaemon/README.md)), on a macOS 27 Mac. To drive a step by
+hand (install from an IPSW, clone, hibernate, TCC, the vsock forwarder), build
+and sign as above and run `localbox-vmlab macos-*`; the commands and their
+arguments are listed in
+[`localbox-vmlab/main.swift`](apps/macos/HostDaemon/Sources/localbox-vmlab/main.swift),
+and they share the IPSW and base cache with tier `m` ([Proofs](#proofs)).
 
 ## Releasing
 
@@ -275,18 +339,21 @@ app bundle, compiled CLI, the built-in linux image, checksums and release
 manifest for the `version` in `package.json` (override with `VERSION`). Set
 `LOCALBOX_IMAGE` to the image directory `npm run image:build -- --out DIR`
 wrote, and `IMAGE_DIGEST` to the `digest` in `dist/vm-image/full/manifest.json`.
-The image must carry the guest agent the release builds, or the script stops.
-It needs `zstd` (`brew install zstd`).
+The image's own agent doesn't have to match: the app ships the release's agent
+and the daemon pushes it into every guest whose agent build differs. The script
+needs `zstd` (`brew install zstd`) and the pinned Bun ([Images](#images)).
 
 The app carries no kernel: the image boots its own through EFI. The image ships
 beside the app because GitHub caps a release asset at 2 GiB: its disk
-zstd-compressed and split into `localbox-linux-VERSION.disk.img.zst.000`,
-`.001`, …, plus `localbox-linux-VERSION.efi-vars` (the boot store) and
-`localbox-linux-VERSION.image.json`. The signed manifest names them and the
+zstd-compressed and split into parts, with its boot store and `image.json`
+beside them (`packImage` in [`scripts/release.ts`](scripts/release.ts) names the
+assets). The signed manifest names them and the
 expanded disk's SHA-256 and size; the installer expands them into
 `releases/VERSION/images/linux/`, leaving unused blocks as holes, and keeps only
 that directory. Activation and rollback re-check it against the manifest, then
-make it this Mac's `images/linux` (an APFS clone, so it costs no space).
+make it this Mac's `images/linux`: an APFS clone, so it costs no space,
+assembled under a dot-prefixed name and swapped in, so the daemon never sees
+half an image. Every Mac thus runs the linux image its release shipped.
 
 Upload every file in the output directory to a release named after the tag:
 `gh release create vVERSION dist/release/* --title "Localbox VERSION"`. Add
@@ -322,8 +389,8 @@ the owner-only IPC token, and loads the daemon and the GitHub release updater.
 Automatic installs leave the running updater loaded while the active release is
 switched, so the updater cannot terminate its own install.
 
-`scripts/rollback-release.sh VERSION` selects an older verified tree and makes
-its image `images/linux` again.
+`scripts/rollback-release.sh VERSION` selects an older verified tree and
+activates it, image included, as above.
 `scripts/uninstall.sh` removes launchd jobs, the CLI link and the marked PATH
 block while preserving VM state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or
 fixture install, and `LOCALBOX_RELEASE_REPOSITORY` when releases come from a

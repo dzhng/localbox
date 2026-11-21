@@ -3,11 +3,11 @@
 `SandboxHost` is the only owner of this Mac's sandboxes. Each lives in its own
 directory under `LOCALBOX_SANDBOXES` (`machinePaths().sandboxes/<id>/`):
 `sandbox.json` (the catalog identity, mirrored read-only, plus the runtime the
-daemon owns: image and OS, size, MAC, machine identifier, a macOS hardware
-model, lifecycle, a pending cold boot), `disk.img` (an APFS clone of its
-image's disk; a copy where cloning is unsupported, which the create report
-says), its own copy of the image's boot store (`efi-vars`, or `aux.img` for
-macOS) and `state.vzsave` while hibernated. Each sandbox has its own
+daemon owns; its fields are
+[`SandboxRecord`](Sources/HostDaemonCore/SandboxRecord.swift)'s), `disk.img` (an
+APFS clone of its image's disk; a copy where cloning is unsupported, which the
+create report says), its own copy of the image's boot store and its save file
+while hibernated. Each sandbox has its own
 `SandboxRuntime`: its backend, guest channel, channel epoch and lifecycle.
 Every sandbox-scoped request is routed by `sandbox_id`; an id with no
 directory, or one the account catalog no longer lists, is refused
@@ -26,7 +26,9 @@ hides every sandbox and deletes nothing. A push never creates a directory.
 A VM is described by a pure `VMSpec` (platform and machine identifier, boot
 store, CPUs, memory, disk, MAC, devices from `GuestPlatform`), built from the
 record and the sandbox's directory alone, and `SandboxConfigurationBuilder` is
-the one translator from it to a Virtualization configuration. Nothing in a spec
+the one translator from it to a Virtualization configuration: every VM the
+package boots, sandbox, macOS build or lab, goes through it, so a device or
+boot setting changes in one place. Nothing in a spec
 comes from the environment, so a saved state always restores into the
 configuration it was saved under. Linux boots EFI firmware from the sandbox's
 own variable store, with GRUB and the kernel on its disk, so there is no kernel
@@ -41,10 +43,11 @@ password) or the backend cannot save (the process fixture), it stops the sandbox
 and records why; the next start cold-boots it and reports `cold_booted` with
 that reason.
 
-`ImageStore` is the only code that touches image files on a Mac:
-`LOCALBOX_IMAGES` (`machinePaths().images/<id>/`) holds `image.json` (id, OS,
-size, a macOS hardware model and minimum version, the agent version it
-carries), `disk.img` and `boot/`. An image is written into a dot-prefixed
+`ImageStore` is the only code that touches image files on a Mac; anything else
+that needs an image's disk, boot store or manifest asks it.
+`LOCALBOX_IMAGES` (`machinePaths().images/<id>/`) holds `image.json` (its fields
+are `ImageManifest`'s, in [`ImageStore.swift`](Sources/HostDaemonCore/ImageStore.swift)),
+`disk.img` and `boot/`. An image is written into a dot-prefixed
 temporary directory and committed by one rename, so nothing ever reads half an
 image, and each start sweeps the temporaries a crash left, except those of an
 image whose operation is still running (`.<id>.*`, kept for its resume) and the
@@ -52,13 +55,13 @@ IPSW cache (`.ipsw/`). A sandbox is
 provisioned from an image off the `SandboxHost` actor and keeps its own disk
 clone and boot store, so deleting the image never breaks it; `SandboxHost`
 itself does no image file I/O and learns free disk only through capacity.
-The one exception is the built-in `linux` image: the installer (and a rollback)
-makes the active release's copy `images/linux`, as an APFS clone assembled
-under a dot-prefixed name and swapped in, so every Mac runs the image its
-release shipped and the daemon reads it like any other.
+The one exception is the built-in `linux` image, which the installer writes
+([releasing](../../../DEVELOPMENT.md#releasing)); the daemon reads it like any
+other.
 
-`HostOperationStore` is the only owner of long host work (an image build, copy
-or capture), separate from `SandboxHost` so that work never queues behind a
+`HostOperationStore` is the only owner of long host work (each kind is a type
+with a `kind` and a resumer, such as `MacBaseBuilder` or `ImageCopy`), separate
+from `SandboxHost` so that work never queues behind a
 sandbox request or holds one up; each work runs detached, off both actors. Its
 journal is `LOCALBOX_OPERATIONS` (`machinePaths().operations/<mutation_id>.json`),
 written before the work starts and at every checkpoint the work reports. The
@@ -78,7 +81,25 @@ grants and Remote Login off through the agent's own shell. The password lives
 only in the builder's memory, so a restart before SIP is off begins again from
 a fresh clone of the installed disk. Every macOS VM outside a sandbox is a
 `MacVirtualMachine` made from a `VMSpec`, and the provisioning steps
-(`MacProvisioning`) are the ones `localbox-vmlab`'s macOS labs call.
+(`MacProvisioning`) are the ones `localbox-vmlab`'s macOS labs call. Typing
+into Recovery uses Virtualization's private VNC server, and
+`RecoveryVNC.swift` is the only file that touches private Apple API: a macOS
+update that breaks it breaks one file, and nothing else depends on it.
+
+Images move between Macs as host operations on both ends. `ImageCopy` is one
+side of a copy: the sender serves its `ImageStore` files, the receiver writes a
+resumable temporary and commits it like any other image. Each side's role and
+the copy's one-time key come from its Convex row through the connector; the key
+is never journaled, so a resume waits for the row again.
+`SandboxCreateAfterCopy` chains a `sandbox create` to the receiving side, so a
+create on a Mac without its image waits on the copy and then creates as usual. The bytes are a separate SwiftPM target, `ImageTransfer` (chunks,
+sealed datagrams, resume, the LAN and hole-punched paths), which never imports
+`HostDaemonCore`, so the transport is tested and driven without a daemon;
+`ImageCopyTransfer` is the one adapter between them. The other executables are
+`localbox-punchlab` (a transfer driven by hand, and probe 20's driver), and
+`localbox-vsock` and `localbox-desktop`, which run inside darwin guests, not on
+the host. What a copy exposes on the network is in the
+[security model](../../../SECURITY.md#direct-image-copies).
 
 `AuthenticatedLocalIPC` is the local CLI boundary: it checks the injected
 owner-only IPC token and forwards the envelope to `SandboxHost.request` without
