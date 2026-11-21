@@ -104,7 +104,8 @@ commands run as root in both; a macOS sandbox has macOS's own tools (`zsh`,
   ([why and the settings](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).
 - Errors name the way out: `sandbox_ambiguous` and `sandbox_not_found` list the
   names, `machine_full` lists what holds the memory (or the two macOS sandboxes
-  already running), `machine_offline` is retryable, and image errors
+  already running; a macOS base build running on that Mac also takes one of the
+  two), `machine_offline` is retryable, and image errors
   (`image_not_found`, `disk_full`, `copy_unreachable`, `image_incompatible`)
   carry a next step. Never blindly repeat a mutation after `operation_uncertain`: read
   status first, or repeat it with the same `--mutation-id`.

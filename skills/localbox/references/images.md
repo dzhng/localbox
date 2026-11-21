@@ -39,7 +39,7 @@ room; a named `--machine` (or this Mac) always gets the copy. To copy ahead of
 time:
 
 ```sh
-localbox image copy IMAGE --to MACHINE
+localbox image copy IMAGE MACHINE
 localbox image wait IMAGE
 ```
 
@@ -62,8 +62,8 @@ user's go-ahead.
 
 A macOS sandbox has every operation a Linux one has, desktop and browser
 included, with Chrome installed. It needs a Mac running macOS 27 or newer, and a
-macOS image runs only on Macs whose macOS is at least as new as the one inside it
-(`image_incompatible` names the Mac's version otherwise).
+macOS image runs only on Macs with the same major macOS as the one inside it, or
+newer (`image_incompatible` names the Mac's version otherwise).
 
 The account has no macOS base until one is built:
 
@@ -78,9 +78,11 @@ with no human step. It needs tens of gigabytes free (it refuses with `disk_full`
 up front if not) and takes a while; tell the user, then keep calling
 `image wait`.
 
-Apple's licence allows at most two macOS VMs running at once per Mac. A third
-puts the least recently used idle macOS sandbox to sleep, or answers
-`machine_full` naming the two that are running. macOS sandboxes are for the
+Apple's licence allows at most two macOS VMs running at once per Mac, and a
+macOS base build running there takes one of the two. A third macOS sandbox puts
+the least recently used idle one to sleep, or answers `machine_full` naming the
+two that are running. Don't start a build on a Mac already running two macOS
+sandboxes, or a second one beside a build; pick another Mac. macOS sandboxes are for the
 user's own development and testing; never set one up for anyone else.
 
 ## Xcode in a macOS sandbox
