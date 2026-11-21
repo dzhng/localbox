@@ -95,6 +95,18 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: IPSWCache(directory: rig.store.ipswDirectory).file(for: Self.release)), FakeHTTP.body)
     }
 
+    func testAFailedBuildLeavesNoBuildDirectoryButKeepsTheIPSW() async throws {
+        let rig = try await Rig(test: self)
+        rig.driver.failing = "root bootstrap"
+        _ = try await rig.build("m-1", image: "image_mac")
+        let failed = try await rig.finished("m-1")
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.error?.code, "internal")
+        XCTAssertTrue(failed.error?.message.hasPrefix("the macOS build stopped in bootstrap") == true, "\(String(describing: failed.error))")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: rig.store.root.appendingPathComponent(".image_mac.build").path), "nothing resumes a failed build, so its files go")
+        XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(Self.release), "the next build reuses the IPSW")
+    }
+
     func testRefusalsComeBeforeAnythingIsJournaled() async throws {
         let old = try await Rig(test: self, hostVersion: "26.4")
         let incompatible = try await old.request(["macos": true, "image": "image_mac"], key: "m-1")
@@ -242,7 +254,9 @@ private final class FakeDriver: MacBuildDriver, @unchecked Sendable {
     let journals: URL, operations: HostOperationStore
     private let lock = NSLock()
     private var _calls: [String] = [], _phases: [String] = [], _passwords: [String] = [], _journals: [String] = [], _scripts: [String] = []
-    private var _payload: URL?, _provisionedDisk: Data?
+    private var _payload: URL?, _provisionedDisk: Data?, _failing: String?
+    /// A step that throws, as a guest step that exits non-zero would.
+    var failing: String? { get { lock.withLock { _failing } } set { lock.withLock { _failing = newValue } } }
     var calls: [String] { lock.withLock { _calls } }
     var phasesSeen: [String] { lock.withLock { _phases } }
     var passwords: [String] { lock.withLock { _passwords } }
@@ -261,7 +275,7 @@ private final class FakeDriver: MacBuildDriver, @unchecked Sendable {
     }
 
     /// Records step `name` of the build in `build`, with the phase its operation last journaled.
-    func step(_ name: String, _ build: MacBuildDirectory, script: String? = nil, payload: URL? = nil) async {
+    func step(_ name: String, _ build: MacBuildDirectory, script: String? = nil, payload: URL? = nil) async throws {
         let subject = String(build.root.lastPathComponent.dropFirst().dropLast(".build".count))
         let phase = await operations.latest(subject: subject)?.progress?.phase ?? ""
         let written = (try? FileManager.default.contentsOfDirectory(at: journals, includingPropertiesForKeys: nil))?.compactMap { try? String(contentsOf: $0, encoding: .utf8) } ?? []
@@ -270,22 +284,23 @@ private final class FakeDriver: MacBuildDriver, @unchecked Sendable {
             if let script { _scripts.append(script) }
             if let payload { _payload = payload }
         }
+        if name == failing { throw HostDaemonError.unsupported("a build step in the guest exited 56") }
     }
 
     func install(ipsw: URL, into build: MacBuildDirectory, diskBytes: UInt64, progress: @escaping @Sendable (Double) -> Void) async throws {
         XCTAssertEqual(try Data(contentsOf: ipsw), FakeHTTP.body, "installs the cached IPSW")
         try Self.writeInstalled(build)
-        await step("install", build)
+        try await step("install", build)
     }
 
     func provision(_ build: MacBuildDirectory, user: MacProvisioningUser) async throws -> any MacBuildGuest {
         lock.withLock { _passwords.append(user.password); _provisionedDisk = try? Data(contentsOf: build.disk) }
-        await step("provision", build)
+        try await step("provision", build)
         return FakeGuest(driver: self, build: build)
     }
 
     func boot(_ build: MacBuildDirectory) async throws -> any MacBuildGuest {
-        await step("boot", build)
+        try await step("boot", build)
         return FakeGuest(driver: self, build: build)
     }
 }
@@ -294,16 +309,16 @@ private struct FakeGuest: MacBuildGuest {
     let driver: FakeDriver, build: MacBuildDirectory
     func root(_ script: String, timeout: TimeInterval) async throws -> String {
         let name = script.contains("install.sh") ? "bootstrap" : script.contains("--grant-tcc") ? "tcc" : script.contains("openssh") ? "finish" : "other"
-        await driver.step("root \(name)", build, script: script)
+        try await driver.step("root \(name)", build, script: script)
         return name == "finish" ? "142.0.7444.60\n" : ""
     }
     func upload(_ local: URL, to remote: String) async throws {
         let copy = FileManager.default.temporaryDirectory.appendingPathComponent("lb-payload-\(UUID().uuidString).tgz")
         try FileManager.default.copyItem(at: local, to: copy)
-        await driver.step("upload \(remote)", build, payload: copy)
+        try await driver.step("upload \(remote)", build, payload: copy)
     }
-    func shutDown() async throws { await driver.step("shut down", build) }
-    func disableSIP(as user: MacProvisioningUser) async throws { await driver.step("disable SIP", build) }
+    func shutDown() async throws { try await driver.step("shut down", build) }
+    func disableSIP(as user: MacProvisioningUser) async throws { try await driver.step("disable SIP", build) }
     func abandon() async {}
 }
 

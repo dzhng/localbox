@@ -142,8 +142,9 @@ public actor MacBaseBuilder {
         let free: UInt64
         do { free = try freeBytes() } catch { throw HostOperationFailure(code: "internal", message: "could not read this Mac's free disk: \(explain(error))") }
         guard free >= needed else {
-            let ipsw = cache.missingBytes(release) > 0 ? "the macOS \(release.version) IPSW (\(gibibytes(cache.missingBytes(release)))) plus " : ""
-            throw HostOperationFailure(code: "disk_full", message: "building a macOS image needs \(ipsw)a \(gibibytes(Self.diskBytes)) disk free on this Mac, \(gibibytes(needed)) in all, and \(gibibytes(free)) is free",
+            let missing = cache.missingBytes(release)
+            let what = missing > 0 ? "the macOS \(release.version) IPSW (\(gibibytes(missing))) and a \(gibibytes(Self.diskBytes)) disk, \(gibibytes(needed)) free in all" : "\(gibibytes(needed)) free for its disk"
+            throw HostOperationFailure(code: "disk_full", message: "building a macOS image on this Mac needs \(what), and \(gibibytes(free)) is free",
                                        nextStep: "free at least \(gibibytes(needed - free)) on this Mac (delete sandboxes or images it no longer needs), then build again")
         }
         return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: try encode(Checkpoint(phase: .download, ipsw: release)))
@@ -205,9 +206,13 @@ public actor MacBaseBuilder {
             let manifest = try store.seal(build.root, imageID: imageID, os: .macos, hardwareModel: hardwareModel, minMacOS: Self.minMacOS(checkpoint.ipsw), agentVersion: agentVersion())
             try store.commit(build.root, as: imageID)
             return result(manifest, checkpoint.ipsw, chrome: chrome)
-        } catch let failure as HostOperationFailure { throw failure }
-        catch is CancellationError { throw CancellationError() }
-        catch {
+        } catch is CancellationError {
+            // The daemon is stopping: the build directory stays for the next start's resume.
+            throw CancellationError()
+        } catch {
+            // A failed operation is final, so nothing will resume from its build directory; the IPSW cache stays.
+            try? store.discardBuild(imageID)
+            if let failure = error as? HostOperationFailure { throw failure }
             throw HostOperationFailure(code: "internal", message: "the macOS build stopped in \(checkpoint.phase.rawValue): \(explain(error))", nextStep: "delete the failed image and build again; the downloaded IPSW is kept")
         }
     }
@@ -290,7 +295,8 @@ public actor MacBaseBuilder {
         n=0; until launchctl print gui/$uid >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+1)); [ $n -lt 150 ] || { echo "the desktop session of \(user) never came up" >&2; exit 1; }; sleep 2; done
         rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(remotePayload) -C /tmp/localbox-stage
         sh /tmp/localbox-stage/install.sh /tmp/localbox-stage
-        curl -fsSL --retry 5 --retry-delay 3 -o /tmp/GoogleChrome.pkg \(chromeInstaller)
+        rm -f /tmp/GoogleChrome.pkg
+        curl -fsSL --retry 8 --retry-all-errors --retry-delay 3 -C - -o /tmp/GoogleChrome.pkg \(chromeInstaller)
         pkgutil --check-signature /tmp/GoogleChrome.pkg | grep -q 'Developer ID Installer: Google LLC' || { echo "the Chrome installer is not signed by Google" >&2; exit 1; }
         installer -pkg /tmp/GoogleChrome.pkg -target / >/dev/null
         test -d '/Applications/Google Chrome.app'
