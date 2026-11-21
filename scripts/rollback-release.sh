@@ -13,6 +13,7 @@ LAUNCH_AGENTS_DIR=${LOCALBOX_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}
 TOKEN_FILE=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/ipc-token
 SOCKET_PATH=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/agent.sock
 SANDBOXES_DIR=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/sandboxes
+OPERATIONS_DIR=${LOCALBOX_MACHINE_ROOT:-$INSTALL_ROOT}/operations
 PUBLIC_KEY_FILE=${LOCALBOX_RELEASE_PUBLIC_KEY_FILE:-$INSTALL_ROOT/release-public.pem}
 RELEASE_REPOSITORY=${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}
 
@@ -59,6 +60,7 @@ cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_PATH' -string "$TOKEN_FILE" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_SANDBOXES' -string "$SANDBOXES_DIR" "$PLIST"
+plutil -replace 'EnvironmentVariables.LOCALBOX_OPERATIONS' -string "$OPERATIONS_DIR" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_KERNEL' -string "$ACTIVE_APP/Contents/Resources/vm/vmlinuz" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_INITRD' -string "$ACTIVE_APP/Contents/Resources/vm/initrd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_TEMPLATE_DISK' -string "$RELEASE_ROOT/active/vm/template.img" "$PLIST"

@@ -31,7 +31,7 @@ export async function buildRealVMs(ctx: ProofContext): Promise<string> {
 export function realDaemon(ctx: ProofContext, options: { probe: string; env?: NodeJS.ProcessEnv }) {
   const artifacts = join(ctx.root, "dist/vm-image/minimal");
   const machine = realpathSync(mkdtempSync(join(tmpdir(), `localbox-proof-${options.probe}-`)));
-  const sandboxes = join(machine, "sandboxes"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
+  const sandboxes = join(machine, "sandboxes"); const operations = join(machine, "operations"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
   const token = randomBytes(32).toString("hex"); writeFileSync(tokenFile, token, { mode: 0o600 });
   const log = join(ctx.evidence, `${options.probe}-hostd.log`);
   const transport = new LocalIPCTransport({ socketPath: socket, token, timeoutMs: 300_000 });
@@ -41,7 +41,7 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
 
   const start = async (bin: string) => {
     const fd = openSync(log, "a");
-    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
+    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_KERNEL: join(artifacts, "kernel"), LOCALBOX_INITRD: join(artifacts, "initrd"), LOCALBOX_TEMPLATE_DISK: join(artifacts, "template.img"), LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
     closeSync(fd);
     for (let attempt = 0; attempt < 120 && !existsSync(socket); attempt++) { if (daemon.exitCode !== null) break; await sleep(250); }
     assert.ok(existsSync(socket), `the daemon did not open its socket: ${readFileSync(log, "utf8").slice(-1500)}`);

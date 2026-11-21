@@ -17,6 +17,7 @@ struct HostDaemonMain {
             let token = try loadToken()
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
             try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
+            let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
@@ -30,6 +31,9 @@ struct HostDaemonMain {
             if let agentSetup { Task.detached { log("agent setup (daemon_start): \(await agentSetup.reconcile())") } } else { log("agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled") }
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
+            // Long host work the last run left unfinished continues from its checkpoint, after the sandboxes it may
+            // act on are back. Kinds register here as their slices land.
+            for key in await operations.start() { log("operation \(key) resumed") }
             // The Mac's sleep and power-off notices hibernate the sandboxes first.
             do { try power(host).start() } catch { log("no power notices: \(error)") }
             // An async main already services the main queue; dispatchMain() here traps. The main task runs the idle

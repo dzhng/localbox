@@ -32,6 +32,18 @@ password) or the backend cannot save (the process fixture), it stops the sandbox
 and records why; the next start cold-boots it and reports `cold_booted` with
 that reason.
 
+`HostOperationStore` is the only owner of long host work (an image build, copy
+or capture), separate from `SandboxHost` so that work never queues behind a
+sandbox request or holds one up; each work runs detached, off both actors. Its
+journal is `LOCALBOX_OPERATIONS` (`machinePaths().operations/<mutation_id>.json`),
+written before the work starts and at every checkpoint the work reports. The
+mutation id is the key: a replay returns the record already there, running or
+finished, and never starts the work again. Callers poll with `wait`, which
+answers when the work finishes or after at most 120 s with the record as it
+stands, so a pending state is an answer, not a timeout. Each kind registers one
+resumer at daemon start; an unfinished record continues from its last
+checkpoint, and one whose kind is no longer registered fails.
+
 `AuthenticatedLocalIPC` is the local CLI boundary: it checks the injected
 owner-only IPC token and forwards the envelope to `SandboxHost.request` without
 duplicating lifecycle state.
@@ -52,8 +64,8 @@ dispatch queue and attaches the framed `GuestService` channel over vsock.
 There is no reset: delete and create replace it.
 
 The `localbox-hostd` executable is the launchd process boundary. It reads
-the boot artifact paths, the sandboxes directory and an owner-only IPC token
-file from environment variables, starts the same `SandboxHost` and
+the boot artifact paths, the sandboxes and operations directories and an
+owner-only IPC token file from environment variables, starts the same `SandboxHost` and
 `UnixDomainSocketServer` used by tests, brings back what the last run left
 running, and hibernates on `SIGTERM`/`SIGINT` (the plist's `ExitTimeOut` bounds
 the saves). The checked-in
