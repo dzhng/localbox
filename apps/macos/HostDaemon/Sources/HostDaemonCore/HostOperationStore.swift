@@ -32,6 +32,20 @@ public enum JSONValue: Codable, Equatable, Sendable {
     }
 }
 
+extension JSONValue {
+    /// A Foundation JSON value (`JSONSerialization`'s), as the journal keeps it.
+    init(_ foundation: Any) throws {
+        let data = try JSONSerialization.data(withJSONObject: foundation, options: .fragmentsAllowed)
+        self = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    /// The value as `JSONSerialization` would read it back.
+    var foundation: Any? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+    }
+}
+
 public enum HostOperationState: String, Codable, Sendable {
     case running, succeeded, failed
 }

@@ -102,8 +102,7 @@ public actor ImageHost {
                 return failure(object, code: "invalid_input", message: "host.begin_operation takes kind, key, subject and checkpoint")
             }
             do {
-                let checkpoint = try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: input["checkpoint"] ?? NSNull(), options: .fragmentsAllowed))
-                return success(object, result: view(try await operations.begin(kind: kind, key: key, subject: subject, checkpoint: checkpoint)))
+                return success(object, result: view(try await operations.begin(kind: kind, key: key, subject: subject, checkpoint: try JSONValue(input["checkpoint"] ?? NSNull()))))
             } catch { return failure(object, code: "invalid_input", message: explain(error)) }
         case "image.delete":
             guard let image = input["image"] as? String, !image.isEmpty else { return failure(object, code: "invalid_input", message: "image.delete requires image") }

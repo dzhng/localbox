@@ -177,13 +177,15 @@ public actor SandboxHost {
     private let images: ImageHost?
     /// The guest agent build this Mac ships (`LOCALBOX_GUEST_AGENT`); every sandbox is kept at it.
     private let agentUpdater: GuestAgentUpdater?
+    /// Creates sandboxes whose image is still copying here (`sandbox.create` with `after_copy`); nil refuses those.
+    private let afterCopy: SandboxCreateAfterCopy?
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, images: ImageHost? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater; self.images = images; self.freeDiskBytes = freeDiskBytes
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, images: ImageHost? = nil, afterCopy: SandboxCreateAfterCopy? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater; self.images = images; self.afterCopy = afterCopy; self.freeDiskBytes = freeDiskBytes
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -516,11 +518,22 @@ public actor SandboxHost {
     }
 
     /// Lays down the sandbox the agent API reserved, from the image it resolved (`image`, an id), at the size and idle
-    /// policy it chose, and boots it.
+    /// policy it chose, and boots it. With `after_copy` (the copy of that image this Mac is receiving), it answers at once
+    /// and `SandboxCreateAfterCopy` creates it once the copy lands.
     private func create(_ object: [String: Any], sandboxID: String, input: [String: Any]) async -> Data {
         guard let name = input["name"] as? String, !name.isEmpty, let imageID = input["image"] as? String, !imageID.isEmpty, let cpus = (input["cpus"] as? NSNumber)?.intValue, let memoryBytes = (input["memory_bytes"] as? NSNumber)?.uint64Value,
               let sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue else { return hostFailure(object, code: "invalid_input", message: "sandbox.create requires name, image, cpus, memory_bytes and sleep_after_ms") }
         guard !sandboxID.contains("/"), !sandboxID.hasPrefix(".") else { return hostFailure(object, code: "invalid_input", message: "sandbox id \(sandboxID) is not a directory name") }
+        if let copyKey = input["after_copy"] as? String {
+            guard let afterCopy else { return hostFailure(object, code: "unsupported", message: "this Mac can't create a sandbox after copying its image") }
+            guard let key = object["mutation_id"] as? String, !key.isEmpty else { return hostFailure(object, code: "invalid_input", message: "sandbox.create with after_copy needs a mutation id") }
+            do {
+                let record = try await afterCopy.begin(key: key, sandboxID: sandboxID, copyKey: copyKey, input: input)
+                let state = record.state == .running ? "copying" : record.state == .succeeded ? "created" : "failed"
+                return hostSuccess(object, result: report(input, produced: ["sandbox_id": sandboxID, "name": name, "state": state, "operation_id": key, "copy_operation_id": copyKey], actions: []))
+            } catch let refused as HostOperationFailure { return hostFailure(object, code: refused.code, message: refused.message) }
+            catch { return hostFailure(object, code: "internal", message: "could not start creating \(name): \(explain(error))") }
+        }
         var actions: [[String: Any]] = []
         var facts: [String: String] = [:]
         let runtime: SandboxRuntime
@@ -559,6 +572,11 @@ public actor SandboxHost {
         var produced: [String: Any] = ["sandbox_id": sandboxID, "name": name, "cpus": sandbox.record.cpus, "memory_bytes": sandbox.record.memoryBytes, "state": sandbox.status.lifecycle.sandboxState]
         for (key, value) in facts { produced[key] = Int(value).map { $0 as Any } ?? value }
         return hostSuccess(object, result: report(input, produced: produced, actions: actions))
+    }
+
+    /// `sandbox.create` once the image it waited for arrived (`SandboxCreateAfterCopy`): the plain create, answered as one.
+    func createArrived(sandboxID: String, input: [String: Any]) async -> Data {
+        await create(["operation": "sandbox.create", "request_id": "create-after-copy-\(sandboxID)", "sandbox_id": sandboxID], sandboxID: sandboxID, input: input)
     }
 
     /// What this Mac can still take: reservation-based, not live free memory. Unlisted sandboxes still hold

@@ -22,7 +22,7 @@ struct HostDaemonMain {
             let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
             // A copy the last run left unfinished resumes into the temporary it was writing.
             for name in images.sweepTemps(keeping: await ImageCopy.resumableTemps(operations)) { log("removed \(name), an image write or delete the last run left unfinished") }
-            // Kinds register before the store starts (image.capture once the sandboxes exist, below); dev daemons also run the
+            // Kinds register before the store starts (image.capture and sandbox.create_after_copy once the sandboxes exist, below); dev daemons also run the
             // proof's fixture kind.
             if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
@@ -38,9 +38,12 @@ struct HostDaemonMain {
             let copy = copyTransport.map { ImageCopy(store: images, operations: operations, transport: $0) }
             await copy?.attach()
             let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, allowsDirectOperations: isDev)
+            // A sandbox whose image is still copying here is created once the copy lands; only a Mac that copies needs it.
+            let afterCopy = copy.map { _ in SandboxCreateAfterCopy(operations: operations) }
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
+                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, afterCopy: afterCopy, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
             await capture.attach(to: host)
+            await afterCopy?.attach(to: host)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)
