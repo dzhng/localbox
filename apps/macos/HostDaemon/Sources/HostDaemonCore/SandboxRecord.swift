@@ -23,16 +23,26 @@ public enum SavedLifecycle: String, Codable, Sendable {
     case running, sleeping, asleep, stopped, hibernated
 }
 
+/// The image every Mac has, built into the release (the contract's `BUILT_IN_IMAGE`).
+public let builtInImage = "linux"
+
 /// One sandbox on this Mac, as `<sandboxes>/<id>/sandbox.json`: the catalog identity Convex owns (id, name) mirrored
-/// read-only, plus the runtime this daemon owns (size, MAC, machine identifier, lifecycle).
+/// read-only, plus the runtime this daemon owns (image, size, MAC, machine identifier, lifecycle).
 public struct SandboxRecord: Codable, Equatable, Sendable {
     public let sandboxID: String
     public var name: String
+    /// The image it was created from, and that image's OS, which `provision` sets. The sandbox keeps its own disk and
+    /// boot store, so the image may be deleted afterwards.
+    public let imageID: String
+    public var os: GuestOS
     public var cpus: Int
     public var memoryBytes: UInt64
-    /// Locally administered NAT MAC and base64 `VZGenericMachineIdentifier`; written once, so a saved state restores.
+    /// Locally administered NAT MAC and base64 machine identifier (`VZGenericMachineIdentifier` for Linux,
+    /// `VZMacMachineIdentifier` for macOS); written once, so a saved state restores.
     public var mac: String?
     public var machineIdentifier: String?
+    /// Base64 `VZMacHardwareModel`, copied from a macOS image at create so the sandbox outlives its image.
+    public var hardwareModel: String?
     public var lifecycle: SavedLifecycle
     public var lastActivityAt: Date?
     /// Why the next start must cold-boot instead of restoring (a failed save, or a backend that cannot save).
@@ -47,11 +57,11 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     /// much (nil: never).
     public var sleepAfterMs: Int
     public var deleteAfterMs: Int?
-    public init(sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, sleepAfterMs: Int, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
-        self.sandboxID = sandboxID; self.name = name; self.cpus = cpus; self.memoryBytes = memoryBytes; self.sleepAfterMs = sleepAfterMs; self.lifecycle = lifecycle; self.inCatalog = inCatalog
+    public init(sandboxID: String, name: String, imageID: String, cpus: Int, memoryBytes: UInt64, sleepAfterMs: Int, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
+        self.sandboxID = sandboxID; self.name = name; self.imageID = imageID; self.os = .linux; self.cpus = cpus; self.memoryBytes = memoryBytes; self.sleepAfterMs = sleepAfterMs; self.lifecycle = lifecycle; self.inCatalog = inCatalog
     }
     enum CodingKeys: String, CodingKey {
-        case sandboxID = "sandbox_id", name, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", lifecycle
+        case sandboxID = "sandbox_id", name, imageID = "image_id", os, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", hardwareModel = "hardware_model", lifecycle
         case lastActivityAt = "last_activity_at", coldBootPending = "cold_boot_pending", inCatalog = "in_catalog", listedBy = "listed_by"
         case sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms"
     }
@@ -65,6 +75,8 @@ public struct SandboxDirectory: Sendable {
     public var disk: URL { url.appendingPathComponent("disk.img") }
     public var savedState: URL { url.appendingPathComponent("state.vzsave") }
     public var consoleLog: URL { url.appendingPathComponent("console.log") }
+    /// The sandbox's own copy of its image's boot store: the EFI variable store, or a macOS guest's auxiliary storage.
+    public func bootStore(for os: GuestOS) -> URL { url.appendingPathComponent(os == .linux ? "efi-vars" : "aux.img") }
     /// The process fixture's filesystem root.
     public var guestRoot: URL { url.appendingPathComponent("root", isDirectory: true) }
 
@@ -91,7 +103,7 @@ public struct SandboxDirectory: Sendable {
 
     /// What deleting this directory removes, for the delete report.
     func contents() -> [String] {
-        [(recordFile, "sandbox identity"), (disk, "disk"), (savedState, "saved state"), (guestRoot, "guest root")]
+        [(recordFile, "sandbox identity"), (disk, "disk"), (bootStore(for: .linux), "boot store"), (bootStore(for: .macos), "boot store"), (savedState, "saved state"), (guestRoot, "guest root")]
             .filter { FileManager.default.fileExists(atPath: $0.0.path) }.map(\.1)
     }
 }

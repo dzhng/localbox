@@ -3,9 +3,10 @@
 `SandboxHost` is the only owner of this Mac's sandboxes. Each lives in its own
 directory under `LOCALBOX_SANDBOXES` (`machinePaths().sandboxes/<id>/`):
 `sandbox.json` (the catalog identity, mirrored read-only, plus the runtime the
-daemon owns: size, MAC, machine identifier, lifecycle, a pending cold boot),
-`disk.img` (an APFS clone of the template; a copy where cloning is
-unsupported) and `state.vzsave` while hibernated. Each sandbox has its own
+daemon owns: image and OS, size, MAC, machine identifier, a macOS hardware
+model, lifecycle, a pending cold boot), `disk.img` (an APFS clone of the
+template; a copy where cloning is unsupported), its own boot store (`efi-vars`,
+or `aux.img` for macOS) and `state.vzsave` while hibernated. Each sandbox has its own
 `SandboxRuntime`: its backend, guest channel, channel epoch and lifecycle.
 Every sandbox-scoped request is routed by `sandbox_id`; an id with no
 directory, or one the account catalog no longer lists, is refused
@@ -19,11 +20,20 @@ and records which machine's catalog listed each sandbox. A sandbox this
 machine's catalog listed before and no longer does (deleted while this Mac was
 offline) is deleted here, disk included, and reported; one it never listed
 (created and not yet listed, or listed by an earlier sign-in) is only hidden. `localbox logout` pushes `source: signed_out`, which
-hides every sandbox and deletes nothing. A push never creates a directory. `SandboxConfigurationBuilder` is the only place a VM configuration is
-made, from the record and the shared boot artifacts, so a saved state always
-restores into the configuration it was saved under. The guest learns its
-identity from the `hello` frame (sandbox id and name), never from the kernel
-command line; a rename sends a new `hello`. A resize of a running sandbox
+hides every sandbox and deletes nothing. A push never creates a directory.
+
+A VM is described by a pure `VMSpec` (platform and machine identifier, boot
+store, CPUs, memory, disk, MAC, devices from `GuestPlatform`), built from the
+record and the sandbox's directory alone, and `SandboxConfigurationBuilder` is
+the one translator from it to a Virtualization configuration. Nothing in a spec
+comes from the environment, so a saved state always restores into the
+configuration it was saved under. Linux boots EFI firmware from the sandbox's
+own variable store, with GRUB and the kernel on its disk, so there is no kernel
+command line and an `apt` kernel upgrade takes effect on the next boot (until
+sandboxes are provisioned from images, the daemon still boots the shared
+kernel and initrd through `BootStore.linuxDirect`, a seam slice 24 removes). The
+guest learns its identity from the `hello` frame (sandbox id and name); a rename
+sends a new `hello`. A resize of a running sandbox
 restarts it and reports the processes that ended.
 
 On SIGTERM the daemon saves every running sandbox and the next start restores

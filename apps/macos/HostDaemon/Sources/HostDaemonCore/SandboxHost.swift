@@ -498,7 +498,7 @@ public actor SandboxHost {
             // A relayed create re-run after a connector restart: the sandbox is already here.
             runtime = existing; await existing.setInCatalog(true); try? await existing.rename(name)
         } else {
-            var record = SandboxRecord(sandboxID: sandboxID, name: name, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
+            var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: builtInImage, cpus: cpus, memoryBytes: memoryBytes, sleepAfterMs: sleepAfterMs)
             record.deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
             let directory = SandboxDirectory(root.appendingPathComponent(sandboxID, isDirectory: true))
             do {
