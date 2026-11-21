@@ -18,16 +18,11 @@ struct VMLabMain {
         #if os(macOS)
         let arguments = Array(CommandLine.arguments.dropFirst())
         do {
-            if arguments.first == "vnc-shot", let port = option("--port", in: arguments).flatMap(UInt16.init), let out = option("--out", in: arguments) {
-                let screen = VNCClient(port: port, password: option("--password", in: arguments)); try await screen.connect()
-                try screen.savePNG(try await screen.capture(), to: URL(fileURLWithPath: out))
-                emit(["ok": true, "text": try await screen.screenText()]); screen.close(); return
-            }
             if arguments.first == "shot-inspect", let file = option("--file", in: arguments) {
                 emit(try inspectShot(URL(fileURLWithPath: expanded(file)))); return
             }
             if let command = arguments.first, command.hasPrefix("macos-") {
-                guard arguments.contains("--json") else { throw LabError("usage: localbox-vmlab macos-install --ipsw <path>|macos-clones|macos-hibernate --json") }
+                guard arguments.contains("--json") else { throw LabError("usage: localbox-vmlab macos-install --ipsw <path>|macos-clones|macos-hibernate|macos-provision|macos-tcc|macos-vsock|macos-image|macos-latest --json") }
                 let lab = MacLab.fromEnvironment()
                 let output: [String: Any]
                 switch command {
@@ -44,9 +39,6 @@ struct VMLabMain {
                     guard let image = option("--image", in: arguments), let evidence = option("--evidence", in: arguments) else { throw LabError("macos-image needs --image <images>/<id> --evidence <dir>") }
                     output = try await lab.image(URL(fileURLWithPath: expanded(image), isDirectory: true), evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
                 case "macos-latest": output = try await lab.latestIPSW()
-                case "macos-check":
-                    guard let guest = option("--guest", in: arguments) else { throw LabError("macos-check needs --guest <dir>") }
-                    output = try await lab.check(guestDirectory: URL(fileURLWithPath: expanded(guest), isDirectory: true))
                 case "macos-provision":
                     guard let evidence = option("--evidence", in: arguments) else { throw LabError("macos-provision needs --evidence <dir>") }
                     output = try await lab.provision(evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
@@ -241,7 +233,7 @@ struct Lab {
         return ["ok": ids.count == 2 && ids[0] != ids[1], "both_booted_ms": bootMs, "guests": ids]
     }
 
-    /// Slice 27's control lane on a real guest. Phase 1: a sandbox run by `SandboxHost` writes a tick every 50 ms while
+    /// The control lane on a real guest. Phase 1: a sandbox run by `SandboxHost` writes a tick every 50 ms while
     /// `freezeAndClone` clones its disk with a body that also sleeps 1 s; the writer stalls, then continues. Phase 2: the
     /// same disk booted on a bare backend, frozen with a 3 s timeout over a lane that then drops without a thaw (what the
     /// guest sees when its host dies mid-clone); a write request completes only once the guest thawed itself.
@@ -250,7 +242,10 @@ struct Lab {
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: base) } }
         let sandboxes = base.appendingPathComponent("sandboxes", isDirectory: true)
         try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
-        let host = SandboxHost(sandboxesDirectory: sandboxes, factory: factory)
+        let operations = try HostOperationStore(operationsDirectory: base.appendingPathComponent("operations", isDirectory: true))
+        let store = try ImageStore(imagesDirectory: image.deletingLastPathComponent())
+        let builds = MacBaseBuilder(store: store, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: nil)
+        let host = SandboxHost(sandboxesDirectory: sandboxes, factory: factory, operations: operations, store: store, macBuilds: builds)
         let id = "sandbox_vmlab"
         _ = try await hostResult(host, "sandbox.create", id, ["name": "vmlab", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": Int(Int32.max)])
         _ = try await hostResult(host, "shell.exec", id, ["command": "while :; do date +%s%3N >> /var/tmp/ticks; sleep 0.05; done", "background": true])
@@ -296,9 +291,7 @@ struct Lab {
     }
 
     func hostResult(_ host: SandboxHost, _ operation: String, _ sandboxID: String, _ input: [String: Any]) async throws -> [String: Any] {
-        let id = UUID().uuidString
-        let envelope = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": operation, "sandbox_id": sandboxID, "deadline_ms": 60_000, "mutation_id": id, "input": input])
-        let response = try JSONSerialization.jsonObject(with: try await host.request(envelope)) as? [String: Any]
+        let response = try JSONSerialization.jsonObject(with: try await host.request(requestEnvelope(operation, sandboxID: sandboxID, input: input, deadlineMs: 60_000))) as? [String: Any]
         guard response?["ok"] as? Bool == true else { throw LabError("\(operation) failed: \(response ?? [:])") }
         return response?["result"] as? [String: Any] ?? [:]
     }
@@ -325,9 +318,7 @@ struct Lab {
 /// Run one shell command in the guest through the framed vsock channel.
 func shell(_ backend: AppleVirtualizationBackend, _ command: String, timeoutMs: Int = 60_000) async throws -> (stdout: String, exitCode: Int) {
     let channel = try await backend.makeGuestChannel()
-    let id = UUID().uuidString
-    let envelope = try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "shell.exec", "sandbox_id": "sandbox_vmlab", "deadline_ms": timeoutMs, "mutation_id": id, "input": ["command": command]])
-    let response = try JSONSerialization.jsonObject(with: try await channel.send(envelope)) as? [String: Any]
+    let response = try JSONSerialization.jsonObject(with: try await channel.send(requestEnvelope("shell.exec", sandboxID: "sandbox_vmlab", input: ["command": command], deadlineMs: timeoutMs))) as? [String: Any]
     guard response?["ok"] as? Bool == true, let result = response?["result"] as? [String: Any] else { throw LabError("guest command failed: \(command): \(response ?? [:])") }
     return (result["stdout"] as? String ?? "", result["exit_code"] as? Int ?? -1)
 }

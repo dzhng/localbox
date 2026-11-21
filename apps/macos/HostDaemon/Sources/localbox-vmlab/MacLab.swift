@@ -29,7 +29,13 @@ struct MacLab {
         var files: MacGuestFiles { MacGuestFiles(disk: disk, auxiliaryStorage: aux, hardwareModel: hardwareModelFile, machineIdentifier: identifierFile, mac: macFile) }
         func mac() throws -> String { try files.macAddress() }
         func identifier() throws -> Data { try Data(contentsOf: identifierFile) }
-        func vm() throws -> MacVirtualMachine { try MacVirtualMachine(spec: try files.spec()) }
+        func vm() throws -> VirtualMachine { try files.vm() }
+    }
+
+    /// A normal boot of `guest` reached over SSH: the lab's provisioned guests keep Remote Login on, and their password.
+    func bootOverSSH(_ guest: Guest, timeout: TimeInterval = 600) async throws -> (VirtualMachine, GuestSSH) {
+        let user = MacProvisioningUser(name: Self.guestUser, password: try String(contentsOf: guest.directory.appendingPathComponent("password"), encoding: .utf8))
+        return try await MacProvisioning.boot(guest.files, .normal, user: user, timeout: timeout)
     }
 
     // MARK: install
@@ -44,7 +50,7 @@ struct MacLab {
         try version.write(to: staging.appendingPathComponent("macos-version"), atomically: true, encoding: .utf8)
         if FileManager.default.fileExists(atPath: base.path) { try FileManager.default.removeItem(at: base) }
         try FileManager.default.moveItem(at: staging, to: base)
-        return ["ok": true, "macos_version": version, "install_ms": installMs, "cpus": MacVirtualMachine.cpus, "memory_bytes": MacVirtualMachine.memoryBytes, "disk_allocated_bytes": privateBytes(Guest(directory: base).disk) ?? -1, "ipsw_bytes": (try? FileManager.default.attributesOfItem(atPath: ipsw.path)[.size] as? Int) ?? -1]
+        return ["ok": true, "macos_version": version, "install_ms": installMs, "cpus": VirtualMachine.macCPUs, "memory_bytes": VirtualMachine.macMemoryBytes, "disk_allocated_bytes": privateBytes(Guest(directory: base).disk) ?? -1, "ipsw_bytes": (try? FileManager.default.attributesOfItem(atPath: ipsw.path)[.size] as? Int) ?? -1]
     }
 
     static let diskBytes: UInt64 = 64 << 30
@@ -94,7 +100,7 @@ struct MacLab {
         let leaseMs = try await waitForLease(try guest.mac(), since: started)
         try await Task.sleep(nanoseconds: 15_000_000_000)
         let saveStarted = Date()
-        try await vm.save(to: guest.savedState)
+        try await vm.pause(); try await vm.saveState(to: guest.savedState); try await vm.stop()
         let saveMs = Int(Date().timeIntervalSince(saveStarted) * 1000)
         let stateBytes = (try? FileManager.default.attributesOfItem(atPath: guest.savedState.path)[.size] as? Int) ?? -1
         let phase2 = try runSelfJSON(["macos-restore", "--scratch", guest.directory.path, "--json"])
@@ -106,7 +112,7 @@ struct MacLab {
         let guest = Guest(directory: scratch)
         let vm = try guest.vm()
         let started = Date()
-        try await vm.restore(from: guest.savedState)
+        try await vm.restoreState(from: guest.savedState); try await vm.resume()
         let restoreMs = Int(Date().timeIntervalSince(started) * 1000)
         try await Task.sleep(nanoseconds: 15_000_000_000)
         let running = vm.isRunning
@@ -116,17 +122,10 @@ struct MacLab {
 
     // MARK: helpers
 
-    /// The guest is up far enough to run its network stack once the NAT's DHCP server leased its MAC an address.
+    /// Milliseconds from `since` until the NAT leased `mac` an address.
     func waitForLease(_ mac: String, since: Date, timeout: TimeInterval = 600) async throws -> Int {
-        let wanted = mac.split(separator: ":").map { String(Int($0, radix: 16) ?? -1, radix: 16) }.joined(separator: ":")
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let leases = try? String(contentsOfFile: "/var/db/dhcpd_leases", encoding: .utf8), leases.contains("hw_address=1,\(wanted)\n") {
-                return Int(Date().timeIntervalSince(since) * 1000)
-            }
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-        }
-        throw LabError("no DHCP lease for \(mac) within \(Int(timeout)) s")
+        _ = try await MacProvisioning.waitForAddress(mac, timeout: timeout)
+        return Int(Date().timeIntervalSince(since) * 1000)
     }
 
     func runSelfJSON(_ arguments: [String]) throws -> [String: Any] {

@@ -4,63 +4,63 @@ import HostDaemonCore
 import ImageIO
 import Vision
 
-/// Spikes 18 and 19 (and slice 33's agent), on clones of the provisioned cache (slice 17), with tools copied in over SSH.
-///   vmlab macos-tcc --agent <darwin agent> --units <dir> --evidence <dir> --json
-///                                               the darwin agent's desktop role, granted by TCC rows, through an update
+/// The darwin agent and its forwarder on clones of the provisioned cache (`macos-provision`), with tools copied in over
+/// SSH:
+///   vmlab macos-tcc --guest-agent <dist/guest-agent> --evidence <dir> --json
+///                                               the desktop role, granted by TCC rows, through a replace and an update
 ///   vmlab macos-vsock --json                    the vsock forwarder: framed echo, reconnect, host-only peers
 extension MacLab {
     static let agentPath = "/usr/local/localbox/localbox-agent"
     static let vsockPath = "/usr/local/localbox/localbox-vsock"
 
     /// A booted clone of the provisioned cache and an SSH session into it.
-    func bootProvisioned() async throws -> (Guest, MacVirtualMachine, GuestSSH, Date) {
+    func bootProvisioned() async throws -> (Guest, VirtualMachine, GuestSSH, Date) {
         guard FileManager.default.fileExists(atPath: provisioned.appendingPathComponent("disk.img").path) else { throw LabError("blocked: no provisioned macOS base; run npm run proof -- 17 --tier m") }
         let guest = try clone(from: provisioned)
-        let user = MacProvisioningUser(name: Self.guestUser, password: try String(contentsOf: guest.directory.appendingPathComponent("password"), encoding: .utf8))
         let started = Date()
-        let (vm, ssh) = try await MacProvisioning.bootOverSSH(guest.files, user: user)
+        let (vm, ssh) = try await bootOverSSH(guest)
         return (guest, vm, ssh, started)
     }
 
     func hostTool(_ name: String) -> URL { URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appendingPathComponent(name) }
 
-    func install(_ local: URL, at remote: String, over ssh: GuestSSH) throws {
-        try ssh.copy(local, to: "/tmp/\(local.lastPathComponent)")
-        let moved = try ssh.run("mkdir -p \((remote as NSString).deletingLastPathComponent) && mv /tmp/\(local.lastPathComponent) \(remote) && chown root:wheel \(remote) && chmod 755 \(remote) && echo ok", elevated: true)
+    func install(_ local: URL, at remote: String, over ssh: GuestSSH) async throws {
+        try await ssh.copy(local, to: "/tmp/\(local.lastPathComponent)")
+        let moved = try await ssh.run("mkdir -p \((remote as NSString).deletingLastPathComponent) && mv /tmp/\(local.lastPathComponent) \(remote) && chown root:wheel \(remote) && chmod 755 \(remote) && echo ok", elevated: true)
         guard moved.stdout.contains("ok") else { throw LabError("installing \(remote) failed: \(moved.stderr)") }
     }
 
-    func launchDaemon(_ label: String, _ arguments: [String], over ssh: GuestSSH) throws {
+    func launchDaemon(_ label: String, _ arguments: [String], over ssh: GuestSSH) async throws {
         let args = arguments.map { "<string>\($0)</string>" }.joined()
         let plist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict><key>Label</key><string>\(label)</string><key>ProgramArguments</key><array>\(args)</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
         let path = "/Library/LaunchDaemons/\(label).plist"
-        let loaded = try ssh.run("printf '%s' '\(plist)' > \(path) && chown root:wheel \(path) && launchctl bootstrap system \(path) && echo ok", elevated: true)
+        let loaded = try await ssh.run("printf '%s' '\(plist)' > \(path) && chown root:wheel \(path) && launchctl bootstrap system \(path) && echo ok", elevated: true)
         guard loaded.stdout.contains("ok") else { throw LabError("loading \(label) failed: \(loaded.stderr)") }
     }
 
-    // MARK: 18 (and slice 33's agent)
+    // MARK: the desktop role and its grants
 
     /// The host's guest agent build (`--guest-agent`, `dist/guest-agent`: the darwin binary and `darwin/` with the helper,
-    /// forwarder, units and `install.sh`), packed and installed exactly as the macOS base build does. Spike 18's question
-    /// still gates: TCC rows grant the desktop role, a binary replaced behind the agent's back loses screen capture
-    /// (recorded), and an `agent.update` keeps it because the system role rewrites the rows (P6). The grant is the base
-    /// build's own `tcc` step, so whether macOS still asks to confirm the capture (slice 33's window-picker prompt) is read
-    /// from every screenshot. Every desktop operation goes over vsock through the system role to the desktop role.
+    /// forwarder, units and `install.sh`), packed and installed exactly as the macOS base build does. TCC rows grant the
+    /// desktop role, a binary replaced behind the agent's back loses screen capture (recorded), and an `agent.update`
+    /// keeps it because the system role rewrites the rows (P6). The grant is the base build's own `tcc` step, so whether
+    /// macOS still asks to confirm the capture (its window-picker prompt) is read from every screenshot. Every desktop
+    /// operation goes over vsock through the system role to the desktop role.
     func tcc(guestAgent: URL, evidence: URL) async throws -> [String: Any] {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
         let tarball = FileManager.default.temporaryDirectory.appendingPathComponent("localbox-payload-\(UUID().uuidString).tgz")
-        try MacBaseBuilder.packPayload(guestAgent: guestAgent, to: tarball)
+        try await MacBaseBuilder.packPayload(guestAgent: guestAgent, to: tarball)
         defer { try? FileManager.default.removeItem(at: tarball) }
         let agent = guestAgent.appendingPathComponent("localbox-agent-darwin-arm64")
 
         let (guest, vm, ssh, _) = try await bootProvisioned()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: guest.directory) } }
-        try ssh.copy(tarball, to: MacBaseBuilder.remotePayload)
-        let installed = try ssh.run("rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(MacBaseBuilder.remotePayload) -C /tmp/localbox-stage && sh /tmp/localbox-stage/install.sh /tmp/localbox-stage && echo ok", elevated: true)
+        try await ssh.copy(tarball, to: MacBaseBuilder.remotePayload)
+        let installed = try await ssh.run("rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(MacBaseBuilder.remotePayload) -C /tmp/localbox-stage && sh /tmp/localbox-stage/install.sh /tmp/localbox-stage && echo ok", elevated: true)
         guard installed.stdout.contains("ok") else { throw LabError("install.sh failed: \(installed.stderr)") }
-        let uid = try ssh.run("id -u").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let uid = try await ssh.run("id -u").stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let vnc = try vm.attachVNC()
-        let screen = try await MacProvisioning.connect(vnc)
+        let screen = try await VNCClient.connect(to: vnc)
         defer { screen.close(); vnc.stop() }
 
         let lane = RequestLane(vm: vm, sandboxID: "sandbox_lab33", name: "lab-agent-33")
@@ -92,13 +92,13 @@ extension MacLab {
 
         _ = try await desktopUp()
         let beforeGrant = try await screenshot(nil)
-        let granted = try ssh.run(MacBaseBuilder.tccScript(user: Self.guestUser) + "\necho ok", elevated: true)
+        let granted = try await ssh.run(MacBaseBuilder.tccScript(user: Self.guestUser) + "\necho ok", elevated: true)
         guard granted.stdout.contains("ok") else { throw LabError("the build's tcc step failed: \(granted.stdout) \(granted.stderr)") }
         let status = try await desktopUp()
         let shot = try await screenshot("33-desktop")
         // macOS 27 may ask to confirm a capture some seconds after it; watch the screen for half a minute of captures.
         for index in 1...6 { try await Task.sleep(nanoseconds: 5_000_000_000); _ = try await screenshot(index == 6 ? "34-after-grant" : nil, "after grant +\(index * 5) s") }
-        // The Apple menu; a fresh grant can take a moment to reach event posting (spike 18), so one retry.
+        // The Apple menu; a fresh grant can take a moment to reach event posting, so one retry.
         var clicks = 0, menuOpened = false
         while !menuOpened && clicks < 2 {
             clicks += 1
@@ -110,26 +110,25 @@ extension MacLab {
         try await Task.sleep(nanoseconds: 1_000_000_000)
         let afterClose = try await screenshot(nil, "after close")
         let typed = try await lane.call("desktop.type", ["text": "localbox"])
-        let identity = try ssh.run("scutil --get LocalHostName; scutil --get ComputerName; cat /var/db/localbox/sandbox-id").stdout.split(separator: "\n").map(String.init)
-        let chrome = try ssh.run("test -d '/Applications/Google Chrome.app' && echo yes || echo no").stdout.contains("yes")
-        let browser: [String: Any] = chrome ? summary(try await lane.call("browser.open", ["url": "https://example.com"])) : ["skipped": "no Chrome in the provisioned base (slice 34 installs it)"]
+        let identity = try await ssh.run("scutil --get LocalHostName; scutil --get ComputerName; cat /var/db/localbox/sandbox-id").stdout.split(separator: "\n").map(String.init)
+        let chrome = try await ssh.run("test -d '/Applications/Google Chrome.app' && echo yes || echo no").stdout.contains("yes")
+        let browser: [String: Any] = chrome ? summary(try await lane.call("browser.open", ["url": "https://example.com"])) : ["skipped": "no Chrome in the provisioned base (the image build installs it)"]
 
-        // Spike 18's fact: a binary replaced without the rewrite loses screen capture.
-        let replacement = try resigned(agent)
+        // A binary replaced without the rewrite loses screen capture.
+        let replacement = try await resigned(agent)
         defer { try? FileManager.default.removeItem(at: replacement) }
-        try install(replacement, at: Self.agentPath, over: ssh)
-        _ = try ssh.run("launchctl kickstart -k system/sh.localbox.agent; launchctl kickstart -k gui/\(uid)/sh.localbox.desktop", elevated: true)
+        try await install(replacement, at: Self.agentPath, over: ssh)
+        _ = try await ssh.run("launchctl kickstart -k system/sh.localbox.agent; launchctl kickstart -k gui/\(uid)/sh.localbox.desktop", elevated: true)
         try await lane.open()
         _ = try await desktopUp()
         let afterReplace = try await screenshot(nil, "after replace")
 
         // P6: an agent.update over the control lane; the system role rewrites the rows, the desktop role restarts itself.
-        let pushed = try resigned(agent)
+        let pushed = try await resigned(agent)
         defer { try? FileManager.default.removeItem(at: pushed) }
         let size = (try FileManager.default.attributesOfItem(atPath: pushed.path)[.size] as? Int) ?? 0
-        let control = try await dial(vm, port: 1025)
-        let channel = FramedControlChannel(reader: control, writer: control)
-        let outcome = try await channel.updateAgent(AgentBinary(version: "lab", sha256: try sha256(pushed), url: pushed, size: size, chunkBytes: 4 << 20))
+        let channel = try await vm.dialControl()
+        let outcome = try await channel.updateAgent(AgentBinary(version: "lab", sha256: try await sha256(pushed), url: pushed, size: size, chunkBytes: 4 << 20))
         await channel.close()
         try await Task.sleep(nanoseconds: 3_000_000_000)
         try await lane.open()
@@ -152,39 +151,36 @@ extension MacLab {
     }
 
     /// A copy of `binary` with a new ad-hoc signature: different bytes at the same path, as an update brings.
-    func resigned(_ binary: URL) throws -> URL {
+    func resigned(_ binary: URL) async throws -> URL {
         let copy = FileManager.default.temporaryDirectory.appendingPathComponent("localbox-agent-\(UUID().uuidString.prefix(8))")
         try FileManager.default.copyItem(at: binary, to: copy)
-        try run("/usr/bin/codesign", ["--force", "--sign", "-", "--identifier", "sh.localbox.agent.\(UUID().uuidString.prefix(8))", copy.path])
+        try await run("/usr/bin/codesign", ["--force", "--sign", "-", "--identifier", "sh.localbox.agent.\(UUID().uuidString.prefix(8))", copy.path])
         return copy
     }
 
-    func run(_ tool: String, _ arguments: [String]) throws {
-        let process = Process(); process.executableURL = URL(fileURLWithPath: tool); process.arguments = arguments
-        try process.run(); process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw LabError("\(tool) \(arguments.joined(separator: " ")) exited \(process.terminationStatus)") }
+    func run(_ tool: String, _ arguments: [String]) async throws {
+        let outcome = await runProcess(URL(fileURLWithPath: tool), arguments, timeout: 120)
+        guard outcome.status == 0 else { throw LabError("\(tool) \(arguments.joined(separator: " ")) exited \(outcome.status): \(outcome.stderr)") }
     }
 
-    func sha256(_ file: URL) throws -> String {
-        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum"); process.arguments = ["-a", "256", file.path]
-        let out = Pipe(); process.standardOutput = out
-        try process.run(); let data = out.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self).split(separator: " ").first.map(String.init) ?? ""
+    func sha256(_ file: URL) async throws -> String {
+        let outcome = await runProcess(URL(fileURLWithPath: "/usr/bin/shasum"), ["-a", "256", file.path], timeout: 120)
+        return outcome.output.split(separator: " ").first.map(String.init) ?? ""
     }
 
-    // MARK: 19
+    // MARK: the vsock forwarder
 
     func vsock() async throws -> [String: Any] {
         let (guest, vm, ssh, booted) = try await bootProvisioned()
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: guest.directory) } }
         let sshMs = Int(Date().timeIntervalSince(booted) * 1000)
-        try install(hostTool("localbox-vsock"), at: Self.vsockPath, over: ssh)
-        try launchDaemon("sh.localbox.echo.agent", [Self.vsockPath, "echo", "/var/run/localbox/agent.sock"], over: ssh)
-        try launchDaemon("sh.localbox.echo.control", [Self.vsockPath, "echo", "/var/run/localbox/control.sock"], over: ssh)
-        try launchDaemon("sh.localbox.vsock", [Self.vsockPath, "1024=/var/run/localbox/agent.sock", "1025=/var/run/localbox/control.sock"], over: ssh)
-        let forwarderPID = { try ssh.run("pgrep -f 'localbox-vsock 1024'").stdout.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let pidBefore = try forwarderPID()
-        var request = try await dial(vm, port: 1024), control = try await dial(vm, port: 1025)
+        try await install(hostTool("localbox-vsock"), at: Self.vsockPath, over: ssh)
+        try await launchDaemon("sh.localbox.echo.agent", [Self.vsockPath, "echo", "/var/run/localbox/agent.sock"], over: ssh)
+        try await launchDaemon("sh.localbox.echo.control", [Self.vsockPath, "echo", "/var/run/localbox/control.sock"], over: ssh)
+        try await launchDaemon("sh.localbox.vsock", [Self.vsockPath, "\(GuestPort.request)=/var/run/localbox/agent.sock", "\(GuestPort.control)=/var/run/localbox/control.sock"], over: ssh)
+        let forwarderPID = { try await ssh.run("pgrep -f 'localbox-vsock \(GuestPort.request)'").stdout.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let pidBefore = try await forwarderPID()
+        var request = try await vm.connect(port: GuestPort.request, within: 30), control = try await vm.connect(port: GuestPort.control, within: 30)
         // 10,000 frames up to 64 KiB plus sixteen of 8 MiB, each echoed byte for byte; a stream on 1025 meanwhile.
         let started = Date()
         var mismatches = 0, frames = 0, bytes = 0
@@ -202,21 +198,19 @@ extension MacLab {
         let controlOK = try await controlTask.value
         let throughputMBs = Double(bytes * 2) / Date().timeIntervalSince(started) / 1_048_576
         // The host drops both connections and dials again: the forwarder keeps running.
-        try request.close(); try control.close()
+        for handle in [request.reader, request.writer, control.reader, control.writer] { try handle.close() }
         try await Task.sleep(nanoseconds: 1_000_000_000)
-        request = try await dial(vm, port: 1024); control = try await dial(vm, port: 1025)
+        request = try await vm.connect(port: GuestPort.request, within: 30); control = try await vm.connect(port: GuestPort.control, within: 30)
         let probe = Data("after reconnect".utf8)
         let reconnected = try roundTrip(request, probe) == probe && roundTrip(control, probe) == probe
-        let pidAfter = try forwarderPID()
-        let fromGuest = try ssh.run("\(Self.vsockPath) dial 1024", elevated: true).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pidAfter = try await forwarderPID()
+        let fromGuest = try await ssh.run("\(Self.vsockPath) dial \(GuestPort.request)", elevated: true).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         try await vm.stop()
         let ok = mismatches == 0 && controlOK && reconnected && pidBefore == pidAfter && !pidBefore.isEmpty && fromGuest.hasPrefix("refused")
         return ["ok": ok, "frames": frames, "bytes": bytes, "mismatches": mismatches, "control_stream_ok": controlOK, "echo_mb_per_s": Int(throughputMBs), "reconnected": reconnected, "forwarder_pid_unchanged": pidBefore == pidAfter, "guest_local_dial": fromGuest, "first_boot_to_ssh_ms": sshMs]
     }
 }
 
-/// One host-to-guest vsock stream, retried while the guest's listener comes up. The descriptor is duplicated so the
-/// handle outlives Virtualization's connection object.
 /// Whether a screenshot shows macOS's "… is requesting to bypass the system private window picker" prompt (Vision OCR).
 func showsPickerPrompt(_ image: Data) -> Bool { pickerPrompt(in: recognizedText(image) ?? "") }
 
@@ -253,39 +247,21 @@ func inspectShot(_ file: URL) throws -> [String: Any] {
             "distinct_colours": colours.count, "text": text, "picker_prompt": pickerPrompt(in: text)]
 }
 
-func dial(_ vm: MacVirtualMachine, port: UInt32) async throws -> FileHandle { try await vm.connect(port: port, within: 30) }
-
 /// The host end of the agent's request lane, reopened after the agent restarts (an update, a kickstart).
 final class RequestLane: @unchecked Sendable {
-    let vm: MacVirtualMachine, sandboxID: String, name: String
+    let vm: VirtualMachine, sandboxID: String, name: String
     private var channel: FramedFileHandleGuestChannel?
-    init(vm: MacVirtualMachine, sandboxID: String, name: String) { self.vm = vm; self.sandboxID = sandboxID; self.name = name }
+    init(vm: VirtualMachine, sandboxID: String, name: String) { self.vm = vm; self.sandboxID = sandboxID; self.name = name }
 
-    /// Dials until an agent answers with its ready frame (the forwarder accepts before the agent listens).
     func open() async throws {
         await close()
-        var last: Error = LabError("never dialled")
-        for _ in 0..<60 {
-            let stream = try await dial(vm, port: 1024)
-            let channel = FramedFileHandleGuestChannel(reader: stream, writer: stream, sandboxID: sandboxID, name: name)
-            do { try await channel.waitUntilReady(); self.channel = channel; return } catch { last = error; await channel.close() }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-        throw LabError("the agent never answered on vsock 1024: \(last)")
+        channel = try await vm.openRequestLane(sandboxID: sandboxID, name: name, until: Date().addingTimeInterval(60))
     }
 
+    /// One request; the lane bounds the wait for its answer by the request's deadline.
     func call(_ operation: String, _ input: [String: Any]) async throws -> [String: Any] {
         guard let channel else { throw LabError("the request lane is closed") }
-        let envelope: [String: Any] = ["protocol_version": "v1", "request_id": UUID().uuidString, "operation": operation, "sandbox_id": sandboxID, "deadline_ms": 60_000, "mutation_id": UUID().uuidString, "input": input]
-        let request = try JSONSerialization.data(withJSONObject: envelope)
-        // The channel has no deadline of its own, and a blocked read can't be cancelled: race it unstructured, so an
-        // answer the agent never sends fails the lab instead of hanging it.
-        let response: Data = try await withCheckedThrowingContinuation { continuation in
-            let lock = NSLock(); var pending = true
-            let finish = { (result: Result<Data, Error>) in if lock.withLock({ defer { pending = false }; return pending }) { continuation.resume(with: result) } }
-            Task { do { finish(.success(try await channel.send(request))) } catch { finish(.failure(error)) } }
-            Task { try? await Task.sleep(nanoseconds: 90_000_000_000); finish(.failure(LabError("no answer to \(operation) within 90 s"))) }
-        }
+        let response = try await channel.send(try requestEnvelope(operation, sandboxID: sandboxID, input: input, deadlineMs: 60_000))
         return try JSONSerialization.jsonObject(with: response) as? [String: Any] ?? [:]
     }
 
@@ -295,30 +271,23 @@ final class RequestLane: @unchecked Sendable {
 /// Writes one length-prefixed frame and reads the echoed frame back. The write runs on its own thread: an echo
 /// answers while the frame is still arriving, so writing all of a large frame before reading would fill both
 /// directions' buffers and deadlock.
-func roundTrip(_ handle: FileHandle, _ frame: Data) throws -> Data {
+func roundTrip(_ stream: (reader: FileHandle, writer: FileHandle), _ frame: Data) throws -> Data {
     var length = UInt32(frame.count).bigEndian
     let outgoing = Data(bytes: &length, count: 4) + frame
-    let writer = Thread { try? handle.write(contentsOf: outgoing) }
+    let writer = Thread { try? stream.writer.write(contentsOf: outgoing) }
     writer.start()
     var received = Data()
     while received.count < frame.count + 4 {
-        guard let chunk = try handle.read(upToCount: frame.count + 4 - received.count), !chunk.isEmpty else { throw LabError("the echo closed after \(received.count) bytes") }
+        guard let chunk = try stream.reader.read(upToCount: frame.count + 4 - received.count), !chunk.isEmpty else { throw LabError("the echo closed after \(received.count) bytes") }
         received.append(chunk)
     }
     return received.dropFirst(4)
 }
 
-extension GuestSSH {
-    func copyBack(_ remote: String, to local: URL) throws {
-        let result = try run("base64 -i \(remote)", timeout: 120)
-        guard result.status == 0, let data = Data(base64Encoded: result.stdout.replacingOccurrences(of: "\n", with: "")) else { throw LabError("could not read \(remote)") }
-        try data.write(to: local)
-    }
-}
 #endif
 
 #if os(macOS)
-/// Slice 34's look inside a built macOS base: `vmlab macos-image --image <images>/<id> --evidence <dir> --json` makes a
+/// A look inside a built macOS base: `vmlab macos-image --image <images>/<id> --evidence <dir> --json` makes a
 /// sandbox from it the way the daemon does (`AppleSandboxFactory`, `AppleVirtualizationBackend`, the agent over vsock)
 /// and checks what the build promises: SIP disabled, Chrome present, no Xcode, Remote Login off, and no window-picker
 /// prompt left over the desktop while the desktop role captures it.
@@ -330,7 +299,7 @@ extension MacLab {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { if ProcessInfo.processInfo.environment["LOCALBOX_VMLAB_KEEP"] == nil { try? FileManager.default.removeItem(at: scratch) } }
         let directory = SandboxDirectory(scratch)
-        var record = SandboxRecord(sandboxID: "sandbox_lab34", name: "lab-image-34", imageID: image.lastPathComponent, cpus: MacVirtualMachine.cpus, memoryBytes: MacVirtualMachine.memoryBytes, sleepAfterMs: .max)
+        var record = SandboxRecord(sandboxID: "sandbox_lab34", name: "lab-image-34", imageID: image.lastPathComponent, cpus: VirtualMachine.macCPUs, memoryBytes: VirtualMachine.macMemoryBytes, sleepAfterMs: .max)
         _ = try await factory.provision(&record, in: directory)
         try directory.save(record)
         let backend = AppleVirtualizationBackend(spec: try VMSpec(record: record, in: directory), sandboxID: record.sandboxID, name: record.name)
@@ -339,8 +308,7 @@ extension MacLab {
         let agentMs = Int(Date().timeIntervalSince(booted) * 1000)
         func call(_ operation: String, _ input: [String: Any] = [:]) async throws -> [String: Any] {
             let channel = try await backend.makeGuestChannel()
-            let envelope: [String: Any] = ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": operation, "sandbox_id": record.sandboxID, "deadline_ms": 90_000, "mutation_id": UUID().uuidString, "input": input]
-            return try JSONSerialization.jsonObject(with: try await channel.send(JSONSerialization.data(withJSONObject: envelope))) as? [String: Any] ?? [:]
+            return try JSONSerialization.jsonObject(with: try await channel.send(requestEnvelope(operation, sandboxID: record.sandboxID, input: input, deadlineMs: 90_000))) as? [String: Any] ?? [:]
         }
         func sh(_ command: String) async throws -> String { ((try await call("shell.exec", ["command": command]))["result"] as? [String: Any])?["stdout"] as? String ?? "" }
         var promptSeen: [String] = [], shots = 0

@@ -94,7 +94,7 @@ func type(_ text: String) throws {
     }
 }
 
-/// One frame from a running `SCStream`. `SCScreenshotManager` answers nil while a menu is open (spike 18); a stream
+/// One frame from a running `SCStream`. `SCScreenshotManager` answers nil while a menu is open; a stream
 /// keeps delivering frames then. `@unchecked Sendable`: the continuation is only touched under the lock.
 final class OneFrame: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let lock = NSLock()

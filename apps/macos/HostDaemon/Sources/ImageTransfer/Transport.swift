@@ -55,8 +55,8 @@ public protocol Transport: Sendable {
 }
 
 /// Same network: this Mac's IPv4 interface addresses (or the given ones), tried at once, on two flows.
-/// Network.framework's ceiling is per process pair (~260k datagrams/s in spike 20, whatever the flow count),
-/// but two flows halve each flow's burst into its socket buffer, which cut loss in the spike's runs.
+/// Network.framework's ceiling is per process pair (~260k datagrams/s measured on one Mac, whatever the flow
+/// count), but two flows halve each flow's burst into its socket buffer, which cut loss in those runs.
 public struct LANTransport: Transport {
     public let kind = PathKind.local
     public let delay: TimeInterval = 0
@@ -113,7 +113,7 @@ public struct PunchedUDPTransport: Transport {
 
     /// Binding requests from `port` itself to the STUN server, retried every 400 ms within `budget`. Takes over
     /// `port.onDatagrams` while it runs. The flows are cancelled afterwards: a live flow to the STUN server on
-    /// the shared port stopped every later flow from that port in spike 20.
+    /// the shared port stopped every later flow from that port.
     public func stun(_ port: any DatagramPort) -> NATReport {
         let servers = stunPorts.map { PeerAddress(stunHost, $0) }
         let transactions = servers.map { _ in Data((0..<12).map { _ in UInt8.random(in: 0...255) }) }

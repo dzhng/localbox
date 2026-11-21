@@ -104,7 +104,7 @@ public final class UDPSocket: DatagramPort, @unchecked Sendable {
     /// A flow the listener accepted is where the kernel delivers that peer's datagrams, so it also carries what we send
     /// there. An outgoing flow we opened to the same peer is replaced: one that was receiving would have taken the
     /// datagram itself, and one still connecting when the peer's first datagram arrived never delivers (a restarted
-    /// receiver saying HELLO while the sender's punch toward it lands, slice 38).
+    /// receiver saying HELLO while the sender's punch toward it lands).
     private func adopt(_ connection: NWConnection) {
         guard let remote = Self.peer(connection.endpoint) else { return connection.cancel() }
         lock.lock()
