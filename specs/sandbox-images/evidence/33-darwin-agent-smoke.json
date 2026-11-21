@@ -1,0 +1,66 @@
+{
+  "run": "localbox-vmlab macos-tcc on a clone of the provisioned macOS 27 base, 2026-11-21 (slice 33 smoke; the gated real run is slice 35)",
+  "after_replace": {
+    "error": "localbox-desktop: Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3801 \"The user declined TCCs for application, window, display capture\" UserInfo={NSLocalizedDescription=The user declined TCCs for application, window, display capture}",
+    "ok": false
+  },
+  "after_update": {
+    "height": 900,
+    "mime_type": "image/jpeg",
+    "ok": true,
+    "width": 1440
+  },
+  "before_grant": {
+    "error": "localbox-desktop: Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3801 \"The user declined TCCs for application, window, display capture\" UserInfo={NSLocalizedDescription=The user declined TCCs for application, window, display capture}",
+    "ok": false
+  },
+  "browser": {
+    "skipped": "no Chrome in the provisioned base (slice 34 installs it)"
+  },
+  "checks": {
+    "capture_after_close": true,
+    "capture_after_update": true,
+    "capture_granted": true,
+    "capture_with_menu_open": true,
+    "click_opened_menu": true,
+    "identity_from_hello": true,
+    "key_and_type": true,
+    "shell_as_root": true
+  },
+  "clicks": 2,
+  "desktop_status": {
+    "browser_tabs": [],
+    "height": 900,
+    "phase": "ready",
+    "viewers": 0,
+    "width": 1440,
+    "work": 0
+  },
+  "identity": [
+    "lab-agent-33",
+    "lab-agent-33",
+    "sandbox_lab33"
+  ],
+  "ok": true,
+  "screenshot": {
+    "height": 900,
+    "mime_type": "image/jpeg",
+    "ok": true,
+    "width": 1440
+  },
+  "shell": {
+    "duration_ms": 85,
+    "exit_code": 0,
+    "signal": null,
+    "stderr": "",
+    "stdout": "0\nDarwin\n",
+    "truncated": false
+  },
+  "survives_replace": false,
+  "with_menu_open": {
+    "height": 900,
+    "mime_type": "image/jpeg",
+    "ok": true,
+    "width": 1440
+  }
+}
