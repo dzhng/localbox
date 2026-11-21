@@ -79,7 +79,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
       }
       const exec = await a(["shell", "exec", "--sandbox", sandbox, "--json", "--", "echo", "hi"]);
       assert.equal(exec.envelope.error?.code, "sandbox_not_ready", exec.stdout + exec.stderr);
-      assert.match(exec.envelope.error.message, new RegExp(`^${sandbox} on ${bName} is waiting for image ${image} to copy \\((\\d+ MiB of 192 MiB|[a-z ]+)\\); follow it with: localbox image wait ${image}$`));
+      assert.match(exec.envelope.error.message, new RegExp(`^${sandbox} on ${bName} is waiting for image ${image} to copy \\((\\d+ (B|MiB) of 192 MiB|[a-z ]+)\\); follow it with: localbox image wait ${image}$`));
       assert.ok(exec.envelope.error.details.progress, JSON.stringify(exec.envelope.error));
       const status = await a(["sandbox", "status", sandbox, "--json"]);
       assert.deepEqual([status.envelope.result?.state, status.envelope.result?.next_step], ["copying", `localbox image wait ${image}`], status.stdout + status.stderr);
