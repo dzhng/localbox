@@ -71,7 +71,8 @@ public struct ImageStore: Sendable {
     }
 
     /// The temporary a resumable write of image `id` under `key` (a copy's operation) uses, created if missing and
-    /// otherwise as an earlier run left it; `sweepTemps(keeping:)` spares it while that write may resume.
+    /// otherwise as an earlier run left it; `sweepTemps(keeping:)` spares it, and anything named after it, while that write
+    /// may resume.
     public func resumableTemp(_ id: String, key: String) throws -> URL {
         let temp = root.appendingPathComponent(Self.resumableTempName(id, key: key), isDirectory: true)
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -172,7 +173,8 @@ public struct ImageStore: Sendable {
     }
 
     /// At daemon start: removes temporaries a crash left (an unfinished write or delete). A dot-entry a running host
-    /// operation owns (`.<subject>.*`, for every subject in `running`) stays for its resume, and so does the IPSW cache.
+    /// operation owns (`.<subject>.*`, for every subject in `running`) stays for its resume (a build directory, a copy's partial files and the transfer's resume
+    /// bitmap beside them), and so does the IPSW cache.
     /// Returns the names removed.
     @discardableResult public func sweepTemps(keeping running: Set<String> = []) -> [String] {
         let swept = temps().filter { $0 != ipswDirectory.lastPathComponent && !Self.temp($0, belongsTo: running) }

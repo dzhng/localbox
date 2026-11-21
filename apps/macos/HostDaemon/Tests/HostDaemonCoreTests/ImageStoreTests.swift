@@ -47,6 +47,19 @@ final class ImageStoreTests: XCTestCase {
         XCTAssertThrowsError(try restarted.manifest("brave-walrus"))
     }
 
+    func testTheSweepSparesEveryTemporaryOfAnImageARunningOperationProducesAndNothingElse() throws {
+        let store = try ImageStore(imagesDirectory: images)
+        let resuming = try store.resumableTemp("copied-otter", key: "copy-1")
+        let bitmap = resuming.deletingLastPathComponent().appendingPathComponent(resuming.lastPathComponent + ".resume")
+        try Data("bits".utf8).write(to: bitmap)
+        let abandoned = try store.reserveTemp("brave-walrus")
+        let restarted = try ImageStore(imagesDirectory: images)
+        XCTAssertEqual(restarted.sweepTemps(keeping: ["copied-otter"]), [abandoned.lastPathComponent])
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: images.path)), [resuming.lastPathComponent, bitmap.lastPathComponent], "the copy's files and the transfer's bitmap beside them stay")
+        restarted.discardTemps(of: "copied-otter")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: images.path), [])
+    }
+
     func testCommitIsAtomicAndRefusesIncompleteOrDuplicateImages() throws {
         let store = try ImageStore(imagesDirectory: images)
         try committed(store, "linux")

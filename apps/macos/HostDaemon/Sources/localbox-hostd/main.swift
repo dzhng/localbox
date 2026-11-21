@@ -1,5 +1,6 @@
 import Foundation
 import HostDaemonCore
+import ImageCopyTransfer
 #if os(macOS)
 import Darwin
 #else
@@ -20,7 +21,7 @@ struct HostDaemonMain {
             let isDev = ProcessInfo.processInfo.environment["LOCALBOX_DEV"] == "1"
             let operations = try HostOperationStore(operationsDirectory: pathURL("LOCALBOX_OPERATIONS"))
             let images = try ImageStore(imagesDirectory: pathURL("LOCALBOX_IMAGES"))
-            // A running operation's temporaries (a macOS build directory, a copy's partial files) stay for its resume.
+            // A running operation's temporaries (a macOS build directory, a copy's partial files and resume bitmap) stay for its resume.
             for name in images.sweepTemps(keeping: await operations.runningSubjects()) { log("removed \(name), an image write or delete the last run left unfinished") }
             // Kinds register before the store starts (macos.build, image.capture and sandbox.create_after_copy below); dev daemons also run the
             // proof's fixture kind.
@@ -32,21 +33,18 @@ struct HostDaemonMain {
             let agentUpdater = guestAgent.map { GuestAgentUpdater(directory: $0) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
             let capture = ImageCapture(store: images, operations: operations)
-            // The image copy transport. Slice 37's ImageTransfer library is wired here (an `ImageCopyTransport` adapter over
-            // `Sender.send`/`Receiver.receive` and `PathSelector`); until then dev daemons copy over loopback, paced so a
-            // proof can stop the receiver midway, and release daemons answer image.copy unsupported.
-            let copyTransport: (any ImageCopyTransport)? = isDev ? LoopbackImageCopyTransport(pauseMs: 50) : nil
-            let copy = copyTransport.map { ImageCopy(store: images, operations: operations, transport: $0) }
-            await copy?.attach()
+            // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
+            let copy = ImageCopy(store: images, operations: operations, transport: ImageTransferCopyTransport())
+            await copy.attach()
             let macBuilder = MacBaseBuilder(store: images, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
             await macBuilder.register()
             let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), capture: capture, copy: copy, macBuilder: macBuilder, allowsDirectOperations: isDev)
-            // A sandbox whose image is still copying here is created once the copy lands; only a Mac that copies needs it.
-            let afterCopy = copy.map { _ in SandboxCreateAfterCopy(operations: operations) }
+            // A sandbox whose image is still copying here is created once the copy lands.
+            let afterCopy = SandboxCreateAfterCopy(operations: operations)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
                                    allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, afterCopy: afterCopy, freeDiskBytes: { dev.freeDiskBytes ?? (try? images.freeBytes()) })
             await capture.attach(to: host)
-            await afterCopy?.attach(to: host)
+            await afterCopy.attach(to: host)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)

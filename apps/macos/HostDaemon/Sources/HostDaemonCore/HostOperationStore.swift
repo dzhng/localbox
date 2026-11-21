@@ -97,6 +97,8 @@ public struct HostOperationContext: Sendable {
     public let subject: String
     public let progress: HostOperationProgress?
     public let checkpoint: JSONValue
+    /// When the operation began (ms since 1970), kept across resumes.
+    public let startedAt: Int
     let store: HostOperationStore
 
     /// Journals progress and the new resume point; throws once the store has stopped, so a work that outlives its
@@ -190,7 +192,6 @@ public actor HostOperationStore {
         records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
     }
 
-    /// The records of `kind` still running (or left running by the last run, before `start()`).
 
     /// Whether any operation on `subject` is still running.
     public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
@@ -262,7 +263,7 @@ public actor HostOperationStore {
     // MARK: - Work
 
     private func launch(_ record: HostOperationRecord, work: @escaping HostOperationWork) {
-        let context = HostOperationContext(key: record.key, subject: record.subject, progress: record.progress, checkpoint: record.checkpoint, store: self)
+        let context = HostOperationContext(key: record.key, subject: record.subject, progress: record.progress, checkpoint: record.checkpoint, startedAt: record.startedAt, store: self)
         tasks[record.key] = Task.detached { [weak self] in
             let outcome: Result<JSONValue, HostOperationFailure>?
             do { outcome = .success(try await work(context)) }

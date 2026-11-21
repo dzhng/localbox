@@ -13,7 +13,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "HostDaemonCore"),
-        .executableTarget(name: "localbox-hostd", dependencies: ["HostDaemonCore"]),
+        .executableTarget(name: "localbox-hostd", dependencies: ["HostDaemonCore", "ImageCopyTransfer"]),
         .executableTarget(name: "localbox-vmlab", dependencies: ["HostDaemonCore"]),
         // Runs inside darwin guests, not on the host.
         .executableTarget(name: "localbox-vsock"),
@@ -23,7 +23,10 @@ let package = Package(
         .target(name: "ImageTransfer"),
         // The manual transfer tool and probe 20's driver, on top of ImageTransfer.
         .executableTarget(name: "localbox-punchlab", dependencies: ["ImageTransfer"]),
+        // The daemon's image copy transport: HostDaemonCore's ImageCopyTransport over ImageTransfer.
+        .target(name: "ImageCopyTransfer", dependencies: ["HostDaemonCore", "ImageTransfer"]),
         .testTarget(name: "HostDaemonCoreTests", dependencies: ["HostDaemonCore"]),
         .testTarget(name: "ImageTransferTests", dependencies: ["ImageTransfer"]),
+        .testTarget(name: "ImageCopyTransferTests", dependencies: ["ImageCopyTransfer", "HostDaemonCore", "ImageTransfer"]),
     ]
 )
