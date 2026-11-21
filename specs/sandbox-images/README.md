@@ -40,8 +40,11 @@ You are picking up the sandbox-images plan. Where things stand:
   3. **38 image copy** after 37, then **39 create with copy** (needs 29, 36, 38).
   4. **40 docs** last.
 - **Warnings:**
-  - Tier `l` daemons can fail with "socket path is too long" under a long
-    worktree path; run those probes from a short `git worktree add /tmp/<x>`.
+  - Run proof sweeps from a short worktree under `$HOME` (`git worktree add
+    ~/lbi`): tier `l` daemons fail with "socket path is too long" under a long
+    path, and Colima shares only `$HOME`, so Docker-backed checks (probe 32's
+    Linux agent binary, the image build) and probe 03's fixture fail under `/tmp`.
+    Sweep 2026-11-21 at `4c0fbdc`: 00, 03–09, 11, 13, 14, 24, 26–30, 32 green.
   - The private VNC server listens on every interface; `RecoveryVNC` always uses
     a one-time VNC password.
 
