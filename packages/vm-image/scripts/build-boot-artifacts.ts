@@ -14,6 +14,8 @@ if (!/@sha256:[0-9a-f]{64}$/i.test(baseImage)) throw new Error("LOCALBOX_BASE_IM
 const outputRoot = resolve(process.env.IMAGE_OUTPUT_DIR ?? "dist/vm-image");
 const output = join(outputRoot, profile);
 const buildVersion = process.env.IMAGE_BUILD_VERSION ?? "dev";
+/** The guest agent binary the Dockerfile installs, from `npm run build:guest-agent`. */
+const AGENT_BINARY = "dist/guest-agent/localbox-agent-linux-arm64";
 const substitutions = [
   { from: "x86_64 release downloads", to: "ARM64 release downloads", reason: "Bun, static-web-server, KasmVNC, and Google Chrome are fetched from their native ARM64 release assets at the Duet versions." },
   { from: "boldsoftware/exeuntu", to: "ubuntu:24.04 ARM64", reason: "The Duet base is private and has no published ARM64 image available to this build; Ubuntu is pinned by digest." },
@@ -37,11 +39,10 @@ async function filesUnder(directory: string): Promise<string[]> {
 
 async function inputDigest(): Promise<string> {
   const hash = createHash("sha256");
-  // Everything the Dockerfile COPYs is an input (a changed guest agent in dist/ must produce a new image), and so is
-  // this script, which edits the root filesystem after the build. dist/vm-image and dist/release are outputs, kept out
-  // of the image by .dockerignore.
+  // Everything the Dockerfile COPYs is an input (a changed guest agent binary must produce a new image), and so is
+  // this script, which edits the root filesystem after the build.
   const copied = ["packages/vm-image/scripts/build-boot-artifacts.ts", "packages/vm-image/Dockerfile.arm64", "packages/vm-image/requirements-arm64.txt", "packages/vm-image/duet-reference/Dockerfile",
-    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), ...(await filesUnder("dist")).filter((path) => !path.startsWith("dist/vm-image/") && !path.startsWith("dist/release/"))];
+    ...await filesUnder("packages/vm-image/duet-reference/desktop"), ...await filesUnder("packages/vm-image/desktop"), AGENT_BINARY];
   for (const path of copied.sort()) { hash.update(path); hash.update(await readFile(join(root, path))); }
   hash.update(profile);
   hash.update(baseImage);
@@ -81,6 +82,8 @@ const TEMPLATE_SCRIPT = [
   "truncate -s 8G /out/template.img && mke2fs -q -t ext4 -L localbox -d /rootfs /out/template.img",
 ].join("; ");
 
+// The agent is built first because its binary is an input: a cache hit must mean the same agent, not a stale one.
+await run("npm", ["run", "build:guest-agent"]);
 const digest = await inputDigest();
 const existing = join(output, "manifest.json");
 try {
@@ -91,7 +94,6 @@ try {
   }
 } catch { /* no cache */ }
 
-await run("npm", ["run", "build"]);
 const tag = `localbox-vm:${profile}-${digest.slice(-12)}`;
 await run("docker", ["build", "--platform", "linux/arm64", "--file", join(root, "packages/vm-image/Dockerfile.arm64"), "--build-arg", `PROFILE=${profile}`, "--build-arg", `BASE_IMAGE=${baseImage}`, "--build-arg", `IMAGE_BUILD_VERSION=${buildVersion}`, "--tag", tag, root], { stdout: "inherit" });
 const container = (await run("docker", ["create", "--platform", "linux/arm64", tag])).trim();
