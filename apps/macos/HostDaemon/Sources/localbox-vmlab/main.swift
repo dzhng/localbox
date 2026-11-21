@@ -33,8 +33,8 @@ struct VMLabMain {
                 case "macos-clones": output = try await lab.clones()
                 case "macos-hibernate": output = try await lab.hibernate()
                 case "macos-tcc":
-                    guard let evidence = option("--evidence", in: arguments) else { throw LabError("macos-tcc needs --evidence <dir>") }
-                    output = try await lab.tcc(evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
+                    guard let evidence = option("--evidence", in: arguments), let agent = option("--agent", in: arguments), let units = option("--units", in: arguments) else { throw LabError("macos-tcc needs --agent <darwin agent> --units <apps/guest-agent/darwin> --evidence <dir>") }
+                    output = try await lab.tcc(agent: URL(fileURLWithPath: expanded(agent)), units: URL(fileURLWithPath: expanded(units), isDirectory: true), evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
                 case "macos-vsock": output = try await lab.vsock()
                 case "macos-check":
                     guard let guest = option("--guest", in: arguments) else { throw LabError("macos-check needs --guest <dir>") }
