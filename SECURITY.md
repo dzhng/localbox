@@ -1,14 +1,17 @@
 # Security model
 
-Localbox has three trust boundaries: the sandbox (a Linux VM) against the Mac
-that runs it, your account against everyone else's, and the hosted relay
-between a remote agent and your Macs. This document says what each one holds,
-what it does not, and what is out of scope.
+Localbox has four trust boundaries: the sandbox (a Linux or macOS VM) against
+the Mac that runs it, your account against everyone else's, the hosted relay
+between a remote agent and your Macs, and the direct connection two of your Macs
+open to copy an image. This document says what each one holds, what it does not,
+and what is out of scope.
 
 ## The VM is the boundary
 
-Each sandbox is its own Linux VM under Apple Virtualization, with its own disk
-(a copy-on-write clone of the template), MAC address and machine identifier.
+Each sandbox is its own Linux or macOS VM under Apple Virtualization, with its
+own disk (a copy-on-write clone of its image), MAC address and machine
+identifier. A sandbox made from an image regenerates its machine identity and SSH
+host keys on first boot, so sandboxes from one image never share them.
 The agent, its tools and everything it installs inside the VM share one trust
 domain and one filesystem. Shell is the authority; browser, filesystem,
 screenshot and desktop operations are convenience adapters over that same
@@ -22,6 +25,57 @@ the VM.
 Authorization grants access to the VM as a whole. The CLI and MCP enforce the
 same authorization decision and the same operation permissions, because both
 come from one operation catalog.
+
+The host keeps the guest agent inside every VM current: when a guest connects
+with an older agent, the host pushes its own build over the VM's private
+channel and the agent replaces itself.
+
+## macOS guests run with SIP off
+
+System Integrity Protection is disabled inside every macOS sandbox, never on the
+Mac that runs it. The guest agent needs Screen Recording, Accessibility and
+input-posting permission for the desktop and browser operations, and macOS grants
+those only through a person clicking prompts or a write to its permission
+database that SIP forbids. With SIP off, the agent grants them to itself, and
+again after each update, with no human step.
+
+This costs nothing at the VM boundary. Inside the guest the agent already runs as
+root, and everything in the VM is one trust domain (above); SIP would protect the
+guest's system files from that same root. The Mac's own SIP, and the
+Virtualization framework between the guest and the Mac, are untouched.
+
+Building the macOS base is the one time a macOS guest is reachable other than
+through its agent:
+
+- The base is installed on the Mac from Apple's restore image, downloaded from
+  Apple. Nothing macOS-side comes from Localbox; Chrome comes from Google's own
+  installer.
+- The build turns on Remote Login in the guest with a random password that lives
+  only in the building process's memory, installs the agent over SSH, then turns
+  Remote Login off and discards the password before the image is saved. The
+  guest's one user logs in automatically; nobody knows its password.
+- To disable SIP, the build types into the guest's Recovery screen through the
+  Virtualization framework's VNC server. That server listens on the Mac's
+  network interfaces for the length of that step, behind a one-time VNC
+  password.
+
+## Images
+
+An image is a sandbox's disk and boot settings, saved on the Mac that holds it
+under `~/Library/Application Support/Localbox/images`. Convex keeps the image's
+name, OS, size, source and which Macs hold it, never its contents.
+
+- An image carries everything that was on the sandbox's disk: installed tools,
+  files, browser sessions and any tokens left there. Every sandbox made from it
+  starts with all of that. Images stay inside the account, but anything signed
+  in when the image was saved is signed in again in each new sandbox.
+- Deleting an image removes its files from every Mac holding it (a Mac that is
+  offline removes them when it next connects) and its row from Convex. Sandboxes
+  made from it keep their own disks. Deleted files are removed, not securely
+  erased; blocks a sandbox still shares with the image stay until that sandbox
+  is deleted too.
+- The built-in `linux` image comes from the signed release
+  ([releases](#releases-and-updates)).
 
 ## The host remains outside the VM boundary
 
@@ -123,8 +177,9 @@ Functions take time from the server, never from the caller.
 The relay is the path a request takes when the agent is not on the same Mac as
 the sandbox: the agent API on Vercel writes the request into a Convex mailbox,
 the target Mac's connector claims it over its outbound subscription, runs it
-through the local daemon and writes the result back. The Mac opens no inbound
-port.
+through the local daemon and writes the result back. The relay never needs an
+inbound port on the Mac; the one inbound flow Localbox accepts is an image copy
+between two of your Macs ([below](#direct-image-copies)).
 
 What the relay can see: requests and results are stored in Convex rows as
 plain JSON. There is no end-to-end encryption, so whoever operates the Vercel
@@ -144,6 +199,37 @@ Limits and retention:
   never run later. A mutation whose result was lost is reported as
   `operation_uncertain` and never retried silently.
 
+## Direct image copies
+
+Images move straight from one of your Macs to another, never through the relay,
+Convex or any cloud storage. A copy is set up through the account and then runs
+peer to peer:
+
+- **Rendezvous.** The relay writes a one-time copy row in Convex naming the image,
+  the sending Mac and the receiving Mac, with a fresh random key for this copy
+  only. Only those two Macs' machine credentials can read the key. Each Mac
+  publishes where it can be reached through that row: its local network addresses
+  and, for the internet, its public address and port.
+- **Transport.** Each Mac opens a UDP port for this copy and accepts only
+  datagrams sealed (ChaCha20-Poly1305) under the copy's key; anything else is
+  dropped, so the only peer either one talks to is the one named in the
+  rendezvous. Every
+  chunk is checked against the sender's sealed manifest, and the receiver refuses
+  manifest paths that would write outside the copy's own temporary folder. The
+  port closes when the copy ends. Local network addresses are tried first; across
+  the internet the two Macs open the path toward each other at once (UDP hole
+  punching), so neither needs port forwarding.
+- **Address discovery.** To learn its public address and port, a Mac asks
+  Cloudflare's public STUN server (`stun.cloudflare.com`). STUN sees only that
+  the Mac asked, from which address; no image bytes, names or account details go
+  through it.
+- **Failure.** If neither path connects, the copy fails, says which paths were
+  tried and what to try next. There is no relayed fallback.
+
+The key lives in the Convex row, so whoever can read the Convex deployment (see
+[relay trust](#relay-trust)) could read it while the copy runs. Copy rows expire
+after 24 hours.
+
 ## Releases and updates
 
 A release is trusted through its manifest: `release.json` lists every artifact's
@@ -161,9 +247,9 @@ pinned in the Localbox skill. The manifest never supplies its own key.
   Localbox identity, not an Apple Developer ID, and are not notarized. The
   installer clears the download quarantine flag after the signature checks so
   Gatekeeper does not refuse them; macOS itself vouches for nothing here.
-- The VM template is outside the code signature. The manifest covers it instead:
-  each compressed part's checksum and the expanded disk's SHA-256 and size,
-  checked at install, activation and rollback.
+- The built-in `linux` image is outside the code signature. The manifest covers
+  it instead: each compressed part's checksum and the expanded disk's SHA-256 and
+  size, checked at install, activation and rollback.
 
 ## Non-security limits
 
@@ -182,5 +268,8 @@ the VM's trust domain.
   trusted with what passes through them, as described above.
 - Isolation between sandboxes on the same NAT network, and from services the
   Mac exposes on it, is not enforced.
-- Sandbox disks are not encrypted by Localbox beyond what macOS provides for
-  the user's files.
+- Sandbox disks and images are not encrypted by Localbox at rest, beyond what
+  macOS provides for the user's files.
+- macOS guests are licensed by Apple for the Mac owner's own development,
+  testing and personal use, at most two running per Mac. Localbox does not
+  support offering them to anyone else.
