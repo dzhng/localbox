@@ -1,0 +1,9 @@
+{
+  "checks": [
+    {
+      "name": "vsock forwarder: 10,016 echoed frames, reconnect, host-only peers",
+      "ok": false,
+      "detail": "Unexpected end of JSON input"
+    }
+  ]
+}

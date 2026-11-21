@@ -1,5 +1,28 @@
 # 17 macOS provisioning, bootstrap and SIP spike (go/no-go)
 
+**Outcome 2026-11-21: go.** L2 and Q3 hold. Evidence:
+[17-macos-provision.json](../evidence/17-macos-provision.json),
+[desktop](../evidence/17-desktop.png), [Recovery](../evidence/17-csrutil.png).
+
+- `VZMacGuestProvisioningOptions` (user `localbox`, random password, auto-login,
+  Remote Login) took a fresh install to an auto-logged-in desktop with no Setup
+  Assistant; SSH answered 39 s after first boot.
+- Over SSH, a root LaunchDaemon was installed; it ran on the next boot.
+- Recovery: the startup options showed after 19 s; Right, Right, Return chose
+  Options; Recovery was up at 27 s; Command-Shift-T opened Terminal. On macOS 27
+  `csrutil disable` asks `[y/n]` and then the password of the only admin directly
+  (no user name prompt; the script accepts either order) and answers "System
+  Integrity Protection is off."
+- Recovery's `halt` does not power the VM off; the build waits a minute, then
+  stops it (the policy is already written). After a normal boot `csrutil status`
+  reports disabled.
+- Remote Login turned off on a clone: SSH then refuses.
+- Two corrections found on the way: Virtualization's VNC server traps unless the
+  client advertises the DesktopSize pseudo-encoding, and it listens on every
+  interface, so `RecoveryVNC` now runs it with a one-time VNC password (the client
+  speaks VNC authentication).
+- The whole run is about 15 minutes.
+
 **Unlocks:** L2 and Q3. A macOS 27 guest reaches an auto-logged-in desktop with
 no Setup Assistant, the host gets code into it with no human step (P3), and one
 scripted Recovery session disables SIP. Confirm item 3.
