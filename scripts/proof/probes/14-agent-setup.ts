@@ -5,7 +5,9 @@ import { chmodSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdi
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { makeManifest, packImage, signManifest, writeRelease } from "../../release.js";
+import { BUILT_IN_IMAGE } from "../../../packages/contract/src/index.js";
 import { asMachine } from "../lib/as-machine.js";
+import { writeImageFiles } from "../lib/images.js";
 import { fixtureHome, machineRoot, stopConnector } from "../lib/login.js";
 import { mcp, registerClient, signInAgent } from "../lib/mcp.js";
 import { signedInWithSandboxes } from "../lib/sandboxes.js";
@@ -105,9 +107,7 @@ async function releaseKit(ctx: ProofContext, work: string, hostd: string, versio
   for (const plist of ["com.localbox.hostd.plist", "com.localbox.updater.plist", "com.localbox.connector.plist"]) copyFileSync(join(ctx.root, "apps/macos/HostDaemon/Resources", plist), join(app, "Resources", plist));
   // A stand-in linux image (this probe boots no VM), shipped and installed the way a real one is.
   const image = join(stage, "image");
-  mkdirSync(join(image, "boot"), { recursive: true });
-  writeFileSync(join(image, "disk.img"), Buffer.alloc(1024 * 1024)); writeFileSync(join(image, "boot/efi-vars"), "efi");
-  writeFileSync(join(image, "image.json"), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: 0, agent_version: version }));
+  writeImageFiles(image, BUILT_IN_IMAGE, { bytes: 1024 * 1024 }, version);
   execFileSync("ditto", ["-c", "-k", "--keepParent", join(stage, "Localbox.app"), join(out, `Localbox-${version}.zip`)]);
   execFileSync("tar", ["-czf", join(out, `localbox-cli-${version}.tar.gz`), "-C", stage, "localbox-cli"]);
   const shipped = await packImage(image, out, `localbox-linux-${version}`, { level: 1 });

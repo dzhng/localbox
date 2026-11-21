@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { HOST_OPERATION_KINDS } from "../../../packages/contract/src/index.js";
 import type { Check, ProofContext } from "../run.js";
+import { seedReadyImage } from "../lib/images.js";
 import { machineAccess } from "../lib/machine-access.js";
 import { startConnector, stopConnector } from "../lib/login.js";
 import { cli, sandboxRecords, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
@@ -56,13 +57,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
         const renamed = await cli(ctx.root, machine, ["machine", "rename", id, wanted]);
         assert.equal(renamed.code, 0, renamed.stdout + renamed.stderr);
       }
-      const reserved = await access.mutation("images:reserve", { machineId: access.machineId, name: image, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: `p39-capture-${run}` });
-      imageId = reserved.image_id;
-      const files = join(access.paths.images, imageId);
-      mkdirSync(join(files, "boot"), { recursive: true });
-      writeFileSync(join(files, "disk.img"), randomBytes(SIZE)); writeFileSync(join(files, "boot", "efi-vars"), "efi");
-      writeFileSync(join(files, "image.json"), JSON.stringify({ image_id: imageId, os: "linux", size_bytes: SIZE, agent_version: "probe" }));
-      await access.mutation("images:setHolder", { imageId, state: "ready", sizeBytes: SIZE });
+      ({ imageId } = await seedReadyImage(access, { name: image, createMutationId: `p39-capture-${run}`, disk: { bytes: SIZE, random: true } }));
     }));
 
     checks.push(await ctx.check("sandbox create --image X --machine B answers at once: copying, with the waiting line; B journals the copy and the create chained to it", async () => {
@@ -72,7 +67,7 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
       assert.deepEqual([report.produced.state, report.produced.machine, report.produced.copying_from], ["copying", bName, aName], JSON.stringify(report));
       assert.equal(report.actions[0].detail, `sandbox ${sandbox} on ${bName} is waiting for image ${image} to copy (192 MiB); localbox image wait ${image}`);
       assert.equal(journal(copyKey)?.kind, "image.copy");
-      assert.deepEqual([journal(mutation)?.kind, journal(mutation)?.subject], ["sandbox.create_after_copy", imageId]);
+      assert.deepEqual([journal(mutation)?.kind, journal(mutation)?.subject], [HOST_OPERATION_KINDS.createAfterCopy, imageId]);
       assert.equal(sandboxRecords(ctx.root, "b").some((row) => row.name === sandbox), false, "nothing is laid down before the image is there");
       evidence.push(`$ localbox sandbox create --name ${sandbox} --image ${image} --machine ${bName} --json\n${started.stdout}`);
     }));

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { seedReadyImage } from "../lib/images.js";
 import { machineAccess } from "../lib/machine-access.js";
 import { machineRoot, startConnector, stopConnector } from "../lib/login.js";
-import { machinePaths } from "../../../packages/config/src/machine-paths.js";
 import { cli, signedInWithSandboxes, waitConnected } from "../lib/sandboxes.js";
 
 export const id = "30";
@@ -36,12 +36,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       const setup = await signedInWithSandboxes(ctx.root, ["a", "b"], `proof-30-${run}@example.com`, { create: false });
       Object.assign(connectors, setup.connectors);
       b = await machineAccess(ctx.root, "b");
-      const image = await b.mutation("images:reserve", { machineId: b.machineId, name: first, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: `p30-${run}` });
-      // A minimal image as ImageStore lays one down: manifest, disk and EFI variable store.
-      files = join(machinePaths({ LOCALBOX_MACHINE_ROOT: machineRoot(ctx.root, "b") }).images, image.image_id);
-      mkdirSync(join(files, "boot"), { recursive: true }); writeFileSync(join(files, "disk.img"), Buffer.alloc(1024 * 1024)); writeFileSync(join(files, "boot", "efi-vars"), "");
-      writeFileSync(join(files, "image.json"), JSON.stringify({ image_id: image.image_id, os: "linux", size_bytes: 1024 * 1024, agent_version: "probe" }));
-      await b.mutation("images:setHolder", { imageId: image.image_id, state: "ready", sizeBytes: 3 * 1024 ** 3 });
+      ({ files } = await seedReadyImage(b, { name: first, createMutationId: `p30-${run}`, disk: { bytes: 1024 * 1024 }, reportedBytes: 3 * 1024 ** 3 }));
       await until(() => existsSync(join(files, "listed-by")) && readFileSync(join(files, "listed-by"), "utf8") === b.machineId, "the mirror marked the files listed by B");
     }));
     checks.push(await ctx.check("from A, image list shows the whole account under NAME OS SIZE FROM ON DEFAULT: linux on every Mac and default, the image on B", async () => {
