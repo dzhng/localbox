@@ -1,3 +1,4 @@
+import ApplicationServices
 import CoreGraphics
 import CoreImage
 import CoreMedia
@@ -17,6 +18,8 @@ import UniformTypeIdentifiers
 ///   localbox-desktop scroll <x> <y> <wheelY> <wheelX>  CGEvent wheel lines: positive scrolls up and left
 ///   localbox-desktop key <keyCode> [command,control,option,shift]
 ///   localbox-desktop type <text>
+///   localbox-desktop guard-capture-prompt              runs until killed; presses Allow on macOS's window-picker
+///                                                      bypass prompt whenever it appears, printing one line per press
 
 struct Failure: Error, CustomStringConvertible { let description: String; init(_ description: String) { self.description = description } }
 
@@ -137,6 +140,56 @@ func capture(scale: Double) async throws -> CGImage {
     return try await frame.wait(on: stream, timeout: 10)
 }
 
+// MARK: - The window-picker bypass prompt
+
+/// macOS 27 asks "… is requesting to bypass the system private window picker" over a granted screen capture, and the
+/// managed restriction against it does not survive a reboot of an unmanaged Mac. The desktop role holds Accessibility,
+/// so this finds the prompt among on-screen windows through the Accessibility API and presses its Allow button.
+enum CapturePrompt {
+    static let marker = "bypass the system private window picker"
+
+    static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
+        var value: AnyObject?
+        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+    }
+
+    /// The window's texts and buttons, to `depth` levels.
+    static func walk(_ element: AXUIElement, depth: Int, texts: inout [String], buttons: inout [(String, AXUIElement)]) {
+        let role = attribute(element, kAXRoleAttribute) as? String
+        for name in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] { if let text = attribute(element, name) as? String, !text.isEmpty { texts.append(text) } }
+        if role == kAXButtonRole as String, let title = (attribute(element, kAXTitleAttribute) as? String) ?? (attribute(element, kAXDescriptionAttribute) as? String) { buttons.append((title, element)) }
+        guard depth > 0, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { return }
+        for child in children { walk(child, depth: depth - 1, texts: &texts, buttons: &buttons) }
+    }
+
+    /// Presses Allow on every prompt on screen now; returns the owners of those pressed.
+    static func allowShown() -> [String] {
+        let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        var owners: [pid_t: String] = [:]
+        for window in windows { if let pid = window[kCGWindowOwnerPID as String] as? pid_t { owners[pid] = window[kCGWindowOwnerName as String] as? String ?? "pid \(pid)" } }
+        var pressed: [String] = []
+        for (pid, owner) in owners {
+            let application = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(application, 0.5)
+            for window in (attribute(application, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
+                var texts: [String] = [], buttons: [(String, AXUIElement)] = []
+                walk(window, depth: 8, texts: &texts, buttons: &buttons)
+                guard texts.contains(where: { $0.contains(marker) }), let allow = buttons.first(where: { $0.0 == "Allow" })?.1 else { continue }
+                if AXUIElementPerformAction(allow, kAXPressAction as CFString) == .success { pressed.append(owner) }
+            }
+        }
+        return pressed
+    }
+
+    static func guardForever() -> Never {
+        guard AXIsProcessTrusted() else { FileHandle.standardError.write(Data("localbox-desktop: no Accessibility grant; the capture prompt can't be answered\n".utf8)); exit(1) }
+        while true {
+            for owner in allowShown() { print("allowed the window-picker bypass prompt shown by \(owner)"); fflush(stdout) }
+            usleep(1_000_000)
+        }
+    }
+}
+
 func encode(_ image: CGImage, as type: UTType, quality: Double?) throws -> Data {
     let data = NSMutableData()
     guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else { throw Failure("cannot encode \(type.identifier)") }
@@ -172,8 +225,9 @@ do {
     case "type":
         guard arguments.count == 2 else { throw Failure("type <text>") }
         try type(arguments[1])
+    case "guard-capture-prompt": CapturePrompt.guardForever()
     default:
-        throw Failure("usage: localbox-desktop geometry | capture png | capture jpeg <q> <scale> | move | click | scroll | key | type")
+        throw Failure("usage: localbox-desktop geometry | capture png | capture jpeg <q> <scale> | move | click | scroll | key | type | guard-capture-prompt")
     }
 } catch {
     FileHandle.standardError.write(Data("localbox-desktop: \(error)\n".utf8))

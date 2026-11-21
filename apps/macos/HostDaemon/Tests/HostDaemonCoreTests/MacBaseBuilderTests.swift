@@ -39,7 +39,7 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("sh /tmp/localbox-stage/install.sh"), "bootstrap runs the darwin agent's install.sh")
         XCTAssertTrue(scripts[0].contains("https://dl.google.com/chrome/mac/universal/stable/gcem/GoogleChrome.pkg") && scripts[0].contains("Developer ID Installer: Google LLC"), "Chrome comes from Google's own signed installer (P12)")
         XCTAssertFalse(scripts.joined().contains("xcode"), "no Xcode (L5)")
-        XCTAssertTrue(scripts[1].contains("localbox-agent --grant-tcc") && scripts[1].contains("forceBypassScreenCaptureAlert"))
+        XCTAssertTrue(scripts[1].contains("localbox-agent --grant-tcc") && scripts[1].contains("kickstart -k gui/"), "the desktop role restarts holding its grants")
         XCTAssertTrue(scripts[2].contains("launchctl disable system/com.openssh.sshd"), "finish turns Remote Login off for good")
         let payload = try XCTUnwrap(rig.driver.payload)
         let listing = try output("/usr/bin/tar", ["-tzf", payload.path])

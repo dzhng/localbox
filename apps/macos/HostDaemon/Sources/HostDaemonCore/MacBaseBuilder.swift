@@ -309,20 +309,13 @@ public actor MacBaseBuilder {
         """
     }
 
-    /// Through the agent's root shell: the desktop role's TCC rows (`--grant-tcc`), and the managed restriction that
-    /// keeps macOS from asking to confirm its screen capture (`forceBypassScreenCaptureAlert` in
-    /// `com.apple.applicationaccess`, as a forced preference for the machine and the desktop user), then the desktop role
-    /// restarts so it holds both.
+    /// Through the agent's root shell: the desktop role's TCC rows (`--grant-tcc`), then the desktop role restarts so it
+    /// holds them (it answers macOS's window-picker bypass prompt itself, through Accessibility).
     public static func tccScript(user: String) -> String {
         """
         set -eu
         \(waitForSession(user: user, seconds: 90))
         /usr/local/localbox/localbox-agent --grant-tcc
-        for dir in '/Library/Managed Preferences' '/Library/Managed Preferences/\(user)'; do
-          mkdir -p "$dir"
-          printf '%s\\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' '<plist version="1.0"><dict><key>forceBypassScreenCaptureAlert</key><true/></dict></plist>' > "$dir/com.apple.applicationaccess.plist"
-          chown root:wheel "$dir/com.apple.applicationaccess.plist"; chmod 0644 "$dir/com.apple.applicationaccess.plist"
-        done
         launchctl kickstart -k gui/$(id -u \(user))/sh.localbox.desktop
         """
     }

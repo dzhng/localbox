@@ -294,7 +294,7 @@ extension GuestSSH {
 /// Slice 34's look inside a built macOS base: `vmlab macos-image --image <images>/<id> --evidence <dir> --json` makes a
 /// sandbox from it the way the daemon does (`AppleSandboxFactory`, `AppleVirtualizationBackend`, the agent over vsock)
 /// and checks what the build promises: SIP disabled, Chrome present, no Xcode, Remote Login off, and no window-picker
-/// prompt over the desktop while the desktop role captures it.
+/// prompt left over the desktop while the desktop role captures it.
 extension MacLab {
     func image(_ image: URL, evidence: URL) async throws -> [String: Any] {
         try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
@@ -330,7 +330,6 @@ extension MacLab {
         let chrome = try await sh("/usr/bin/defaults read '/Applications/Google Chrome.app/Contents/Info' CFBundleShortVersionString 2>/dev/null").trimmingCharacters(in: .whitespacesAndNewlines)
         let xcode = try await sh("ls -d /Applications/Xcode*.app /Library/Developer/CommandLineTools 2>/dev/null; true").trimmingCharacters(in: .whitespacesAndNewlines)
         let sshd = try await sh("launchctl print-disabled system | grep com.openssh.sshd; true").trimmingCharacters(in: .whitespacesAndNewlines)
-        let managed = try await sh("cat '/Library/Managed Preferences/com.apple.applicationaccess.plist' 2>/dev/null | grep -c forceBypassScreenCaptureAlert; true").trimmingCharacters(in: .whitespacesAndNewlines)
         let address = try await MacProvisioning.waitForAddress(record.mac ?? "", timeout: 60)
         let port22 = Process(); port22.executableURL = URL(fileURLWithPath: "/usr/bin/nc"); port22.arguments = ["-z", "-G", "3", address, "22"]
         try port22.run(); port22.waitUntilExit()
@@ -343,14 +342,18 @@ extension MacLab {
         try await Task.sleep(nanoseconds: 3_000_000_000)
         _ = try await screenshot("after browser.open", save: "34-browser.jpg")
         for index in 1...6 { try await Task.sleep(nanoseconds: 5_000_000_000); _ = try await screenshot("+\(index * 5) s") }
+        // The desktop role logs each prompt its guard answered (its LaunchAgent's stderr).
+        let guardLog = try await sh("grep -h 'window-picker bypass prompt' /tmp/localbox-desktop.log 2>/dev/null | tail -5; true").split(separator: "\n").map(String.init)
         try await backend.stop()
 
         let checks: [String: Bool] = [
             "sip_disabled": sip.contains("disabled"), "chrome_installed": !chrome.isEmpty, "no_xcode": xcode.isEmpty,
             "remote_login_off": sshd.contains("disabled") || sshd.contains("true"), "port_22_refused": port22.terminationStatus != 0,
-            "desktop_captures": desktopUp && first, "browser_opens": browser["ok"] as? Bool == true, "no_picker_prompt": promptSeen.isEmpty,
+            "desktop_captures": desktopUp && first, "browser_opens": browser["ok"] as? Bool == true,
+            // The prompt may show on the first captures until the desktop role's guard presses Allow (it looks every second).
+            "picker_prompt_answered": !promptSeen.contains { $0.hasPrefix("+") },
         ]
-        return ["ok": checks.values.allSatisfy { $0 }, "checks": checks, "csrutil_status": sip, "chrome_version": chrome, "xcode": xcode, "sshd": sshd, "capture_restriction_installed": managed == "1",
+        return ["ok": checks.values.allSatisfy { $0 }, "checks": checks, "csrutil_status": sip, "chrome_version": chrome, "xcode": xcode, "sshd": sshd, "guard_log": guardLog,
                 "agent_ready_ms": agentMs, "screenshots": shots, "picker_prompt_seen": promptSeen, "browser": (browser["result"] ?? browser["error"]) ?? NSNull()]
     }
 
