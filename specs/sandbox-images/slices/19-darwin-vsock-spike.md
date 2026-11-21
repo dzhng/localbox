@@ -1,5 +1,22 @@
 # 19 darwin vsock forwarder spike (go/no-go)
 
+**Outcome 2026-11-21: go.** Evidence: [19-darwin-vsock.json](../evidence/19-darwin-vsock.json).
+
+- `localbox-vsock` (a Swift target, `AF_VSOCK` listener per port, one thread pair
+  per connection) carried 10,016 frames (10,000 up to 64 KiB plus sixteen of
+  8 MiB, 461 MB) byte for byte on port 1024 while a second stream ran on 1025;
+  29 MB/s echoed each way in a debug build.
+- The host dropped and re-dialled both ports: the forwarder kept its PID and the
+  echoes kept answering.
+- A connection from inside the guest to its own port 1024 was closed by the
+  forwarder (peer CID not 2).
+- A clone of the provisioned base answered SSH 9.5 s after boot, far inside the
+  120 s first-boot wait (E9 needs no longer wait for a booted base; slice 35 still
+  measures the agent's own first connection).
+- The first run deadlocked in the test, not the forwarder: the host wrote a whole
+  8 MiB frame before reading its echo. The round trip now writes on its own
+  thread.
+
 **Unlocks:** the darwin guest channel. A native forwarder in a macOS guest listens
 on `AF_VSOCK` ports 1024 and 1025 and hands each connection to a Unix socket, so
 the host reaches the agent through `VZVirtioSocketDevice.connect(toPort:)` exactly

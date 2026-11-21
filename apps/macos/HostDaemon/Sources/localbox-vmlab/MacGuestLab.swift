@@ -65,10 +65,13 @@ extension MacLab {
         // macOS 27 keeps the user database in a per-user container; tccd's open files name the live one.
         let userDatabase = try ssh.run("lsof -a -u \(uid) -c tccd -Fn | sed -n 's|^n\\(/private/var/containers/Data/ProtectedSystem/.*/com.apple.TCC/TCC.db\\)$|\\1|p' | head -1", elevated: true).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !userDatabase.isEmpty else { throw LabError("could not find the user TCC database") }
-        for database in ["/Library/Application Support/com.apple.TCC/TCC.db", userDatabase] {
-            let written = try ssh.run("sqlite3 '\(database)' \"\(insert)\" && echo ok", elevated: true)
-            guard written.stdout.contains("ok") else { throw LabError("writing \(database) failed: \(written.stderr)") }
+        func grant() throws {
+            for database in ["/Library/Application Support/com.apple.TCC/TCC.db", userDatabase] {
+                let written = try ssh.run("sqlite3 '\(database)' \"\(insert)\" && echo ok", elevated: true)
+                guard written.stdout.contains("ok") else { throw LabError("writing \(database) failed: \(written.stderr)") }
+            }
         }
+        try grant()
         let granted = try await runDesktopRole()
         try? ssh.copyBack("/tmp/tccprobe-after.png", to: evidence.appendingPathComponent("18-menu-opened.png"))
         // Replace the binary with different bytes (a new ad-hoc signature) at the same path.
@@ -79,9 +82,13 @@ extension MacLab {
         try resign.run(); resign.waitUntilExit()
         try install(replacement, at: Self.agentPath, over: ssh)
         let replaced = try await runDesktopRole()
+        // P6's fallback: the agent rewrites its own rows as root after a swap (SIP is off).
+        try grant()
+        let rewritten = try await runDesktopRole()
         try await vm.stop()
         func allGranted(_ result: [String: Any]) -> Bool { ["screen_capture", "accessibility", "post_event", "menu_opened"].allSatisfy { result[$0] as? Bool == true } }
-        return ["ok": allGranted(granted), "survives_replace": allGranted(replaced), "user_database": userDatabase, "before_grant": before, "after_grant": granted, "after_replace": replaced]
+        let survives = allGranted(replaced)
+        return ["ok": allGranted(granted) && (survives || allGranted(rewritten)), "survives_replace": survives, "rewrite_restores": allGranted(rewritten), "user_database": userDatabase, "before_grant": before, "after_grant": granted, "after_replace": replaced, "after_rewrite": rewritten]
     }
 
     // MARK: 19
@@ -110,7 +117,8 @@ extension MacLab {
         }
         for index in 0..<10_016 {
             let size = index < 10_000 ? Int.random(in: 1...65_536) : 8 << 20
-            let frame = Data((0..<size).map { _ in UInt8.random(in: 0...255) })
+            var generator = SystemRandomNumberGenerator()
+            let frame = Data((0..<(size + 7) / 8).flatMap { _ in withUnsafeBytes(of: generator.next() as UInt64) { Array($0) } }.prefix(size))
             if try roundTrip(request, frame) != frame { mismatches += 1 }
             frames += 1; bytes += size
         }
@@ -130,10 +138,14 @@ extension MacLab {
     }
 }
 
-/// Writes one length-prefixed frame and reads the echoed frame back.
+/// Writes one length-prefixed frame and reads the echoed frame back. The write runs on its own thread: an echo
+/// answers while the frame is still arriving, so writing all of a large frame before reading would fill both
+/// directions' buffers and deadlock.
 func roundTrip(_ handle: FileHandle, _ frame: Data) throws -> Data {
     var length = UInt32(frame.count).bigEndian
-    try handle.write(contentsOf: Data(bytes: &length, count: 4) + frame)
+    let outgoing = Data(bytes: &length, count: 4) + frame
+    let writer = Thread { try? handle.write(contentsOf: outgoing) }
+    writer.start()
     var received = Data()
     while received.count < frame.count + 4 {
         guard let chunk = try handle.read(upToCount: frame.count + 4 - received.count), !chunk.isEmpty else { throw LabError("the echo closed after \(received.count) bytes") }

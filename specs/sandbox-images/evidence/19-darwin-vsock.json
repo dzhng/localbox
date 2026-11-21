@@ -2,8 +2,17 @@
   "checks": [
     {
       "name": "vsock forwarder: 10,016 echoed frames, reconnect, host-only peers",
-      "ok": false,
-      "detail": "Unexpected end of JSON input"
+      "ok": true
     }
-  ]
+  ],
+  "bytes": 461538536,
+  "control_stream_ok": true,
+  "echo_mb_per_s": 29,
+  "first_boot_to_ssh_ms": 9510,
+  "forwarder_pid_unchanged": true,
+  "frames": 10016,
+  "guest_local_dial": "refused: closed by the forwarder",
+  "mismatches": 0,
+  "ok": true,
+  "reconnected": true
 }
