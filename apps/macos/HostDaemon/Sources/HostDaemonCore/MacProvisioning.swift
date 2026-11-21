@@ -124,7 +124,13 @@ public struct AppleIPSWCatalog: IPSWCatalog {
     private let http: any RangedHTTP
     public init(http: any RangedHTTP = URLSessionRangedHTTP()) { self.http = http }
     public func latest() async throws -> IPSWRelease {
-        let image = try await VZMacOSRestoreImage.latestSupported()
+        // Apple's catalog service fails now and then ("the restore image catalog failed to load"); a retry answers.
+        var attempt = 0
+        var image: VZMacOSRestoreImage
+        while true {
+            do { image = try await VZMacOSRestoreImage.latestSupported(); break }
+            catch { attempt += 1; if attempt >= 4 { throw error }; try await Task.sleep(nanoseconds: 5_000_000_000) }
+        }
         let os = image.operatingSystemVersion
         return IPSWRelease(url: image.url, version: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)", build: image.buildVersion, sizeBytes: try await http.length(of: image.url))
     }
@@ -177,6 +183,8 @@ private struct SSHBuildGuest: MacBuildGuest {
 private final class AgentBuildGuest: MacBuildGuest, @unchecked Sendable {
     let vm: MacVirtualMachine
     private let channel: FramedFileHandleGuestChannel
+    /// The throwaway id the hello gave the build guest; the agent's requests name it, as a sandbox's name theirs.
+    private let guestID = "build_\(UUID().uuidString.prefix(8).lowercased())"
     /// The longest deadline the agent accepts on a request (it refuses more than 120 s).
     static let maxDeadlineMs = 120_000
 
@@ -187,7 +195,7 @@ private final class AgentBuildGuest: MacBuildGuest, @unchecked Sendable {
         let deadline = Date().addingTimeInterval(300)
         while Date() < deadline {
             let stream = try await vm.connect(port: 1024, within: 300)
-            let channel = FramedFileHandleGuestChannel(reader: stream, writer: stream, sandboxID: "build_\(UUID().uuidString.prefix(8).lowercased())", name: MacBaseBuilder.guestName)
+            let channel = FramedFileHandleGuestChannel(reader: stream, writer: stream, sandboxID: guestID, name: MacBaseBuilder.guestName)
             do { try await channel.waitUntilReady(); self.channel = channel; return } catch { last = error; await channel.close() }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
@@ -195,7 +203,7 @@ private final class AgentBuildGuest: MacBuildGuest, @unchecked Sendable {
     }
 
     func root(_ script: String, timeout: TimeInterval) async throws -> String {
-        let envelope: [String: Any] = ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": "shell.exec", "sandbox_id": NSNull(),
+        let envelope: [String: Any] = ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": "shell.exec", "sandbox_id": guestID,
                                        "deadline_ms": min(Int(timeout * 1000), AgentBuildGuest.maxDeadlineMs), "mutation_id": UUID().uuidString, "input": ["command": script]]
         let answer = try JSONSerialization.jsonObject(with: try await channel.send(JSONSerialization.data(withJSONObject: envelope))) as? [String: Any] ?? [:]
         guard answer["ok"] as? Bool == true, let result = answer["result"] as? [String: Any] else {
