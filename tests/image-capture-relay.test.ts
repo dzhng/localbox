@@ -22,7 +22,7 @@ async function setup(connectors: Record<string, Machine> = {}) {
     const now = Date.now();
     await ctx.db.insert("accounts", { accountId: "a1", email: "a@example.com", name: "brave-walrus-100", createdAt: now });
     for (const { machineId, name } of machines) await ctx.db.insert("machines", { machineId, accountId: "a1", credentialHash: `h-${machineId}`, name, createdAt: now, lastSeenAt: now });
-    await ctx.db.insert("sandboxes", { sandboxId: "sandbox_otter", accountId: "a1", machineId: "m2", name: "bold-otter", imageId: "linux", cpus: 2, memoryBytes: 2 * GIB, sleepAfterMs: 1_800_000, createdAt: now });
+    await ctx.db.insert("sandboxes", { sandboxId: "sandbox_otter", accountId: "a1", machineId: "m2", name: "bold-otter", imageId: "linux", os: "linux", cpus: 2, memoryBytes: 2 * GIB, sleepAfterMs: 1_800_000, createdAt: now });
   });
   const studio = t.withIdentity({ subject: "machine:m1", account: "a1" });
   const { deps } = memoryMailbox({ machines, connectors });

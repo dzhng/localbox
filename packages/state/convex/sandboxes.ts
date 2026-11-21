@@ -4,6 +4,7 @@ import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
 import { holderFailure } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
+import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 
 /** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it. */
 const DEFAULT_SLEEP_AFTER_MS = 30 * 60_000;
@@ -23,7 +24,7 @@ async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
 }
 /** A sandbox waiting for its image's copy reads `copying` (or `failed`, with why) until its machine reports it created. */
 const view = (row: any, machineName?: string) => ({
-  sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null, image_id: row.imageId,
+  sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null, image_id: row.imageId, os: row.os, min_macos: row.minMacOS ?? null,
   cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
   state: row.pending ?? row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null, copy_operation_id: row.copyOperationId ?? null,
   error: row.pendingError ? { code: row.pendingError.code, message: row.pendingError.message, next_step: row.pendingError.nextStep } : null,
@@ -31,7 +32,8 @@ const view = (row: any, machineName?: string) => ({
 
 /**
  * Reserves a sandbox's identity on one of the caller's machines, with the image it starts from (the id the agent API
- * resolved: an image row's, or the built-in `linux`); the agent API then asks that machine to create it. With
+ * resolved: an image row's, or the built-in `linux`) and that image's OS, which the sandbox keeps after the image is
+ * gone (a sandbox saved as an image passes it on); the agent API then asks that machine to create it. With
  * `copyOperationId` (the image's copy to that machine) the sandbox is `copying` until the machine reports it created. A
  * create carrying a mutation id this account already reserved with returns that reservation instead of a second one.
  */
@@ -40,13 +42,15 @@ export const create = mutationGeneric({ args: { machineId: v.string(), name: v.o
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`);
   if (args.createMutationId !== undefined) { const reserved = await reservedBy(ctx, accountId, args.createMutationId); if (reserved) return view(reserved, (await byField(ctx, "machines", "by_machine", "machineId", reserved.machineId))?.name); }
+  const image = args.imageId === BUILT_IN_IMAGE ? { os: "linux" as const } : await byField(ctx, "images", "by_image", "imageId", args.imageId);
+  if (!image || (args.imageId !== BUILT_IN_IMAGE && image.accountId !== accountId)) refuse("image_not_found", `no image ${args.imageId} on this account`);
   let name = args.name;
   if (name !== undefined) { validateLabel(name); if (await named(ctx, accountId, name)) await nameTaken(ctx, accountId, name); }
   else {
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) refuse("name_conflict", `no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), ...(args.copyOperationId === undefined ? {} : { copyOperationId: args.copyOperationId, pending: "copying" as const }), createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, os: image.os, ...(image.minMacOS === undefined ? {} : { minMacOS: image.minMacOS }), cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), ...(args.copyOperationId === undefined ? {} : { copyOperationId: args.copyOperationId, pending: "copying" as const }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
 } });

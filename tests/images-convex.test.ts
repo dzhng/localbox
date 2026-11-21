@@ -147,6 +147,29 @@ test("a machine's mirror lists only the images held on it, with each holding's s
   await assert.rejects(() => agent.query(ref("images:forMachine"), {}), code("unauthorized"));
 });
 
+test("a machine's mirror lists every holding, past any batch size, since a missing one would read as deleted", async () => {
+  const { t, m1 } = await setup();
+  await t.run(async (ctx) => {
+    for (let index = 0; index < 201; index++) {
+      const imageId = `image_${String(index).padStart(3, "0")}`;
+      await ctx.db.insert("images", { imageId, accountId: "a1", name: `image-${index}`, os: "linux", source: fromSandbox, createdAt: index, createMutationId: `m-${index}` });
+      await ctx.db.insert("imageHolders", { imageId, accountId: "a1", machineId: "m1", state: "ready", updatedAt: index });
+    }
+  });
+  const listed = await m1.query(ref("images:forMachine"), {}) as any[];
+  assert.equal(listed.length, 201);
+  assert.equal(listed.at(-1).image_id, "image_200");
+});
+
+test("an image resolves by its id, else its name in any case, like machines and sandboxes", async () => {
+  const { agent } = await setup();
+  const image = await reserve(agent, { name: "rails-dev" });
+  assert.equal((await agent.query(ref("images:get"), { image: "Rails-Dev" }) as any).image_id, image.image_id);
+  assert.equal((await agent.query(ref("images:get"), { image: image.image_id }) as any).name, "rails-dev");
+  assert.equal((await agent.query(ref("images:get"), { image: "LINUX" }) as any).image_id, "linux");
+  await assert.rejects(() => agent.query(ref("images:get"), { image: image.image_id.toUpperCase() }), code("image_not_found"));
+});
+
 test("admin:wipe clears the image tables", async () => {
   const { t, agent } = await setup();
   await reserve(agent, { name: "rails-dev" });
