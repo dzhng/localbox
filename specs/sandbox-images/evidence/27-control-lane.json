@@ -1,0 +1,31 @@
+{
+  "checks": [
+    {
+      "name": "freezeAndClone stalls a guest writer, clones the disk, and the writer continues; a freeze whose host never thaws thaws itself",
+      "ok": true
+    }
+  ],
+  "vmlab": {
+    "ok": true,
+    "phase1": {
+      "clone": "cloned",
+      "clone_bytes": 8589934592,
+      "freeze_and_clone_ms": 1153,
+      "guest_clock_max_gap_ms": 104,
+      "host_measured_stall_ms": 1127,
+      "lifecycle_after": "ready",
+      "median_tick_ms": 54,
+      "ticks_after_clone_s": 19,
+      "ticks_in_window": 19,
+      "window_ms": 2153
+    },
+    "phase2": {
+      "self_thaw_timeout_ms": 3000,
+      "write_blocked_ms": 3015,
+      "write_landed": true
+    },
+    "self_thawed": true,
+    "writer_continued": true,
+    "writer_stalled": true
+  }
+}

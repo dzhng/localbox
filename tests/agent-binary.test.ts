@@ -17,7 +17,8 @@ const nativeLinux = process.platform === "linux" && process.arch === "arm64";
 const noLinux = noBun || (nativeLinux || spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0 ? false : "needs linux arm64 or Docker");
 const noDarwin = noBun || (process.platform === "darwin" && process.arch === "arm64" ? false : "needs darwin arm64");
 
-before(async () => { if (!noBun) await buildGuestAgent(outDir); });
+let built: Awaited<ReturnType<typeof buildGuestAgent>> | undefined;
+before(async () => { if (!noBun) built = await buildGuestAgent(outDir); });
 
 interface Session { ready: Extract<GuestFrame, { kind: "ready" }>; call(operation: string, input: unknown, mutation?: string): Promise<any>; close(): Promise<void> }
 
@@ -61,6 +62,7 @@ test("the linux agent binary serves shell, files and jobs with no Node installed
   const agent = await session(linuxAgent());
   try {
     assert.equal(agent.ready.readiness_marker, "/tmp/ready");
+    assert.deepEqual([agent.ready.agent_version, agent.ready.agent_os], [built!.version, "linux"], "the binary announces the version it was built as");
     assert.equal((await agent.call("system.info", {})).gateway, "guest");
     if (!nativeLinux) {
       const node = await agent.call("shell.exec", { command: "command -v node nodejs" }, "m-node");
@@ -80,6 +82,7 @@ test("the darwin agent binary starts and answers over stdin/stdout", { skip: noD
   const root = await mkdtemp(join(tmpdir(), "lb-agent-bin-"));
   const agent = await session(spawn(join(outDir, agentBinaryName("darwin")), [], { env: { PATH: "/usr/bin:/bin", LOCALBOX_ROOT: root, LOCALBOX_READINESS_MARKER: join(root, "ready") } }));
   try {
+    assert.deepEqual([agent.ready.agent_version, agent.ready.agent_os], [built!.version, "darwin"]);
     assert.equal((await agent.call("system.info", {})).gateway, "guest");
     const uname = await agent.call("shell.exec", { command: "uname -s" }, "m-uname");
     assert.equal(uname.stdout, "Darwin\n");

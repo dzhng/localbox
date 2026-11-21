@@ -39,11 +39,23 @@ public actor SandboxRuntime {
     private var bootCount = 0
     /// Deleted: nothing boots it again and its record is never written, so its directory stays gone.
     private var discarded = false
+    /// Held by an exclusive operation on the running guest (`freezeAndClone`). Requests, bring-ups, stops, saves and
+    /// resizes wait for it to be free before they look at the lifecycle.
+    private var operationHeld = false
+    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Keeps the guest agent at the host's build; nil leaves whatever agent the image carries.
+    private let agentUpdater: GuestAgentUpdater?
+    /// The agent the request lane's ready frame named.
+    private var agent: GuestAgentIdentity?
+    /// A version the guest refused or did not come back on; not pushed again until the next boot.
+    private var agentUpdateFailed: String?
+    /// The guest acknowledged an update and its agent is exiting: a request-lane close now is expected, not the guest lost.
+    private var agentRestarting = false
     private let onChange: @Sendable () -> Void
     private let now: @Sendable () -> Date
 
-    init(record: SandboxRecord, directory: SandboxDirectory, factory: any SandboxBackendFactory, now: @escaping @Sendable () -> Date, onChange: @escaping @Sendable () -> Void) {
-        self.record = record; self.directory = directory; self.factory = factory; self.now = now; self.onChange = onChange
+    init(record: SandboxRecord, directory: SandboxDirectory, factory: any SandboxBackendFactory, agentUpdater: GuestAgentUpdater? = nil, now: @escaping @Sendable () -> Date, onChange: @escaping @Sendable () -> Void) {
+        self.record = record; self.directory = directory; self.factory = factory; self.agentUpdater = agentUpdater; self.now = now; self.onChange = onChange
         // Asleep in memory when the daemon ended: the processes are gone, so the next use cold-boots it.
         if record.lifecycle == .sleeping { self.record.lifecycle = .asleep; self.record.coldBootPending = "the daemon exited while it slept in memory" }
         if self.record.lifecycle == .asleep { statusValue = RuntimeStatus(lifecycle: .asleep) }
@@ -52,12 +64,13 @@ public actor SandboxRuntime {
 
     public func status() -> RuntimeStatus { statusValue }
     func snapshot() -> RuntimeSnapshot {
-        RuntimeSnapshot(record: record, status: statusValue, lastBoot: lastBoot, pauseKeepsMemory: backend is any HibernateBackend)
+        RuntimeSnapshot(record: record, status: statusValue, lastBoot: lastBoot, pauseKeepsMemory: backend is any HibernateBackend, agentVersion: agent?.version)
     }
 
     /// Runs the sandbox and says what that took: nothing, a wake, a restore from saved state, or a cold boot. One
     /// bring-up runs at a time; a caller that finds one in flight (or a sleep or stop settling) waits for it.
     public func bringUp() async throws -> SandboxAction? {
+        await operationsSettled()
         while true {
             if let booting { _ = try await booting.value; return nil }
             guard statusValue.lifecycle == .stopping else { break }
@@ -147,12 +160,15 @@ public actor SandboxRuntime {
                 let guestChannel = try await provider.makeGuestChannel()
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
+                agent = await (guestChannel as? any GuestAgentReporting)?.agentIdentity(); agentUpdateFailed = nil
             }
             // A stop (a delete) during the boot cancels it; the VM it made goes down with it.
             try Task.checkCancellation()
             // A boot counts as activity, so a sandbox that was just started is not the first slept to make room.
             record.coldBootPending = nil; record.lifecycle = .running; record.lastActivityAt = now(); persist()
             setStatus(.ready, epoch: statusValue.channelEpoch + 1)
+            // A guest that connects with another agent build gets the host's, after the bring-up it is part of.
+            if agentUpdater != nil { Task { await self.updateAgentIfDue() } }
         } catch {
             await channel?.close(); channel = nil; backend = nil; try? await next.stop()
             let failure = Task.isCancelled ? HostDaemonError.invalidState("\(record.name) was stopped while it started") : error
@@ -163,7 +179,7 @@ public actor SandboxRuntime {
     /// The guest went away on its own (powered off, panicked, or its agent closed the channel): the sandbox is down,
     /// not running, until it is started again.
     private func guestLost(_ reason: String, boot: Int) async {
-        guard boot == bootCount, let lost = backend, [.ready, .paused].contains(statusValue.lifecycle) else { return }
+        guard boot == bootCount, let lost = backend, [.ready, .paused, .freezing].contains(statusValue.lifecycle) else { return }
         backend = nil; setStatus(.stopping)
         await channel?.close(); channel = nil
         try? await lost.stop()
@@ -183,6 +199,7 @@ public actor SandboxRuntime {
     /// Stops it, cancelling a boot in flight, and ends stopped; where the backend cannot stop it, it ends in error
     /// and keeps the backend, so the next stop or start tries again.
     public func stop() async throws {
+        await operationsSettled()
         if let booting { booting.cancel(); _ = try? await booting.value }
         if statusValue.lifecycle == .stopping { _ = await settled() }
         guard statusValue.lifecycle != .stopped else { return }
@@ -220,6 +237,7 @@ public actor SandboxRuntime {
     /// fails or the backend cannot save, stop it and owe it a cold boot that reports why. Returns why it was not
     /// saved, or nil when it was.
     @discardableResult func hibernate() async -> String? {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { return nil }
         let failure: String, reason: String
         if let saver = backend as? any HibernateBackend {
@@ -247,6 +265,7 @@ public actor SandboxRuntime {
     /// `power`: the Mac is going to sleep, so a sandbox serving a request sleeps too, and a saved one comes back
     /// when the Mac wakes or the daemon starts.
     func sleep(power: Bool = false) async throws -> SandboxAction {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
         guard power || inFlight == 0 else { throw HostDaemonError.invalidState("\(record.name) is serving a request") }
         let name = record.name
@@ -274,6 +293,7 @@ public actor SandboxRuntime {
     /// (a locked screen) it stops and owes a cold boot at its next use, since pausing would keep its memory. The process
     /// fixture cannot save, so it sleeps with SIGSTOP, which admission counts as freed.
     func sleepForRoom() async throws -> String {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
         let size = "\(record.name) (\(gibibytes(record.memoryBytes)))"
         guard let saver = backend as? any HibernateBackend else { try await pause(); return "slept \(size) to make room" }
@@ -318,7 +338,11 @@ public actor SandboxRuntime {
     /// The guest's running Localbox jobs (`guest.activity`), or nil when it is serving a request or does not say.
     /// Asking is not activity, so it leaves `lastActivityAt` alone.
     func runningJobs() async -> Int? {
-        guard statusValue.lifecycle == .ready, inFlight == 0, let channel else { return nil }
+        guard statusValue.lifecycle == .ready, inFlight == 0, !operationHeld, let channel else { return nil }
+        return await runningJobs(on: channel)
+    }
+
+    private func runningJobs(on channel: any GuestChannel) async -> Int? {
         let id = "admission-\(UUID().uuidString)"
         guard let request = try? JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": id, "operation": "guest.activity", "sandbox_id": record.sandboxID, "deadline_ms": 5_000, "mutation_id": NSNull(), "input": [String: Any]()]),
               let response = try? await send(request, on: channel),
@@ -328,6 +352,7 @@ public actor SandboxRuntime {
     }
 
     public func forward(_ envelope: Data) async throws -> Data {
+        await operationsSettled()
         guard statusValue.lifecycle == .ready, let channel else { throw HostDaemonError.guestUnavailable }
         record.lastActivityAt = now()
         inFlight += 1; defer { inFlight -= 1 }
@@ -338,9 +363,118 @@ public actor SandboxRuntime {
     private func send(_ envelope: Data, on channel: any GuestChannel) async throws -> Data {
         let boot = bootCount, epoch = statusValue.channelEpoch
         do { return try await channel.send(envelope) } catch HostDaemonError.guestUnavailable {
-            if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch { await guestLost("the guest agent closed its channel", boot: boot) }
+            if statusValue.lifecycle == .ready, statusValue.channelEpoch == epoch, !agentRestarting { await guestLost("the guest agent closed its channel", boot: boot) }
             throw HostDaemonError.guestUnavailable
         }
+    }
+
+    /// Freezes the guest's filesystem and pauses the VM around `body` (a disk clone), so the clone holds everything
+    /// written before it and nothing half-written. Lock, freeze, pause, body, resume, thaw, unlock: resume, thaw and
+    /// unlock run on every path, and a thaw the guest never receives is covered by its own self-thaw after `timeoutMs`.
+    /// While it runs the sandbox is `.freezing`. `body` must not call back into this runtime's lifecycle, which waits
+    /// for the lock `body` runs under.
+    public func freezeAndClone<T: Sendable>(timeoutMs: Int = 10_000, _ body: @Sendable () async throws -> T) async throws -> T {
+        await lockOperation(); defer { unlockOperation() }
+        guard statusValue.lifecycle == .ready, let backend else { throw HostDaemonError.invalidState("\(record.name) is not running") }
+        guard let dialer = backend as? any GuestControlDialer else { throw HostDaemonError.unsupported("\(record.name) has no control lane to freeze it on (the process fixture)") }
+        setStatus(.freezing)
+        var control: (any GuestControlChannel)?, paused = false
+        do {
+            let lane = try await dialer.dialControl(); control = lane
+            try await lane.freeze(timeoutMs: timeoutMs)
+            try await backend.pause(); paused = true
+            let value = try await body()
+            try await backend.resume(); paused = false
+            let unconfirmed = await thaw(lane, timeoutMs: timeoutMs)
+            if statusValue.lifecycle == .freezing { setStatus(.ready, detail: unconfirmed) }
+            return value
+        } catch {
+            var stuck: String?
+            if paused { do { try await backend.resume() } catch { stuck = "paused in memory: could not resume after a disk clone: \(explain(error))" } }
+            if let control { _ = await thaw(control, timeoutMs: timeoutMs) }
+            // A guest lost meanwhile already left `.freezing`; a VM that would not resume sleeps paused, and its next use resumes it.
+            if statusValue.lifecycle == .freezing { setStatus(stuck == nil ? .ready : .paused, detail: stuck) }
+            throw error
+        }
+    }
+
+    /// Brings the guest agent to the host's build when its ready frame named another: on each connect and each idle
+    /// tick. It waits while the guest serves a request or runs a job (P5: the job table lives in the agent's memory),
+    /// pushes the binary on the control lane under the operation lock, then dials the request lane again once the old
+    /// agent exits and its supervisor starts the new one. The VM never stops. A version the guest refuses, or does not
+    /// come back on, is not pushed again until the next boot; an agent that does not come back loses the guest.
+    @discardableResult func updateAgentIfDue() async -> SandboxAction? {
+        guard let agentUpdater, let running = agent, statusValue.lifecycle == .ready, !operationHeld, backend is any GuestControlDialer & GuestReconnecting,
+              let binary = await agentUpdater.due(for: running), binary.version != agentUpdateFailed else { return nil }
+        await lockOperation(); defer { unlockOperation() }
+        // Looked at again under the lock: a stop, a restart or another update may have run meanwhile.
+        guard statusValue.lifecycle == .ready, inFlight == 0, agent == running, let channel, let lane = backend as? any GuestControlDialer & GuestReconnecting,
+              let jobs = await runningJobs(on: channel), jobs == 0 else { return nil }
+        do {
+            let control = try await lane.dialControl()
+            let outcome: AgentUpdateOutcome
+            do { outcome = try await control.updateAgent(binary) } catch { await control.close(); throw error }
+            await control.close()
+            guard outcome == .updated else { return nil }
+        } catch {
+            agentUpdateFailed = binary.version
+            setStatus(.ready, detail: "could not update the guest agent to \(binary.version): \(explain(error))")
+            return nil
+        }
+        agentRestarting = true; defer { agentRestarting = false }
+        await channel.close(); self.channel = nil
+        let fresh: any GuestChannel
+        do { fresh = try await redial(lane, expecting: binary.version, within: await agentUpdater.restartWindow) } catch {
+            await guestLost("the guest agent did not come back after its update to \(binary.version): \(explain(error))", boot: bootCount)
+            return nil
+        }
+        self.channel = fresh
+        agent = await (fresh as? any GuestAgentReporting)?.agentIdentity()
+        guard agent?.version == binary.version else {
+            agentUpdateFailed = binary.version
+            setStatus(.ready, epoch: statusValue.channelEpoch + 1, detail: "pushed guest agent \(binary.version), but it came back as \(agent?.version ?? "an unknown version")")
+            return nil
+        }
+        setStatus(.ready, epoch: statusValue.channelEpoch + 1)
+        let action = ["kind": "agent_updated", "detail": "updated \(record.name)'s guest agent from \(running.version) to \(binary.version) without restarting the sandbox"]
+        unreported.append(action)
+        return action
+    }
+
+    /// Dials the request lane until the agent that answers is `version`. In the moment before the old agent exits it may
+    /// still accept a connection (and close it) or even answer ready, so neither ends the wait. At the end of `window`
+    /// a lane whose agent answered on another version is kept (the caller reports it); with none, the last error.
+    private func redial(_ lane: any GuestReconnecting, expecting version: String, within window: TimeInterval) async throws -> any GuestChannel {
+        let deadline = Date().addingTimeInterval(window)
+        var other: (any GuestChannel)?, failure: Error = HostDaemonError.guestUnavailable
+        while true {
+            do {
+                let fresh = try await lane.reconnectGuest(name: record.name)
+                if await (fresh as? any GuestAgentReporting)?.agentIdentity()?.version == version { return fresh }
+                other = fresh
+            } catch { failure = error }
+            if Date() >= deadline { if let other { return other }; throw failure }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    /// Thaws and closes the lane. Returns why the thaw is unconfirmed, or nil.
+    private func thaw(_ control: any GuestControlChannel, timeoutMs: Int) async -> String? {
+        defer { Task { await control.close() } }
+        do { try await control.thaw(); return nil } catch { return "the guest did not confirm its thaw (\(explain(error))); it thaws itself within \(spoken(TimeInterval(timeoutMs) / 1000))" }
+    }
+
+    private func lockOperation() async { await operationsSettled(); operationHeld = true }
+
+    private func unlockOperation() {
+        operationHeld = false
+        let waiting = operationWaiters; operationWaiters = []
+        for waiter in waiting { waiter.resume() }
+    }
+
+    /// Returns once no exclusive operation holds the lock.
+    private func operationsSettled() async {
+        while operationHeld { await withCheckedContinuation { operationWaiters.append($0) } }
     }
 
     /// A running guest takes the new name as its hostname at once, through a new hello.
@@ -363,6 +497,7 @@ public actor SandboxRuntime {
 
     /// A size takes effect at boot, so a running sandbox restarts; the action names the processes that ended.
     func resize(cpus: Int?, memoryBytes: UInt64?) async throws -> SandboxAction? {
+        await operationsSettled()
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes
         guard cpus != record.cpus || memory != record.memoryBytes else { return nil }
         guard cpus > 0, memory > 0 else { throw HostDaemonError.invalidState("a sandbox needs at least one CPU and some memory") }
@@ -439,6 +574,8 @@ struct RuntimeSnapshot: Sendable {
     let lastBoot: SandboxAction?
     /// A paused VM keeps its RAM; a paused process fixture (SIGSTOP) counts as freed.
     let pauseKeepsMemory: Bool
+    /// The guest agent build the request lane's ready frame named, while one is connected.
+    let agentVersion: String?
     /// Admission counts a sandbox's memory while it starts or runs, and while a VM sleeps paused in memory.
-    var reservesMemory: Bool { [.starting, .ready].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
+    var reservesMemory: Bool { [.starting, .ready, .freezing].contains(status.lifecycle) || (status.lifecycle == .paused && pauseKeepsMemory) }
 }

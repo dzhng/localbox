@@ -7,6 +7,9 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
     case paused
     /// Asleep and down: a saved state to restore, or a cold boot owed, at the next use.
     case asleep
+    /// Running, with its filesystem frozen and the VM paused for a disk clone (`SandboxRuntime.freezeAndClone`).
+    /// Requests wait for it, and admission and the idle policy pass it by.
+    case freezing
     case stopping
     case stopped
     case error
@@ -14,7 +17,7 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
     /// The runtime state reported for the sandbox.
     var sandboxState: String {
         switch self {
-        case .ready: return "running"
+        case .ready, .freezing: return "running"
         case .paused, .asleep: return "sleeping"
         default: return rawValue
         }
@@ -27,7 +30,7 @@ public enum RuntimeLifecycle: String, Codable, Sendable {
         case .ready: return .running
         case .paused: return .sleeping
         case .stopped, .error: return .stopped
-        case .starting, .stopping, .asleep: return nil
+        case .starting, .stopping, .asleep, .freezing: return nil
         }
     }
 }
@@ -166,13 +169,15 @@ public actor SandboxHost {
     private var provisioning: Set<String> = []
     /// Answers image operations and the connector's operation reports; nil answers them `unsupported`.
     private let images: ImageHost?
+    /// The guest agent build this Mac ships (`LOCALBOX_GUEST_AGENT`); every sandbox is kept at it.
+    private let agentUpdater: GuestAgentUpdater?
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, images: ImageHost? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.images = images; self.freeDiskBytes = freeDiskBytes
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, images: ImageHost? = nil, freeDiskBytes: @escaping @Sendable () -> UInt64? = { nil }, now: @escaping @Sendable () -> Date = { Date() }) {
+        root = sandboxesDirectory; self.factory = factory; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater; self.images = images; self.freeDiskBytes = freeDiskBytes
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -181,14 +186,14 @@ public actor SandboxHost {
         var found: [String: SandboxRuntime] = [:], strays: [String] = []
         for name in ((try? FileManager.default.contentsOfDirectory(atPath: sandboxesDirectory.path)) ?? []).sorted() where !name.hasPrefix(".") {
             let directory = SandboxDirectory(sandboxesDirectory.appendingPathComponent(name, isDirectory: true))
-            if let record = try? directory.load(), record.sandboxID == name { found[name] = SandboxRuntime(record: record, directory: directory, factory: factory, now: now, onChange: changes.fire) } else { strays.append(name) }
+            if let record = try? directory.load(), record.sandboxID == name { found[name] = SandboxRuntime(record: record, directory: directory, factory: factory, agentUpdater: agentUpdater, now: now, onChange: changes.fire) } else { strays.append(name) }
         }
         runtimes = found; self.strays = strays
         changes.host = self
     }
 
     private func makeRuntime(_ record: SandboxRecord, _ directory: SandboxDirectory) -> SandboxRuntime {
-        SandboxRuntime(record: record, directory: directory, factory: factory, now: now, onChange: changes.fire)
+        SandboxRuntime(record: record, directory: directory, factory: factory, agentUpdater: agentUpdater, now: now, onChange: changes.fire)
     }
 
     public func runtime(_ sandboxID: String) -> SandboxRuntime? { runtimes[sandboxID] }
@@ -217,7 +222,8 @@ public actor SandboxHost {
     /// SIGTERM and power-off: hibernate every running sandbox, all at once; one that cannot be saved stops and
     /// owes a cold boot. Returns what each did.
     @discardableResult public func shutdown() async -> [String: SandboxAction] {
-        await concurrently(await runtimes(in: [.ready, .paused])) { runtime in
+        // A freezing sandbox is saved once its clone ends and it thaws (`hibernate` waits for the operation).
+        await concurrently(await runtimes(in: [.ready, .paused, .freezing])) { runtime in
             let name = await runtime.record.name
             if let failure = await runtime.hibernate() { return ["kind": "stopped", "detail": "stopped \(name), which cold-boots at the next start: \(failure)"] }
             return ["kind": "slept", "detail": "hibernated \(name)"]
@@ -257,8 +263,10 @@ public actor SandboxHost {
         idleBusy = true; defer { idleBusy = false }
         var done: [String: SandboxAction] = [:]
         for (id, runtime) in runtimes.sorted(by: { $0.key < $1.key }) {
+            // An agent update deferred by a running job (or a request) is tried again each tick.
+            if let updated = await runtime.updateAgentIfDue() { done[id] = updated; continue }
             let sandbox = await runtime.snapshot()
-            guard let since = await runtime.idleSince(), ![.starting, .stopping].contains(sandbox.status.lifecycle) else { continue }
+            guard let since = await runtime.idleSince(), ![.starting, .stopping, .freezing].contains(sandbox.status.lifecycle) else { continue }
             let idle = now().timeIntervalSince(since), policy = IdlePolicy(sandbox.record)
             let running = sandbox.status.lifecycle == .ready
             var step = policy.step(idleFor: idle, running: running)
@@ -387,7 +395,7 @@ public actor SandboxHost {
              .imageCreate, .imageCopy, .imageDelete, .imageWait:
             preconditionFailure("answered by request() or ImageHost")
         case .systemInfo:
-            return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host"])
+            return hostSuccess(object, result: ["sandbox_id": sandboxID, "lifecycle": sandbox.status.lifecycle.rawValue, "channel_epoch": sandbox.status.channelEpoch, "runtime": "host", "agent_version": sandbox.agentVersion as Any? ?? NSNull()])
         case .sandboxStatus:
             var result = view(sandbox); result["lifecycle"] = sandbox.status.lifecycle.rawValue; result["channel_epoch"] = sandbox.status.channelEpoch
             result["sleep_after_ms"] = sandbox.record.sleepAfterMs; result["delete_after_ms"] = sandbox.record.deleteAfterMs as Any? ?? NSNull()
@@ -589,7 +597,7 @@ public actor SandboxHost {
             let holders = holding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
             let listed = holding.map { held -> String in
                 let jobs = jobs[held.record.sandboxID] ?? nil
-                let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
+                let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle == .freezing ? "frozen for a disk clone" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
                 return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
             }
             let total = holding.map(\.record.memoryBytes).reduce(0, +)

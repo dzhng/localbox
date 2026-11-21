@@ -1,0 +1,51 @@
+{
+  "checks": [
+    {
+      "name": "the minimal image, the host daemon, and a next agent build with another version",
+      "ok": true
+    },
+    {
+      "name": "a host shipping the image's own agent leaves it alone",
+      "ok": true
+    },
+    {
+      "name": "a new host build while a job runs: the push waits for the job",
+      "ok": true
+    },
+    {
+      "name": "the deferred update lands once the job ends: same boot, uptime kept, a background process still alive",
+      "ok": true
+    },
+    {
+      "name": "a sandbox that boots with the older agent gets the host's build at connect",
+      "ok": true
+    }
+  ],
+  "machine_root": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-32-5klVcI",
+  "image_agent": "0.1.1+d31193c53e85",
+  "next_agent": "0.0.0-probe32+d31193c53e85",
+  "landed_after_job_ms": 3025,
+  "before": {
+    "bootId": "368fe8f2-cb30-4a4c-890c-bdbedb4cf97e",
+    "uptime": 0.88
+  },
+  "after": {
+    "bootId": "368fe8f2-cb30-4a4c-890c-bdbedb4cf97e",
+    "uptime": 18.9
+  },
+  "connect_update_ms": 0,
+  "second_created": [
+    {
+      "detail": "created bravo-p32 with 2 CPUs and 2 GiB; disk cloned",
+      "kind": "created"
+    },
+    {
+      "detail": "cold-booted bravo-p32",
+      "kind": "cold_booted"
+    }
+  ],
+  "reported": [
+    "updated alpha-p32's guest agent from 0.1.1+d31193c53e85 to 0.0.0-probe32+d31193c53e85 without restarting the sandbox",
+    "updated bravo-p32's guest agent from 0.1.1+d31193c53e85 to 0.0.0-probe32+d31193c53e85 without restarting the sandbox"
+  ]
+}

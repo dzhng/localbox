@@ -25,9 +25,12 @@ struct HostDaemonMain {
             if isDev { await FixtureOperations.register(on: operations) }
             let agentSetup = ProcessInfo.processInfo.environment["LOCALBOX_CLI"].flatMap { $0.isEmpty ? nil : AgentSetupCLI(executable: URL(fileURLWithPath: expanded($0))) }
             let dev = devHost()
+            // The guest agent build this Mac ships; without it sandboxes keep the agent their image carries.
+            let agentUpdater = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : GuestAgentUpdater(directory: URL(fileURLWithPath: expanded($0), isDirectory: true)) }
+            if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
             let imageHost = ImageHost(operations: operations, files: StoredImageFiles(store: images), allowsDirectOperations: isDev)
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes, admissionBytes: dev.admissionBytes,
-                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, images: imageHost, freeDiskBytes: { try? images.freeBytes() })
+                                   allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, images: imageHost, freeDiskBytes: { try? images.freeBytes() })
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(host: host, token: token, endpoint: endpoint), endpoint: endpoint)
             installSignalHandlers(server: server, host: host)

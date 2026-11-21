@@ -82,6 +82,29 @@ server lifecycle in the signed product bundle.
 dispatch queue and attaches the framed `GuestService` channel over vsock.
 There is no reset: delete and create replace it.
 
+A guest has two lanes. Requests travel on vsock port 1024, one at a time and
+with no timeout, and the guest journals their mutations to its disk. Freeze and
+thaw travel on the control lane, port 1025 (`ControlChannel.swift`, twin of
+`packages/guest-gateway/src/control.ts`), dialled per operation, every answer
+under a deadline, so they never queue behind a request or write to the disk
+they freeze. `SandboxRuntime.freezeAndClone` holds the sandbox's operation lock
+and runs lock, freeze, pause, body, resume, thaw, unlock; resume, thaw and
+unlock run on every path, and the guest thaws itself after the freeze's timeout
+if the host never does. While it runs the sandbox is `.freezing`: requests,
+starts, stops, saves and resizes wait for the lock; admission never sleeps it
+for room and the idle policy passes it by; shutdown saves it once it thaws.
+
+`GuestAgentUpdater` holds every guest to the agent build this Mac ships
+(`LOCALBOX_GUEST_AGENT`: `agent-version.json` and one binary per guest OS,
+read again whenever the file changes). A guest whose ready frame names another
+version gets the host's binary over the control lane, on connect and on each
+idle tick, under the operation lock and only while it serves no request and
+runs no job. Once the guest answers `updated` its request lane's close is
+expected: the runtime dials it again instead of losing the guest, and the
+sandbox never stops. A version the guest refuses is not pushed again until the
+next boot; an agent that does not come back loses the guest like any other
+close.
+
 The `localbox-hostd` executable is the launchd process boundary. It reads
 the sandboxes, operations and images directories and an owner-only IPC
 token file from environment variables, starts the same `SandboxHost` and
