@@ -11,8 +11,8 @@ import Foundation
 /// finished finds the sandbox and only boots it.
 public actor SandboxCreateAfterCopy {
     public static let kind = "sandbox.create_after_copy"
-    /// How often the copy's progress is looked at and, when it moved, journaled here.
-    static let followIntervalMs = 1_000
+    /// How often the copy's progress is looked at and, when it moved, journaled here: as often as the copy journals it.
+    static let followIntervalMs = ImageCopy.progressIntervalMs
 
     private let operations: HostOperationStore
     private var sandboxes: SandboxHost?
@@ -50,7 +50,8 @@ public actor SandboxCreateAfterCopy {
         var copied: JSONValue?
         while true {
             try Task.checkCancellation()
-            guard let copy = await operations.wait(copyKey, timeoutMs: Self.followIntervalMs) else {
+            // The copy as it stands first, so its progress shows from the start; then until it moves on or the interval ends.
+            guard let copy = await operations.state(copyKey) else {
                 throw HostOperationFailure(code: "internal", message: "the copy \(copyKey) that \(name) waits for is gone from this Mac", nextStep: again)
             }
             if copy.state == .failed {
@@ -62,6 +63,7 @@ public actor SandboxCreateAfterCopy {
                 try await context.report(progress, checkpoint: context.checkpoint)
                 shown = progress
             }
+            _ = await operations.wait(copyKey, timeoutMs: Self.followIntervalMs)
         }
         // 2. The image is here: lay the sandbox down and boot it as a plain create does.
         try await context.report(HostOperationProgress(phase: "creating"), checkpoint: context.checkpoint)
