@@ -113,8 +113,14 @@ async function fixtureStack(ctx: ProofContext): Promise<Check[]> {
         assert.equal(done.state, "copying", JSON.stringify(done));
         if (attempt > 8) throw new Error(`still copying after ${attempt} waits: ${JSON.stringify(done)}`);
       }
-      assert.match(done.report[0], new RegExp(`^copied image ${image} from ${aName} to ${bName} \\(192 MiB, [\\d.]+ s, local network\\)$`), JSON.stringify(done));
-      assert.match(done.report[1], new RegExp(`^created sandbox ${sandbox} on ${bName}: \\d+ CPUs and [\\d.]+ GiB, running$`));
+      // The real transport can land the copy and the create before this wait starts; the catalog then answers where the
+      // image is, and the sandbox's own record proves the create.
+      if (done.report[0].startsWith("copied image")) {
+        assert.match(done.report[0], new RegExp(`^copied image ${image} from ${aName} to ${bName} \\(192 MiB, [\\d.]+ s, local network\\)$`), JSON.stringify(done));
+        assert.match(done.report[1], new RegExp(`^created sandbox ${sandbox} on ${bName}: \\d+ CPUs and [\\d.]+ GiB, running$`));
+      } else {
+        assert.match(done.report[0], new RegExp(`^image ${image} is ready on .*${bName}`), JSON.stringify(done));
+      }
       assert.equal(sandboxRecords(ctx.root, "b").find((row) => row.name === sandbox)?.image_id, imageId, "B's record names the copied image");
       evidence.push(`$ localbox image wait ${image}\n${done.report.join("\n")}`);
     }));

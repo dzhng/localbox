@@ -699,7 +699,11 @@ export function buildReport(image: ImageRow, result: BuildResult, holder: ImageR
 /** No Mac is building or copying the image, so the catalog's holder rows say how it stands. */
 function catalogState(image: ImageRow): ImageOperationState {
   const base = { image: image.image_id, name: image.name, os: image.os };
-  if (image.holders.some((holder) => holder.state === "ready")) return { ...base, state: "ready" };
+  const ready = image.holders.filter((holder) => holder.state === "ready");
+  if (image.image_id === BUILT_IN_IMAGE || ready.length) {
+    const on = image.image_id === BUILT_IN_IMAGE ? "every Mac" : ready.map(holderName).join(", ");
+    return { ...base, state: "ready", report: [`image ${image.name} is ready on ${on}`, `start a sandbox from it: localbox sandbox create --image ${image.name}`] };
+  }
   const failed = image.holders.find((holder) => holder.state === "failed");
   if (failed) {
     const where = failed.machine_name ?? failed.machine_id;
