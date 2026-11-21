@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { ContractError, OUTPUT_CAP_BYTES, type Json, type OperationId } from "../../contract/src/index.js";
-import type { Handler, HandlerRegistry } from "../../runtime/src/index.js";
+import type { Json, OperationId } from "../../contract/src/index.js";
+import type { HandlerRegistry } from "../../runtime/src/index.js";
+import { CdpBrowser, type CdpBrowserOptions } from "./browser.js";
+import { MacSurface, type MacSurfaceOptions } from "./macos.js";
+import { desktopScreenshot } from "./screenshot.js";
+import { desktopButton, type DesktopSurface } from "./surface.js";
+import { X11Surface, type X11SurfaceOptions } from "./x11.js";
 
 export type DesktopPhase = "stopped" | "starting" | "ready" | "reaping";
 export interface BrowserTab { tab_id: string; generation: number; url: string; title: string; focused: boolean; }
@@ -67,371 +70,52 @@ export function desktopHandlers(runtime = new DesktopRuntime()) {
   };
 }
 
+
+/** Every operation a production desktop answers: on darwin the root role forwards exactly these to the `--desktop` role. */
+export const DESKTOP_OPERATIONS = [
+  "desktop.status", "desktop.screenshot", "desktop.click", "desktop.move", "desktop.scroll", "desktop.key", "desktop.type",
+  "browser.list_tabs", "browser.open", "browser.navigate", "browser.focus", "browser.close", "browser.screenshot",
+  "browser.click", "browser.type", "browser.key",
+] as const satisfies readonly OperationId[];
+
+export type ProductionDesktopOptions = CdpBrowserOptions & (
+  | ({ backend: "x11" } & X11SurfaceOptions)
+  | ({ backend: "macos" } & MacSurfaceOptions)
+);
+
 /**
- * CDP and X11-backed desktop/browser implementation used inside production
- * guests. It has no process-global state and is opt-in through
- * `productionDesktopHandlers`; fixture callers continue to use DesktopRuntime.
+ * Production handlers for a guest with a real desktop: one handler set over the guest OS's surface (`x11` on Linux,
+ * `macos` in the darwin desktop role) and Chrome over CDP. Fixture callers keep `DesktopRuntime`.
  */
-export interface CdpTarget {
-  id: string;
-  type?: string;
-  title?: string;
-  url?: string;
-  webSocketDebuggerUrl?: string;
-}
-
-export interface CdpSocket {
-  readonly readyState: number;
-  send(data: string): void;
-  close(): void;
-  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: any) => void): void;
-}
-
-export interface DesktopCommandResult { stdout: Buffer; stderr: Buffer; code: number }
-export type DesktopCommandRunner = (command: string, args: string[], env: NodeJS.ProcessEnv) => Promise<DesktopCommandResult>;
-
-export interface ProductionDesktopOptions {
-  /** Chromium remote debugging HTTP endpoint. Defaults to loopback port 9222. */
-  cdpUrl?: string;
-  fetchImpl?: typeof fetch;
-  webSocketFactory?: (url: string) => CdpSocket;
-  commandRunner?: DesktopCommandRunner;
-  env?: NodeJS.ProcessEnv;
-  generation?: number;
-  commandTimeoutMs?: number;
-}
-
-class CdpClient {
-  private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-  private readonly opened: Promise<void>;
-
-  constructor(private readonly socket: CdpSocket, private readonly timeoutMs = 30_000) {
-    this.opened = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new ContractError("operation_timeout", "CDP websocket open timed out", undefined, true)), this.timeoutMs);
-      const fail = (event: any) => { clearTimeout(timer); reject(new Error(event?.message ?? "CDP websocket failed")); };
-      socket.addEventListener("open", () => { clearTimeout(timer); resolve(); });
-      socket.addEventListener("error", fail);
-      socket.addEventListener("close", () => {
-        clearTimeout(timer);
-        const error = new Error("CDP websocket closed");
-        for (const waiter of this.pending.values()) waiter.reject(error);
-        this.pending.clear();
-      });
-      socket.addEventListener("message", (event: any) => {
-        try {
-          const message = JSON.parse(typeof event.data === "string" ? event.data : Buffer.from(event.data).toString("utf8")) as { id?: number; result?: unknown; error?: { message?: string } };
-          if (message.id === undefined) return;
-          const waiter = this.pending.get(message.id);
-          if (!waiter) return;
-          this.pending.delete(message.id);
-          if (message.error) waiter.reject(new Error(message.error.message ?? "CDP command failed")); else waiter.resolve(message.result ?? {});
-        } catch (error) {
-          for (const waiter of this.pending.values()) waiter.reject(error instanceof Error ? error : new Error(String(error)));
-          this.pending.clear();
-        }
-      });
-      if (socket.readyState === 1) { clearTimeout(timer); resolve(); }
-    });
-  }
-
-  async command(method: string, params: Record<string, unknown> = {}): Promise<any> {
-    await this.opened;
-    const id = this.nextId++;
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new ContractError("operation_timeout", `CDP command timed out: ${method}`, undefined, true)); }, this.timeoutMs);
-      this.pending.set(id, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } });
-      try { this.socket.send(JSON.stringify({ id, method, params })); } catch (error) { this.pending.delete(id); clearTimeout(timer); reject(error); }
-    });
-  }
-
-  close(): void { this.socket.close(); }
-}
-
-class ProductionDesktopBackend {
-  private readonly fetchImpl: typeof fetch;
-  private readonly makeSocket: (url: string) => CdpSocket;
-  private readonly command: DesktopCommandRunner;
-  private readonly env: NodeJS.ProcessEnv;
-  private readonly cdpUrl: string;
-  private readonly generation: number;
-  private readonly commandTimeoutMs: number;
-  private focusedTab?: string;
-
-  constructor(options: ProductionDesktopOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.makeSocket = options.webSocketFactory ?? defaultWebSocketFactory;
-    this.command = options.commandRunner ?? defaultCommandRunner;
-    this.env = { ...process.env, ...(options.env ?? {}) };
-    this.cdpUrl = (options.cdpUrl ?? "http://127.0.0.1:9222").replace(/\/$/, "");
-    this.generation = options.generation ?? 1;
-    this.commandTimeoutMs = options.commandTimeoutMs ?? 30_000;
-    if (!Number.isSafeInteger(this.commandTimeoutMs) || this.commandTimeoutMs < 1) throw new TypeError("commandTimeoutMs must be positive");
-  }
-
-  async status(): Promise<Json> {
-    const geometry = await this.displayGeometry();
-    const tabs = await this.targets();
-    return { width: geometry.width, height: geometry.height, phase: "ready", viewers: 0, work: 0, browser_tabs: tabs.filter((target) => !target.type || target.type === "page").map((target) => this.tab(target)) } as Json;
-  }
-
-  async screenshot(): Promise<Json> {
-    const png = (await this.capture(["png:-"])).toString("base64");
-    if (fits("image/png", png)) return { mime_type: "image/png", data: dataUrl("image/png", png) };
-    for (const step of REENCODE_STEPS) {
-      const jpeg = (await this.capture(["-quality", String(step.quality), ...(step.scale < 1 ? ["-resize", `${step.scale * 100}%`] : []), "jpeg:-"])).toString("base64");
-      if (fits("image/jpeg", jpeg)) return { mime_type: "image/jpeg", data: dataUrl("image/jpeg", jpeg), reencoded: { from: "image/png", original_bytes: Buffer.byteLength(dataUrl("image/png", png)), quality: step.quality, scale: step.scale } };
-    }
-    throw new ContractError("resource_exhausted", "desktop screenshot does not fit the output cap even re-encoded");
-  }
-
-  private async capture(output: string[]): Promise<Buffer> {
-    try { return (await this.run("import", ["-window", "root", ...output])).stdout; }
-    catch (error) {
-      if (!(error instanceof ContractError) || error.code !== "unsupported") throw error;
-      return (await this.run("magick", ["import", "-window", "root", ...output])).stdout;
-    }
-  }
-
-  async listTabs(): Promise<Json> {
-    const targets = await this.targets();
-    return { tabs: targets.filter((target) => !target.type || target.type === "page").map((target) => this.tab(target)) } as Json;
-  }
-
-  async open(url: string): Promise<Json> {
-    if (!url) throw new ContractError("invalid_input", "browser URL must be non-empty");
-    let response = await this.fetchImpl(`${this.cdpUrl}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
-    if (!response.ok && (response.status === 404 || response.status === 405)) response = await this.fetchImpl(`${this.cdpUrl}/json/new?${encodeURIComponent(url)}`);
-    if (!response.ok) throw new ContractError("guest_unreachable", `Chromium could not open a tab (${response.status})`, undefined, true);
-    const target = await response.json() as CdpTarget;
-    if (!target.id) throw new ContractError("internal", "Chromium returned an invalid target");
-    this.focusedTab = target.id;
-    return this.tab(target);
-  }
-
-  async navigate(tabId: string, url: string): Promise<Json> {
-    const target = await this.target(tabId);
-    await this.withCdp(target, (client) => client.command("Page.navigate", { url }));
-    return this.tab({ ...target, url });
-  }
-
-  async focus(tabId: string): Promise<Json> {
-    const target = await this.target(tabId);
-    const response = await this.fetchImpl(`${this.cdpUrl}/json/activate/${encodeURIComponent(target.id)}`);
-    if (!response.ok) throw new ContractError("guest_unreachable", `Chromium could not focus tab (${response.status})`, undefined, true);
-    this.focusedTab = target.id;
-    return this.tab(target);
-  }
-
-  async close(tabId: string): Promise<Json> {
-    await this.target(tabId);
-    const response = await this.fetchImpl(`${this.cdpUrl}/json/close/${encodeURIComponent(tabId)}`);
-    if (!response.ok) throw new ContractError("guest_unreachable", `Chromium could not close tab (${response.status})`, undefined, true);
-    if (this.focusedTab === tabId) this.focusedTab = undefined;
-    return { closed: tabId };
-  }
-
-  async browserScreenshot(tabId: string): Promise<Json> {
-    const target = await this.target(tabId);
-    return await this.withCdp(target, async (client) => {
-      await client.command("Page.enable");
-      const shot = async (params: Record<string, unknown>) => {
-        const result = await client.command("Page.captureScreenshot", params);
-        if (!result?.data || typeof result.data !== "string") throw new ContractError("internal", "Chromium returned no screenshot");
-        return result.data as string;
-      };
-      const png = await shot({ format: "png" });
-      if (fits("image/png", png)) return { mime_type: "image/png", data: dataUrl("image/png", png) } as Json;
-      const metrics = await client.command("Page.getLayoutMetrics") as { cssLayoutViewport?: { clientWidth: number; clientHeight: number } };
-      const viewport = metrics?.cssLayoutViewport ?? { clientWidth: 1440, clientHeight: 900 };
-      for (const step of REENCODE_STEPS) {
-        const jpeg = await shot({ format: "jpeg", quality: step.quality, ...(step.scale < 1 ? { clip: { x: 0, y: 0, width: viewport.clientWidth, height: viewport.clientHeight, scale: step.scale } } : {}) });
-        if (fits("image/jpeg", jpeg)) return { mime_type: "image/jpeg", data: dataUrl("image/jpeg", jpeg), reencoded: { from: "image/png", original_bytes: Buffer.byteLength(dataUrl("image/png", png)), quality: step.quality, scale: step.scale } } as Json;
-      }
-      throw new ContractError("resource_exhausted", "browser screenshot does not fit the output cap even re-encoded");
-    });
-  }
-
-  async click(tabId: string, x: number, y: number): Promise<Json> {
-    const target = await this.target(tabId);
-    await this.withCdp(target, async (client) => {
-      await client.command("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-      await client.command("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
-    });
-    return { tab_id: tabId, clicked: true, x, y };
-  }
-
-  async type(tabId: string, text: string): Promise<Json> {
-    const target = await this.target(tabId);
-    await this.withCdp(target, (client) => client.command("Input.insertText", { text }));
-    return { tab_id: tabId, typed: text.length };
-  }
-
-  async key(tabId: string, key: string): Promise<Json> {
-    const target = await this.target(tabId);
-    const value = cdpKeySpec(key);
-    await this.withCdp(target, async (client) => {
-      const params = { key: value.key, code: value.code, modifiers: value.modifiers, ...(value.text ? { text: value.text } : {}) };
-      await client.command("Input.dispatchKeyEvent", { type: "keyDown", ...params });
-      await client.command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
-    });
-    return { tab_id: tabId, key };
-  }
-
-  async desktopClick(x: number, y: number, button = "left"): Promise<Json> {
-    await this.run("xdotool", ["mousemove", "--sync", String(x), String(y)]);
-    await this.run("xdotool", ["click", desktopButton(button)]);
-    return { x, y, button, clicked: true };
-  }
-
-  async desktopMove(x: number, y: number): Promise<Json> {
-    await this.run("xdotool", ["mousemove", "--sync", String(x), String(y)]);
-    return { x, y, moved: true };
-  }
-
-  async desktopScroll(x: number, y: number, deltaY: number, deltaX = 0): Promise<Json> {
-    await this.run("xdotool", ["mousemove", "--sync", String(x), String(y)]);
-    if (deltaY) await this.run("xdotool", ["click", "--repeat", String(Math.max(1, Math.abs(Math.trunc(deltaY)))), deltaY > 0 ? "5" : "4"]);
-    if (deltaX) await this.run("xdotool", ["click", "--repeat", String(Math.max(1, Math.abs(Math.trunc(deltaX)))), deltaX > 0 ? "7" : "6"]);
-    return { x, y, delta_y: deltaY, delta_x: deltaX, scrolled: true };
-  }
-
-  async desktopKey(key: string): Promise<Json> {
-    await this.run("xdotool", ["key", normalizeKey(key)]);
-    return { key, sent: true };
-  }
-
-  async desktopType(text: string): Promise<Json> {
-    await this.run("xdotool", ["type", "--clearmodifiers", "--delay", "0", text]);
-    return { text, typed: true };
-  }
-
-  private async targets(): Promise<CdpTarget[]> {
-    const response = await this.fetchImpl(`${this.cdpUrl}/json/list`);
-    if (!response.ok) throw new ContractError("guest_unreachable", `Chromium CDP is unavailable (${response.status})`, undefined, true);
-    const value = await response.json() as unknown;
-    if (!Array.isArray(value)) throw new ContractError("internal", "Chromium returned an invalid target list");
-    return value.filter((target): target is CdpTarget => Boolean(target && typeof target === "object" && typeof (target as CdpTarget).id === "string"));
-  }
-
-  private async target(tabId: string): Promise<CdpTarget> {
-    const target = (await this.targets()).find((candidate) => candidate.id === tabId && (!candidate.type || candidate.type === "page"));
-    if (!target) throw new ContractError("invalid_input", `unknown browser tab: ${tabId}`);
-    if (!target.webSocketDebuggerUrl) throw new ContractError("guest_unreachable", "Chromium target has no debugger websocket", undefined, true);
-    return target;
-  }
-
-  private tab(target: CdpTarget): Json {
-    return { tab_id: target.id, generation: this.generation, url: target.url ?? "about:blank", title: target.title ?? target.url ?? "", focused: target.id === this.focusedTab };
-  }
-
-  private async withCdp<T>(target: CdpTarget, action: (client: CdpClient) => Promise<T>): Promise<T> {
-    if (!target.webSocketDebuggerUrl) throw new ContractError("guest_unreachable", "Chromium target has no debugger websocket", undefined, true);
-    const client = new CdpClient(this.makeSocket(target.webSocketDebuggerUrl), this.commandTimeoutMs);
-    try { return await action(client); } catch (error) { if (error instanceof ContractError) throw error; throw new ContractError("guest_unreachable", error instanceof Error ? error.message : "Chromium CDP command failed", undefined, true); } finally { client.close(); }
-  }
-
-  private async displayGeometry(): Promise<{ width: number; height: number }> {
-    const output = await this.run("xdotool", ["getdisplaygeometry"]);
-    const match = output.stdout.toString("utf8").trim().match(/^(\d+)\s+(\d+)$/);
-    if (!match) throw new ContractError("internal", "xdotool returned invalid display geometry");
-    return { width: Number(match[1]), height: Number(match[2]) };
-  }
-
-  private async run(command: string, args: string[]): Promise<DesktopCommandResult> {
-    try {
-      const result = await this.command(command, args, this.env);
-      if (result.code !== 0) throw new ContractError("internal", result.stderr.toString("utf8") || `${command} exited with code ${result.code}`);
-      return result;
-    }
-    catch (error) {
-      if (error instanceof ContractError) throw error;
-      throw new ContractError("unsupported", `${command} is unavailable: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-}
-
-/** Screenshots must fit the output cap whole: trimming base64 corrupts the image, so oversize shots are re-encoded. */
-const SCREENSHOT_BUDGET = OUTPUT_CAP_BYTES - 16 * 1024;
-const REENCODE_STEPS = [{ quality: 80, scale: 1 }, { quality: 60, scale: 1 }, { quality: 60, scale: 0.75 }, { quality: 50, scale: 0.5 }] as const;
-const dataUrl = (mime: string, base64: string) => `data:${mime};base64,${base64}`;
-const fits = (mime: string, base64: string) => Buffer.byteLength(dataUrl(mime, base64)) <= SCREENSHOT_BUDGET;
-
-/** Build production handlers without changing the deterministic fixture backend. */
-export function productionDesktopHandlers(options: ProductionDesktopOptions = {}): HandlerRegistry {
-  const backend = new ProductionDesktopBackend(options);
-  return {
-    "desktop.status": () => backend.status(),
-    "desktop.screenshot": () => backend.screenshot(),
-    "browser.list_tabs": () => backend.listTabs(),
-    "browser.open": (input) => backend.open((input as { url: string }).url),
-    "browser.navigate": (input) => { const value = input as { tab_id: string; url: string }; return backend.navigate(value.tab_id, value.url); },
-    "browser.focus": (input) => backend.focus((input as { tab_id: string }).tab_id),
-    "browser.close": (input) => backend.close((input as { tab_id: string }).tab_id),
-    "browser.screenshot": (input) => backend.browserScreenshot((input as { tab_id: string }).tab_id),
-    "browser.click": (input) => { const value = input as { tab_id: string; x: number; y: number }; return backend.click(value.tab_id, value.x, value.y); },
-    "browser.type": (input) => { const value = input as { tab_id: string; text: string }; return backend.type(value.tab_id, value.text); },
-    "browser.key": (input) => { const value = input as { tab_id: string; key: string }; return backend.key(value.tab_id, value.key); },
-    "desktop.click": (input) => { const value = input as { x: number; y: number; button: string }; return backend.desktopClick(value.x, value.y, value.button); },
-    "desktop.move": (input) => { const value = input as { x: number; y: number }; return backend.desktopMove(value.x, value.y); },
-    "desktop.scroll": (input) => { const value = input as { x: number; y: number; delta_y: number; delta_x?: number }; return backend.desktopScroll(value.x, value.y, value.delta_y, value.delta_x ?? 0); },
-    "desktop.key": (input) => backend.desktopKey((input as { key: string }).key),
-    "desktop.type": (input) => backend.desktopType((input as { text: string }).text),
+export function productionDesktopHandlers(options: ProductionDesktopOptions): HandlerRegistry {
+  const surface: DesktopSurface = options.backend === "macos" ? new MacSurface(options) : new X11Surface(options);
+  const browser = new CdpBrowser(options);
+  type In<T> = T & Json;
+  const handlers: Record<(typeof DESKTOP_OPERATIONS)[number], (input: any) => Promise<Json>> = {
+    "desktop.status": async () => {
+      const [{ width, height }, tabs] = await Promise.all([surface.geometry(), browser.openTabs()]);
+      return { width, height, phase: "ready", viewers: 0, work: 0, browser_tabs: tabs };
+    },
+    "desktop.screenshot": () => desktopScreenshot(surface),
+    "desktop.click": async (input: In<{ x: number; y: number; button?: string }>) => { const button = desktopButton(input.button); await surface.click(input.x, input.y, button); return { x: input.x, y: input.y, button, clicked: true }; },
+    "desktop.move": async (input: In<{ x: number; y: number }>) => { await surface.move(input.x, input.y); return { x: input.x, y: input.y, moved: true }; },
+    "desktop.scroll": async (input: In<{ x: number; y: number; delta_y: number; delta_x?: number }>) => { const deltaX = input.delta_x ?? 0; await surface.scroll(input.x, input.y, input.delta_y, deltaX); return { x: input.x, y: input.y, delta_y: input.delta_y, delta_x: deltaX, scrolled: true }; },
+    "desktop.key": async (input: In<{ key: string }>) => { await surface.key(input.key); return { key: input.key, sent: true }; },
+    "desktop.type": async (input: In<{ text: string }>) => { await surface.type(input.text); return { text: input.text, typed: true }; },
+    "browser.list_tabs": () => browser.listTabs(),
+    "browser.open": (input: In<{ url: string }>) => browser.open(input.url),
+    "browser.navigate": (input: In<{ tab_id: string; url: string }>) => browser.navigate(input.tab_id, input.url),
+    "browser.focus": (input: In<{ tab_id: string }>) => browser.focus(input.tab_id),
+    "browser.close": (input: In<{ tab_id: string }>) => browser.close(input.tab_id),
+    "browser.screenshot": (input: In<{ tab_id: string }>) => browser.browserScreenshot(input.tab_id),
+    "browser.click": (input: In<{ tab_id: string; x: number; y: number }>) => browser.click(input.tab_id, input.x, input.y),
+    "browser.type": (input: In<{ tab_id: string; text: string }>) => browser.type(input.tab_id, input.text),
+    "browser.key": (input: In<{ tab_id: string; key: string }>) => browser.key(input.tab_id, input.key),
   };
+  return handlers;
 }
 
-function defaultWebSocketFactory(url: string): CdpSocket {
-  const constructor = (globalThis as unknown as { WebSocket?: new (url: string) => CdpSocket }).WebSocket;
-  if (constructor) return new constructor(url);
-  // Debian's Node 18 image has no global WebSocket; undici ships the same
-  // client implementation and is installed as a production runtime dep.
-  try {
-    const UndiciWebSocket = (createRequire(import.meta.url)("undici") as { WebSocket?: new (url: string) => CdpSocket }).WebSocket;
-    if (UndiciWebSocket) return new UndiciWebSocket(url);
-  } catch { /* report the stable contract error below */ }
-  throw new ContractError("unsupported", "Node WebSocket support is unavailable");
-}
-
-function defaultCommandRunner(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<DesktopCommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-    const stdout: Buffer[] = []; const stderr: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", reject);
-    child.once("close", (code) => {
-      const result = { stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr), code: code ?? 1 };
-      if (result.code !== 0) reject(new ContractError("internal", result.stderr.toString("utf8") || `${command} exited with code ${result.code}`)); else resolve(result);
-    });
-  });
-}
-
-function desktopButton(button: string): string {
-  switch (button.toLowerCase()) {
-    case "left": return "1";
-    case "middle": return "2";
-    case "right": return "3";
-    default: throw new ContractError("invalid_input", `unsupported desktop button: ${button}`);
-  }
-}
-
-function normalizeKey(key: string): string {
-  const aliases: Record<string, string> = { ENTER: "Return", ESC: "Escape", ESCAPE: "Escape", TAB: "Tab", BACKSPACE: "BackSpace", SPACE: "space", ARROWLEFT: "Left", ARROWRIGHT: "Right", ARROWUP: "Up", ARROWDOWN: "Down" };
-  return aliases[key.toUpperCase()] ?? key;
-}
-
-function cdpKeySpec(raw: string): { key: string; code: string; modifiers: number; text?: string } {
-  const parts = raw.split("+").filter(Boolean);
-  const base = parts.pop() ?? raw;
-  let modifiers = 0;
-  for (const modifier of parts) {
-    if (modifier.toUpperCase() === "CTRL" || modifier.toUpperCase() === "CONTROL") modifiers |= 2;
-    else if (modifier.toUpperCase() === "ALT") modifiers |= 1;
-    else if (modifier.toUpperCase() === "SHIFT") modifiers |= 8;
-    else if (modifier.toUpperCase() === "META" || modifier.toUpperCase() === "CMD" || modifier.toUpperCase() === "COMMAND") modifiers |= 4;
-  }
-  const aliases: Record<string, string> = { ENTER: "Enter", ESC: "Escape", ESCAPE: "Escape", TAB: "Tab", BACKSPACE: "Backspace", SPACE: " ", ARROWLEFT: "ArrowLeft", ARROWRIGHT: "ArrowRight", ARROWUP: "ArrowUp", ARROWDOWN: "ArrowDown" };
-  const value = aliases[base.toUpperCase()] ?? base;
-  const code = value.length === 1 && /[a-z]/i.test(value) ? `Key${value.toUpperCase()}` : value === " " ? "Space" : value;
-  return { key: value, code, modifiers, ...(value.length === 1 ? { text: value } : {}) };
-}
+export { CdpBrowser, type CdpBrowserOptions, type CdpSocket, type CdpTarget } from "./browser.js";
+export { MacSurface, macChromeLauncher, macKey, type MacChromeOptions, type MacSurfaceOptions } from "./macos.js";
+export { X11Surface, type X11SurfaceOptions } from "./x11.js";
+export type { CaptureEncoding, DesktopButton, DesktopCommandResult, DesktopCommandRunner, DesktopSurface } from "./surface.js";

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The darwin guest agent's system role (root): request lane, control lane, and the desktop link the desktop role dials. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sh.localbox.agent</string>
+  <key>ProgramArguments</key><array><string>/usr/local/localbox/localbox-agent</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LOCALBOX_ROOT</key><string>/</string>
+    <key>LOCALBOX_READINESS_MARKER</key><string>/var/run/localbox/ready</string>
+    <key>LOCALBOX_AGENT_SOCKET</key><string>/var/run/localbox/agent.sock</string>
+    <key>LOCALBOX_CONTROL_SOCKET</key><string>/var/run/localbox/control.sock</string>
+    <key>LOCALBOX_DESKTOP_BACKEND</key><string>macos</string>
+    <key>LOCALBOX_DESKTOP_SOCKET</key><string>/var/run/localbox/desktop.sock</string>
+    <key>LOCALBOX_DESKTOP_USER</key><string>localbox</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <!-- Like systemd's KillMode=process: an update restarts the agent, never the processes it started. -->
+  <key>AbandonProcessGroup</key><true/>
+  <key>StandardErrorPath</key><string>/var/log/localbox-agent.log</string>
+</dict>
+</plist>
