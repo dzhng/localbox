@@ -33,9 +33,13 @@ struct VMLabMain {
                 case "macos-clones": output = try await lab.clones()
                 case "macos-hibernate": output = try await lab.hibernate()
                 case "macos-tcc":
-                    guard let evidence = option("--evidence", in: arguments), let agent = option("--agent", in: arguments), let units = option("--units", in: arguments) else { throw LabError("macos-tcc needs --agent <darwin agent> --units <apps/guest-agent/darwin> --evidence <dir>") }
-                    output = try await lab.tcc(agent: URL(fileURLWithPath: expanded(agent)), units: URL(fileURLWithPath: expanded(units), isDirectory: true), evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
+                    guard let evidence = option("--evidence", in: arguments), let agent = option("--guest-agent", in: arguments) else { throw LabError("macos-tcc needs --guest-agent <dist/guest-agent> --evidence <dir>") }
+                    output = try await lab.tcc(guestAgent: URL(fileURLWithPath: expanded(agent), isDirectory: true), evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
                 case "macos-vsock": output = try await lab.vsock()
+                case "macos-image":
+                    guard let image = option("--image", in: arguments), let evidence = option("--evidence", in: arguments) else { throw LabError("macos-image needs --image <images>/<id> --evidence <dir>") }
+                    output = try await lab.image(URL(fileURLWithPath: expanded(image), isDirectory: true), evidence: URL(fileURLWithPath: expanded(evidence), isDirectory: true))
+                case "macos-latest": output = try await lab.latestIPSW()
                 case "macos-check":
                     guard let guest = option("--guest", in: arguments) else { throw LabError("macos-check needs --guest <dir>") }
                     output = try await lab.check(guestDirectory: URL(fileURLWithPath: expanded(guest), isDirectory: true))
