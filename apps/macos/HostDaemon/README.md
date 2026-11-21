@@ -1,5 +1,11 @@
 # Host daemon
 
+`HostDaemon` wires the daemon's parts once and is its one entry for requests:
+the catalog's image operations and the connector's image calls go to
+`ImageHost` (it routes on `HostOperation`'s image cases and a named set of
+internal operations), everything else to `SandboxHost`. Every host operation
+kind is registered there, before the journal starts.
+
 `SandboxHost` is the only owner of this Mac's sandboxes. Each lives in its own
 directory under `LOCALBOX_SANDBOXES` (`machinePaths().sandboxes/<id>/`):
 `sandbox.json` (the catalog identity, mirrored read-only, plus the runtime the
@@ -23,7 +29,9 @@ offline) is deleted here, disk included, and reported; one it never listed
 (created and not yet listed, or listed by an earlier sign-in) is only hidden. `localbox logout` pushes `source: signed_out`, which
 hides every sandbox and deletes nothing. A push never creates a directory.
 
-A VM is described by a pure `VMSpec` (platform and machine identifier, boot
+Every VM the package runs, a sandbox's, a macOS build's or a lab's, is one
+`VirtualMachine` (its queue, stop notices, vsock dialling and request-lane
+opening), and a VM is described by a pure `VMSpec` (platform and machine identifier, boot
 store, CPUs, memory, disk, MAC, devices from `GuestPlatform`), built from the
 record and the sandbox's directory alone, and `SandboxConfigurationBuilder` is
 the one translator from it to a Virtualization configuration: every VM the
@@ -54,7 +62,10 @@ image whose operation is still running (`.<id>.*`, kept for its resume) and the
 IPSW cache (`.ipsw/`). A sandbox is
 provisioned from an image off the `SandboxHost` actor and keeps its own disk
 clone and boot store, so deleting the image never breaks it; `SandboxHost`
-itself does no image file I/O and learns free disk only through capacity.
+itself does no image file I/O; it asks `ImageStore` for free disk for capacity.
+`ImageStore` is also the one answer to "how much is free" (`freeBytes`, with
+`LOCALBOX_DEV_FREE_DISK_BYTES` fixing it in proof runs) and refuses every image
+write that would not fit (`requireFree`, `disk_full`).
 The one exception is the built-in `linux` image, which the installer writes
 ([releasing](../../../DEVELOPMENT.md#releasing)); the daemon reads it like any
 other.
@@ -77,11 +88,14 @@ waits also answer when it moves to its next phase, so `image wait` shows each.
 Apple's latest IPSW with no human step: download (resumable, into the IPSW
 cache), install, a provisioning boot with a random password and Remote Login,
 the darwin agent and Chrome over SSH, `csrutil disable` in Recovery, then TCC
-grants and Remote Login off through the agent's own shell. The password lives
+grants, notification banners off and Remote Login off through the agent's own
+shell; Chrome runs under managed policies (no sign-in prompt, no site
+notifications). A build's VM holds one of the two macOS VM slots, and admission
+counts it as it counts macOS sandboxes, so a third macOS VM is refused with the
+reason, never Virtualization's raw error. The password lives
 only in the builder's memory, so a restart before SIP is off begins again from
-a fresh clone of the installed disk. Every macOS VM outside a sandbox is a
-`MacVirtualMachine` made from a `VMSpec`, and the provisioning steps
-(`MacProvisioning`) are the ones `localbox-vmlab`'s macOS labs call. Typing
+a fresh clone of the installed disk. The provisioning steps (`MacProvisioning`) are the ones `localbox-vmlab`'s macOS
+labs call. Typing
 into Recovery uses Virtualization's private VNC server, and
 `RecoveryVNC.swift` is the only file that touches private Apple API: a macOS
 update that breaks it breaks one file, and nothing else depends on it.
@@ -116,16 +130,20 @@ cannot stall other clients. `stop()` cancels the listener and removes the
 socket path; launchd packaging can own process startup and call the same
 server lifecycle in the signed product bundle.
 
-`AppleVirtualizationBackend` runs one sandbox's VM for one boot on its own
-dispatch queue and attaches the framed `GuestService` channel over vsock.
+`AppleVirtualizationBackend` runs one sandbox's `VirtualMachine` for one boot
+and attaches the framed `GuestService` channel over vsock.
 There is no reset: delete and create replace it.
 
-A guest has two lanes. Requests travel on vsock port 1024, one at a time and
-with no timeout, and the guest journals their mutations to its disk. Freeze and
-thaw travel on the control lane, port 1025 (`ControlChannel.swift`, twin of
+A guest has two lanes (`GuestPort`). Requests travel on vsock port 1024, one at
+a time, and the guest journals their mutations to its disk; the guest answers by
+each request's `deadline_ms`, and one that has not answered 30 s past it is
+wedged: the lane closes (a late answer would be read as the next request's) and
+the sandbox is lost, not running. Freeze and thaw travel on the control lane,
+port 1025 (`ControlChannel.swift`, twin of
 `packages/guest-gateway/src/control.ts`), dialled per operation, every answer
 under a deadline, so they never queue behind a request or write to the disk
-they freeze. `SandboxRuntime.freezeAndClone` holds the sandbox's operation lock
+they freeze; a missed answer closes that lane too, and a thaw after a failed
+freeze goes on a fresh one. `SandboxRuntime.freezeAndClone` holds the sandbox's operation lock
 and runs lock, freeze, pause, body, resume, thaw, unlock; resume, thaw and
 unlock run on every path, and the guest thaws itself after the freeze's timeout
 if the host never does. While it runs the sandbox is `.freezing`: requests,
