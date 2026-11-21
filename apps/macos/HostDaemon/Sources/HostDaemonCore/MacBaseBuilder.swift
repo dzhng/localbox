@@ -56,8 +56,7 @@ public protocol MacAgentGuest: MacBuildGuest {
 ///
 /// Phases, each journaled as the checkpoint's next phase before it runs: `download` (resumable, into the IPSW cache),
 /// `install`, `provision` (a fresh clone of the installed disk, first boot with a random password and Remote Login),
-/// `bootstrap` (over SSH: the darwin agent, its forwarder, helper and units, and Chrome from Google's installer with its
-/// policies, P12), `sip` (Recovery's Terminal), `tcc` and `finish` (through the agent's root shell: grants and a quiet
+/// `bootstrap` (over SSH: the darwin agent, its forwarder, helper and units, and Chrome from Google's installer, P12), `sip` (Recovery's Terminal), `tcc` and `finish` (through the agent's root shell: grants and a quiet
 /// desktop, then Remote Login off, shut down, commit). The password lives only in this process's memory: a restart
 /// during `bootstrap` or `sip` resumes from `provision` on a fresh clone; `tcc` and `finish` need no password and resume
 /// where they were. The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint. From `install`
@@ -273,25 +272,10 @@ public actor MacBaseBuilder: HostOperationKind {
         "n=0; until launchctl print gui/$(id -u \(user)) >/dev/null 2>&1 && pgrep -x -u \(user) Finder >/dev/null; do n=$((n+2)); [ $n -lt \(seconds) ] || { echo \"the desktop session of \(user) never came up\" >&2; exit 1; }; sleep 2; done"
     }
 
-    /// Chrome's policies, as managed preferences (mandatory, read at every launch): no sign-in (and so no "Sign in to
-    /// Chrome?" prompt) or sync, no site asking to send notifications, no promotional or default-browser tabs, no
-    /// metrics or privacy-sandbox prompts. A sandbox's browser is driven by agents, so anything Chrome asks covers what
-    /// they look at.
-    static let chromePolicies: [(key: String, value: String)] = [
-        ("BrowserSignin", "<integer>0</integer>"), ("SyncDisabled", "<true/>"), ("DefaultNotificationsSetting", "<integer>2</integer>"), ("PromotionalTabsEnabled", "<false/>"),
-        ("DefaultBrowserSettingEnabled", "<false/>"), ("MetricsReportingEnabled", "<false/>"), ("PrivacySandboxPromptEnabled", "<false/>"),
-    ]
-
-    /// `chromePolicies` as the plist Chrome reads from `/Library/Managed Preferences`.
-    static var chromePolicyPlist: String {
-        #"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>"# + chromePolicies.map { "<key>\($0.key)</key>\($0.value)" }.joined() + "</dict></plist>"
-    }
-
     /// Over SSH as root, on the first boot: wait for the auto-login session the agent's desktop role runs in, install
-    /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google, and its policies.
+    /// the agent (`install.sh`), then Chrome from Google's package, checked to be signed by Google.
     public static func bootstrapScript(user: String) -> String {
-        let policies = "/Library/Managed Preferences/com.google.Chrome.plist"
-        return """
+        """
         set -eu
         \(waitForSession(user: user, seconds: 300))
         rm -rf /tmp/localbox-stage && mkdir /tmp/localbox-stage && tar -xzf \(remotePayload) -C /tmp/localbox-stage
@@ -301,9 +285,6 @@ public actor MacBaseBuilder: HostOperationKind {
         pkgutil --check-signature /tmp/GoogleChrome.pkg | grep -q 'Developer ID Installer: Google LLC' || { echo "the Chrome installer is not signed by Google" >&2; exit 1; }
         installer -pkg /tmp/GoogleChrome.pkg -target / >/dev/null
         test -d '/Applications/Google Chrome.app'
-        mkdir -p '/Library/Managed Preferences'
-        printf '%s\\n' '\(chromePolicyPlist)' > '\(policies)'
-        chmod 644 '\(policies)' && plutil -lint '\(policies)' >/dev/null
         rm -rf /tmp/GoogleChrome.pkg /tmp/localbox-stage \(remotePayload)
         """
     }

@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { ContractError } from "../../contract/src/index.js";
 import { defaultCommandRunner, notches, runDesktopCommand, type CaptureEncoding, type DesktopButton, type DesktopCommandRunner, type DesktopSurface } from "./surface.js";
 
@@ -102,13 +104,26 @@ export interface MacChromeOptions {
 }
 
 /**
+ * What a new profile starts with: no sign-in (so no "Sign in to Chrome?" button) and no site asking to send
+ * notifications. A sandbox's browser is driven by agents, so anything Chrome asks covers what they look at; an unmanaged
+ * Mac ignores Chrome's managed policies, so the profile itself carries these.
+ */
+export const MAC_CHROME_PROFILE = { signin: { allowed: false }, profile: { default_content_setting_values: { notifications: 2 } } };
+
+/**
  * Starts Google Chrome in the desktop role's session through Launch Services (`open`), so it is an ordinary app of the
  * logged-in user that outlives the agent; `CdpBrowser` calls this when CDP doesn't answer and waits for it to. It starts
- * with no window, so the tab `browser.open` makes is the only one (no stray blank tab beside it).
+ * with no window, so the tab `browser.open` makes is the only one (no stray blank tab beside it), on a profile seeded
+ * with `MAC_CHROME_PROFILE` the first time.
  */
 export function macChromeLauncher(options: MacChromeOptions): () => Promise<void> {
   const runner = options.commandRunner ?? defaultCommandRunner, env = { ...process.env, ...(options.env ?? {}) };
   return async () => {
+    const preferences = join(options.userDataDir, "Default", "Preferences");
+    if (!existsSync(preferences)) {
+      mkdirSync(join(options.userDataDir, "Default"), { recursive: true });
+      writeFileSync(preferences, JSON.stringify(MAC_CHROME_PROFILE));
+    }
     await runDesktopCommand(runner, "/usr/bin/open", ["-n", "-a", options.app ?? "Google Chrome", "--args",
       `--remote-debugging-port=${options.port}`, "--remote-debugging-address=127.0.0.1", `--user-data-dir=${options.userDataDir}`,
       "--no-first-run", "--no-default-browser-check", "--no-startup-window"], env);

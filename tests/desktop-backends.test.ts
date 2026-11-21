@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ContractError, type Json } from "../packages/contract/src/index.js";
@@ -106,12 +108,14 @@ test("on macOS the browser is launched in the session when CDP doesn't answer, o
     if (!up) throw new TypeError("fetch failed: ECONNREFUSED");
     return String(input).endsWith("/json/list") ? new Response("[]", { status: 200 }) : new Response("{}", { status: 200 });
   };
-  const launch = macChromeLauncher({ port: 9222, userDataDir: "/Users/localbox/Library/Application Support/Localbox/Chrome", commandRunner: async (command, args) => { opened.push([command, ...args]); up = true; return ok(); } });
+  const userDataDir = join(mkdtempSync(join(tmpdir(), "lb-chrome-")), "Chrome");
+  const launch = macChromeLauncher({ port: 9222, userDataDir, commandRunner: async (command, args) => { opened.push([command, ...args]); up = true; return ok(); } });
   const handlers = productionDesktopHandlers({ backend: "macos", helper: HELPER, fetchImpl, launch, launchTimeoutMs: 1_000 });
   const [first, second] = await Promise.all([handlers["browser.list_tabs"]!({}, context()), handlers["browser.list_tabs"]!({}, context())]);
   assert.deepEqual([first, second], [{ tabs: [] }, { tabs: [] }]);
   assert.deepEqual(opened, [["/usr/bin/open", "-n", "-a", "Google Chrome", "--args", "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1",
-    "--user-data-dir=/Users/localbox/Library/Application Support/Localbox/Chrome", "--no-first-run", "--no-default-browser-check", "--no-startup-window"]]);
+    `--user-data-dir=${userDataDir}`, "--no-first-run", "--no-default-browser-check", "--no-startup-window"]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(userDataDir, "Default", "Preferences"), "utf8")).signin, { allowed: false }, "a new profile starts with sign-in off");
 });
 
 test("desktop status never starts a browser: with CDP down it reports no tabs", async () => {

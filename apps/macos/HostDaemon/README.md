@@ -89,8 +89,8 @@ Apple's latest IPSW with no human step: download (resumable, into the IPSW
 cache), install, a provisioning boot with a random password and Remote Login,
 the darwin agent and Chrome over SSH, `csrutil disable` in Recovery, then TCC
 grants, notification banners off and Remote Login off through the agent's own
-shell; Chrome runs under managed policies (no sign-in prompt, no site
-notifications). A build's VM holds one of the two macOS VM slots, and admission
+shell (the darwin agent seeds Chrome's profile with sign-in and site
+notifications off, and starts it with no window). A build's VM holds one of the two macOS VM slots, and admission
 counts it as it counts macOS sandboxes, so a third macOS VM is refused with the
 reason, never Virtualization's raw error. The password lives
 only in the builder's memory, so a restart before SIP is off begins again from
