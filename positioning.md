@@ -221,7 +221,8 @@ The agent never has to guess or ask a follow-up question.
   every shared access logged. It's what makes full autonomy feel safe.
 - Free and personal, for individual developers. Don't mention plans, seats, teams,
   or building products on top of other people's Macs.
-- Sign-in is "your email and a code". Never mention passwords, keys or pairing.
+- Sign-in is "your email and a 6-digit code emailed to you". Never mention
+  passwords, keys or pairing.
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
   give their memory back and resume exactly where they were. The installer
   checks the Mac is set up for it; don't promise it beyond that.

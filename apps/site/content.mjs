@@ -10,7 +10,7 @@ export const openIn = [
   { label: "Open in Codex", href: `codex://new?prompt=${encodeURIComponent(agentPrompt)}` },
 ];
 
-export const requirements = "Apple Silicon · macOS 14 or newer (27 for macOS sandboxes)";
+export const requirements = "Apple Silicon · macOS 14 or newer (macOS 27 for macOS sandboxes)";
 
 export const links = {
   repo,
@@ -39,7 +39,7 @@ export const hero = {
 /** The honest pitch: what renting a sandbox, SSH, and Localbox each actually give you. */
 export const compare = {
   title: "Better than renting, safer than SSH",
-  body: "A cloud sandbox keeps your agent off your laptop, but you rent it by the minute, it forgets everything when the session ends, and it's nowhere near your machines. SSH and Tailscale reach the Macs you own once you've set up keys and a network on each, and then your agent has your whole computer: your files, keys and logged-in sessions. Localbox gives every agent a sandbox on every Mac you own, set up with your email and a code.",
+  body: "A cloud sandbox keeps your agent off your laptop, but you rent it by the minute, it forgets everything when the session ends, and it's nowhere near your machines. SSH and Tailscale reach the Macs you own once you've set up keys and a network on each, and then your agent has your whole computer: your files, keys and logged-in sessions. Localbox gives every agent a sandbox on every Mac you own, set up with your email and a 6-digit code emailed to you.",
   columns: ["Cloud sandbox", "SSH and Tailscale", "Localbox"],
   rows: [
     { label: "Runs on the computers you already own", values: [false, true, true] },
@@ -52,7 +52,7 @@ export const compare = {
 };
 
 export const asks = [
-  "Use the Mac mini in the closet for tonight's full build.",
+  "Use the Mac mini in the closet for tonight\u2019s full build.",
   "Set up a sandbox with our toolchain and make it my default image.",
   "Give each of these three branches its own sandbox, on whichever Macs have room.",
   "Open a macOS sandbox, install Xcode with my Apple ID, and run the iOS tests.",
@@ -64,15 +64,15 @@ export const asks = [
 export const features = [
   {
     image: "05-your-machines-are-the-fleet.png",
-    alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out",
+    alt: "Xiaohei hands a sandbox from a shelf of home computers to the agent",
     kicker: "owned, not rented",
-    title: "Stop renting sandboxes",
+    title: "Every Mac you own, already paid for",
     body: "A cloud sandbox is someone else's computer by the minute, wiped when the session ends. Sign in on each Mac you own with your email and it joins, even from another country. Your agent works on the machine it's on, names another, or asks Localbox for the roomiest. Start with the Mac you have; every Mac you add joins. No per-minute billing, no session limit.",
   },
   {
     image: "01-still-there-next-week.png",
     alt: "Xiaohei goes to bed beside its desk, then comes back to find every tool and tab exactly where it was",
-    kicker: "images",
+    kicker: "saved setups",
     title: "Set up your way, still there next week",
     body: "A sandbox keeps its files, installed packages, browser profile and desktop until someone deletes it. Save one as an image and every new sandbox can start from it, on any of your Macs: images copy straight from Mac to Mac, never through anyone's cloud. Idle sandboxes sleep and wake with every process where it was, dev server included.",
   },
@@ -80,15 +80,15 @@ export const features = [
     image: "04-host-stays-outside.png",
     alt: "Xiaohei builds freely inside a glass jar while your files sit untouched outside it",
     kicker: "Linux or macOS",
-    title: "A whole computer, not your whole computer",
-    body: "Each sandbox is a whole computer, Linux or macOS, with a shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps: Localbox builds the base on your own Mac from Apple's restore image. SSH would hand your agent your own computer; a sandbox lets it run with permission prompts off, and the worst case is deleting it.",
+    title: "A sandbox, not your whole computer",
+    body: "Each sandbox is a whole computer, Linux or macOS, with a shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps: Localbox builds the base on your own Mac from Apple's restore image. SSH would hand your agent your own computer; a sandbox lets it run with permission prompts off, and the worst case is deleting the sandbox.",
   },
   {
     image: "03-outbound-only.png",
     alt: "The house's front door stays padlocked while Xiaohei sits on the roof reeling a line up to the relay",
     kicker: "from anywhere",
     title: "Cloud agents, your computers",
-    body: "Codex cloud, Claude Code on the web and scheduled agents reach your Macs through a relay they connect out to: no port forwarding, VPN, Tailscale or SSH keys. They sign in with your email and a code, and you can revoke them any time.",
+    body: "Codex cloud, Claude Code on the web and scheduled agents reach your Macs through a relay they connect out to: no port forwarding, VPN, Tailscale or SSH keys. They sign in with your email and a 6-digit code emailed to you, and you can revoke them any time.",
   },
   {
     image: "06-share-a-folder.png",

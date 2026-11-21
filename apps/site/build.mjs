@@ -8,6 +8,7 @@ import * as content from "./content.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const artwork = join(here, "../../.github/readme");
 const staticFiles = ["style.css", "main.js", "favicon.svg", "og.png"];
+const heroMobile = "header-mobile.png";
 
 /** Production origin: explicit SITE_URL, else Vercel's production domain, else local preview. */
 function defaultSiteUrl() {
@@ -42,6 +43,12 @@ function illustration(name, alt, { eager = false } = {}) {
   const { width, height } = pngSize(join(artwork, name));
   const loading = eager ? `fetchpriority="high"` : `loading="lazy"`;
   return `<img src="/art/${name}" alt="${escape(alt)}" width="${width}" height="${height}" ${loading} decoding="async">`;
+}
+
+/** A phone gets the stacked cut of the hero art, so its labels stay readable at 390 px. */
+function heroArt(alt) {
+  const { width, height } = pngSize(join(artwork, heroMobile));
+  return `<picture><source media="(max-width: 520px)" srcset="/art/${heroMobile}" width="${width}" height="${height}">${illustration("header.png", alt, { eager: true })}</picture>`;
 }
 
 const blob = (id) => `<svg class="blob" id="${id}" viewBox="0 0 120 130" aria-hidden="true">
@@ -140,7 +147,7 @@ ${bar()}
     <p class="kicker hand">${escape(hero.kicker)}</p>
     <h1>${escape(hero.title)}<br><span>${escape(hero.accent)}</span></h1>
     <p class="lede">${prose(hero.lede)}</p>
-    <figure class="hero-art">${illustration("header.png", meta.imageAlt, { eager: true })}</figure>
+    <figure class="hero-art">${heroArt(meta.imageAlt)}</figure>
 
     <div class="cta">
       <p class="hand cta-label">tell your agent to install it</p>
@@ -210,7 +217,7 @@ ${bar()}
 </main>
 
 <main class="agent-view">
-  <p class="agent-banner"># You're reading the agent view. Same words as <a href="/llms.txt">/llms.txt</a> ${copyButton("Copy all", "agent-text")}</p>
+  <p class="agent-banner"><span># You're reading the agent view. Same words as <a href="/llms.txt">/llms.txt</a></span> ${copyButton("Copy all", "agent-text")}</p>
   <pre id="agent-text">${escape(content.llmsText())}</pre>
 </main>
 
@@ -244,7 +251,7 @@ ${footer()}
 export function build({ out = join(here, "dist"), siteUrl = defaultSiteUrl(), readme = readFileSync(join(here, "../../README.md"), "utf8") } = {}) {
   checkPromptMatchesReadme(readme);
   const origin = siteUrl.replace(/\/$/, "");
-  const images = ["header.png", ...content.features.map((item) => item.image)];
+  const images = ["header.png", heroMobile, ...content.features.map((item) => item.image)];
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "art"), { recursive: true });
   writeFileSync(join(out, "index.html"), renderPage(origin));

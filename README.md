@@ -51,7 +51,7 @@ optional MCP endpoint.
 ## Stop renting sandboxes
 
 <p align="center">
-  <img src=".github/readme/05-your-machines-are-the-fleet.png" alt="Xiaohei hands a sandbox from a shelf of home computers to the agent, while the cloud bill is crossed out" width="85%">
+  <img src=".github/readme/05-your-machines-are-the-fleet.png" alt="Xiaohei hands a sandbox from a shelf of home computers to the agent" width="85%">
 </p>
 
 A cloud sandbox is someone else's computer by the minute. It forgets everything
@@ -74,8 +74,8 @@ Background agents like Codex cloud, Claude Code on the web and scheduled agents
 reach your computers from wherever they run, and do their work in your sandboxes
 instead of rented ones. Each Mac connects **out** to a hosted relay, so there's no
 port forwarding, VPN, Tailscale or SSH key. A cloud agent signs in with your
-email and a code, gets a token for your account that you can revoke any time, and a
-request that may have half-applied is reported as uncertain, never silently
+email and a 6-digit code emailed to you, gets a token for your account that you can
+revoke any time, and a request that may have half-applied is reported as uncertain, never silently
 retried.
 
 ## Set up your way

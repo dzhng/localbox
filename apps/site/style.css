@@ -501,7 +501,6 @@ td.us .yes {
 /* FAQ */
 .faq details {
   border-bottom: 1px solid var(--line);
-  max-width: 820px;
 }
 .faq summary {
   cursor: pointer;
@@ -513,17 +512,22 @@ td.us .yes {
 .faq summary::-webkit-details-marker {
   display: none;
 }
+/* Plus when closed, minus when open: two drawn bars, no in-between state. */
 .faq summary::after {
-  content: "+";
+  content: "";
   position: absolute;
-  right: 4px;
-  top: 14px;
-  font: 400 1.8rem var(--mono);
-  color: var(--orange);
-  transition: transform 0.2s;
+  right: 6px;
+  top: 27px;
+  width: 16px;
+  height: 16px;
+  background:
+    linear-gradient(var(--orange), var(--orange)) center / 16px 3px no-repeat,
+    linear-gradient(var(--orange), var(--orange)) center / 3px 16px no-repeat;
 }
 .faq details[open] summary::after {
-  transform: rotate(45deg);
+  background-size:
+    16px 3px,
+    0 0;
 }
 .faq details p {
   margin: -4px 0 22px;
@@ -628,6 +632,11 @@ td.us .yes {
   }
   thead th {
     font-size: 0.82rem;
+  }
+  th:last-child,
+  td:last-child {
+    padding-right: 12px;
+    padding-left: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
