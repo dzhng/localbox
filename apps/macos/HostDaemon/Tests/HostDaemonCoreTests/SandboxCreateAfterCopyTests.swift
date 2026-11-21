@@ -7,7 +7,7 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
     static let image = "image_copied"
 
     func testTheCreateAnswersAtOnceShowsTheCopysProgressAndCreatesWhenTheCopyLands() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         try await daemon.startCopy("copy-1")
         let answer = try await daemon.create("create-1", after: "copy-1")
         let produced = try XCTUnwrap((answer["result"] as? [String: Any])?["produced"] as? [String: Any], "\(answer)")
@@ -41,7 +41,7 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
     }
 
     func testAFailedCopyFailsTheCreateWithTheCopysReasonAndNextStep() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         try await daemon.startCopy("copy-2")
         _ = try await daemon.create("create-2", after: "copy-2")
         daemon.copy.finish(HostOperationFailure(code: "copy_unreachable", message: "no direct path between the two Macs", nextStep: "put both Macs on the same network once, then copy"))
@@ -54,7 +54,7 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
     }
 
     func testACreateNamingNoCopyOfItsImageIsRefusedAndJournalsNothing() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         let refused = try await daemon.create("create-3", after: "copy-missing")
         XCTAssertEqual((refused["error"] as? [String: Any])?["code"] as? String, "invalid_input", "\(refused)")
         let journaled = await daemon.operations.state("create-3")
@@ -62,12 +62,12 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
     }
 
     func testARestartMidCopyResumesTheCreateWhichCreatesOnceTheCopyLands() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         try await daemon.startCopy("copy-4")
         _ = try await daemon.create("create-4", after: "copy-4")
         await daemon.operations.stop()
 
-        let restarted = try await Daemon(test: self, root: daemon.root)
+        let restarted = try await Daemon(root: daemon.root)
         let resumed = await restarted.operations.start()
         XCTAssertEqual(Set(resumed), ["copy-4", "create-4"])
         restarted.copy.finish(nil)
@@ -81,19 +81,17 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
 private struct NeverReached: Error, CustomStringConvertible { let description: String }
 
 /// A scripted copy: its progress and outcome are set by the test; the work polls them.
-private final class ScriptedCopy: @unchecked Sendable {
-    private let lock = NSLock()
-    private var shown: HostOperationProgress?
-    private var outcome: HostOperationFailure??
+private final class ScriptedCopy: Sendable {
+    private let state = Locked<(shown: HostOperationProgress?, outcome: HostOperationFailure??)>((nil, nil))
 
-    func progress(_ progress: HostOperationProgress) { lock.withLock { shown = progress } }
+    func progress(_ progress: HostOperationProgress) { state.withLock { $0.shown = progress } }
     /// nil succeeds the copy; a failure fails it.
-    func finish(_ failure: HostOperationFailure?) { lock.withLock { outcome = .some(failure) } }
+    func finish(_ failure: HostOperationFailure?) { state.withLock { $0.outcome = .some(failure) } }
 
     func run(_ context: HostOperationContext) async throws -> JSONValue {
         var reported: HostOperationProgress?
         while true {
-            let (progress, ended) = lock.withLock { (shown, outcome) }
+            let (progress, ended) = state.value
             if let ended { if let failure = ended { throw failure }; return .object(["role": .string("receiver")]) }
             if let progress, progress != reported { try await context.report(progress, checkpoint: context.checkpoint); reported = progress }
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -103,21 +101,16 @@ private final class ScriptedCopy: @unchecked Sendable {
 
 /// One daemon whose fake Mac already has the image's files (the scripted copy moves none), with `image.copy` scripted.
 private struct Daemon {
-    let root: URL
-    let operations: HostOperationStore, host: SandboxHost, factory: FakeBackendFactory
+    let rig: TestDaemon, factory = FakeBackendFactory(images: [builtInImage, SandboxCreateAfterCopyTests.image])
     let copy = ScriptedCopy()
+    var root: URL { rig.root }
+    var operations: HostOperationStore { rig.operations }
+    var host: SandboxHost { rig.host }
 
-    init(test: XCTestCase, root: URL? = nil) async throws {
-        let root = try root ?? Self.scratch(test)
-        self.root = root
-        operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
-        factory = FakeBackendFactory(images: [builtInImage, SandboxCreateAfterCopyTests.image])
-        let afterCopy = SandboxCreateAfterCopy(operations: operations)
-        host = SandboxHost(sandboxesDirectory: root.appendingPathComponent("sandboxes"), factory: factory, hostCPUs: 4, hostMemoryBytes: 8 * 1024 * 1024 * 1024,
-                           images: ImageHost(operations: operations), afterCopy: afterCopy)
+    init(root: URL) async throws {
+        rig = try await TestDaemon(root: root, factory: factory)
         let copy = copy
         await operations.register(kind: ImageCopy.kind) { try await copy.run($0) }
-        await afterCopy.attach(to: host)
     }
 
     func startCopy(_ key: String) async throws {
@@ -139,15 +132,6 @@ private struct Daemon {
     }
 
     func request(_ operation: String, input: [String: Any] = [:], sandboxID: String? = nil, mutationID: String? = nil) async throws -> [String: Any] {
-        let envelope: [String: Any] = ["protocol_version": "v1", "request_id": "r-\(UUID().uuidString)", "operation": operation, "sandbox_id": sandboxID ?? NSNull(), "deadline_ms": 30_000, "mutation_id": mutationID ?? UUID().uuidString, "input": input]
-        let response = try await host.request(try JSONSerialization.data(withJSONObject: envelope))
-        return try XCTUnwrap(try JSONSerialization.jsonObject(with: response) as? [String: Any])
-    }
-
-    static func scratch(_ test: XCTestCase) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lb-after-copy-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return directory
+        try await call(rig.daemon, envelope(operation, input, mutation: mutationID ?? UUID().uuidString, sandboxID: sandboxID))
     }
 }

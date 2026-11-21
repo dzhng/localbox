@@ -5,7 +5,6 @@ import XCTest
 /// the phase order, a resume from every checkpoint, the refusals before anything is journaled, and the password, which
 /// must never reach a file.
 final class MacBaseBuilderTests: XCTestCase {
-    static let release = IPSWRelease(url: URL(string: "https://updates.example.com/UniversalMac_27.2.1_26B131_Restore.ipsw")!, version: "27.2.1", build: "26B131", sizeBytes: 4096)
     static let fullBuild = ["install", "provision", "upload /tmp/localbox-payload.tgz", "root bootstrap", "disable SIP", "boot", "root tcc", "root finish", "shut down"]
 
     func testABuildRunsEveryPhaseInOrderAndCommitsAMacOSImage() async throws {
@@ -25,7 +24,7 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: image.path).sorted(), ["boot", "disk.img", "image.json"], "nothing of the build's own is committed")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: image.appendingPathComponent("boot").path), ["aux.img"])
         XCTAssertTrue(rig.store.list().map(\.imageID) == ["image_mac"])
-        XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(Self.release), "the IPSW stays cached for the next build")
+        XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(fakeIPSW), "the IPSW stays cached for the next build")
         guard case .object(let result)? = finished.result else { return XCTFail("no result") }
         XCTAssertEqual(result["min_macos"], .string("27.0")); XCTAssertEqual(result["ipsw_version"], .string("27.2.1")); XCTAssertEqual(result["chrome_version"], .string("142.0.7444.60"))
         XCTAssertEqual(result["size_bytes"], .number(Double(manifest.sizeBytes)))
@@ -39,10 +38,12 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("sh /tmp/localbox-stage/install.sh"), "bootstrap runs the darwin agent's install.sh")
         XCTAssertTrue(scripts[0].contains("https://dl.google.com/chrome/mac/universal/stable/gcem/GoogleChrome.pkg") && scripts[0].contains("Developer ID Installer: Google LLC"), "Chrome comes from Google's own signed installer (P12)")
         XCTAssertFalse(scripts.joined().contains("xcode"), "no Xcode (L5)")
+        XCTAssertTrue(scripts[0].contains("defaults write '/Library/Managed Preferences/com.google.Chrome' BrowserSignin -int 0") && scripts[0].contains("DefaultNotificationsSetting -int 2"), "Chrome's sign-in prompt and notification asks are off by policy")
         XCTAssertTrue(scripts[1].contains("localbox-agent --grant-tcc") && scripts[1].contains("kickstart -k gui/"), "the desktop role restarts holding its grants")
+        XCTAssertTrue(scripts[1].contains("launchctl disable gui/$(id -u localbox)/com.apple.notificationcenterui.agent"), "no notification banner covers a screenshot")
         XCTAssertTrue(scripts[2].contains("launchctl disable system/com.openssh.sshd"), "finish turns Remote Login off for good")
         let payload = try XCTUnwrap(rig.driver.payload)
-        let listing = try output("/usr/bin/tar", ["-tzf", payload.path])
+        let listing = await output("/usr/bin/tar", ["-tzf", payload.path])
         XCTAssertEqual(Set(listing.split(separator: "\n").map { String($0).replacingOccurrences(of: "./", with: "") }.filter { !$0.isEmpty }),
                        ["localbox-agent", "install.sh", "localbox-desktop", "localbox-vsock", "sh.localbox.agent.plist", "sh.localbox.desktop.plist", "sh.localbox.vsock.plist"])
     }
@@ -92,7 +93,7 @@ final class MacBaseBuilderTests: XCTestCase {
         let finished = try await rig.finished("m-2")
         XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
         XCTAssertEqual(rig.http.offsets, [0, 1000], "the second build fetched only what the first did not")
-        XCTAssertEqual(try Data(contentsOf: IPSWCache(directory: rig.store.ipswDirectory).file(for: Self.release)), FakeHTTP.body)
+        XCTAssertEqual(try Data(contentsOf: IPSWCache(directory: rig.store.ipswDirectory).file(for: fakeIPSW)), FakeHTTP.body)
     }
 
     func testAFailedBuildLeavesNoBuildDirectoryButKeepsTheIPSW() async throws {
@@ -104,7 +105,7 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(failed.error?.code, "internal")
         XCTAssertTrue(failed.error?.message.hasPrefix("the macOS build stopped in bootstrap") == true, "\(String(describing: failed.error))")
         XCTAssertFalse(FileManager.default.fileExists(atPath: rig.store.root.appendingPathComponent(".image_mac.build").path), "nothing resumes a failed build, so its files go")
-        XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(Self.release), "the next build reuses the IPSW")
+        XCTAssertTrue(IPSWCache(directory: rig.store.ipswDirectory).has(fakeIPSW), "the next build reuses the IPSW")
     }
 
     func testWithoutApplesCatalogABuildUsesTheNewestCachedRelease() async throws {
@@ -138,7 +139,7 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(error["code"] as? String, "disk_full")
         XCTAssertTrue(((error["details"] as? [String: Any])?["next_step"] as? String)?.hasPrefix("free at least") == true, "\(error)")
         try FileManager.default.createDirectory(at: tight.store.ipswDirectory, withIntermediateDirectories: true)
-        try FakeHTTP.body.write(to: IPSWCache(directory: tight.store.ipswDirectory).file(for: Self.release))
+        try FakeHTTP.body.write(to: IPSWCache(directory: tight.store.ipswDirectory).file(for: fakeIPSW))
         let cached = try await tight.request(["macos": true, "image": "image_mac"], key: "m-2")
         XCTAssertEqual((cached["result"] as? [String: Any])?["kind"] as? String, MacBaseBuilder.kind, "\(cached)")
         _ = try await tight.finished("m-2")
@@ -156,7 +157,7 @@ final class MacBaseBuilderTests: XCTestCase {
     func testTheStartSweepKeepsARunningBuildsDirectoryAndTheIPSWCache() throws {
         let root = try scratch()
         let store = try ImageStore(imagesDirectory: root)
-        let build = try store.buildDirectory("image_mac")
+        let build = try store.buildDirectory("image_mac").root
         try FileManager.default.createDirectory(at: store.ipswDirectory, withIntermediateDirectories: true)
         let stray = try store.reserveTemp("image_gone")
         XCTAssertEqual(store.sweepTemps(keeping: ["image_mac"]), [stray.lastPathComponent])
@@ -167,46 +168,36 @@ final class MacBaseBuilderTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func scratch() throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lb-macbuild-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        return root
-    }
-
     private func everyFile(under root: URL) throws -> [URL] {
         let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]))
         return enumerator.compactMap { $0 as? URL }.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
     }
 
-    /// A daemon's image side with a fake driver: store, journal, builder and `ImageHost`, under one scratch root.
+    /// A daemon with a fake build driver and guest agent build, its journal started, under one scratch root.
     private struct Rig {
-        let root: URL, store: ImageStore, operations: HostOperationStore, images: ImageHost, driver: FakeDriver, http: FakeHTTP, catalog = FakeCatalog()
+        let rig: TestDaemon, driver: FakeMacDriver, http: FakeHTTP, catalog = FakeCatalog()
+        var root: URL { rig.root }
+        var store: ImageStore { rig.store }
+        var operations: HostOperationStore { rig.operations }
 
         /// `leftAt` restarts a build the last run left just before that phase: its journal and files exist before the store loads.
-        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64 = .max, leftAt: MacBaseBuilder.Phase? = nil) async throws {
-            root = try test.scratch()
+        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64? = nil, leftAt: MacBaseBuilder.Phase? = nil) async throws {
+            let root = try test.scratch()
             self.http = http
-            store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"))
             try FileManager.default.createDirectory(at: root.appendingPathComponent("operations"), withIntermediateDirectories: true)
-            if let leftAt { try Self.leaveBuild(at: leftAt, store: store, root: root) }
-            operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
-            driver = FakeDriver(journals: root.appendingPathComponent("operations"), operations: operations)
+            if let leftAt { try Self.leaveBuild(at: leftAt, store: try ImageStore(imagesDirectory: root.appendingPathComponent("images")), root: root) }
+            driver = FakeMacDriver(journals: root.appendingPathComponent("operations"))
             let agent = root.appendingPathComponent("guest-agent", isDirectory: true)
             try FileManager.default.createDirectory(at: agent.appendingPathComponent("darwin"), withIntermediateDirectories: true)
             try Data("agent".utf8).write(to: agent.appendingPathComponent("localbox-agent-darwin-arm64"))
             try Data(#"{"version":"0.1.1+abc"}"#.utf8).write(to: agent.appendingPathComponent("agent-version.json"))
             for name in ["install.sh", "localbox-desktop", "localbox-vsock", "sh.localbox.agent.plist", "sh.localbox.desktop.plist", "sh.localbox.vsock.plist"] { try Data(name.utf8).write(to: agent.appendingPathComponent("darwin/\(name)")) }
-            let builder = MacBaseBuilder(store: store, operations: operations, driver: driver, catalog: catalog, http: http, guestAgent: agent, hostVersion: { hostVersion }, freeBytes: { freeBytes })
-            await builder.register()
-            images = ImageHost(operations: operations, macBuilder: builder)
-            await operations.start()
+            rig = try await TestDaemon(root: root, freeBytes: freeBytes, macDriver: driver, catalog: catalog, http: http, guestAgent: agent, hostVersion: hostVersion)
+            await rig.operations.start()
         }
 
         func request(_ input: [String: Any], key: String) async throws -> [String: Any] {
-            let envelope: [String: Any] = ["protocol_version": "v1", "request_id": "r-\(UUID().uuidString)", "operation": "image.create", "sandbox_id": NSNull(), "deadline_ms": 30_000, "mutation_id": key, "input": input]
-            let answer = await images.request(try JSONSerialization.data(withJSONObject: envelope))
-            return try XCTUnwrap(JSONSerialization.jsonObject(with: answer) as? [String: Any])
+            try await call(rig.daemon, envelope("image.create", input, mutation: key))
         }
 
         func build(_ key: String, image: String) async throws -> [String: Any] {
@@ -225,15 +216,15 @@ final class MacBaseBuilderTests: XCTestCase {
         static func leaveBuild(at phase: MacBaseBuilder.Phase, store: ImageStore, root: URL) throws {
             if phase != .download {
                 try FileManager.default.createDirectory(at: store.ipswDirectory, withIntermediateDirectories: true)
-                try FakeHTTP.body.write(to: IPSWCache(directory: store.ipswDirectory).file(for: MacBaseBuilderTests.release))
+                try FakeHTTP.body.write(to: IPSWCache(directory: store.ipswDirectory).file(for: fakeIPSW))
             }
-            let build = MacBuildDirectory(root: try store.buildDirectory("image_mac"))
-            if ![.download, .install].contains(phase) { try FakeDriver.writeInstalled(build) }
+            let build = try store.buildDirectory("image_mac")
+            if ![.download, .install].contains(phase) { try FakeMacDriver.writeInstalled(build) }
             if [.bootstrap, .sip, .tcc, .finish].contains(phase) {
                 try build.resetWorkCopy()
                 try Data("half-provisioned".utf8).write(to: build.disk)
             }
-            let checkpoint = try JSONSerialization.jsonObject(with: JSONEncoder().encode(MacBaseBuilder.Checkpoint(phase: phase, ipsw: MacBaseBuilderTests.release)))
+            let checkpoint = try JSONSerialization.jsonObject(with: JSONEncoder().encode(MacBaseBuilder.Checkpoint(phase: phase, ipsw: fakeIPSW)))
             let record: [String: Any] = ["key": "m-1", "kind": MacBaseBuilder.kind, "subject": "image_mac", "state": "running", "checkpoint": checkpoint, "started_at": 1, "updated_at": 1]
             try JSONSerialization.data(withJSONObject: record).write(to: root.appendingPathComponent("operations/m-1.json"))
         }
@@ -242,115 +233,4 @@ final class MacBaseBuilderTests: XCTestCase {
 
 private struct Timeout: Error {}
 
-/// Apple's catalog; `fails` makes it answer as its service does when it errors.
-private final class FakeCatalog: IPSWCatalog, @unchecked Sendable {
-    private let lock = NSLock(); private var _fails = false
-    var fails: Bool { get { lock.withLock { _fails } } set { lock.withLock { _fails = newValue } } }
-    func latest() async throws -> IPSWRelease {
-        if fails { throw HostDaemonError.unsupported("The restore image catalog failed to load.") }
-        return MacBaseBuilderTests.release
-    }
-}
-
-/// Serves `body` by range; `failAfter` drops the connection once that many bytes of the file exist.
-private final class FakeHTTP: RangedHTTP, @unchecked Sendable {
-    static let body = Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 7) })
-    private let lock = NSLock()
-    private var _failAfter: Int?, _offsets: [UInt64] = []
-    var failAfter: Int? { get { lock.withLock { _failAfter } } set { lock.withLock { _failAfter = newValue } } }
-    var offsets: [UInt64] { lock.withLock { _offsets } }
-    init(failAfter: Int? = nil) { _failAfter = failAfter }
-
-    func length(of url: URL) async throws -> UInt64 { UInt64(Self.body.count) }
-    func fetch(_ url: URL, from offset: UInt64, appendingTo file: FileHandle, progress: @escaping @Sendable (UInt64) -> Void) async throws {
-        lock.withLock { _offsets.append(offset) }
-        let end = failAfter.map { min($0, Self.body.count) } ?? Self.body.count
-        try file.write(contentsOf: Self.body.subdata(in: Int(offset)..<max(Int(offset), end)))
-        progress(UInt64(end) - offset)
-        if end < Self.body.count { throw URLError(.networkConnectionLost) }
-    }
-}
-
-/// Guests made of files. Records each step, the phase journaled when it ran, every password it was handed, every
-/// journal write it could see, and the disk a provisioning boot started from.
-private final class FakeDriver: MacBuildDriver, @unchecked Sendable {
-    let journals: URL, operations: HostOperationStore
-    private let lock = NSLock()
-    private var _calls: [String] = [], _phases: [String] = [], _passwords: [String] = [], _journals: [String] = [], _scripts: [String] = []
-    private var _payload: URL?, _provisionedDisk: Data?, _failing: String?
-    /// A step that throws, as a guest step that exits non-zero would.
-    var failing: String? { get { lock.withLock { _failing } } set { lock.withLock { _failing = newValue } } }
-    var calls: [String] { lock.withLock { _calls } }
-    var phasesSeen: [String] { lock.withLock { _phases } }
-    var passwords: [String] { lock.withLock { _passwords } }
-    var journalsSeen: [String] { lock.withLock { _journals } }
-    var scripts: [String] { lock.withLock { _scripts } }
-    var payload: URL? { lock.withLock { _payload } }
-    var provisionedDisk: Data? { lock.withLock { _provisionedDisk } }
-    init(journals: URL, operations: HostOperationStore) { self.journals = journals; self.operations = operations }
-
-    static func writeInstalled(_ build: MacBuildDirectory) throws {
-        try Data("installed".utf8).write(to: build.installedDisk)
-        try Data("aux".utf8).write(to: build.installedAux)
-        try Data("model".utf8).write(to: build.hardwareModel)
-        try Data("identifier".utf8).write(to: build.machineIdentifier)
-        try Data("02:00:00:00:00:02".utf8).write(to: build.mac)
-    }
-
-    /// Records step `name` of the build in `build`, with the phase its operation last journaled.
-    func step(_ name: String, _ build: MacBuildDirectory, script: String? = nil, payload: URL? = nil) async throws {
-        let subject = String(build.root.lastPathComponent.dropFirst().dropLast(".build".count))
-        let phase = await operations.latest(subject: subject)?.progress?.phase ?? ""
-        let written = (try? FileManager.default.contentsOfDirectory(at: journals, includingPropertiesForKeys: nil))?.compactMap { try? String(contentsOf: $0, encoding: .utf8) } ?? []
-        lock.withLock {
-            _calls.append(name); _phases.append(phase); _journals.append(contentsOf: written)
-            if let script { _scripts.append(script) }
-            if let payload { _payload = payload }
-        }
-        if name == failing { throw HostDaemonError.unsupported("a build step in the guest exited 56") }
-    }
-
-    func install(ipsw: URL, into build: MacBuildDirectory, diskBytes: UInt64, progress: @escaping @Sendable (Double) -> Void) async throws {
-        XCTAssertEqual(try Data(contentsOf: ipsw), FakeHTTP.body, "installs the cached IPSW")
-        try Self.writeInstalled(build)
-        try await step("install", build)
-    }
-
-    func provision(_ build: MacBuildDirectory, user: MacProvisioningUser) async throws -> any MacBuildGuest {
-        lock.withLock { _passwords.append(user.password); _provisionedDisk = try? Data(contentsOf: build.disk) }
-        try await step("provision", build)
-        return FakeGuest(driver: self, build: build)
-    }
-
-    func boot(_ build: MacBuildDirectory) async throws -> any MacBuildGuest {
-        try await step("boot", build)
-        return FakeGuest(driver: self, build: build, throughAgent: true)
-    }
-}
-
-private struct FakeGuest: MacBuildGuest {
-    let driver: FakeDriver, build: MacBuildDirectory
-    /// Booted normally, so its steps go through the agent's request lane, which refuses deadlines over 120 s.
-    var throughAgent = false
-    func root(_ script: String, timeout: TimeInterval) async throws -> String {
-        if throughAgent { XCTAssertLessThanOrEqual(timeout, 120, "a step through the agent must fit its 120 s request deadline") }
-        let name = script.contains("install.sh") ? "bootstrap" : script.contains("--grant-tcc") ? "tcc" : script.contains("openssh") ? "finish" : "other"
-        try await driver.step("root \(name)", build, script: script)
-        return name == "finish" ? "142.0.7444.60\n" : ""
-    }
-    func upload(_ local: URL, to remote: String) async throws {
-        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("lb-payload-\(UUID().uuidString).tgz")
-        try FileManager.default.copyItem(at: local, to: copy)
-        try await driver.step("upload \(remote)", build, payload: copy)
-    }
-    func shutDown() async throws { try await driver.step("shut down", build) }
-    func disableSIP(as user: MacProvisioningUser) async throws { try await driver.step("disable SIP", build) }
-    func abandon() async {}
-}
-
-private func output(_ tool: String, _ arguments: [String]) throws -> String {
-    let process = Process(); process.executableURL = URL(fileURLWithPath: tool); process.arguments = arguments
-    let out = Pipe(); process.standardOutput = out
-    try process.run(); let data = out.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-    return String(decoding: data, as: UTF8.self)
-}
+private func output(_ tool: String, _ arguments: [String]) async -> String { await runProcess(URL(fileURLWithPath: tool), arguments, timeout: 30).output }

@@ -22,7 +22,7 @@ final class ImageTransferCopyTransportTests: XCTestCase {
         let source = try image(diskBytes: 8 * Self.MiB)
         let board = Board()
         let temp = try received()
-        async let sent = transport().send(source, key: Self.key, rendezvous: board.side(.sender), progress: { _, _ in })
+        async let sent = transport().send(source, key: Self.key, rendezvous: board.side(.sender))
         let report = try await transport().receive(into: temp, key: Self.key, rendezvous: board.side(.receiver), progress: { _, _ in })
         let sender = try await sent
 
@@ -38,7 +38,7 @@ final class ImageTransferCopyTransportTests: XCTestCase {
         let temp = try received()
         // About 2.7 MB/s: the bitmap is saved before the stop, and the sender restarts long before the receiver could finish.
         let slow = { var options = Sender.Options(); options.maxRate = 2_000; return options }()
-        let firstSender = Task { try await transport(sender: slow).send(source, key: Self.key, rendezvous: board.side(.sender), progress: { _, _ in }) }
+        let firstSender = Task { try await transport(sender: slow).send(source, key: Self.key, rendezvous: board.side(.sender)) }
 
         // The receiver's daemon exits at 40%: its work is cancelled, the temporary and its bitmap stay.
         let midway = Gate()
@@ -55,7 +55,7 @@ final class ImageTransferCopyTransportTests: XCTestCase {
         try await senderMidway.wait()
         firstSender.cancel()
         _ = try? await firstSender.value
-        async let secondSender = transport().send(source, key: Self.key, rendezvous: board.side(.sender), progress: { _, _ in })
+        async let secondSender = transport().send(source, key: Self.key, rendezvous: board.side(.sender))
         let report = try await resumed.value
         await board.finish()
         do { _ = try await secondSender } catch is Board.Finished {}

@@ -12,7 +12,7 @@ struct LoopbackImageCopyTransport: ImageCopyTransport {
     let pauseMs: Int
     init(chunkBytes: Int = 1 << 20, pauseMs: Int = 0) { self.chunkBytes = chunkBytes; self.pauseMs = pauseMs }
 
-    func send(_ image: ImageCopySource, key: Data, rendezvous: any ImageCopyRendezvous, progress: @escaping ImageCopyProgress) async throws -> ImageCopyReport {
+    func send(_ image: ImageCopySource, key: Data, rendezvous: any ImageCopyRendezvous) async throws -> ImageCopyReport {
         let started = Date()
         try await rendezvous.publish([ImageCopyCandidate(kind: Self.root, address: image.directory.path, port: 0)] + image.files.enumerated().map { ImageCopyCandidate(kind: Self.file, address: $1, port: $0) })
         var seen: [ImageCopyCandidate]? = nil

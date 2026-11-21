@@ -4,7 +4,7 @@ import XCTest
 /// `image.capture` through `image.create` as the relay sends it, on fake VMs whose disk and boot store are real files.
 final class ImageCaptureTests: XCTestCase {
     func testARunningSandboxIsFrozenOnlyForTheCloneAndKeepsRunning() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         let record = try await daemon.capture("m-1", image: "image_1")
         XCTAssertEqual(record["state"] as? String, "succeeded", "\(record)")
         XCTAssertEqual(record["subject"] as? String, "image_1", "the operation's subject is the image it makes")
@@ -22,7 +22,7 @@ final class ImageCaptureTests: XCTestCase {
     }
 
     func testAStoppedSandboxIsClonedWithoutAFreeze() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         _ = try await daemon.request("sandbox.stop", sandboxID: "sandbox_1")
         let record = try await daemon.capture("m-1", image: "image_1")
         XCTAssertEqual(record["state"] as? String, "succeeded", "\(record)")
@@ -34,7 +34,7 @@ final class ImageCaptureTests: XCTestCase {
     }
 
     func testASleepingSandboxWakesThroughAdmissionThenFreezes() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         _ = try await daemon.request("sandbox.sleep", sandboxID: "sandbox_1")
         let record = try await daemon.capture("m-1", image: "image_1")
         XCTAssertEqual(record["state"] as? String, "succeeded", "\(record)")
@@ -44,7 +44,7 @@ final class ImageCaptureTests: XCTestCase {
     }
 
     func testTooLittleDiskFailsBeforeAnythingFreezes() async throws {
-        let daemon = try await Daemon(test: self, freeBytes: 1024)
+        let daemon = try await Daemon(root: try scratch(), freeBytes: 1024)
         let record = try await daemon.capture("m-1", image: "image_1")
         XCTAssertEqual(record["state"] as? String, "failed")
         let error = try XCTUnwrap(record["error"] as? [String: Any])
@@ -55,7 +55,7 @@ final class ImageCaptureTests: XCTestCase {
     }
 
     func testAReplayReturnsTheSameOperationAndAnUnknownSourceIsRefused() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         let first = try await daemon.capture("m-1", image: "image_1")
         let replay = try await daemon.capture("m-1", image: "image_1")
         XCTAssertEqual(replay["key"] as? String, "m-1")
@@ -68,14 +68,14 @@ final class ImageCaptureTests: XCTestCase {
     }
 
     func testAResumeAfterTheCommitOnlyRecordsTheResult() async throws {
-        let daemon = try await Daemon(test: self)
+        let daemon = try await Daemon(root: try scratch())
         _ = try await daemon.capture("m-1", image: "image_1")
         // The daemon died between the commit and the record's finish: the journal still says running.
         let journal = daemon.root.appendingPathComponent("operations/m-1.json")
         var record = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String: Any])
         record["state"] = "running"; record["result"] = nil
         try JSONSerialization.data(withJSONObject: record).write(to: journal)
-        let restarted = try await Daemon(test: self, root: daemon.root, creating: false)
+        let restarted = try await Daemon(root: daemon.root, creating: false)
         await restarted.operations.start()
         let resumed = await restarted.operations.wait("m-1", timeoutMs: 5_000)
         XCTAssertEqual(resumed?.state, .succeeded)
@@ -87,18 +87,14 @@ final class ImageCaptureTests: XCTestCase {
 /// whose directory holds a real disk and boot store.
 private struct Daemon {
     static let diskBytes = Data(repeating: 7, count: 64 * 1024)
-    let root: URL, log = EventLog()
-    let store: ImageStore, operations: HostOperationStore, host: SandboxHost
+    let log = EventLog(), rig: TestDaemon
+    var root: URL { rig.root }
+    var store: ImageStore { rig.store }
+    var operations: HostOperationStore { rig.operations }
+    var host: SandboxHost { rig.host }
 
-    init(test: XCTestCase, freeBytes: UInt64 = .max, root: URL? = nil, creating: Bool = true) async throws {
-        let root = try root ?? Self.scratch(test)
-        self.root = root
-        operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
-        store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"))
-        let capture = ImageCapture(store: store, operations: operations, freeBytes: { freeBytes })
-        host = SandboxHost(sandboxesDirectory: root.appendingPathComponent("sandboxes"), factory: FakeBackendFactory(log: log, guest: FreezeLockTests.guest(log)), hostCPUs: 4, hostMemoryBytes: 8 * 1024 * 1024 * 1024,
-                           images: ImageHost(operations: operations, files: StoredImageFiles(store: store), capture: capture))
-        await capture.attach(to: host)
+    init(root: URL, freeBytes: UInt64? = nil, creating: Bool = true) async throws {
+        rig = try await TestDaemon(root: root, factory: FakeBackendFactory(log: log, guest: answeringGuest(log: log)), freeBytes: freeBytes)
         guard creating else { return }
         _ = try await request("sandbox.create", input: ["name": "one", "image": "linux", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": 1_800_000], sandboxID: "sandbox_1")
         let directory = SandboxDirectory(root.appendingPathComponent("sandboxes/sandbox_1"))
@@ -115,15 +111,6 @@ private struct Daemon {
     }
 
     func request(_ operation: String, input: [String: Any] = [:], sandboxID: String? = nil, mutationID: String? = nil) async throws -> [String: Any] {
-        let envelope: [String: Any] = ["protocol_version": "v1", "request_id": "r-\(UUID().uuidString)", "operation": operation, "sandbox_id": sandboxID ?? NSNull(), "deadline_ms": 30_000, "mutation_id": mutationID ?? UUID().uuidString, "input": input]
-        let response = try await host.request(try JSONSerialization.data(withJSONObject: envelope))
-        return try XCTUnwrap(try JSONSerialization.jsonObject(with: response) as? [String: Any])
-    }
-
-    static func scratch(_ test: XCTestCase) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lb-capture-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return directory
+        try await call(rig.daemon, envelope(operation, input, mutation: mutationID ?? UUID().uuidString, sandboxID: sandboxID))
     }
 }

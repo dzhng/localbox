@@ -142,7 +142,7 @@ final class HostOperationStoreTests: XCTestCase {
             return b?.progress != nil && c?.progress != nil
         }
 
-        let host = SandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory())
+        let host = try sandboxHost(sandboxesDirectory: try scratch(), factory: FakeBackendFactory())
         let request = Data(#"{"protocol_version":"v1","request_id":"r","operation":"sandbox.list","sandbox_id":null,"deadline_ms":1000,"mutation_id":null,"input":{}}"#.utf8)
         let listed = try JSONSerialization.jsonObject(with: try await host.request(request)) as? [String: Any]
         XCTAssertEqual(listed?["ok"] as? Bool, true)
@@ -154,26 +154,18 @@ final class HostOperationStoreTests: XCTestCase {
         XCTAssertEqual(built?.result, .string("macos")); XCTAssertEqual(copied?.result, .string("linux"))
     }
 
-    private func scratch() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lb-operations-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return directory
+    /// A daemon exiting answers every wait at once, so no caller sits out its timeout on a store that will not move.
+    func testStopAnswersEveryWait() async throws {
+        let store = try HostOperationStore(operationsDirectory: try scratch())
+        await store.register(kind: "held") { _ in try await Task.sleep(nanoseconds: 60_000_000_000); return .null }
+        _ = try await store.begin(kind: "held", key: "m-1", subject: "image_1", checkpoint: .null)
+        let clock = ContinuousClock(), began = clock.now
+        let waiting = Task { await store.wait("m-1", timeoutMs: 60_000) }, outcomes = Task { await store.unreported(timeoutMs: 60_000) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await store.stop()
+        let record = await waiting.value
+        _ = await outcomes.value
+        XCTAssertEqual(record?.state, .running, "the record stays for the next start")
+        XCTAssertLessThan(clock.now - began, .seconds(5))
     }
-
-    private func until(_ condition: @escaping @Sendable () async -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
-        for _ in 0..<500 { if await condition() { return }; try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTFail("condition never held", file: file, line: line)
-    }
-}
-
-/// Holds every waiter until opened.
-actor Gate {
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-    func wait() async {
-        if isOpen { return }
-        await withCheckedContinuation { waiters.append($0) }
-    }
-    func open() { isOpen = true; for waiter in waiters { waiter.resume() }; waiters = [] }
 }

@@ -6,12 +6,10 @@ import Virtualization
 #endif
 
 final class VMSpecTests: XCTestCase {
-    private var scratch: URL!
+    private var root: URL!
     override func setUpWithError() throws {
-        scratch = FileManager.default.temporaryDirectory.appendingPathComponent("lb-vmspec-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        root = try scratch()
     }
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     private func record(_ os: GuestOS) -> SandboxRecord {
         var record = SandboxRecord(sandboxID: "sandbox_1", name: "brave-otter", imageID: os == .linux ? builtInImage : "image_mac", cpus: 2, memoryBytes: 2 << 30, sleepAfterMs: 60_000)
@@ -26,7 +24,7 @@ final class VMSpecTests: XCTestCase {
     /// every file from the sandbox's own directory: two daemons reading the same directory build the same spec.
     func testEveryRestoreInputComesFromTheRecordOrTheSandboxDirectory() throws {
         for os in [GuestOS.linux, .macos] {
-            let directory = SandboxDirectory(scratch.appendingPathComponent(os.rawValue, isDirectory: true))
+            let directory = SandboxDirectory(root.appendingPathComponent(os.rawValue, isDirectory: true))
             let record = record(os)
             let spec = try VMSpec(record: record, in: directory)
             XCTAssertEqual(spec, try VMSpec(record: record, in: directory))
@@ -44,7 +42,7 @@ final class VMSpecTests: XCTestCase {
     }
 
     func testARecordMissingIdentityHasNoSpec() {
-        let directory = SandboxDirectory(scratch)
+        let directory = SandboxDirectory(root)
         var noMAC = record(.linux); noMAC.mac = nil
         XCTAssertThrowsError(try VMSpec(record: noMAC, in: directory))
         var noModel = record(.macos); noModel.hardwareModel = nil
@@ -52,7 +50,7 @@ final class VMSpecTests: XCTestCase {
     }
 
     func testMacOSGetsMacInputAndNoEntropyOrConsole() throws {
-        let spec = try VMSpec(record: record(.macos), in: SandboxDirectory(scratch))
+        let spec = try VMSpec(record: record(.macos), in: SandboxDirectory(root))
         XCTAssertFalse(spec.devices.contains(.entropy))
         XCTAssertFalse(spec.devices.contains(.virtioConsole))
         XCTAssertNil(spec.consoleLog)
@@ -61,7 +59,7 @@ final class VMSpecTests: XCTestCase {
     }
 
     func testRecordRoundTripsImageAndOS() throws {
-        let directory = SandboxDirectory(scratch)
+        let directory = SandboxDirectory(root)
         let record = record(.macos)
         try directory.save(record)
         XCTAssertEqual(try directory.load(), record)
@@ -73,7 +71,7 @@ final class VMSpecTests: XCTestCase {
     /// The Linux spec boots EFI firmware from the sandbox's variable store: no kernel and no command line. `validate()`
     /// needs the virtualization entitlement this test process lacks; probe 23 (tier v) validates and boots it.
     func testLinuxEFISpecTranslatesWithNoCommandLineAndValidates() throws {
-        let directory = SandboxDirectory(scratch)
+        let directory = SandboxDirectory(root)
         var record = record(.linux)
         record.machineIdentifier = VZGenericMachineIdentifier().dataRepresentation.base64EncodedString()
         FileManager.default.createFile(atPath: directory.disk.path, contents: nil)
@@ -88,7 +86,7 @@ final class VMSpecTests: XCTestCase {
     }
 
     func testAMissingBootStoreRefusesToBuild() throws {
-        let directory = SandboxDirectory(scratch)
+        let directory = SandboxDirectory(root)
         FileManager.default.createFile(atPath: directory.disk.path, contents: Data())
         var record = record(.linux)
         record.machineIdentifier = VZGenericMachineIdentifier().dataRepresentation.base64EncodedString()

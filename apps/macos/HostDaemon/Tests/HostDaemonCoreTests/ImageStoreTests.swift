@@ -6,13 +6,11 @@ import Darwin
 #endif
 
 final class ImageStoreTests: XCTestCase {
-    private var scratch: URL!
-    private var images: URL { scratch.appendingPathComponent("images", isDirectory: true) }
+    private var root: URL!
+    private var images: URL { root.appendingPathComponent("images", isDirectory: true) }
     override func setUpWithError() throws {
-        scratch = FileManager.default.temporaryDirectory.appendingPathComponent("lb-images-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        root = try scratch()
     }
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: scratch) }
 
     /// Writes a complete image into `temp`: a 16 MiB disk of real (non-zero) data, a boot store and its manifest.
     private func writeImage(_ id: String, into temp: URL, os: GuestOS = .linux) throws {
@@ -30,7 +28,7 @@ final class ImageStoreTests: XCTestCase {
     }
 
     private func sandbox(_ name: String) throws -> SandboxDirectory {
-        let directory = SandboxDirectory(scratch.appendingPathComponent("sandboxes/\(name)", isDirectory: true))
+        let directory = SandboxDirectory(root.appendingPathComponent("sandboxes/\(name)", isDirectory: true))
         try FileManager.default.createDirectory(at: directory.url, withIntermediateDirectories: true)
         return directory
     }
@@ -81,7 +79,7 @@ final class ImageStoreTests: XCTestCase {
 
     /// A daemon whose images directory didn't exist yet (its root URL then has no trailing slash) commits all the same.
     func testCommitWorksOnAStoreWhoseDirectoryItCreated() throws {
-        let fresh = URL(fileURLWithPath: scratch.appendingPathComponent("fresh-images").path)
+        let fresh = URL(fileURLWithPath: root.appendingPathComponent("fresh-images").path)
         let store = try ImageStore(imagesDirectory: fresh)
         try committed(store, "brave-walrus")
         XCTAssertEqual(store.list().map(\.imageID), ["brave-walrus"])
@@ -94,7 +92,6 @@ final class ImageStoreTests: XCTestCase {
         let directory = try sandbox("sandbox_1")
         let clone = try store.cloneForSandbox("linux", into: directory)
         XCTAssertEqual(clone.disk, "cloned")
-        XCTAssertEqual(clone.boot, .linuxEFI(variableStore: directory.bootStore(for: .linux)))
         XCTAssertEqual(clone.manifest.os, .linux)
         let shared = try XCTUnwrap(privateBytes(directory.disk))
         XCTAssertLessThan(shared, 1 << 20, "a 16 MiB clone holds \(shared) private bytes")
