@@ -16,7 +16,7 @@ public final class VirtualMachine: NSObject, VZVirtualMachineDelegate, @unchecke
 
     public init(spec: VMSpec) throws {
         nonisolated(unsafe) let configuration = try SandboxConfigurationBuilder.build(spec)
-        let queue = DispatchQueue(label: "org.localbox.vm")
+        let queue = DispatchQueue(label: "sh.localbox.vm")
         self.queue = queue
         machine = queue.sync { VZVirtualMachine(configuration: configuration, queue: queue) }
         super.init()

@@ -28,10 +28,13 @@ export async function buildRealVMs(ctx: ProofContext): Promise<string> {
 /**
  * One real host daemon on this Mac (Apple backend, the dev linux image) in a temporary machine root, driven over its
  * socket. `env` adds daemon environment (e.g. a dev admission cap). `cleanup` kills it and removes the root.
+ * `start(bin, { supervised: true })` runs it as an app does, `--supervised` with stdin a pipe that `closeStdin` closes;
+ * otherwise its stdin is /dev/null, as under launchd.
  */
 export function realDaemon(ctx: ProofContext, options: { probe: string; env?: NodeJS.ProcessEnv }) {
   const machine = realpathSync(mkdtempSync(join(tmpdir(), `localbox-proof-${options.probe}-`)));
   const sandboxes = join(machine, "sandboxes"); const operations = join(machine, "operations"); const images = join(machine, "images"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
+  const env: NodeJS.ProcessEnv = { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_HOSTD_LOCK: join(machine, "hostd.lock"), LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env };
   const token = randomBytes(32).toString("hex"); writeFileSync(tokenFile, token, { mode: 0o600 });
   const log = join(ctx.evidence, `${options.probe}-hostd.log`);
   const transport = new LocalIPCTransport({ socketPath: socket, token, timeoutMs: 300_000 });
@@ -39,12 +42,12 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   /** A VM service is this daemon's when it holds a file under this machine root (its disk clone); others (Colima) are left alone. */
   const ours = (pid: number): boolean => { try { return execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(machine); } catch { return false; } };
 
-  const start = async (bin: string) => {
+  const start = async (bin: string, how: { supervised?: boolean } = {}) => {
     // This machine gets `images/linux` the way an install does: an APFS clone of the image beside it (the dev image
     // sits at `dist/vm-image/images/linux`, where a release keeps its own), so it costs neither time nor space.
     if (!existsSync(join(images, "linux"))) await installLinuxImage(dirname(dirname(await linuxImage(ctx))), images);
     const fd = openSync(log, "a");
-    daemon = spawn(join(bin, "localbox-hostd"), [], { cwd: ctx.root, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env } });
+    daemon = spawn(join(bin, "localbox-hostd"), how.supervised ? ["--supervised"] : [], { cwd: ctx.root, stdio: [how.supervised ? "pipe" : "ignore", fd, fd], env });
     closeSync(fd);
     for (let attempt = 0; attempt < 120 && !existsSync(socket); attempt++) { if (daemon.exitCode !== null) break; await sleep(250); }
     assert.ok(existsSync(socket), `the daemon did not open its socket: ${readFileSync(log, "utf8").slice(-1500)}`);
@@ -55,6 +58,13 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
     child.kill(signal);
     await Promise.race([exited, sleep(timeoutMs).then(() => { child.kill("SIGKILL"); })]);
     await exited;
+  };
+  /** A supervised daemon's stop signal: its stdin closes, as when the app quits or dies. Resolves with its exit status once it has gone. */
+  const closeStdin = async (): Promise<number | null> => {
+    const child = daemon; assert.ok(child?.stdin, "the daemon was started supervised");
+    const exited = child.exitCode !== null ? Promise.resolve(child.exitCode) : new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    child.stdin.end();
+    return exited;
   };
   const call = async (operation: string, sandboxId: string | null, input: Json = {}, mutation = true): Promise<ResponseEnvelope> => {
     const requestId = `p${options.probe}-${Date.now()}-${calls++}`;
@@ -80,7 +90,7 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   };
   /** Resident memory of this daemon's VM services, by pid, in KiB. */
   const vmRSS = () => new Map([...virtualizationRSS()].filter(([pid]) => ours(pid)));
-  return { machine, sandboxes, start, stop, call, ok, sh, record, vmRSS, cleanup };
+  return { machine, sandboxes, env, log, start, stop, closeStdin, call, ok, sh, record, vmRSS, cleanup };
 }
 
 /**

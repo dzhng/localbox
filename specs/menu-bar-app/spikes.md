@@ -25,7 +25,8 @@ No fallback needed.
 
 ## 02 · VMs under an app-supervised child: go
 
-`npm run proof -- 40 --tier v`. The daemon, as the child of an `LSUIElement`
+`npm run proof -- 40 --tier v` (the spike's probe; slice 06 replaced it with
+a regression). The daemon, as the child of an `LSUIElement`
 app launched with `open -g`, booted, hibernated and restored real Linux VMs,
 including when signed with a self-signed identity inside a bundle.
 

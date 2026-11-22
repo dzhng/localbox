@@ -6,6 +6,8 @@ export interface MachinePaths {
   credentials: string;
   ipcToken: string;
   socket: string;
+  /** The host daemon's lock: one daemon per root, held for its life (`MachineLock` in the daemon). */
+  hostdLock: string;
   /** One directory per sandbox (`<id>/sandbox.json`, `disk.img`, `state.vzsave`), owned by the host daemon. */
   sandboxes: string;
   /** One journal per long host operation (`<mutation_id>.json`), owned by the host daemon's `HostOperationStore`. */
@@ -24,6 +26,7 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env): MachinePaths
     credentials: relocated ? join(root, "credentials.json") : join(home, ".config", "localbox", "credentials.json"),
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
+    hostdLock: join(root, "hostd.lock"),
     sandboxes: join(root, "sandboxes"),
     operations: join(root, "operations"),
     images: join(root, "images"),

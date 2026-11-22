@@ -1,0 +1,102 @@
+# Choices made while building
+
+Decisions a slice left to its implementer, one entry each: what, why, and how
+to reverse it.
+
+## 06 · Daemon: supervised mode, one daemon per root
+
+**The lock is taken first, not just before the socket server.**
+`main.swift` takes `MachineLock` before it reads the token, sweeps image
+temporaries or builds anything, because `ImageStore.sweepTemps` would also
+delete a running daemon's partial writes. Reverse: move `takeMachineLock()`
+down to just before `server.start()`.
+
+**The lock file holds the holder's pid**, and the refusal names it
+(`another daemon (pid N) holds PATH, …`), so a person or the app can tell which
+process to look at. The pid is informational; the `flock` is the lock.
+Reverse: drop the `pwrite` in `MachineLock.init` and the pid in
+`MachineLockError.held`.
+
+**`machinePaths().hostdLock`** (`<root>/hostd.lock`) is the one definition of
+the path on the TypeScript side; `stack.ts` and `realDaemon()` set
+`LOCALBOX_HOSTD_LOCK` from it, and slice 08's `DaemonLaunch` should too. The
+launchd plist template is untouched: its daemon derives the same path from the
+socket's directory, and slice 10 deletes the template. Reverse: remove the
+field and set the variable from a literal.
+
+**Stop is one core type, `DaemonShutdown`,** in `HostDaemonCore` rather than in
+`main.swift`, so `swift test` drives the real EOF path with the process
+fixture. `main.swift` only decides which triggers to install. Reverse: inline
+it back into `main.swift` (the tests would then need the binary for every
+case).
+
+**The EOF watcher is a thread** blocked in `read(2)` on stdin. Bytes read are
+dropped (the supervisor never writes); a read error stops the daemon like EOF,
+since the parent can no longer be heard. A `DispatchSource` would do the same
+with more code for the EOF case. Reverse: swap the `Thread` for a read source.
+
+**A second stop request is dropped**, not queued: SIGTERM followed by the pipe
+closing (an app that signals and then exits) saves once and logs once.
+Reverse: remove the `started` guard in `DaemonShutdown.run`.
+
+**Shutdown progress lines** are `hibernated NAME` and `stopped NAME: reason`,
+with the daemon's usual `localbox-hostd: ` prefix, after one
+`stopping (CAUSE): hibernating running sandboxes` line (CAUSE is `SIGTERM`,
+`SIGINT`, `stdin closed`). There is no count line; the app knows what runs from
+`app status`. To emit them as each sandbox finishes, `SandboxHost.shutdown`
+gained an observer parameter, `finished: (name, failure?)`, defaulting to a
+no-op; what shutdown saves, stops and returns is unchanged (the firewall).
+Reverse: drop the parameter and print from the returned actions at the end.
+
+**Unknown arguments exit 64** (`usage: localbox-hostd [--supervised]`), so a
+typo such as `--supervise` cannot start a daemon that silently outlives its
+app. Reverse: ignore unknown arguments again in `supervisedArgument()`.
+
+**Probe 40 no longer uses the spike's app.** It spawns `localbox-hostd
+--supervised` directly with a stdin pipe (via `realDaemon().start(bin,
+{ supervised: true })` and `closeStdin()`), and is renamed
+`40-supervised-daemon.ts`. The app as supervisor is slice 08's to prove with
+the real app; the spike's timing table, orphan record and signed-bundle check
+were measurements, not regressions, and live in git at 6cd328f. Reverse:
+restore `40-app-child.ts` from that commit.
+
+**The rare cold boot after a restore: not reproduced, cause not established,
+no fix made.** Spike 02 saw one restore in about 40 fall back to `cold_booted`
+with "guest channel is unavailable" after 125 s. That error and that time
+mean `GuestLane.open` spent its whole 120 s `guestWait`: every vsock dial was
+accepted and then closed before the agent's ready frame (a refused dial would
+have said "nothing in the guest accepted vsock port 1024"). 120 s is also two
+of socat's 60 s `UNIX-CONNECT` retry windows, which fits the agent's socket
+not accepting for two minutes, but rapid closes would end at the same time.
+
+What ran (2026-11-22, this Mac, Colima up, the screen unlocked), with a daemon
+instrumented to log each lane attempt and the restore's timings (the
+instrumentation was never committed):
+
+- 124 SIGTERM-and-restart cycles of the same 4 × 2 GiB sandboxes, each with
+  1280 MiB of random bytes in a tmpfs: 496 restores, all `woke`. Restore to
+  attached: median 1.9 s, p99 3.6 s, max 3.7 s. One restore's first dial
+  closed before ready (3 ms) and the second dial attached at once: the
+  documented "a restored guest closes its first connection" path, seen
+  1 in 496.
+- 6 cycles of freshly created 4 × 2 GiB sandboxes (the spike's failing
+  restore was the first restore of guests booted seconds earlier): 24
+  restores, all `woke`. This run was cut short when the session's turn ended
+  and was not resumed.
+- Probe 40, 10 and 12 runs during the soak: every restore woke.
+
+About 31 minutes of soak machine time, 130 cycles, not the 200 the slice
+asked for. Ruled out on this evidence: a steady-state restore race in the
+host's lane code or Virtualization's restore at roughly the 1-in-40 rate
+seen in the spike (0 in 520 here). Not ruled out: the spike's conditions,
+which this run did not recreate (heavy swap from the 8 GiB cells, a blocked
+keychain dialog, restores right after a kill -9 mid-save on the same daemon),
+and fresh guests (only 24 restores). The guest journal is volatile in the
+minimal image (`journalctl --list-boots` finds none), so a fallback leaves
+only the restored boot's `console.log`, where the agent's output also goes.
+
+Next step if it recurs: keep the failing sandbox's `console.log` (the agent
+logs there via `journal+console`) and the daemon log, and check whether the
+agent was down (systemd `start-limit-hit` on `localbox-guest.service` under
+`Restart=always`, `RestartSec=0` would leave it down until a cold boot) or
+the dials were reset immediately. Reverse: not applicable (nothing changed).

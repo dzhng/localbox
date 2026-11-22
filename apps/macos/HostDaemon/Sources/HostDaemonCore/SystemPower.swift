@@ -15,7 +15,7 @@ public final class SystemPowerMonitor: @unchecked Sendable {
 
     private let host: SandboxHost
     private let log: @Sendable (String) -> Void
-    private let queue = DispatchQueue(label: "org.localbox.power")
+    private let queue = DispatchQueue(label: "sh.localbox.power")
     private var rootPort: io_connect_t = 0
     private var notificationPort: IONotificationPortRef?
     private var notifier: io_object_t = 0

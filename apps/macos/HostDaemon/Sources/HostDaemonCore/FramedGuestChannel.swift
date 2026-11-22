@@ -15,7 +15,7 @@ public enum GuestPort {
 /// would be read as the next request's, the lane closes.
 public actor FramedFileHandleGuestChannel: GuestChannel, GuestReadinessProvider, GuestAgentReporting {
     private let reader: FileHandle
-    private let readQueue = DispatchQueue(label: "org.localbox.guest-channel.read")
+    private let readQueue = DispatchQueue(label: "sh.localbox.guest-channel.read")
     /// A read is blocked on `readQueue`; `close` leaves the reader to it, so its descriptor is never closed under it.
     private var reading = false
     /// Held from a request's write to its response (and through readiness), so exchanges never interleave.

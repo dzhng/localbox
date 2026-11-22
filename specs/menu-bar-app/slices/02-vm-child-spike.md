@@ -2,7 +2,8 @@
 
 No dependencies. Throwaway code under `specs/menu-bar-app/spikes/02/`, plus a
 probe `scripts/proof/probes/40-app-child.ts` at tier `v` that slice 06 keeps as
-a regression.
+a regression (it is now `40-supervised-daemon.ts`; the spike's probe is at
+commit 6cd328f).
 
 **This spike is the plan's kill switch.** Decision 1 (the app owns everything)
 only works if its answer is yes.

@@ -169,7 +169,14 @@ the sandboxes, operations and images directories and an owner-only IPC
 token file from environment variables, starts the same `SandboxHost` and
 `UnixDomainSocketServer` used by tests, brings back what the last run left
 running, and hibernates on `SIGTERM`/`SIGINT` (the plist's `ExitTimeOut` bounds
-the saves). The checked-in
+the saves). One daemon serves a machine root: before it touches the root it
+takes `MachineLock`, a kernel `flock` on `LOCALBOX_HOSTD_LOCK` (default
+`hostd.lock` beside the socket), and a second daemon exits 75 naming the lock,
+so it never unlinks a running daemon's socket or sweeps its temporaries.
+Started `--supervised` (an app's child, with stdin a pipe), the end of its
+stdin is a stop request too; every stop runs `DaemonShutdown`, which prints
+`hibernated NAME` or `stopped NAME: reason` on stderr as each sandbox is done
+and exits 0 when all are. The checked-in
 `Resources/sh.localbox.hostd.plist` is a bundle template; an installer
 must materialize its paths, create the token file with mode `0600`, load it with
 `launchctl`, and unload it before replacement.

@@ -14,6 +14,9 @@ struct HostDaemonMain {
         // A client that dies mid-reply (a killed connector) must cost one failed write, not the daemon: SIGPIPE's
         // default action kills the process silently.
         Darwin.signal(SIGPIPE, SIG_IGN)
+        let supervised = supervisedArgument()
+        // Before anything touches the root (the image sweep, the socket's unlink): a twin must leave it as it found it.
+        takeMachineLock()
         do {
             let token = try loadToken()
             let sandboxes = pathURL("LOCALBOX_SANDBOXES")
@@ -36,7 +39,12 @@ struct HostDaemonMain {
             let daemon = await HostDaemon(sandboxes: host, macBuilder: macBuilder, transport: ImageTransferCopyTransport(), dev: isDev)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
-            installSignalHandlers(server: server, host: host)
+            let shutdown = DaemonShutdown(server: server, host: host, log: { log($0) })
+            shutdown.onSignals([SIGTERM, SIGINT])
+            // Probes and launchd start the daemon with stdin on /dev/null, which reads as an immediate end; only a
+            // supervisor's pipe means "stop when I go away".
+            if supervised { shutdown.onEndOfInput(STDIN_FILENO) }
+            daemonShutdown = shutdown
             try await server.start()
             // Every start (including the relaunch after an update) matches the skill and CLI link to the installed
             // release, in the background so it never holds up sandbox restore.
@@ -81,24 +89,33 @@ struct HostDaemonMain {
         }
     }
 
-    /// SIGTERM (launchd stop, update, `kickstart -k`) hibernates every running sandbox before exiting;
-    /// launchd's `ExitTimeOut` must cover the saves.
-    private static func installSignalHandlers(server: UnixDomainSocketServer, host: SandboxHost) {
-        for signal in [SIGTERM, SIGINT] {
-            Darwin.signal(signal, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: signal, queue: .main)
-            source.setEventHandler {
-                Task {
-                    await server.stop()
-                    await host.shutdown()
-                    exit(0)
-                }
-            }
-            source.resume()
-            signalSources.append(source)
+    /// `--supervised` is the only argument: a mistyped one must not quietly start a daemon that outlives its parent.
+    private static func supervisedArgument() -> Bool {
+        let arguments = CommandLine.arguments.dropFirst()
+        guard arguments.allSatisfy({ $0 == "--supervised" }) else {
+            FileHandle.standardError.write(Data("usage: localbox-hostd [--supervised]\n".utf8)); exit(64)
+        }
+        return !arguments.isEmpty
+    }
+
+    /// Held for the process's life; the kernel releases it at exit. A daemon that cannot take it exits 75
+    /// (EX_TEMPFAIL): another one serves this root, and a supervisor may retry once that one is gone.
+    nonisolated(unsafe) private static var machineLock: MachineLock?
+    private static func takeMachineLock() {
+        let path = ProcessInfo.processInfo.environment["LOCALBOX_HOSTD_LOCK"].flatMap { $0.isEmpty ? nil : expanded($0) }
+            ?? URL(fileURLWithPath: expanded(required("LOCALBOX_SOCKET"))).deletingLastPathComponent().appendingPathComponent("hostd.lock").path
+        do {
+            try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
+            machineLock = try MachineLock(path: path)
+        } catch {
+            log("\(error)")
+            if case MachineLockError.held = error { exit(75) }
+            exit(1)
         }
     }
-    nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+
+    /// Kept for the daemon's life: its signal sources and stdin watch call back into it.
+    nonisolated(unsafe) private static var daemonShutdown: DaemonShutdown?
 
     /// Kept for the daemon's life: IOKit calls back into it.
     nonisolated(unsafe) private static var powerMonitor: SystemPowerMonitor?

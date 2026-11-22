@@ -23,7 +23,7 @@ public final class VNCClient: @unchecked Sendable {
     /// A wait's own deadline, which no read under it outlasts.
     private var waitDeadline: Date?
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "org.localbox.vnc")
+    private let queue = DispatchQueue(label: "sh.localbox.vnc")
     public private(set) var width = 0
     public private(set) var height = 0
     private var framebuffer = Data()
