@@ -8,9 +8,10 @@ const facts = new URL("./fixtures/facts/three-sandboxes.json", import.meta.url).
 const DRIVER = `
 import Foundation
 @MainActor final class Log { var lines: [String] = []; func add(_ line: String) { lines.append(line) } }
-func makeFacts(hibernate: String = "available", running: Bool = true, imagePhase: String? = nil) throws -> AppFacts {
+func makeFacts(hibernate: String = "available", locked: Bool = false, running: Bool = true, imagePhase: String? = nil) throws -> AppFacts {
   var object = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: ${swiftString(facts)}))) as! [String: Any]
   object["hibernate"] = hibernate
+  object["screen_locked_now"] = locked
   if !running { object["sandboxes"] = (object["sandboxes"] as! [[String: Any]]).filter { $0["state"] as? String != "running" } }
   if let imagePhase { object["images"] = [["name": "linux", "state": "downloading", "phase": imagePhase]] }
   return try AppFacts.decode(try JSONSerialization.data(withJSONObject: object))
@@ -59,12 +60,29 @@ final class Box: @unchecked Sendable {
     case "automatic":
       offer()
     case "locked":
-      box.facts = { try makeFacts(hibernate: "only_while_unlocked") }
+      box.facts = { try makeFacts(hibernate: "only_while_unlocked", locked: true) }
       offer(); await settle()
       log.add("can check: \\(coordinator.canCheck)")
       coordinator.check()       // Settings' Check for Updates while it waits: a person's install
+    case "password-lock-unlocked":
+      box.facts = { try makeFacts(hibernate: "only_while_unlocked", locked: false) }
+      offer()
+    case "unknown-lock-unlocked":
+      box.facts = { try makeFacts(hibernate: "unknown", locked: false) }
+      offer()
+    case "unknown-lock-locked":
+      box.facts = { try makeFacts(hibernate: "unknown", locked: true) }
+      offer()
+    case "no-password-locked":
+      box.facts = { try makeFacts(hibernate: "available", locked: true) }
+      offer()
+    case "unlocked-while-waiting":
+      box.facts = { try makeFacts(hibernate: "only_while_unlocked", locked: true) }
+      offer(); await settle()
+      box.facts = { try makeFacts(hibernate: "only_while_unlocked", locked: false) }
+      coordinator.factsChanged()
     case "locked-nothing-running":
-      box.facts = { try makeFacts(hibernate: "only_while_unlocked", running: false) }
+      box.facts = { try makeFacts(hibernate: "only_while_unlocked", locked: true, running: false) }
       offer()
     case "image-installing":
       box.facts = { try makeFacts(imagePhase: "installing") }
@@ -123,14 +141,38 @@ test("gate order: blockers, connector and daemon stopped (hibernating), no comma
   assert.ok(lines.indexOf("status: Putting 1 sandbox to sleep to install Localbox 0.9.0…") < lines.indexOf("children stopped"), lines.join("\n"));
 });
 
-test("automatic installs wait while sandboxes run and this Mac cannot hibernate them; Check for Updates installs anyway, saying they restart", () => {
+const INSTALLS = ["facts", "stop children [quiet-otter]", "children stopped", "no commands", "grant", "authorize", "exit at once", "phase installing"];
+const WAITING = "status: Waiting: this Mac is locked, so installing could restart running sandboxes. Unlock it, or use Check for Updates in Settings to install anyway.";
+
+test("automatic installs wait while sandboxes run and the screen is locked with a password lock; Check for Updates installs anyway, saying they may restart", () => {
   const lines = scenario("locked");
   const asked = lines.indexOf("can check: true");
-  assert.ok(lines.slice(0, asked).includes("status: Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."), lines.join("\n"));
+  assert.ok(lines.slice(0, asked).includes(WAITING), lines.join("\n"));
   assert.ok(!lines.slice(0, asked).some((line) => line.startsWith("stop children")), "nothing stopped while blocked");
   const after = lines.slice(asked);
-  assert.deepEqual(withoutStatus(after), ["can check: true", "facts", "stop children [quiet-otter]", "children stopped", "no commands", "grant", "authorize", "exit at once", "phase installing"]);
-  assert.ok(after.includes("status: Installing Localbox 0.9.0; sandboxes will restart, since this Mac can't hibernate them while it is locked."), after.join("\n"));
+  assert.deepEqual(withoutStatus(after), ["can check: true", ...INSTALLS]);
+  assert.ok(after.includes("status: Installing Localbox 0.9.0 while this Mac is locked; running sandboxes may restart."), after.join("\n"));
+});
+
+test("a password lock with the screen unlocked does not block: the sandboxes are put to sleep and the update installs", () => {
+  const lines = scenario("password-lock-unlocked");
+  assert.deepEqual(withoutStatus(lines), INSTALLS);
+  assert.ok(lines.includes("status: Putting 1 sandbox to sleep to install Localbox 0.9.0…") && !lines.includes(WAITING), lines.join("\n"));
+});
+
+test("an unreadable lock setting blocks only while the screen is locked; no password lock never blocks", () => {
+  assert.deepEqual(withoutStatus(scenario("unknown-lock-unlocked")), INSTALLS);
+  const unknownLocked = scenario("unknown-lock-locked");
+  assert.ok(unknownLocked.includes(WAITING) && !unknownLocked.some((line) => line.startsWith("stop children")), unknownLocked.join("\n"));
+  assert.equal(unknownLocked.at(-1), "phase waiting");
+  assert.deepEqual(withoutStatus(scenario("no-password-locked")), INSTALLS);
+});
+
+test("an update waiting on a locked screen installs once the facts say it is unlocked", () => {
+  const lines = scenario("unlocked-while-waiting");
+  const waited = lines.indexOf(WAITING);
+  assert.ok(waited > 0, lines.join("\n"));
+  assert.deepEqual(withoutStatus(lines.slice(waited)), INSTALLS);
 });
 
 test("with nothing running, hibernation being unavailable does not block an automatic install", () => {

@@ -9,7 +9,7 @@ import { readCredentials, type Credentials } from "../../../packages/credentials
 import { AgentSetup } from "./agent-setup.js";
 import { askApp, type AppDeps } from "./app-socket.js";
 import type { ImageProgress } from "./builtin-image.js";
-import { checkHost, type HostCheck } from "./host-check.js";
+import { checkHost, screenLockedNow, type HostCheck } from "./host-check.js";
 
 /**
  * Everything Localbox.app shows, in one shape: the popover and Settings draw only this, and `warnings` are decided
@@ -23,6 +23,11 @@ export interface AppFacts {
   connector: { state: "connected" | "connecting" | "signed_out" | "down"; detail?: string };
   capacity: { cpus_free: number; cpus_total: number; memory_free_bytes: number; memory_total_bytes: number; disk_free_bytes: number | null } | null;
   hibernate: HostCheck["hibernate"];
+  /**
+   * Whether the screen is locked at this moment. Saving a sandbox fails only while the screen is locked and the lock
+   * asks for a password, so with `hibernate` this says whether hibernating would fail right now.
+   */
+  screen_locked_now: boolean;
   open_at_login: "enabled" | "disabled" | "requires_approval" | "not_found";
   agent_setup: { enabled: boolean; command: string; skill: string };
   sandboxes: SandboxFact[];
@@ -72,6 +77,8 @@ export interface FactsDeps {
   daemon?: { dispatch(request: RequestEnvelope): Promise<ResponseEnvelope> };
   credentials?: () => Promise<Credentials | undefined>;
   hostCheck?: () => Pick<HostCheck, "hibernate" | "fixes">;
+  /** Whether the screen is locked now; read again at every recomposition, so locking or unlocking ends a wait. */
+  screenLocked?: () => boolean;
   agentSetup?: () => Promise<AppFacts["agent_setup"]>;
   /** The built-in image's progress file (`builtin-image.json`) and the images folder. */
   builtinImage?: string;
@@ -93,7 +100,8 @@ export const FAILURE_SHOWN_MS = 60 * 60_000;
 /**
  * `localbox app status [--since N] [--timeout-ms M]`. Without `--since`, the facts now. With it, waits until the
  * facts' `watch_version` differs from N, or `--timeout-ms` (at most 25 s) passes, then answers. The host's settings
- * and agent setup are read once per call (they spawn processes); everything else is read again while waiting.
+ * and agent setup are read once per call (they spawn several processes); everything else, whether the screen is
+ * locked included, is read again while waiting.
  */
 export async function appFacts(options: { since?: number; timeoutMs?: number } = {}, deps: FactsDeps = {}): Promise<AppFacts> {
   const now = deps.now ?? Date.now;
@@ -167,7 +175,7 @@ async function compose({ deps, daemon, watch, host, setup, progressFile, images,
     account: credentials ? { email: credentials.email ?? null, machine_name: credentials.machine_name } : null,
     daemon: daemonState, connector,
     capacity: watch?.capacity ? capacityFact(watch) : null,
-    hibernate: host.hibernate, open_at_login: loginItem.state, agent_setup: setup,
+    hibernate: host.hibernate, screen_locked_now: (deps.screenLocked ?? screenLockedNow)(), open_at_login: loginItem.state, agent_setup: setup,
     sandboxes: sandboxFacts(watch, recent),
     images: [...builtinRow(builtinImage, builtin), ...imageFacts(recent, images)],
     builtin_image: builtinImage,

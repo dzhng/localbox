@@ -31,47 +31,51 @@ the slice that made the choice (`review` is the whole-spec review); the
 README's [slice table](README.md#where-to-look) says what each slice built. ⚠
 marks a choice that stretches or contradicts one of the brief's decisions.
 
-**Review these first:** U2 (on a Mac whose lock screen asks for a password,
-automatic updates wait while any sandbox runs, even with the screen unlocked),
-N1 (a daemon that stops talking while it saves is waited on forever), U1
-(`localbox login --json` prints no JSON, and Settings reads it by exit code)
-and N2 (automatic updates are on by default).
+**Review these first:** N1 (a daemon that stops talking while it saves is
+waited on forever, with no final kill) and N2 (automatic updates are on by
+default). The two Unsound entries the closing audit found were redone and are
+now S40 and S41.
 
 ---
 
 ## Needs your call
 
-### N1. A daemon that goes quiet while saving is waited on forever
+### N1. A daemon that goes quiet while saving is waited on forever, with no final kill
 
-**When:** 08 · **Owner:** `StopPolicy.daemon` in `ChildProcess.swift`; `DaemonShutdown.run`
+**When:** 08, after the closing audit · **Owner:** `StopPolicy.patient` in `ChildProcess.swift`; `Lifetime` (`quiet`); `PopoverPresentation.quietNote`; `DaemonShutdown.run`
 
 Say you quit Localbox with three sandboxes running. The app closes the
 daemon's stdin (its stop signal), and the daemon starts hibernating: it saves
 each sandbox's memory to disk and prints `hibernated NAME` as each one
 finishes. The app waits for the daemon to exit with no deadline, because a save
-cut short loses that sandbox's memory. If the daemon writes nothing for 120 s,
-the app sends it one SIGTERM and keeps waiting; it never sends SIGKILL.
+cut short loses that sandbox's memory, and sends it nothing more. (It used to
+send one SIGTERM after 120 s of silence; that did nothing, since the daemon's
+shutdown runs once and drops a second stop request, so the step was removed.)
 
-The catch is that the SIGTERM does nothing in the common case. The daemon's
-shutdown runs once: a second stop request (the SIGTERM after stdin already
-closed) is dropped by `DaemonShutdown`'s `started` guard. So a daemon that
-really is wedged mid-save (a Virtualization call that never returns) keeps the
-app in "Putting 3 sandboxes to sleep…" until macOS kills the app at logout, or
-the person force-quits it. An update in that state waits the same way, and
-`localbox` commands meanwhile get "Localbox is updating" from nothing. Any
-output line counts as progress, not only the two shutdown shapes, since a
-daemon that is still writing is not wedged.
+If the daemon writes nothing for 120 s, `Lifetime` marks the stop `quiet` and
+the popover adds, under "Putting 3 sandboxes to sleep…": "Saving is taking
+longer than usual. Localbox keeps waiting; force-quitting localbox-hostd would
+lose the memory of sandboxes not yet saved." Any line from the daemon clears
+it, since a daemon still writing is not wedged. The line names the daemon, not
+the app, on purpose: the daemon runs in its own process group, so force-quitting
+Localbox leaves it saving as an orphan (and the next launch's daemon is refused
+by the machine lock until it exits). A daemon truly wedged mid-save (a
+Virtualization call that never returns) therefore keeps the app quitting until
+macOS ends the session at logout or someone kills `localbox-hostd`. An update
+in that state waits the same way.
 
 - **Gap:** the brief said quitting hibernates; nobody said how long to wait.
   Spike 02 measured 4 × 2 GiB at 3.2–10.7 s, so Bento's 4 s + 2 s window was
   too short.
 - **Reach:** every quit, logout and update. A deadline would trade a hang for a
   lost sandbox.
-- **Verdict:** needs your call. **Provisional call:** keep the unbounded wait
-  (a hung quit is visible and recoverable; a killed save is silent data loss).
-  To reverse it, give `StopPolicy.patient` a final deadline that sends SIGKILL,
-  or make the daemon's second stop request log what it is waiting for, so the
-  SIGTERM at least leaves a trace in `hostd.log`.
+- **Verdict:** needs your call: wait forever, or set a final deadline after
+  which the daemon is killed. **Provisional call:** wait forever (a hung quit is
+  visible, says what is happening, and is recoverable; a killed save is silent
+  data loss), and the rule "never SIGKILL a daemon that is saving" stands. To
+  reverse it, give `StopPolicy.patient` a deadline after which `ChildProcess`
+  SIGKILLs the daemon's process group (a SIGTERM would still do nothing), and
+  reword `quietNote`; a sandbox still saving then cold-boots at the next start.
 - **Confidence:** low–medium.
 
 ### N2. Automatic updates are on by default, check hourly, and wait while sandboxes can't hibernate
@@ -87,10 +91,11 @@ for every `localbox` command to finish, and only then lets Sparkle replace the
 bundle and relaunch. The sandboxes wake under the new version with their
 processes intact.
 
-An automatic install waits instead when sandboxes are running and this Mac
-can't hibernate them (see U2 for what "can't" means today); the Settings line
-then says so. A person's install (Check for Updates while one waits, or
-`localbox update install`) goes ahead and says the sandboxes will restart.
+An automatic install waits instead when sandboxes are running and saving them
+could fail right now (S41: the screen is locked and its lock asks for a
+password); the Settings line then says so. A person's install (Check for
+Updates while one waits, or `localbox update install`) goes ahead and says the
+sandboxes may restart.
 With automatic updates off, an update still downloads and waits: "Localbox X is
 ready. Check for Updates to install it."
 
@@ -228,64 +233,14 @@ Three things Bento has that Localbox does not:
 
 ## Unsound
 
-### U1. ⚠ `localbox login --json` prints no JSON, and Settings reads it by exit code (contradicts 12)
+None remain. The closing audit found two, and both were redone:
 
-**When:** 14 · **Owner:** `login` in `apps/cli/src/index.ts`; `CLISettingsActions` in `SettingsModel.swift`
-
-Every Settings action runs the bundled CLI with `--json` (brief 12). Sign-in
-is the exception that breaks it. `localbox login --email you@example.com
---json` prints a sentence meant for a person, "Code sent to you@example.com.
-Ask the user for the 6-digit code…", and its refusals ("verification code is
-invalid or expired", "this Mac is already signed in to X; run localbox logout
-first") are plain text on stderr with exit 1, not the CLI's error envelope.
-Settings copes: exit 0 means "code sent" or "signed in", stdout is ignored, and
-on failure it shows the stderr text as a sentence. It also offers the code flow
-only while the facts show no account, so the "already signed in" refusal
-cannot happen from Settings.
-
-This works, but it is a workaround for a CLI that ignores its own `--json`:
-any agent or future client parsing `login --json` gets text.
-
-- **Gap:** the slice guessed `login --json` printed an envelope; it did not.
-- **Reach:** Settings' account section, and anything else that scripts sign-in.
-- **Verdict:** unsound. **Corrected decision:** `login --json` answers like
-  every other command: `{ state: "code_sent", email }` without `--code`, the
-  signed-in account with it, and refusals as the error envelope with codes
-  (`invalid_input`, `unauthorized`, `conflict`). Settings then reads the
-  envelope like every other action.
-- **Confidence:** high that it should change.
-
-### U2. On a Mac whose lock screen asks for a password, automatic updates wait while any sandbox runs, even unlocked
-
-**When:** 15, 16 · **Owner:** `UpdateCoordinator.run` (`restarting`); `hibernate` in `apps/cli/src/app-facts.ts`
-
-The facts' `hibernate` comes from `localbox host check`, which reads the lock
-screen *setting*: `available` when the lock asks for no password,
-`only_while_unlocked` when it does, `unknown` otherwise. The coordinator
-treats anything but `available`, with any sandbox running or paused, as "this
-Mac can't hibernate them". But the daemon hibernates fine while the screen is
-unlocked; it only fails while the screen is locked (`consoleScreenIsLocked()`
-in the daemon).
-
-Walk it through: a developer's MacBook asks for a password on wake, the
-person is at it with the screen unlocked, and one sandbox is running. An
-update arrives. The coordinator waits, and Settings says "Waiting: installing
-now would restart sandboxes. Unlock this Mac, or use Check for Updates in
-Settings to install anyway." The Mac is already unlocked, so the advice cannot
-help, and the update waits until no sandbox runs. If the person presses Check
-for Updates, the line says "sandboxes will restart", yet the daemon will in
-fact hibernate them, since the screen is unlocked.
-
-- **Gap:** A12 said "wait while hibernation is unavailable"; the facts carry
-  only the setting, not whether the screen is locked now.
-- **Reach:** every automatic update on most laptops, and the words shown for a
-  manual one.
-- **Verdict:** unsound. **Corrected decision:** block only when hibernation
-  would fail now: the facts carry `screen_locked_now` (`checkHost()` already
-  computes it) and the coordinator blocks when the setting is not `available`
-  *and* the screen is locked (or the state is unknown). The waiting and
-  "will restart" sentences follow the same test.
-- **Confidence:** medium–high that it should change.
+- **U1** (`localbox login --json` printed text, and Settings read it by exit
+  code) is now **S40**: login and logout answer with the CLI's envelope, and
+  Settings follows the answer's state.
+- **U2** (on a Mac whose lock asks for a password, automatic updates waited
+  while any sandbox ran, even with the screen unlocked) is now **S41**: they
+  wait only while saving could fail right now.
 
 ---
 
@@ -485,8 +440,8 @@ same steps once: stop taking requests, hibernate every running sandbox, exit
 0. A second request is dropped. It prints `stopping (CAUSE): hibernating
 running sandboxes`, then `hibernated NAME` or `stopped NAME: reason` per
 sandbox. `SandboxHost.shutdown` gained an observer for those lines; what it
-saves and returns is unchanged. See N1 for what the dropped second request
-means for the app's SIGTERM.
+saves and returns is unchanged. Because a second request is dropped, the app
+sends nothing after closing stdin (N1).
 
 - **Verdict:** sound. **Confidence:** high.
 
@@ -731,6 +686,28 @@ the probe holds.
 
 - **Verdict:** sound. **Confidence:** high.
 
+#### S40. `localbox login` and `logout` answer `--json` with the CLI's envelope (was U1)
+
+**When:** 14, redone after the closing audit · **Owner:** `login`, `logout`, `identityError` in `apps/cli/src/index.ts`; `LoginStep`, `CLISettingsActions` in `SettingsModel.swift`
+
+With `--json`, `localbox login --email E` answers
+`{"state": "code_sent", "email": E}` and `--email E --code C` answers
+`{"state": "signed_in", "email", "account_name", "machine_name",
+"machine_count"}`; `logout` answers `{"signed_out": true, …}` as before.
+Refusals from both go through `render()` as the error envelope every other
+command prints, with the existing codes: `invalid_input` (no email, a bad email
+or code), `conflict` (already signed in), `unauthorized` (a revoked Mac),
+`rate_limited` (retryable), `internal`. The identity API's HTTP status picks
+the code; the contract and catalog are unchanged. Without `--json` the text is
+the same as before ("Code sent to E. Ask the user for the 6-digit code…").
+Settings decodes each answer into a `LoginStep` and the code flow follows it:
+`code_sent` shows the code field, `signed_in` ends the flow; an exit 0 with any
+other answer is shown as a failure, and a refusal shows the envelope's
+message.
+
+- **Verdict:** sound (it was unsound while it printed text, contradicting
+  brief 12). **Confidence:** high.
+
 ### The built-in image
 
 #### S24. The CLI fetches the image at every launch, and only it writes `images/linux`
@@ -851,6 +828,38 @@ the archive before extracting; Sparkle's own automatic installs are off, since
 the coordinator decides.
 
 - **Verdict:** sound. **Confidence:** high.
+
+#### S41. Automatic updates wait only while saving sandboxes could fail right now (was U2)
+
+**When:** 15, redone after the closing audit · **Owner:** `screen_locked_now` in `apps/cli/src/app-facts.ts`; `AppFacts.hibernationMayFailNow`; `UpdateCoordinator.run`
+
+The daemon's save fails only while the screen is locked and the lock asks for
+a password (`consoleScreenIsLocked()` in the daemon). So the facts carry
+`screen_locked_now` beside `hibernate` (the lock *setting*), re-read at every
+recomposition so locking or unlocking ends an `app status --since` wait, and
+the coordinator's automatic-only blocker fires when sandboxes are running or
+paused *and* the screen is locked *and* `hibernate` is not `available`. A
+MacBook whose lock asks for a password, in use and unlocked, installs: its
+sandboxes hibernate and wake under the new version. Locked, it waits, and
+Settings says "Waiting: this Mac is locked, so installing could restart running
+sandboxes. Unlock it, or use Check for Updates in Settings to install anyway."
+An update waiting on a locked screen goes once the facts say it is unlocked. A
+person's install while locked says "running sandboxes may restart".
+
+The unknown case is decided conservatively: a lock setting `host check` cannot
+read counts as asking for a password while the screen is locked (the update
+waits), and blocks nothing while it is unlocked, since saves work then whatever
+the setting. Both sentences say "could" and "may" so they stay true in that
+case.
+
+The `hibernate_blocked` warning was checked for the same over-reach and kept:
+it is about the setting, which is worth fixing on a Mac meant to free memory
+while locked, and its sentence is conditional ("While this Mac is locked, idle
+sandboxes can't free their memory, because the lock screen asks for a
+password."), so it claims nothing about the screen now.
+
+- **Verdict:** sound (it was unsound while it blocked on the setting alone).
+  **Confidence:** medium–high.
 
 ### Release and install
 

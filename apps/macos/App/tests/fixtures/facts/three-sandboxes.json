@@ -17,6 +17,7 @@
     "disk_free_bytes": 210000000000
   },
   "hibernate": "available",
+  "screen_locked_now": false,
   "open_at_login": "enabled",
   "agent_setup": {
     "enabled": true,
@@ -62,5 +63,5 @@
   "stopping": null,
   "update": null,
   "warnings": [],
-  "watch_version": 206555880427759
+  "watch_version": 195792091312745
 }

@@ -84,7 +84,8 @@ public struct PopoverRows: Equatable, Sendable {
     public enum Body: Equatable, Sendable {
         /// `empty` stands in for the sandbox list when it has no rows; an empty `images` means no images section.
         case lists(sandboxes: [Sandbox], empty: String?, images: [Image])
-        case stopping(title: String, pending: [String])
+        /// `note`: what a long silence means, when the daemon has gone quiet.
+        case stopping(title: String, pending: [String], note: String?)
     }
 
     public let header: Header
@@ -104,6 +105,8 @@ public enum PopoverPresentation {
     public struct Local: Equatable, Sendable {
         /// The sandboxes a quit in progress still waits for; set from `Lifetime` once the app stops reading facts.
         public var quitting: [String]?
+        /// The daemon has said nothing for a long while during that quit (`Lifetime.State.stopping`'s `quiet`).
+        public var quietWhileQuitting: Bool
         /// A failed action's message by sandbox name, shown in its row until the next facts arrive.
         public var failures: [String: String]
         /// Whether a Settings window exists to open.
@@ -111,8 +114,8 @@ public enum PopoverPresentation {
         /// The app could not learn its paths, so nothing is supervised.
         public var couldNotStart: Bool
 
-        public init(quitting: [String]? = nil, failures: [String: String] = [:], settingsAvailable: Bool = false, couldNotStart: Bool = false) {
-            self.quitting = quitting; self.failures = failures; self.settingsAvailable = settingsAvailable; self.couldNotStart = couldNotStart
+        public init(quitting: [String]? = nil, quietWhileQuitting: Bool = false, failures: [String: String] = [:], settingsAvailable: Bool = false, couldNotStart: Bool = false) {
+            self.quitting = quitting; self.quietWhileQuitting = quietWhileQuitting; self.failures = failures; self.settingsAvailable = settingsAvailable; self.couldNotStart = couldNotStart
         }
     }
 
@@ -121,7 +124,7 @@ public enum PopoverPresentation {
         let pending = local.quitting ?? facts?.stopping?.pending
         let body: PopoverRows.Body
         if let pending {
-            body = .stopping(title: stoppingTitle(pending.count), pending: pending)
+            body = .stopping(title: stoppingTitle(pending.count), pending: pending, note: local.quitting != nil && local.quietWhileQuitting ? quietNote : nil)
         } else if let facts {
             body = .lists(sandboxes: facts.sandboxes.map { sandbox($0, failure: local.failures[$0.name]) },
                           empty: facts.sandboxes.isEmpty ? (facts.daemon == .running ? "No sandboxes on this Mac yet." : "Sandboxes show here once Localbox is running.") : nil,
@@ -143,6 +146,11 @@ public enum PopoverPresentation {
             quit: .init(title: "Quit", action: .quit, enabled: pending == nil),
             statusIcon: (facts?.warnings.isEmpty ?? !local.couldNotStart) ? .normal : .warning)
     }
+
+    /// Shown once the daemon has been silent for `Lifetime.quietAfter`; Localbox still waits for it. Force-quitting the
+    /// app would not help: the daemon is in its own process group and goes on saving as an orphan. Only killing the
+    /// daemon itself ends the wait, and that loses what it has not saved.
+    static let quietNote = "Saving is taking longer than usual. Localbox keeps waiting; force-quitting localbox-hostd would lose the memory of sandboxes not yet saved."
 
     static func stoppingTitle(_ count: Int) -> String {
         count == 0 ? "Quitting…" : "Putting \(count) \(count == 1 ? "sandbox" : "sandboxes") to sleep…"

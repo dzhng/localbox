@@ -73,7 +73,7 @@ const UNLOCKED = { hibernate: "available" as const, fixes: [] };
 const SETUP = { enabled: true, command: "installed", skill: "installed" };
 
 interface Scenario {
-  app?: AppState; daemon?: Partial<DaemonState>; signedIn?: boolean; host?: FactsDeps["hostCheck"]; setup?: FactsDeps["agentSetup"];
+  app?: AppState; daemon?: Partial<DaemonState>; signedIn?: boolean; host?: FactsDeps["hostCheck"]; locked?: boolean; setup?: FactsDeps["agentSetup"];
   linux?: boolean; images?: string[]; builtin?: Record<string, unknown>;
 }
 
@@ -91,7 +91,7 @@ async function withScenario<T>(scenario: Scenario, body: (deps: FactsDeps, daemo
     app: { layout: { app: "/Applications/Localbox.app" }, paths: { appSocket }, launch: { env: { LOCALBOX_MACHINE_ROOT: root } } },
     daemon, builtinImage: join(root, "builtin-image.json"), images, now: () => NOW,
     credentials: async () => scenario.signedIn === false ? undefined : CREDENTIALS,
-    hostCheck: scenario.host ?? (() => UNLOCKED), agentSetup: scenario.setup ?? (async () => SETUP),
+    hostCheck: scenario.host ?? (() => UNLOCKED), screenLocked: () => scenario.locked ?? false, agentSetup: scenario.setup ?? (async () => SETUP),
   };
   try { return await body(deps, daemon, app); } finally { server.close(); }
 }
@@ -117,7 +117,7 @@ test("idle and connected: the account, capacity, nothing listed and no warnings"
   assert.deepEqual({ ...value, watch_version: 0 }, {
     version: "0.2.0", build: "release", account: { email: "dev@example.com", machine_name: "studio" }, daemon: "running", connector: { state: "connected" },
     capacity: { cpus_free: 10, cpus_total: 10, memory_free_bytes: 24 * GIB, memory_total_bytes: 32 * GIB, disk_free_bytes: 210 * 10 ** 9 },
-    hibernate: "available", open_at_login: "enabled", agent_setup: SETUP, sandboxes: [], images: [], builtin_image: "ready", stopping: null, update: null, warnings: [], watch_version: 0,
+    hibernate: "available", screen_locked_now: false, open_at_login: "enabled", agent_setup: SETUP, sandboxes: [], images: [], builtin_image: "ready", stopping: null, update: null, warnings: [], watch_version: 0,
   });
 });
 
@@ -192,11 +192,26 @@ test("connector down: the app's child backing off, or a report gone stale; one n
   assert.deepEqual(fresh.connector, { state: "connecting" }); assert.deepEqual(codes(fresh), []);
 });
 
-test("hibernation blocked: the fix is the System Settings changes host check names", async () => {
+test("hibernation blocked: the setting warns whether or not the screen is locked now, in a sentence true either way", async () => {
   const fixes = ['System Settings > Lock Screen: set "Require password after screen saver begins or display is turned off" to Never', "System Settings > Users & Groups: turn on automatic login"];
-  const value = fixture("hibernate-blocked", await facts({ host: () => ({ hibernate: "only_while_unlocked", fixes }) }));
-  assert.equal(value.hibernate, "only_while_unlocked");
-  assert.deepEqual(value.warnings, [{ code: "hibernate_blocked", message: "While this Mac is locked, idle sandboxes can't free their memory, because the lock screen asks for a password.", fix: fixes.join("; then ") }]);
+  const host = () => ({ hibernate: "only_while_unlocked" as const, fixes });
+  const value = fixture("hibernate-blocked", await facts({ host, locked: true }));
+  assert.deepEqual([value.hibernate, value.screen_locked_now], ["only_while_unlocked", true]);
+  const warning = { code: "hibernate_blocked", message: "While this Mac is locked, idle sandboxes can't free their memory, because the lock screen asks for a password.", fix: fixes.join("; then ") };
+  assert.deepEqual(value.warnings, [warning]);
+  const unlocked = await facts({ host, locked: false });
+  assert.deepEqual([unlocked.screen_locked_now, unlocked.warnings], [false, [warning]], "the sentence is conditional, so it claims nothing about now");
+});
+
+test("locking or unlocking the screen ends a wait", async () => {
+  let locked = false;
+  await withScenario({}, async (deps) => {
+    const watched = { ...deps, screenLocked: () => locked };
+    const first = await appFacts({}, watched);
+    setTimeout(() => { locked = true; }, 100);
+    const changed = await appFacts({ since: first.watch_version, timeoutMs: 10_000 }, watched);
+    assert.equal(changed.screen_locked_now, true);
+  });
 });
 
 test("daemon down: it still answers from the app and the sign-in, with no capacity and empty lists", async () => {
@@ -241,7 +256,7 @@ test("what does not warn: a dev build outside Applications, setup turned off, a 
 });
 
 test("the app's updater is its five fields, nulls dropped; a build without one says null; a change of status ends a wait", async () => {
-  const waiting = { available: true, enabled: true, can_check: true, state: "waiting", status: "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway.", version: "0.9.0" };
+  const waiting = { available: true, enabled: true, can_check: true, state: "waiting", status: "Waiting for localbox commands to finish.", version: "0.9.0" };
   assert.deepEqual((await facts({ app: { update: waiting } })).update, { available: true, enabled: true, can_check: true, status: waiting.status, version: "0.9.0" });
   assert.deepEqual((await facts({ app: { update: { ...waiting, state: "idle", status: null, version: null } } })).update, { available: true, enabled: true, can_check: true });
   assert.equal((await facts({})).update, null);

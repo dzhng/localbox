@@ -16,7 +16,7 @@ final class Fake: Supervised, @unchecked Sendable {
 }
 func describe(_ state: Lifetime.State) -> String {
   switch state { case .running: return "running"; case .stopped: return "stopped"
-  case .stopping(let reason, let pending): return "stopping \\(reason.rawValue) [\\(pending.joined(separator: ","))]" }
+  case .stopping(let reason, let pending, let quiet): return "stopping \\(reason.rawValue) [\\(pending.joined(separator: ","))]\\(quiet ? " quiet" : "")" }
 }
 @main struct Driver {
   static func main() {
@@ -83,6 +83,44 @@ test("the connector starts after the daemon and stops before it; pending empties
     "stopping logout [alpha,gamma]",
     "stopping logout [gamma]",
     "stopping logout []",
+    "stop daemon ends",
+    "stopped",
+  ]);
+});
+
+const QUIET = DRIVER.replace(/@main struct Driver \{[\s\S]*$/, `
+@main struct Driver {
+  static func main() {
+    let log = Log(), gate = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+    let lifetime = Lifetime(connector: Fake("connector", log), daemon: Fake("daemon", log, gate: gate), quietAfter: 0.3) { state in
+      log.add(describe(state)); if state == .stopped { done.signal() } }
+    func waitFor(_ line: String) { let end = Date().addingTimeInterval(10); while !log.all.contains(line) && Date() < end { Thread.sleep(forTimeInterval: 0.01) } }
+    lifetime.start()
+    lifetime.stop(.quit, running: ["alpha", "beta"])
+    waitFor("stopping quit [alpha,beta] quiet")
+    lifetime.daemonSaid("localbox-hostd: still saving alpha")   // any line: it is not wedged
+    lifetime.daemonSaid("localbox-hostd: hibernated alpha")
+    Thread.sleep(forTimeInterval: 0.1)
+    log.add("--- talking again")
+    waitFor("stopping quit [beta] quiet")
+    gate.signal()
+    done.wait()
+    Thread.sleep(forTimeInterval: 0.5)                         // nothing more once stopped
+    for line in log.all { print(line) }
+  }
+}
+`);
+
+test("a daemon silent for quietAfter while stopping is marked quiet and still waited for; any line clears it", () => {
+  assert.deepEqual(run(compile(QUIET)).split("\n"), [
+    "start daemon", "start connector",
+    "stopping quit [alpha,beta]",
+    "stop connector begins", "stop connector ends", "stop daemon begins",
+    "stopping quit [alpha,beta] quiet",
+    "stopping quit [alpha,beta]",
+    "stopping quit [beta]",
+    "--- talking again",
+    "stopping quit [beta] quiet",
     "stop daemon ends",
     "stopped",
   ]);

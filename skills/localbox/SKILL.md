@@ -29,6 +29,10 @@ localbox login --email you@example.com          # sends a 6-digit code
 localbox login --email you@example.com --code NNNNNN   # ask the user for the code
 ```
 
+With `--json` the steps answer `{"state": "code_sent", ...}` and
+`{"state": "signed_in", ...}`; a refusal (a wrong code, a Mac already signed in)
+is the usual error envelope (`invalid_input`, `conflict`).
+
 ## Sandboxes
 
 - `localbox sandbox create` makes one and reports its generated name (like

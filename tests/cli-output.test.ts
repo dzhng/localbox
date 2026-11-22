@@ -23,7 +23,9 @@ const samples: Array<[string, ResponseEnvelope | Json]> = [
   ["fs read", envelope("fs.read", { path: "/big.txt", content: "zzzz", offset: 0, next_offset: 4, eof: false, truncated: { original_bytes: 2_097_152, returned_bytes: 921_600 } })],
   ["machine list", envelope("machine.list", [{ machineId: "machine_1", name: "attic", lastSeenAt: 1_760_000_000_000, capacity: { cpus: 12, total_bytes: 24 * GIB, reserved_bytes: 0, room_bytes: 18 * GIB, running: 0, revision: 1 } }])],
   ["account status", envelope("account.status", { accountId: "account_1", email: "you@example.com", name: "brave-walrus-482", createdAt: 1_760_000_000_000 })],
-  ["login", { account_name: "brave-walrus-482", machine_name: "studio", machine_count: 2 }],
+  ["login --email", { state: "code_sent", email: "you@example.com" }],
+  ["login --code", { state: "signed_in", email: "you@example.com", account_name: "brave-walrus-482", machine_name: "studio", machine_count: 2 }],
+  ["login on a signed-in Mac", failure(requestFromInvocation({ operation: "login", input: {} }), { code: "conflict", message: "this Mac is already signed in to brave-walrus-482; run localbox logout first", retryable: false })],
 ];
 
 /** Every scalar in a JSON value. */

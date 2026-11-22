@@ -268,13 +268,59 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
   print(await run(request, sandbox));
 }
 
-/** A refused identity call; `status` is the HTTP status (401: this Mac's credential was revoked). */
-class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+/** The identity API's refusal as the CLI's error: 401 is `unauthorized` (this Mac's credential was revoked). */
+function identityError(status: number, message: string): ContractError {
+  if (status === 400) return new ContractError("invalid_input", message);
+  if (status === 401) return new ContractError("unauthorized", message);
+  if (status === 429) return new ContractError("rate_limited", message, undefined, true);
+  if (status === 503) return new ContractError("unsupported", message);
+  return new ContractError("internal", message, undefined, status >= 500);
+}
 
 async function apiCall(path: string, body?: Record<string, unknown>): Promise<any> {
   const credentials = await readCredentials(machinePaths().credentials);
-  const response = await fetch(`${PUBLIC_API_ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(credentials ? { authorization: `Bearer ${credentials.secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  const result = await response.json().catch(() => ({})); if (!response.ok) throw new ApiError(result.error_description ?? result.error ?? `request failed (${response.status})`, response.status); return result;
+  let response: Response;
+  try { response = await fetch(`${PUBLIC_API_ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(credentials ? { authorization: `Bearer ${credentials.secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); }
+  catch (error) { throw new ContractError("internal", `cannot reach ${PUBLIC_API_ORIGIN}: ${error instanceof Error ? error.message : String(error)}`, undefined, true); }
+  const result = await response.json().catch(() => ({})); if (!response.ok) throw identityError(response.status, result.error_description ?? result.error ?? `request failed (${response.status})`); return result;
+}
+
+/**
+ * `localbox login --email E [--code C]`. Without a code it emails one: `{ state: "code_sent", email }`. With one it
+ * signs this Mac in: `{ state: "signed_in", email, account_name, machine_name, machine_count }`. Refusals are
+ * `ContractError`s: `invalid_input` (no email, a bad email or code), `conflict` (already signed in), `rate_limited`.
+ */
+async function login(words: string[]): Promise<Record<string, Json>> {
+  const { flags } = parse(words);
+  const email = typeof flags.email === "string" ? flags.email : undefined; const code = typeof flags.code === "string" ? flags.code : undefined;
+  if (!email) throw new ContractError("invalid_input", "login requires --email");
+  // A second login would mint a new machine and strand this one's sandboxes, so it is refused before any code is sent.
+  const current = await readCredentials(machinePaths().credentials);
+  if (current) throw new ContractError("conflict", `this Mac is already signed in to ${current.account_name}; run localbox logout first`);
+  if (!code) { await apiCall("/api/auth/email/start", { email }); return { state: "code_sent", email }; }
+  const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
+  const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret, email };
+  await writeCredentials(machinePaths().credentials, credentials);
+  // The running connector finds the new credential by itself.
+  return { state: "signed_in", email, account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
+}
+
+/** `localbox logout`: revokes this Mac, deletes its credential and hides the old account's sandboxes here. */
+async function logout(): Promise<Record<string, Json>> {
+  // A Mac removed from another machine is already revoked (401); its credential file still goes.
+  let alreadyRemoved = false;
+  try { await apiCall("/api/auth/logout"); } catch (error) { if (!(error instanceof ContractError && error.code === "unauthorized")) throw error; alreadyRemoved = true; }
+  await deleteCredentials(machinePaths().credentials);
+  // The mirror holds the old account's sandboxes; an account signed in next must not find them here. `signed_out`
+  // hides them and keeps their disks; only the signed-in connector's catalog push deletes a sandbox.
+  const cleared = await (await localTransport()).dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { source: "signed_out", sandboxes: [] } });
+  return { signed_out: true, ...(alreadyRemoved ? { machine: "already removed from the account; deleted this Mac's credentials" } : {}), sandboxes_forgotten: cleared.ok };
+}
+
+/** A person's sentence for a login step; `--json` prints the value itself. */
+function loginText(answer: Record<string, Json>): string {
+  if (answer.state === "code_sent") return `Code sent to ${answer.email}. Ask the user for the 6-digit code, then run: localbox login --email ${answer.email} --code NNNNNN\n`;
+  return `Signed in to ${answer.account_name} as ${answer.machine_name}. ${answer.machine_count} machine${answer.machine_count === 1 ? "" : "s"}.\n`;
 }
 
 async function main(): Promise<void> {
@@ -303,31 +349,13 @@ async function main(): Promise<void> {
     return;
   }
   if (group === "contract" && subcommand === "generate-snapshots") { await writeSnapshots(); return; }
-  if (group === "login") {
-    const { flags } = parse(head.slice(1));
-    const email = typeof flags.email === "string" ? flags.email : undefined; const code = typeof flags.code === "string" ? flags.code : undefined;
-    if (!email) throw new Error("login requires --email");
-    // A second login would mint a new machine and strand this one's sandboxes, so it is refused before any code is sent.
-    const current = await readCredentials(machinePaths().credentials);
-    if (current) throw new Error(`this Mac is already signed in to ${current.account_name}; run localbox logout first`);
-    if (!code) { await apiCall("/api/auth/email/start", { email }); process.stdout.write(`Code sent to ${email}. Ask the user for the 6-digit code, then run: localbox login --email ${email} --code NNNNNN\n`); return; }
-    const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
-    const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret, email };
-    await writeCredentials(machinePaths().credentials, credentials);
-    // The running connector finds the new credential by itself.
-    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
-    if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.\n`);
+  if (group === "login" || group === "logout") {
+    try {
+      if (group === "logout") { print(await logout()); return; }
+      const answer = await login(head.slice(1));
+      if (json) print(answer); else process.stdout.write(loginText(answer));
+    } catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(requestFromInvocation({ operation: group, input: {} }), error)); }
     return;
-  }
-  if (group === "logout") {
-    // A Mac removed from another machine is already revoked (401); its credential file still goes.
-    let alreadyRemoved = false;
-    try { await apiCall("/api/auth/logout"); } catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; alreadyRemoved = true; }
-    await deleteCredentials(machinePaths().credentials);
-    // The mirror holds the old account's sandboxes; an account signed in next must not find them here. `signed_out`
-    // hides them and keeps their disks; only the signed-in connector's catalog push deletes a sandbox.
-    const cleared = await (await localTransport()).dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { source: "signed_out", sandboxes: [] } });
-    print({ signed_out: true, ...(alreadyRemoved ? { machine: "already removed from the account; deleted this Mac's credentials" } : {}), sandboxes_forgotten: cleared.ok }); return;
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }
   if (group === "host" && subcommand === "check") { const { checkHost } = await import("./host-check.js"); print(checkHost() as unknown as Json); return; }

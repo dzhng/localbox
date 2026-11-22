@@ -6,10 +6,10 @@ import Foundation
 public protocol SettingsActions: Sendable {
     /// `localbox app status`: the facts Settings shows, read when the window opens and after every change.
     func facts() async throws -> AppFacts
-    /// `localbox login --email E`: emails a sign-in code.
-    func sendCode(email: String) async throws
-    /// `localbox login --email E --code C`: signs this Mac in.
-    func signIn(email: String, code: String) async throws
+    /// `localbox login --email E`: emails a sign-in code; the CLI answers `code_sent`.
+    func sendCode(email: String) async throws -> LoginStep
+    /// `localbox login --email E --code C`: signs this Mac in; the CLI answers `signed_in`.
+    func signIn(email: String, code: String) async throws -> LoginStep
     /// `localbox logout`: signs this Mac out and removes it from the account.
     func signOut() async throws
     /// `localbox agents setup on|off`.
@@ -22,6 +22,24 @@ public protocol SettingsActions: Sendable {
     func checkForUpdates() async throws
 }
 
+/// What `localbox login --json` answers for each step (`apps/cli/src/index.ts`): `{state: "code_sent", email}` or
+/// `{state: "signed_in", email, account_name, machine_name, machine_count}`. Refusals are the CLI's failure envelope,
+/// which `BundledCLI` turns into a `CLIFailure`.
+public enum LoginStep: Equatable, Sendable {
+    case codeSent(email: String)
+    case signedIn(email: String, machineName: String)
+
+    public static func decode(_ data: Data) throws -> LoginStep {
+        struct Answer: Decodable { let state: String; let email: String; let machineName: String? }
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        if let answer = try? decoder.decode(Answer.self, from: data) {
+            if answer.state == "code_sent" { return .codeSent(email: answer.email) }
+            if answer.state == "signed_in", let machine = answer.machineName { return .signedIn(email: answer.email, machineName: machine) }
+        }
+        throw CLIFailure(code: "cli_failed", message: "localbox login gave an answer Settings does not know: \(String(decoding: data.prefix(200), as: UTF8.self))")
+    }
+}
+
 /// The production `SettingsActions`: each one is `localbox <arguments> --json` through `BundledCLI`.
 public struct CLISettingsActions: SettingsActions {
     public typealias Run = @Sendable (_ arguments: [String]) async throws -> Data
@@ -31,9 +49,8 @@ public struct CLISettingsActions: SettingsActions {
     public init(cli: BundledCLI) { self.init(run: { try await cli.run($0) }) }
 
     public func facts() async throws -> AppFacts { try AppFacts.decode(try await run(["app", "status"])) }
-    // Sending a code prints a sentence for a person even with --json (apps/cli/src/index.ts); exit 0 is the answer.
-    public func sendCode(email: String) async throws { _ = try await run(["login", "--email", email]) }
-    public func signIn(email: String, code: String) async throws { _ = try await run(["login", "--email", email, "--code", code]) }
+    public func sendCode(email: String) async throws -> LoginStep { try LoginStep.decode(try await run(["login", "--email", email])) }
+    public func signIn(email: String, code: String) async throws -> LoginStep { try LoginStep.decode(try await run(["login", "--email", email, "--code", code])) }
     public func signOut() async throws { _ = try await run(["logout"]) }
     public func setAgentSetup(_ enabled: Bool) async throws { _ = try await run(["agents", "setup", enabled ? "on" : "off"]) }
     public func setOpenAtLogin(_ enabled: Bool) async throws { _ = try await run(["app", "login-item", enabled ? "on" : "off"]) }
@@ -136,20 +153,22 @@ public final class SettingsModel: ObservableObject {
     public func sendCode() async {
         guard canSendCode else { return }
         let email = trimmedEmail
-        await account(.sendingCode) {
-            try await self.actions.sendCode(email: email)
-            self.codeSentTo = email
-            self.code = ""
-        }
+        await account(.sendingCode) { self.follow(try await self.actions.sendCode(email: email)) }
     }
 
     public func signIn() async {
         guard canSignIn, let email = codeSentTo else { return }
         let code = self.code.trimmingCharacters(in: .whitespaces)
-        await account(.signingIn) {
-            try await self.actions.signIn(email: email, code: code)
-            self.codeSentTo = nil
-            self.code = ""
+        await account(.signingIn) { self.follow(try await self.actions.signIn(email: email, code: code)) }
+    }
+
+    /// The code flow follows the CLI's answer: a code sent waits for it to be typed; signed in ends the flow (the
+    /// account itself comes from the facts read next).
+    private func follow(_ step: LoginStep) {
+        code = ""
+        switch step {
+        case .codeSent(let email): codeSentTo = email
+        case .signedIn: codeSentTo = nil
         }
     }
 

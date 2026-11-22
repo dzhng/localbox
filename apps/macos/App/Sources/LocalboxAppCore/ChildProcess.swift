@@ -19,14 +19,15 @@ public struct ChildLaunch: Sendable, Equatable {
 public enum StopPolicy: Sendable, Equatable {
     /// Wait `eof`, then SIGTERM, wait `signal`, then SIGKILL its process group. For children with nothing to save.
     case bounded(eof: TimeInterval, signal: TimeInterval)
-    /// Wait for the exit however long it takes. SIGTERM once if the child has written nothing for `quiet` seconds;
-    /// never SIGKILL, since a daemon that is quiet may still be saving a VM.
-    case patient(quiet: TimeInterval)
+    /// Wait for the exit however long it takes, and send nothing more: a daemon that is quiet may still be saving a
+    /// VM, so it is never killed, and it ignores a second stop request (its shutdown runs once), so a signal would do
+    /// nothing. `Lifetime` says when it has gone quiet for long.
+    case patient
 
     /// The connector's: 4 s, SIGTERM, 2 s, SIGKILL.
     public static let connector = StopPolicy.bounded(eof: 4, signal: 2)
-    /// The daemon's: hibernating can take as long as the sandboxes need; 120 s without a progress line is a wedge.
-    public static let daemon = StopPolicy.patient(quiet: 120)
+    /// The daemon's: hibernating takes as long as the sandboxes need.
+    public static let daemon = StopPolicy.patient
     /// `localbox app image ensure`'s: it does not watch stdin (run from a shell, stdin is often already closed), so
     /// SIGTERM at once. What it downloaded stays on disk and the next run resumes it.
     public static let imageEnsure = StopPolicy.bounded(eof: 0, signal: 2)
@@ -86,7 +87,6 @@ public final class ChildProcess: @unchecked Sendable {
     private var launched = false
     private var generation = 0
     private var tail: LogTail?
-    private var lastOutput = Date()
 
     public init(name: String, launch: ChildLaunch, policy: StopPolicy, backoff: Backoff = Backoff(), restart: Restart = .always,
                 onLine: @escaping @Sendable (String) -> Void = { _ in }, diagnostic: @escaping @Sendable (String) -> Void) {
@@ -112,7 +112,7 @@ public final class ChildProcess: @unchecked Sendable {
         queue.sync {
             guard !enabled else { return }
             enabled = true; launched = false
-            if tail == nil { tail = LogTail(url: launch.log) { [weak self] line in self?.heard(line) } }
+            if tail == nil { tail = LogTail(url: launch.log) { [weak self] line in self?.onLine(line) } }
             startTailing()
             spawn()
         }
@@ -140,7 +140,6 @@ public final class ChildProcess: @unchecked Sendable {
             return
         }
         process = child; input = pipe
-        lastOutput = Date()
         diagnostic("\(name) started (pid \(child.processIdentifier))")
     }
 
@@ -188,23 +187,9 @@ public final class ChildProcess: @unchecked Sendable {
             diagnostic("\(name) still running after SIGTERM; killing its process group")
             kill(-child.processIdentifier, SIGKILL); kill(child.processIdentifier, SIGKILL)
             _ = Self.wait(child, signal)
-        case .patient(let quiet):
-            queue.sync { lastOutput = Date() }
-            var signalled = false
-            while !Self.wait(child, 0.1) {
-                let silent = Date().timeIntervalSince(queue.sync { lastOutput })
-                if !signalled && silent > quiet {
-                    diagnostic("\(name) has written nothing for \(Int(silent)) s since its stdin closed; sending SIGTERM and waiting on")
-                    kill(child.processIdentifier, SIGTERM)
-                    signalled = true
-                }
-            }
+        case .patient:
+            while !Self.wait(child, 0.1) {}
         }
-    }
-
-    private func heard(_ line: String) {
-        lastOutput = Date()
-        onLine(line)
     }
 
     private var timer: DispatchSourceTimer?

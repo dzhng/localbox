@@ -31,8 +31,9 @@ instead.
 - **Hibernation is the daemon's, and the daemon is never killed while it may
   be saving.** The daemon hibernates in its one shutdown path (SIGTERM, stdin
   closed, power-off). The app and the updater only wait for it to exit,
-  however long that takes; silence for 120 s earns one SIGTERM, never a
-  SIGKILL. One daemon per machine root is the daemon's own kernel lock, never
+  however long that takes, and send it nothing more (its shutdown runs once,
+  so a second signal would do nothing, and it is never SIGKILLed); after 120 s
+  of silence the popover says saving is taking longer than usual. One daemon per machine root is the daemon's own kernel lock, never
   the app's bookkeeping.
 - **Paths come from the CLI.** `packages/config`'s `machinePaths()` is the one
   definition of the machine root; Swift learns every path from
@@ -81,9 +82,10 @@ instead.
   however long it takes), and no `localbox` command holding the launch lock
   (`LaunchLock`). It then exits well inside the helper's 20 s. Anything that
   fails before the permit restarts the children; there is no rollback.
-  Automatic installs wait while sandboxes run and this Mac cannot hibernate
-  them; a person's install (Check for Updates, `localbox update install`)
-  does not.
+  Automatic installs wait while sandboxes run and saving them could fail right
+  now (the screen locked, and its lock asking for a password or its setting
+  unreadable); a person's install (Check for Updates, `localbox update
+  install`) does not.
 - **Children log straight to files,** never through a pipe the app reads, so
   a child outlives a killed app long enough to stop cleanly. The app reads the
   daemon's progress back from its log.

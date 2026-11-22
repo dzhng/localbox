@@ -16,23 +16,32 @@ public final class Lifetime: @unchecked Sendable {
     public enum Reason: String, Sendable { case quit, logout, update }
     public enum State: Equatable, Sendable {
         case running
-        /// `pending`: the sandboxes the daemon has not yet reported hibernated or stopped.
-        case stopping(reason: Reason, pending: [String])
+        /// `pending`: the sandboxes the daemon has not yet reported hibernated or stopped. `quiet`: the daemon has
+        /// written nothing for `quietAfter` (it is still waited for; nothing kills a daemon that may be saving).
+        case stopping(reason: Reason, pending: [String], quiet: Bool)
         case stopped
     }
+
+    /// Longer than any save measured (spike 02: 4 × 2 GiB in at most 10.7 s) by far.
+    public static let quietAfter: TimeInterval = 120
 
     private let connector: Supervised
     private let daemon: Supervised
     /// `localbox app image ensure`, a one-shot: it ends once this release's built-in image is installed.
     private let image: Supervised?
+    private let quietAfter: TimeInterval
     private let changed: @Sendable (State) -> Void
     private let lock = NSLock()
     private var current = State.running
     /// Why the children last stopped; only an update's stop can be undone.
     private var stoppedFor: Reason?
+    /// When the daemon last wrote a line during a stop, and the timer that notices it going quiet.
+    private var lastHeard = Date()
+    private var watchdog: DispatchSourceTimer?
 
-    public init(connector: Supervised, daemon: Supervised, image: Supervised? = nil, changed: @escaping @Sendable (State) -> Void) {
-        self.connector = connector; self.daemon = daemon; self.image = image; self.changed = changed
+    public init(connector: Supervised, daemon: Supervised, image: Supervised? = nil, quietAfter: TimeInterval = Lifetime.quietAfter,
+                changed: @escaping @Sendable (State) -> Void) {
+        self.connector = connector; self.daemon = daemon; self.image = image; self.quietAfter = quietAfter; self.changed = changed
     }
 
     public var state: State { lock.withLock { current } }
@@ -50,18 +59,31 @@ public final class Lifetime: @unchecked Sendable {
     public func stop(_ reason: Reason, running: [String] = []) {
         let began: Bool = lock.withLock {
             guard current == .running else { return false }
-            current = .stopping(reason: reason, pending: running); return true
+            current = .stopping(reason: reason, pending: running, quiet: false); lastHeard = Date(); return true
         }
         guard began else { return }
-        changed(.stopping(reason: reason, pending: running))
+        changed(.stopping(reason: reason, pending: running, quiet: false))
+        let timer = DispatchSource.makeTimerSource(queue: .global())
+        timer.schedule(deadline: .now() + min(1, quietAfter / 4), repeating: min(1, quietAfter / 4))
+        timer.setEventHandler { [weak self] in self?.noticeQuiet() }
+        lock.withLock { watchdog = timer }
+        timer.resume()
         Thread.detachNewThread { [self] in
             connector.stop()
             // A download stopped here resumes at the next launch.
             image?.stop()
             daemon.stop()
-            lock.withLock { current = .stopped; stoppedFor = reason }
+            lock.withLock { watchdog?.cancel(); watchdog = nil; current = .stopped; stoppedFor = reason }
             changed(.stopped)
         }
+    }
+
+    private func noticeQuiet() {
+        let update: State? = lock.withLock {
+            guard case .stopping(let reason, let pending, false) = current, Date().timeIntervalSince(lastHeard) > quietAfter else { return nil }
+            current = .stopping(reason: reason, pending: pending, quiet: true); return current
+        }
+        if let update { changed(update) }
     }
 
     /// Starts the children again after an update stopped them and then did not install (`UpdateCoordinator`). A quit's
@@ -78,14 +100,18 @@ public final class Lifetime: @unchecked Sendable {
         return true
     }
 
-    /// One line of the daemon's output. While stopping, `hibernated NAME` and `stopped NAME: why` (the daemon's
-    /// shutdown progress, `DaemonShutdown`) take NAME off `pending`.
+    /// One line of the daemon's output. While stopping, any line ends `quiet` (a daemon still writing is not wedged),
+    /// and `hibernated NAME` and `stopped NAME: why` (the daemon's shutdown progress, `DaemonShutdown`) take NAME off
+    /// `pending`.
     public func daemonSaid(_ line: String) {
-        guard let name = Self.finished(line) else { return }
+        let name = Self.finished(line)
         let update: State? = lock.withLock {
-            guard case .stopping(let reason, var pending) = current, let index = pending.firstIndex(of: name) else { return nil }
-            pending.remove(at: index)
-            current = .stopping(reason: reason, pending: pending); return current
+            guard case .stopping(let reason, var pending, let quiet) = current else { return nil }
+            lastHeard = Date()
+            let index = name.flatMap { pending.firstIndex(of: $0) }
+            guard quiet || index != nil else { return nil }
+            if let index { pending.remove(at: index) }
+            current = .stopping(reason: reason, pending: pending, quiet: false); return current
         }
         if let update { changed(update) }
     }

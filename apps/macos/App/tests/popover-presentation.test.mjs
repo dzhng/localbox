@@ -18,7 +18,7 @@ func json(_ rows: PopoverRows) -> [String: Any] {
     body = ["kind": "lists", "empty": opt(empty),
       "sandboxes": sandboxes.map { ["name": $0.name, "detail": $0.detail, "tone": $0.tone.rawValue, "progress": opt($0.progress), "error": opt($0.error), "items": $0.items.map(item)] },
       "images": images.map { ["name": $0.name, "detail": $0.detail, "tone": $0.tone.rawValue, "progress": opt($0.progress)] }]
-  case .stopping(let title, let pending): body = ["kind": "stopping", "title": title, "pending": pending]
+  case .stopping(let title, let pending, let note): body = ["kind": "stopping", "title": title, "pending": pending, "note": opt(note)]
   }
   let h = rows.header
   return ["header": ["title": h.title, "connection": h.connection, "tone": h.connectionTone.rawValue, "room": opt(h.room), "version": h.version],
@@ -36,6 +36,7 @@ func json(_ rows: PopoverRows) -> [String: Any] {
     out["three-sandboxes+failure"] = json(PopoverPresentation.rows(three, .init(failures: ["quiet-otter": "the sandbox is busy; try again"])))
     out["three-sandboxes+quitting"] = json(PopoverPresentation.rows(three, .init(quitting: ["quiet-otter"])))
     out["three-sandboxes+quit-done"] = json(PopoverPresentation.rows(three, .init(quitting: [])))
+    out["three-sandboxes+quitting-quiet"] = json(PopoverPresentation.rows(three, .init(quitting: ["quiet-otter"], quietWhileQuitting: true)))
     out["loading"] = json(PopoverPresentation.rows(nil))
     out["could-not-start"] = json(PopoverPresentation.rows(nil, .init(couldNotStart: true)))
     out["idle+settings"] = json(PopoverPresentation.rows(try AppFacts.decode(Data(contentsOf: dir.appendingPathComponent("idle.json"))), .init(settingsAvailable: true)))
@@ -91,12 +92,17 @@ test("images in progress: an image building and the built-in image downloading a
 
 test("stopping with two pending: the sleep message and their names instead of the lists; Quit disabled", () => {
   const stopping = rows.stopping;
-  assert.deepEqual(stopping.body, { kind: "stopping", title: "Putting 2 sandboxes to sleep…", pending: ["calm-heron", "quiet-otter"] });
+  assert.deepEqual(stopping.body, { kind: "stopping", title: "Putting 2 sandboxes to sleep…", pending: ["calm-heron", "quiet-otter"], note: null });
   assert.equal(stopping.quit.enabled, false);
   assert.equal(stopping.warning, null);
   assert.equal(stopping.header.connection, "Quitting…", "not the connector's stale state");
-  assert.deepEqual(rows["three-sandboxes+quitting"].body, { kind: "stopping", title: "Putting 1 sandbox to sleep…", pending: ["quiet-otter"] }, "the app's own quit outranks stale facts");
+  assert.deepEqual(rows["three-sandboxes+quitting"].body, { kind: "stopping", title: "Putting 1 sandbox to sleep…", pending: ["quiet-otter"], note: null }, "the app's own quit outranks stale facts");
   assert.equal(rows["three-sandboxes+quit-done"].body.title, "Quitting…");
+});
+
+test("a quit whose daemon has gone quiet says so, and what force would cost, under the same pending list", () => {
+  assert.deepEqual(rows["three-sandboxes+quitting-quiet"].body, { kind: "stopping", title: "Putting 1 sandbox to sleep…", pending: ["quiet-otter"],
+    note: "Saving is taking longer than usual. Localbox keeps waiting; force-quitting localbox-hostd would lose the memory of sandboxes not yet saved." });
 });
 
 test("warnings: the first one's message and fix in the band, a count for the rest, and the warning status icon", () => {

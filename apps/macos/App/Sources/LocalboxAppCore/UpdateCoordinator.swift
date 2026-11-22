@@ -29,8 +29,9 @@ public struct UpdateSteps: Sendable {
 /// app exits within 20 s, so hibernation must already be over.
 ///
 /// `install(automatic:)` runs, in order:
-/// 1. blockers: the built-in image being swapped in; for an automatic install only, sandboxes running while this Mac
-///    cannot hibernate them (a manual install proceeds and they restart);
+/// 1. blockers: the built-in image being swapped in; for an automatic install only, sandboxes running while their
+///    saves could fail right now (`AppFacts.hibernationMayFailNow`: the screen locked and the lock asking for a
+///    password, or its setting unreadable); a manual install proceeds and says they may restart;
 /// 2. and 3. stop the connector, then the daemon, through `Lifetime` (reason `update`), and wait for it, unbounded;
 /// 4. wait until no `localbox` command holds the shared launch lock;
 /// 5. grant Sparkle's permit, and exit as soon as Sparkle authorizes the replacement.
@@ -39,7 +40,7 @@ public struct UpdateSteps: Sendable {
 public final class UpdateCoordinator {
     public enum Phase: String, Sendable { case unavailable, idle, disabled, checking, downloading, waiting, installing, failed }
 
-    public static let hibernationBlocked = "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."
+    public static let hibernationBlocked = "Waiting: this Mac is locked, so installing could restart running sandboxes. Unlock it, or use Check for Updates in Settings to install anyway."
     public static let commandsRunning = "Waiting for localbox commands to finish."
     public static let imageInstalling = "Waiting for the built-in Linux image to finish installing."
     public static let upToDate = "You’re up to date."
@@ -225,14 +226,14 @@ public final class UpdateCoordinator {
         guard wanted, !Task.isCancelled else { return }
         if facts.images.contains(where: { $0.name == "linux" && $0.phase == "installing" }) { wait(Self.imageInstalling); return }
         let hibernating = facts.hibernating
-        let restarting = facts.hibernate != .available && !hibernating.isEmpty
+        let restarting = facts.hibernationMayFailNow && !hibernating.isEmpty
         if automatic && restarting { wait(Self.hibernationBlocked); return }
 
         // 2 and 3. The connector, then the daemon, which saves every sandbox before it exits.
         stage = .stopping; childrenStopped = true
         phase = .installing
         let target = version.map { "Localbox \($0)" } ?? "the update"
-        message = restarting ? "Installing \(target); sandboxes will restart, since this Mac can't hibernate them while it is locked."
+        message = restarting ? "Installing \(target) while this Mac is locked; running sandboxes may restart."
             : hibernating.isEmpty ? "Getting ready to install \(target)…" : "Putting \(Self.count(hibernating.count)) to sleep to install \(target)…"
         publish()
         await steps.stopChildren(hibernating)

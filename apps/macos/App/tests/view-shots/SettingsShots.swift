@@ -12,9 +12,9 @@ enum SettingsShots {
     struct Actions: SettingsActions {
         let current: AppFacts
         func facts() async throws -> AppFacts { current }
-        func sendCode(email: String) async throws {}
-        func signIn(email: String, code: String) async throws {
-            throw CLIFailure(code: "cli_failed", message: "verification code is invalid or expired")
+        func sendCode(email: String) async throws -> LoginStep { .codeSent(email: email) }
+        func signIn(email: String, code: String) async throws -> LoginStep {
+            throw CLIFailure(code: "invalid_input", message: "verification code is invalid or expired")
         }
         func signOut() async throws {}
         func setAgentSetup(_ enabled: Bool) async throws {}

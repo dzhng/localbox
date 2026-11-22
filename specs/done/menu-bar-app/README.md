@@ -14,9 +14,9 @@ launchd jobs, the installer script, the updater job and rollback are gone.
   below (A1–A14).
 - Every further choice the build made, and its verdict: the
   [choices ledger](choices.md). Its **Needs your call** entries (N1–N7) are
-  live trade-offs the user owns, its **Unsound** entries (U1, U2) name the
-  decision to redo from, and its **Provisional** entries (V1–V6) each wait on
-  something named.
+  live trade-offs the user owns, its **Unsound** group is empty (the closing
+  audit's U1 and U2 were redone and are now S40 and S41), and its
+  **Provisional** entries (V1–V6) each wait on something named.
 - What the spikes found: [spikes.md](spikes.md), with each full write-up in
   `spikes/NN/verdict.md`.
 - There is no backward compatibility: Localbox was unlaunched, so the old
@@ -108,7 +108,7 @@ the existing release key, so there is one trust root (A9).
 | 9 | No rollback | Forward only (N7). |
 | 10 | No backward compatibility | The old installer, updater, plists and command link were deleted. |
 | 11 | Every id under `sh.localbox.*` | Bundle ids, CLI identifier, launch lock, sockets; `tests/naming.test.ts` enforces it. |
-| 12 | The app does nothing the CLI can't | One socket, one read; `localbox login --json` is the exception (U1 ⚠). |
+| 12 | The app does nothing the CLI can't | One socket, one read; every action, sign-in included, reads the CLI's `--json` envelope (S40). |
 
 ## Plan decisions
 
@@ -128,7 +128,7 @@ made a further choice inside one.
 | A9 | Sparkle's feed is signed with the existing Ed25519 release key. | A separate Sparkle key (new key material). |
 | A10 | No move-to-Applications prompt; a copy elsewhere runs and warns. | Bento's relocator. |
 | A11 | No uninstall command; `installation.md` documents removal. | `localbox app uninstall`. |
-| A12 | Automatic updates wait while sandboxes run and hibernation is unavailable; a manual install proceeds. | Always install. (How "unavailable" is judged is U2.) |
+| A12 | Automatic updates wait while sandboxes run and hibernation would fail right now (the screen locked, its lock asking for a password; S41); a manual install proceeds. | Always install. |
 | A13 | Proof tier `a`: the assembled app in a scratch root, launched `open -g`, never focused. | Folding packaged checks into tier `l`. |
 | A14 | The minimum stays macOS 14; Settings uses only macOS 13–14 APIs. | Raising the minimum. |
 
@@ -254,8 +254,11 @@ Sparkle accepting a feed signed by the release key (slice 15). All held.
 - `Lifetime.ensureImage()` was planned as the hook for an update's new image;
   it went, because every Sparkle install ends in a relaunch, and every launch
   runs `ensure`.
-- `localbox login` turned out to print text even with `--json` (U1). The CLI
-  was not changed.
+- `localbox login` turned out to print text even with `--json`, and the build
+  shipped Settings reading it by exit code. After the closing audit the CLI
+  was changed to answer with its envelope (S40), and automatic updates were
+  changed to wait on the screen being locked now rather than on the lock
+  setting alone (S41).
 - Probe numbers moved: the release is 42, the image 43, the update 44.
 - The daemon's fallback lock path, kept for the deleted launchd plist, went in
   the whole-spec review; the variable is now required.
