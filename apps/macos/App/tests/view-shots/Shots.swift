@@ -4,7 +4,8 @@ import LocalboxMenu
 import SwiftUI
 
 // Draws the production PopoverView offscreen: synthetic facts (the shared fixtures), an NSHostingView that is never
-// put in a window, no app activation. Arguments: fixtures directory, output directory, scale (2 for evidence).
+// put in a window, no app activation. Arguments: fixtures directory, output directory, scale (2 for evidence), and
+// optionally the Settings shots' directory (SettingsShots.swift).
 @main struct Shots {
     @MainActor static func main() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -64,6 +65,7 @@ import SwiftUI
         precondition(heights["twelve-sandboxes"]! > heights["three-sandboxes"]!, "the capped list is still taller than three rows: \(heights)")
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: output.appendingPathComponent("shots.json"))
+        if arguments.count > 4 { try SettingsShots.render(fixtures: fixtures, output: URL(fileURLWithPath: arguments[4])) }
     }
 
     /// The status item's two images as the menu bar tints them, on a menu-bar-coloured strip.

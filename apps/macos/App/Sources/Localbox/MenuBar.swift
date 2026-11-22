@@ -14,6 +14,8 @@ final class MenuBar: NSObject, NSPopoverDelegate {
     /// Told whether the popover is open, so the facts long-poll only while someone looks.
     var watching: (Bool) -> Void = { _ in }
     var quit: () -> Void = {}
+    /// Opens the Settings window; set once there is one (after `app paths` answers), which shows the Settings… item.
+    var openSettings: (() -> Void)? { didSet { local.settingsAvailable = openSettings != nil; render() } }
 
     private var facts: AppFacts?
     private var local = PopoverPresentation.Local()
@@ -100,7 +102,8 @@ final class MenuBar: NSObject, NSPopoverDelegate {
             popover.performClose(nil)
             quit()
         case .settings:
-            break  // slice 14's window
+            popover.performClose(nil)
+            openSettings?()
         case .sleep, .wake, .openLog:
             guard let cli, let arguments = action.arguments, let name = action.sandbox else { return }
             Task { [weak self] in

@@ -1,0 +1,130 @@
+[
+  {
+    "account" : "signedOut",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "signed-out",
+    "width" : 560
+  },
+  {
+    "account" : "codeSent(email: \"dev@example.com\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "code-sent",
+    "width" : 560
+  },
+  {
+    "account" : "codeSent(email: \"dev@example.com\")",
+    "appearance" : "light",
+    "failure" : "Verification code is invalid or expired.",
+    "height" : 780,
+    "state" : "code-refused",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "signed-in",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "login-item-approval",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "agent-setup-attention",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "manual-updates",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "updates",
+    "width" : 560
+  },
+  {
+    "account" : "signedOut",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "signed-out",
+    "width" : 560
+  },
+  {
+    "account" : "codeSent(email: \"dev@example.com\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "code-sent",
+    "width" : 560
+  },
+  {
+    "account" : "codeSent(email: \"dev@example.com\")",
+    "appearance" : "dark",
+    "failure" : "Verification code is invalid or expired.",
+    "height" : 780,
+    "state" : "code-refused",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "signed-in",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "login-item-approval",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "agent-setup-attention",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "manual-updates",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "updates",
+    "width" : 560
+  }
+]

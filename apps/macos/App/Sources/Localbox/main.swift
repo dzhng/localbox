@@ -35,9 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRelease = false
     private var lifetime: Lifetime?
     private var appSocket: AppSocket?
-    /// This Mac's facts, read through the CLI; the popover (and Settings, slice 14) set it watching.
+    /// This Mac's facts, read through the CLI; the popover and Settings set it watching while either shows.
     private var facts: FactsSource?
     private let menuBar = MenuBar()
+    private var settings: SettingsWindow?
+    private var popoverOpen = false, settingsOpen = false
     private var inApplications = false
     /// A quit that arrived before supervision started: the startup finishes by answering it instead.
     private var quitBeforeStart = false
@@ -99,15 +101,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem, testHooks: testHooks()))
         lifetime.start()
         let menuBar = self.menuBar
+        let settings = SettingsWindow(cli: cli, quiet: testHooksEnabled)
+        self.settings = settings
         let facts = FactsSource(cli: cli, published: { facts in
-            RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated { menuBar.factsChanged(facts) } }
+            RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated {
+                menuBar.factsChanged(facts)
+                settings.model.factsChanged(facts)
+            } }
         }, failed: { error in diagnostic("app status failed: \(error)") })
         self.facts = facts
         menuBar.cli = cli
-        menuBar.watching = { [weak facts] open in facts?.setWatching(open) }
-        if menuBar.isShown { facts.setWatching(true) }
+        menuBar.watching = { [weak self] open in self?.popoverOpen = open; self?.watchingChanged() }
+        settings.watching = { [weak self] open in self?.settingsOpen = open; self?.watchingChanged() }
+        menuBar.openSettings = { [weak settings] in settings?.show() }
+        popoverOpen = menuBar.isShown
+        watchingChanged()
         facts.start()
+        // A person's own choice; never on the relaunch after an update.
+        if settings.model.showAtLaunch && !CommandLine.arguments.contains("--localbox-update-relaunch") { settings.show() }
     }
+
+    /// The facts are long-polled while the popover or Settings shows.
+    private func watchingChanged() { facts?.setWatching(popoverOpen || settingsOpen) }
+
+    private var testHooksEnabled: Bool { !isRelease && environment["LOCALBOX_APP_TEST_HOOKS"] == "1" }
 
     /// `SMAppService.mainApp`, except that a development build can stand in a fake (`LOCALBOX_APP_LOGIN_ITEM=fake`,
     /// as probes do), so a run on scratch roots never touches this account's login items.
@@ -115,15 +132,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         !isRelease && environment["LOCALBOX_APP_LOGIN_ITEM"] == "fake" ? .fake() : LoginItem(defaults: .standard)
     }
 
-    /// The popover's test hooks on the app socket: a development build launched with `LOCALBOX_APP_TEST_HOOKS=1` only.
+    /// The popover's and Settings' test hooks on the app socket: a development build launched with
+    /// `LOCALBOX_APP_TEST_HOOKS=1` only.
     private func testHooks() -> AppControl.Hook? {
-        guard !isRelease && environment["LOCALBOX_APP_TEST_HOOKS"] == "1" else { return nil }
-        let menuBar = self.menuBar
-        // The socket answers on its own queue; the popover lives on the main thread.
-        return { operation, params in
+        guard testHooksEnabled else { return nil }
+        // The socket answers on its own queue; the popover and Settings live on the main thread.
+        return { [weak self] operation, params in
             nonisolated(unsafe) let params = params
-            return DispatchQueue.main.sync { MainActor.assumeIsolated { menuBar.testHook(operation, params) } }
+            return DispatchQueue.main.sync { MainActor.assumeIsolated {
+                guard let self else { return .failure(AppSocketFailure(code: "unsupported", message: "the app is going away")) }
+                return operation.hasPrefix("settings.") ? self.settingsHook(operation, params) : self.menuBar.testHook(operation, params)
+            } }
         }
+    }
+
+    /// `settings.open`, `settings.close`, `settings.state` and `settings.set_open_at_login {enabled}`: the window as a
+    /// person uses it (the switch runs `localbox app login-item` as the real one does), for probes.
+    private func settingsHook(_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure> {
+        guard let settings else { return .failure(AppSocketFailure(code: "conflict", message: "Settings is not ready yet")) }
+        switch operation {
+        case "settings.open": settings.show()
+        case "settings.close": settings.close()
+        case "settings.state": break
+        case "settings.set_open_at_login":
+            guard let enabled = params["enabled"] as? Bool else {
+                return .failure(AppSocketFailure(code: "invalid_input", message: "settings.set_open_at_login takes {\"enabled\": true|false}"))
+            }
+            Task { await settings.model.setOpenAtLogin(enabled) }
+        default:
+            return .failure(AppSocketFailure(code: "unsupported", message: "no test hook \(operation)"))
+        }
+        let model = settings.model
+        let account: String
+        switch model.account {
+        case .loading: account = "loading"
+        case .signedOut: account = "signed_out"
+        case .codeSent: account = "code_sent"
+        case .signedIn: account = "signed_in"
+        }
+        return .success(["shown": settings.isShown, "account": account, "open_at_login": model.openAtLogin,
+                         "login_item": model.loginItem.rawValue, "login_item_description": model.loginItemDescription,
+                         "login_failure": model.loginFailure ?? NSNull(), "pending": model.openAtLoginPending != nil])
     }
 
     /// The CLI's way to the app's native powers. A socket that cannot be served (another copy answers on this root)

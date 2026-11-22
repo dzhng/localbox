@@ -48,6 +48,12 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
   they write no copy and spawn nothing. The executable's `MenuBar` runs each
   action as one `BundledCLI` invocation and opens the popover without
   activating any app. Warnings are the CLI's sentences, shown as they are.
+- **Settings is Bento's window where a section applies.** `SettingsView`'s About and General keep Bento's
+  `SettingsWindow.swift` code shape with only the product's name changed (compared against Bento's own rendered
+  shots in `specs/menu-bar-app/assets/`); Account is Localbox's email-code sign-in. `SettingsModel` (in
+  `LocalboxAppCore`) holds the facts and the form, and each control is one `localbox` command through
+  `SettingsActions`, followed by a fresh `app status`. Its one setting of its own is "Show this window when
+  Localbox starts". The window, `SettingsWindow`, tells the facts to long-poll while it is open, as the popover does.
 - **Status item art** is a placeholder symbol until `apps/macos/App/art/`
   holds `StatusItem.pdf` and `StatusItemWarning.pdf` (template PDFs); the
   assembler copies them into the bundle and the app prefers them.
@@ -67,7 +73,7 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
 swift build --package-path apps/macos/App
 npm run test:app     # Node runners that compile Swift drivers against LocalboxAppCore, and the assembler's checks
 npm run app:dev      # npm run build, assemble dist/app-dev/Localbox Dev.app, open it quietly
-npm run app:shots    # the popover offscreen for every facts fixture, light and dark, into specs/menu-bar-app/evidence/13
+npm run app:shots    # the popover (evidence/13) and Settings (evidence/14) offscreen, light and dark, under specs/menu-bar-app
 npm run proof -- 41 --tier a   # the packaged app on the process fixture; --tier v with a real VM
 npm run proof -- 42 --tier a,v # a scratch-signed release, installed by the installation procedure's own steps
 ```
@@ -78,6 +84,6 @@ id `sh.localbox.mac.dev`, no update feed) uses its
 own machine root, `~/Library/Application Support/Localbox Dev`, and its own
 logs folder, so it never shares a daemon with a release install. It honours
 `LOCALBOX_APP_SCREENS=0` to behave as if the Mac had no display, and
-`LOCALBOX_APP_TEST_HOOKS=1` to answer `popover.open`, `popover.close` and
-`popover.perform` on the app socket (probes open the popover and use its
-actions through them).
+`LOCALBOX_APP_TEST_HOOKS=1` to answer `popover.*` and `settings.*` on the app
+socket (probes open the popover and Settings and use their controls through
+them; Settings then orders in behind other windows instead of activating).
