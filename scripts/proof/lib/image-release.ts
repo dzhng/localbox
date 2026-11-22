@@ -52,7 +52,7 @@ export interface FaultServer {
   close(): Promise<void>;
 }
 
-/** A static server over one folder, with `Range`, as GitHub's release downloads answer, and the faults above (spike 04). */
+/** A static server over one folder, with `Range`, as GitHub's release downloads answer, and the faults above. */
 export async function startFaultServer(dir: string, faults: Faults = {}): Promise<FaultServer> {
   const requests: RequestRecord[] = [];
   let reachedHold!: () => void, release!: () => void;

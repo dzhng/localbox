@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Assembles Localbox.app: the one definition of the bundle layout (specs/menu-bar-app, README "Contracts"), for the
-// development build and the release.
+// Assembles Localbox.app: the one definition of the bundle layout, for the development build and the release.
 //
 //   node apps/macos/App/scripts/build-app.mjs [--release] [--out DIR] [--version V] [--node PATH] [--public-key PEM] [--open]
 //

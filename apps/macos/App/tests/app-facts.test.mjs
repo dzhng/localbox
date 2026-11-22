@@ -67,7 +67,7 @@ func pause(_ seconds: Double) async { try? await Task.sleep(nanoseconds: UInt64(
 let driver;
 before(() => { driver = compile(DRIVER); });
 
-/** The fixture as JSON with its nulls dropped, as Swift encodes absent optionals; `update` is slice 15's. */
+/** The fixture as JSON with its nulls dropped, as Swift encodes absent optionals. */
 const withoutNulls = (value) => Array.isArray(value) ? value.map(withoutNulls)
   : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).filter(([key, item]) => item !== null && key !== "update").map(([key, item]) => [key, withoutNulls(item)])) : value;
 

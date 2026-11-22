@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// Everything Settings changes, one CLI invocation each (specs/menu-bar-app, invariant 5). `CLISettingsActions` is
+/// Everything Settings changes, one CLI invocation each. `CLISettingsActions` is
 /// the app's; tests pass a fake CLI to it, or a fake of this protocol.
 public protocol SettingsActions: Sendable {
     /// `localbox app status`: the facts Settings shows, read when the window opens and after every change.

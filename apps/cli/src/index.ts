@@ -314,7 +314,7 @@ async function main(): Promise<void> {
     const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
     const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret, email };
     await writeCredentials(machinePaths().credentials, credentials);
-    // The running connector finds the new credential by itself (specs/menu-bar-app, A3).
+    // The running connector finds the new credential by itself.
     const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
     if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.\n`);
     return;

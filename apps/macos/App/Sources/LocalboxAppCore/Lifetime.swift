@@ -79,7 +79,7 @@ public final class Lifetime: @unchecked Sendable {
     }
 
     /// One line of the daemon's output. While stopping, `hibernated NAME` and `stopped NAME: why` (the daemon's
-    /// shutdown progress, slice 06) take NAME off `pending`.
+    /// shutdown progress, `DaemonShutdown`) take NAME off `pending`.
     public func daemonSaid(_ line: String) {
         guard let name = Self.finished(line) else { return }
         let update: State? = lock.withLock {

@@ -19,8 +19,8 @@ export interface AppLaunchOptions {
 export type AppLaunch = { state: "ready" } | { state: "failed"; message: string };
 
 /**
- * Spike 01's hands-off launch: `launchctl asuser` puts `open` in the user's GUI session even from SSH, and `-g` keeps
- * the app from taking focus.
+ * The hands-off launch: `launchctl asuser` puts `open` in the user's GUI session even from SSH, and `-g` keeps the
+ * app from taking focus.
  */
 export async function openQuietly(app: string): Promise<void> {
   await execFileAsync("/bin/launchctl", ["asuser", String(process.getuid!()), "/usr/bin/open", "-g", app]);
@@ -28,8 +28,8 @@ export async function openQuietly(app: string): Promise<void> {
 
 /**
  * Starts Localbox.app when this CLI lives in it and its daemon is not answering, then waits for the daemon's socket,
- * so a command run while the app is quit still works (the user chose a quiet launch over a refusal). A checkout, the
- * old install, and any run on a relocated machine root (probes, tests) never launch an app.
+ * so a command run while the app is quit still works (the user chose a quiet launch over a refusal). A checkout and any
+ * run on a relocated machine root (probes, tests) never launch an app.
  */
 export async function ensureApp(layout: Pick<Layout, "app">, paths: Pick<MachinePaths, "socket">, options: AppLaunchOptions = {}): Promise<AppLaunch> {
   const env = options.env ?? process.env;
@@ -38,7 +38,7 @@ export async function ensureApp(layout: Pick<Layout, "app">, paths: Pick<Machine
   const timeoutMs = options.timeoutMs ?? 20_000, intervalMs = options.intervalMs ?? 250;
   try { await launch(layout.app); }
   catch {
-    // Spike 02 saw `open` fail about once in 70 launches, right after the app exited; a second try succeeds.
+    // `open` fails about once in 70 launches right after the app exited; a second try succeeds.
     await sleep(options.retryDelayMs ?? 1_000);
     try { await launch(layout.app); }
     catch (error) { return { state: "failed", message: `Localbox could not be started (${launchError(error)}); open Localbox from Applications` }; }

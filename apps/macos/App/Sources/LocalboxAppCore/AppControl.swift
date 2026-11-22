@@ -1,6 +1,6 @@
 import Foundation
 
-/// The operations the app socket answers (specs/menu-bar-app, slices 09 and 15): `app.info`, `login_item.get`,
+/// The operations the app socket answers: `app.info`, `login_item.get`,
 /// `login_item.set`, and `update.check|install|status|set_automatic` (`UpdateCoordinator`'s, in a build with Sparkle;
 /// a build without it refuses them). A development build launched with test hooks also answers `popover.*` and
 /// `settings.*` (probes open the popover and Settings and use their controls through them). Anything else is

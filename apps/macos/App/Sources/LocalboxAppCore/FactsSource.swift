@@ -1,8 +1,7 @@
 import Foundation
 
-/// Keeps the app's copy of `AppFacts` current by running `localbox app status` through `BundledCLI` (invariant 5:
-/// the app reads nothing else). While something shows the facts (`watching`: the popover open or Settings open; slices
-/// 13 and 14 set it), it long-polls with `--since <last watch_version>`, so a change shows within the CLI's wait.
+/// Keeps the app's copy of `AppFacts` current by running `localbox app status` through `BundledCLI` (the app reads
+/// nothing else). While something shows the facts (`watching`: the popover or Settings is open), it long-polls with `--since <last watch_version>`, so a change shows within the CLI's wait.
 /// With nothing open it cancels the running poll, which stops its CLI child, and reads once every `idleRefresh`, so
 /// the status item's warning badge stays true. Each value whose `watch_version` differs from the last is published;
 /// a repeat is not.

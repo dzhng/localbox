@@ -13,12 +13,12 @@ import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { machinePaths } from "../../../packages/config/src/index.js";
 import { PROTOCOL_VERSION, type Json } from "../../../packages/contract/src/index.js";
 import { appcast, signAppcast, sparklePublicKey, sparkleSignature } from "../../appcast.js";
-import { installLinuxImage } from "../../release.js";
-import { linuxImage } from "../lib/linux-image.js";
+import { installLinuxImage, linuxImage } from "../lib/linux-image.js";
+import { frontmostPid, killVirtualMachinesUnder } from "../lib/packaged-app.js";
 import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 import { scratchIdentity } from "../lib/scratch-identity.js";
 
-// Menu bar app, slice 15: an installed Localbox updates itself with Sparkle. Two signed bundles, N and N+1, built from this checkout with the
+// An installed Localbox updates itself with Sparkle. Two signed bundles, N and N+1, built from this checkout with the
 // patched Sparkle linked; a scratch signing identity in a temporary keychain, a scratch feed key (the release key's
 // format, PKCS#8 Ed25519), a signed feed served on 127.0.0.1, a scratch HOME and machine root.
 //
@@ -147,7 +147,7 @@ async function realVM(ctx: ProofContext, lab: Lab): Promise<Check[]> {
     assert.match(out, /^\d+$/, `marker process ${markerPid}: ${out}`); return Number(out);
   };
   checks.push(await ctx.check("N boots a Linux sandbox with a marker process counting in memory", async () => {
-    await installLinuxImage(dirname(dirname(await linuxImage(ctx))), lab.paths.images);
+    await installLinuxImage(await linuxImage(ctx), lab.paths.images);
     await lab.launch();
     const created = await lab.ok("sandbox.create", SANDBOX, { name: NAME, image: "linux", cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 60 * 60_000 });
     assert.deepEqual(created.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
@@ -253,12 +253,7 @@ async function updateLab(ctx: ProofContext, backend: "process-fixture" | "apple"
   /** Sparkle's installer for this lab's bundle id (its arguments name it). */
   const installers = () => rows().filter((row) => /\/Autoupdate\b/.test(row[3]) && row[3].includes(bundleId)).map((row) => Number(row[1]));
   const sparkleProcesses = () => rows().filter((row) => (/\/Autoupdate\b|\/Updater\.app\//.test(row[3]) && row[3].includes(bundleId)) || plain(row[3]).includes(plain(scratch))).map((row) => Number(row[1]));
-  const front = (): number | undefined => {
-    try {
-      const asn = execFileSync("lsappinfo", ["front"], { encoding: "utf8" }).trim();
-      return Number(/pid\s*=\s*(\d+)/.exec(execFileSync("lsappinfo", ["info", "-only", "pid", asn], { encoding: "utf8" }))?.[1]) || undefined;
-    } catch { return undefined; }
-  };
+  const front = frontmostPid;
   const windowTool = join(scratch, "windows");
 
   const answers = () => new Promise<boolean>((resolve) => {
@@ -475,11 +470,7 @@ async function updateLab(ctx: ProofContext, backend: "process-fixture" | "apple"
     if (app) { try { process.kill(app, "SIGTERM"); } catch { /* gone */ } await until(() => !processes().app, "the app to quit", 300_000).catch(() => undefined); }
     const left = processes();
     for (const pid of [left.app, ...left.daemons.map((row) => row.pid), ...left.connectors.map((row) => row.pid), ...sparkleProcesses()]) if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
-    // A real VM's service process belongs to launchd, not the daemon; it is this run's when it holds a file under this root.
-    for (const row of rows().filter((row) => row[3].includes("Virtualization.VirtualMachine"))) {
-      const pid = Number(row[1]);
-      try { if (execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(root)) process.kill(pid, "SIGKILL"); } catch { /* gone */ }
-    }
+    killVirtualMachinesUnder(root);
     server?.close();
     spawnSync("defaults", ["delete", bundleId]);
     const traces = accountTraces();

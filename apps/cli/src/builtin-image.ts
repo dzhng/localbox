@@ -10,8 +10,7 @@ import { checkManifest, expandImage, IMAGE_FILES, processAlive, replaceLinuxImag
 import { layout } from "./layout.js";
 
 /**
- * `localbox app image ensure` (specs/menu-bar-app, slice 11): the only writer of this Mac's `images/linux` (invariant
- * 9). It fetches this release's `release.json`, trusts nothing in it until its signature verifies against the pinned
+ * `localbox app image ensure`: the only writer of this Mac's `images/linux`. It fetches this release's `release.json`, trusts nothing in it until its signature verifies against the pinned
  * key, and, unless the image it names is already installed, downloads the image's artifacts with `Range` resume into
  * `<root>/downloads/linux-<version>/`, checks each one's SHA-256, expands the image there and swaps it into the images
  * directory with one rename. Every step is a progress line; the latest one is also `<root>/builtin-image.json`, which
@@ -203,7 +202,7 @@ class Refused extends Error {}
 
 /**
  * Brings `partial` up to the whole artifact, asking only for the bytes it lacks. The resume offset is the file's own
- * length: a reset connection can lose bytes the server already sent (spike 04).
+ * length: a reset connection can lose bytes the server already sent.
  */
 async function download(url: string, partial: string, artifact: ReleaseArtifact, retries: number, received: (bytes: number) => void): Promise<void> {
   let have = Math.max(0, await size(partial));
@@ -301,7 +300,11 @@ async function writeProgress(file: string, line: ImageProgress): Promise<void> {
   await rename(draft, file);
 }
 
-/** The release folder `ensure` reads: `LOCALBOX_RELEASE_URL` when set (a local release), else GitHub's for this version. */
+/**
+ * The release folder `ensure` reads: `LOCALBOX_RELEASE_URL` when set (a local release), else GitHub's for this version.
+ * Any source is safe in a release too: nothing it serves is used before it verifies against the bundle's pinned key
+ * and names this CLI's version.
+ */
 export function releaseBase(version: string, env: NodeJS.ProcessEnv = process.env): string {
   const override = env.LOCALBOX_RELEASE_URL?.replace(/\/+$/, "");
   if (override) return override;

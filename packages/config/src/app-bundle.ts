@@ -13,7 +13,7 @@ export interface AppBundle { path: string; id: string | null }
 const BUNDLED = /^(.*\.app)\/Contents\/Resources\/cli\//;
 
 /**
- * The app bundle around `file` (by default this module's own realpath), or null for a checkout or the old install.
+ * The app bundle around `file` (by default this module's own realpath), or null for a checkout.
  * Inside the app the CLI is `<X>.app/Contents/Resources/cli`, and every compiled module sits under it, so any of
  * them finds the same bundle. Never from the environment: a CLI started by another copy's CLI still knows its own app.
  */

@@ -103,7 +103,7 @@ ditto -c -k --keepParent --norsrc --noextattr --noqtn "$STAGE/Localbox.app" "$OU
 cd "$ROOT"
 # Sparkle's feed offers this release's zip at its versioned URL (https://localbox.sh/mac/appcast.xml redirects to the
 # latest release's appcast.xml). The zip and the feed are signed with the same Ed25519 key as release.json, whose
-# public half the bundle carries as SUPublicEDKey (specs/menu-bar-app, A9).
+# public half the bundle carries as SUPublicEDKey.
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" \
   RELEASE_DOWNLOAD="https://github.com/${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}/releases/download/v$VERSION" node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from "node:fs";

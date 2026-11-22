@@ -5,11 +5,11 @@ import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSyn
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { installLinuxImage } from "../../release.js";
 import type { ProofContext } from "../run.js";
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
+import { machinePaths } from "../../../packages/config/src/index.js";
 import { PROTOCOL_VERSION, type Json, type ResponseEnvelope } from "../../../packages/contract/src/index.js";
-import { linuxImage } from "./linux-image.js";
+import { installLinuxImage, linuxImage } from "./linux-image.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Apple's VM service creates the saved-state key in the keychain, which refuses while the console is locked. */
@@ -29,12 +29,12 @@ export async function buildRealVMs(ctx: ProofContext): Promise<string> {
  * One real host daemon on this Mac (Apple backend, the dev linux image) in a temporary machine root, driven over its
  * socket. `env` adds daemon environment (e.g. a dev admission cap). `cleanup` kills it and removes the root.
  * `start(bin, { supervised: true })` runs it as an app does, `--supervised` with stdin a pipe that `closeStdin` closes;
- * otherwise its stdin is /dev/null, as under launchd.
+ * otherwise its stdin is /dev/null.
  */
 export function realDaemon(ctx: ProofContext, options: { probe: string; env?: NodeJS.ProcessEnv }) {
   const machine = realpathSync(mkdtempSync(join(tmpdir(), `localbox-proof-${options.probe}-`)));
-  const sandboxes = join(machine, "sandboxes"); const operations = join(machine, "operations"); const images = join(machine, "images"); const socket = join(machine, "agent.sock"); const tokenFile = join(machine, "ipc-token");
-  const env: NodeJS.ProcessEnv = { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_HOSTD_LOCK: join(machine, "hostd.lock"), LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env };
+  const { sandboxes, operations, images, socket, hostdLock, ipcToken: tokenFile } = machinePaths({ LOCALBOX_MACHINE_ROOT: machine });
+  const env: NodeJS.ProcessEnv = { ...process.env, LOCALBOX_SANDBOX_BACKEND: "apple", LOCALBOX_SANDBOXES: sandboxes, LOCALBOX_OPERATIONS: operations, LOCALBOX_IMAGES: images, LOCALBOX_SOCKET: socket, LOCALBOX_HOSTD_LOCK: hostdLock, LOCALBOX_IPC_TOKEN_PATH: tokenFile, ...options.env };
   const token = randomBytes(32).toString("hex"); writeFileSync(tokenFile, token, { mode: 0o600 });
   const log = join(ctx.evidence, `${options.probe}-hostd.log`);
   const transport = new LocalIPCTransport({ socketPath: socket, token, timeoutMs: 300_000 });
@@ -45,7 +45,7 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   const start = async (bin: string, how: { supervised?: boolean } = {}) => {
     // This machine gets `images/linux` the way an install does: an APFS clone of the image beside it (the dev image
     // sits at `dist/vm-image/images/linux`, where a release keeps its own), so it costs neither time nor space.
-    if (!existsSync(join(images, "linux"))) await installLinuxImage(dirname(dirname(await linuxImage(ctx))), images);
+    if (!existsSync(join(images, "linux"))) await installLinuxImage(await linuxImage(ctx), images);
     const fd = openSync(log, "a");
     daemon = spawn(join(bin, "localbox-hostd"), how.supervised ? ["--supervised"] : [], { cwd: ctx.root, stdio: [how.supervised ? "pipe" : "ignore", fd, fd], env });
     closeSync(fd);

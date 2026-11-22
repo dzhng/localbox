@@ -7,16 +7,13 @@ import { BUILT_IN_IMAGE, ContractError, HOST_OPERATION_KINDS, PROTOCOL_VERSION, 
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { readCredentials, type Credentials } from "../../../packages/credentials/src/index.js";
 import { AgentSetup } from "./agent-setup.js";
-import type { AppDeps } from "./app.js";
-import { askApp } from "./app-socket.js";
+import { askApp, type AppDeps } from "./app-socket.js";
 import type { ImageProgress } from "./builtin-image.js";
 import { checkHost, type HostCheck } from "./host-check.js";
-import { layout } from "./layout.js";
 
 /**
- * Everything Localbox.app shows, in one shape (specs/menu-bar-app, slice 12): the popover and Settings draw only
- * this, and `warnings` are decided here and nowhere else (invariant 10). The sandboxes and images are this Mac's,
- * from its own daemon, never the account's catalog.
+ * Everything Localbox.app shows, in one shape: the popover and Settings draw only this, and `warnings` are decided
+ * here and nowhere else. The sandboxes and images are this Mac's, from its own daemon, never the account's catalog.
  */
 export interface AppFacts {
   version: string;
@@ -32,7 +29,7 @@ export interface AppFacts {
   images: ImageFact[];
   builtin_image: "ready" | "downloading" | "failed" | "missing";
   stopping: { reason: string; pending: string[] } | null;
-  /** The app's updater (slice 15), null in a build that cannot update itself; `status` is the line Settings shows. */
+  /** The app's updater, null in a build that cannot update itself; `status` is the line Settings shows. */
   update: UpdateFact | null;
   warnings: Warning[];
   /** A fingerprint of everything above: `--since` this value waits until any of it changes. */
@@ -58,7 +55,7 @@ interface Watch {
 }
 interface AppInfo {
   version: string; build: "release" | "dev"; in_applications: boolean; children: { daemon: AppFacts["daemon"]; connector: string }; stopping: AppFacts["stopping"];
-  /** `UpdateCoordinator`'s snapshot (slice 15); null in a build without Sparkle. */
+  /** `UpdateCoordinator`'s snapshot; null in a build without Sparkle. */
   update: (Omit<UpdateFact, "status" | "version"> & { state: string; status: string | null; version: string | null }) | null;
 }
 
@@ -151,10 +148,9 @@ interface Inputs {
 }
 
 async function compose({ deps, daemon, watch, host, setup, progressFile, images, now }: Inputs): Promise<AppFacts> {
-  const ask = (operation: "app.info" | "login_item.get") => askApp(deps.app?.layout ?? layout(), deps.app?.paths ?? machinePaths(), operation, {}, deps.app?.launch);
   const [info, loginItem, signedIn, relay, builtin] = await Promise.all([
-    ask("app.info") as Promise<unknown> as Promise<AppInfo>,
-    ask("login_item.get") as Promise<unknown> as Promise<{ state: AppFacts["open_at_login"] }>,
+    askApp("app.info", {}, deps.app) as Promise<unknown> as Promise<AppInfo>,
+    askApp("login_item.get", {}, deps.app) as Promise<unknown> as Promise<{ state: AppFacts["open_at_login"] }>,
     (deps.credentials ?? (() => readCredentials(machinePaths().credentials)))().then((credentials) => ({ credentials }), (error: Error) => ({ credentials: undefined, error: error.message })),
     watch ? daemon.dispatch(local("relay.status", {}, 10_000)).then((response) => response.ok ? response.result as { connector: string; detail: string | null; reported_at: string | null } : undefined, () => undefined) : undefined,
     readFile(progressFile, "utf8").then((text) => JSON.parse(text) as BuiltinImageProgress, () => undefined),

@@ -1,7 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from "node:crypto";
 
 /**
- * Sparkle's update feed, signed with the release's Ed25519 key (specs/menu-bar-app, A9): the same PKCS#8 key that
+ * Sparkle's update feed, signed with the release's Ed25519 key: the same PKCS#8 key that
  * signs `release.json`, so there is one trust root and one secret. Sparkle's EdDSA is plain Ed25519 (RFC 8032), so
  * Node's `sign(null, …)` gives the bytes Sparkle's `sign_update` would; tests/appcast.test.ts pins that against a
  * `sign_update` answer. The app carries the key's raw 32-byte public half, base64, as `SUPublicEDKey`.

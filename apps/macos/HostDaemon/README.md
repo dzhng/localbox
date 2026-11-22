@@ -170,8 +170,8 @@ token file from environment variables, starts the same `SandboxHost` and
 `UnixDomainSocketServer` used by tests, brings back what the last run left
 running, and hibernates on `SIGTERM`/`SIGINT`, taking as long as the saves
 take. One daemon serves a machine root: before it touches the root it
-takes `MachineLock`, a kernel `flock` on `LOCALBOX_HOSTD_LOCK` (default
-`hostd.lock` beside the socket), and a second daemon exits 75 naming the lock,
+takes `MachineLock`, a kernel `flock` on `LOCALBOX_HOSTD_LOCK` (required; its
+one definition is `machinePaths().hostdLock`), and a second daemon exits 75 naming the lock,
 so it never unlinks a running daemon's socket or sweeps its temporaries.
 Started `--supervised` (an app's child, with stdin a pipe), the end of its
 stdin is a stop request too; every stop runs `DaemonShutdown`, which prints
@@ -179,5 +179,6 @@ stdin is a stop request too; every stop runs `DaemonShutdown`, which prints
 and exits 0 when all are. Its environment is built in one place, the app's
 `DaemonLaunch`, from the paths `localbox app paths` prints (which also creates
 the owner-only token file); the [app's README](../App/README.md) holds the
-supervision's principles (one supervisor, one root, hibernation the daemon's own) and the [development guide](../../../DEVELOPMENT.md#releasing) the
-signed bundle it ships in. Probes still start it directly on scratch roots.
+supervision's principles (one supervisor, one root, hibernation the daemon's
+own) and the [development guide](../../../DEVELOPMENT.md#releasing) the signed
+bundle it ships in. Probes start it directly on scratch roots.

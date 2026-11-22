@@ -43,14 +43,14 @@ struct HostDaemonMain {
             let server = UnixDomainSocketServer(ipc: AuthenticatedLocalIPC(daemon: daemon, token: token, endpoint: endpoint), endpoint: endpoint)
             let shutdown = DaemonShutdown(server: server, host: host, log: { log($0) })
             shutdown.onSignals([SIGTERM, SIGINT])
-            // Probes and launchd start the daemon with stdin on /dev/null, which reads as an immediate end; only a
-            // supervisor's pipe means "stop when I go away".
+            // Probes start the daemon with stdin on /dev/null, which reads as an immediate end; only a supervisor's
+            // pipe means "stop when I go away".
             if supervised { shutdown.onEndOfInput(STDIN_FILENO) }
             daemonShutdown = shutdown
             try await server.start()
-            // Every start (including the relaunch after an update) matches the skill and CLI link to the installed
-            // release, in the background so it never holds up sandbox restore.
-            if let agentSetup { Task.detached { log("agent setup (daemon_start): \(await agentSetup.reconcile())") } } else { log("agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled") }
+            // Every start (including the relaunch after an update) matches the skill and the localbox command to the
+            // app, in the background so it never holds up sandbox restore.
+            if let agentSetup { Task.detached { log("agent setup (daemon_start): \(await agentSetup.reconcile())") } } else { log("agent setup: no LOCALBOX_CLI, so the skill and the localbox command are not reconciled") }
             // Bring back what the last run hibernated or left running; each sandbox reports woke or cold_booted.
             for (id, action) in await host.recover().sorted(by: { $0.key < $1.key }) { log("\(id) \(action["kind"] ?? ""): \(action["detail"] ?? "")") }
             // Long host work the last run left unfinished continues from its checkpoint, after the sandboxes it may
@@ -104,8 +104,8 @@ struct HostDaemonMain {
     /// (EX_TEMPFAIL): another one serves this root, and a supervisor may retry once that one is gone.
     nonisolated(unsafe) private static var machineLock: MachineLock?
     private static func takeMachineLock() {
-        let path = ProcessInfo.processInfo.environment["LOCALBOX_HOSTD_LOCK"].flatMap { $0.isEmpty ? nil : expanded($0) }
-            ?? URL(fileURLWithPath: expanded(required("LOCALBOX_SOCKET"))).deletingLastPathComponent().appendingPathComponent("hostd.lock").path
+        // `machinePaths().hostdLock` is the path's one definition; every launcher passes it.
+        let path = expanded(required("LOCALBOX_HOSTD_LOCK"))
         do {
             try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
             machineLock = try MachineLock(path: path)

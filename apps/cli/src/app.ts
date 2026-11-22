@@ -1,11 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { machinePaths, type MachinePaths } from "../../../packages/config/src/index.js";
+import { machinePaths } from "../../../packages/config/src/index.js";
 import type { Json } from "../../../packages/contract/src/index.js";
 import { commandDirectory } from "./agent-setup.js";
-import type { AppLaunchOptions } from "./app-launch.js";
-import { askApp } from "./app-socket.js";
-import { layout, type Layout } from "./layout.js";
+import { askApp, type AppDeps } from "./app-socket.js";
 
 /** What `localbox app paths --json` prints: every path Localbox.app hands its children. */
 export interface AppPaths {
@@ -41,13 +39,7 @@ async function ensureToken(path: string): Promise<void> {
   await rename(staging, path);
 }
 
-/** Where `localbox app status` (`app-facts.ts`) and `login-item` find the app; the defaults are this CLI's own. */
-export interface AppDeps { layout?: Pick<Layout, "app">; paths?: Pick<MachinePaths, "appSocket">; launch?: AppLaunchOptions }
-
 /** `localbox app login-item [on|off]`: the login item's state, after turning it on or off when asked. */
 export async function appLoginItem(enabled: boolean | undefined, deps: AppDeps = {}): Promise<Json> {
-  return enabled === undefined ? ask(deps, "login_item.get") : ask(deps, "login_item.set", { enabled });
+  return enabled === undefined ? askApp("login_item.get", {}, deps) : askApp("login_item.set", { enabled }, deps);
 }
-
-const ask = (deps: AppDeps, operation: Parameters<typeof askApp>[2], params: Record<string, Json> = {}) =>
-  askApp(deps.layout ?? layout(), deps.paths ?? machinePaths(), operation, params, deps.launch);

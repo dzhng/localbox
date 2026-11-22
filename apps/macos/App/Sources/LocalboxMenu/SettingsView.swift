@@ -3,7 +3,7 @@ import LocalboxAppCore
 import SwiftUI
 
 /// The Settings window's form: About, General (agent setup, open at login, updates) and Account (email-code
-/// sign-in), in a grouped form matched to the reference shots in specs/menu-bar-app/assets. Every change goes through `SettingsModel`, which runs the CLI; the view spawns nothing.
+/// sign-in), in a grouped form. Every change goes through `SettingsModel`, which runs the CLI; the view spawns nothing.
 public struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     /// Opens System Settings › General › Login Items (the app's own: `SMAppService.openSystemSettingsLoginItems`).
