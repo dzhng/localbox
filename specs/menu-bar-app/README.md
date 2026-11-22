@@ -15,7 +15,8 @@ is [brief.md](brief.md). Read it before any slice.
 **Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell), 09 (app control), 10 (release cutover), 11 (built-in image), 12 (app facts), 13 (popover), 14 (Settings) and 15 (updates) are
 done and merged; see [spikes.md](spikes.md) and [choices.md](choices.md).
 
-**Every slice is built.** What remains is the whole-spec review, consolidating `choices.md`, and closing the spec; then the manual runbook is the user's. There are no
+**Every slice is built and the whole-spec review is done** (`choices.md`, "Whole-spec review"). What remains is
+consolidating `choices.md` and closing the spec; then the [manual runbook](manual-runbook.md) is the user's. There are no
 slices 03 or 05: signing a bundle with a CLI inside and the patched Sparkle
 update are already proven by Bento and Yap, so they are ported directly, and
 only what is new to Localbox is checked, in slices 10 and 15 (see "Ported
@@ -150,7 +151,7 @@ Localbox.app/Contents/
   MacOS/localbox-hostd           the daemon, signed with the virtualization entitlement
   Frameworks/Sparkle.framework   release builds only
   Resources/bin/localbox         the C launcher (the bytes of ~/.local/bin/localbox)
-  Resources/cli/                 localbox (entry), dist/, node_modules/, skill/, skills-installer/, version
+  Resources/cli/                 localbox (entry), dist/, package.json, node_modules/, skill/, skills-installer/, version
   Resources/node/bin/node
   Resources/guest-agent/         sealed bytes; digests match agent-version.json
   Resources/release-public.pem   equals skills/localbox/release-public.pem
@@ -246,7 +247,7 @@ Each is owned by a spike; see the brief's "Known fog" for the full statement.
 
 ## Open verification
 
-Manual legs no agent session can run. Slice 16 turns them into a runbook.
+Manual legs no agent session can run; the [runbook](manual-runbook.md) holds the steps.
 
 - Real logout and real shutdown with two sandboxes running: did they hibernate,
   and how long did macOS wait?

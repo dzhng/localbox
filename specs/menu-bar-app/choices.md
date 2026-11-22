@@ -689,3 +689,61 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   returned, while the stderr `readabilityHandler` spun at EOF (most of a `sample`). Neither the test nor the daemon
   changed in this slice. The handler now stops itself at EOF and the async tests wait by polling `isRunning`; three
   filtered runs and the full suite then passed. Reverse: `exited(_:)` in that file.
+
+## Whole-spec review
+
+The review of `git diff 6cd328f` as one feature, after every slice had its own: refactor-clean, then code-review,
+then write-docs. Each entry is a change made, or a thing deliberately left.
+
+- **The daemon's lock path has one definition.** `localbox-hostd` fell back to `hostd.lock` beside the socket when
+  `LOCALBOX_HOSTD_LOCK` was unset: a second definition of `machinePaths().hostdLock`, kept (§06) only for the launchd
+  plist that slice 10 deleted. The variable is now required, like the socket's (exit 78 before the root is touched);
+  `DaemonLaunch`, `stack.ts`, `real-daemon.ts` and the daemon's own tests pass it. Reverse: restore the fallback in
+  `takeMachineLock()`.
+- **`installLinuxImage` moved to the proof lib** (`scripts/proof/lib/linux-image.ts`, now taking the image directory
+  itself). It lived in `scripts/release.ts`, which ships in the bundle, so every release carried a second writer of
+  `images/linux` that no shipped code called (invariant 9). Only probes and one test seed an image; `ensure` and
+  `replaceLinuxImage` stay in `release.ts`. Reverse: move it back.
+- **One `askApp` entry.** `AppDeps` moved into `app-socket.ts` and `askApp(operation, params, deps)` applies the CLI's
+  own layout and paths, instead of `app.ts`, `app-facts.ts` and `update.ts` each rebuilding those defaults around a
+  five-argument call. Reverse: `apps/cli/src/app-socket.ts`.
+- **One main-thread hop in the app.** `onMain` in `main.swift` is the socket-queue-to-main-thread step the test hooks
+  and `update.*` each carried; the Settings-at-launch check names the relaunch argument through `LaunchDecision`.
+- **Probe 44 shares `frontmostPid` and `killVirtualMachinesUnder`** with `packaged-app.ts` instead of its own copies;
+  `real-daemon.ts` takes every path from `machinePaths()`.
+- **Lineage comments removed.** Slice, spike, brief and invariant numbers in shipped code, tests and probe headers
+  became the facts they stood for; stale install words (the installer, the localbox link, launchd) went where they no
+  longer describe anything. Spec links that point a reader at the rationale (the App README, `build-app.mjs`'s
+  reference shots, the view-shot output folders) stay.
+- **Kept, decided: `LOCALBOX_RELEASE_URL` is honoured by a release build.** `ensure` uses nothing it fetched until
+  `release.json` verifies against the bundle's pinned key and names this CLI's version, so the location adds no trust;
+  the installation procedure documents the same override, and probe 42 uses it against a release-built app. A comment
+  at `releaseBase` now says why. `LOCALBOX_RELEASE_REPOSITORY` the same.
+- **Kept, decided: `HOME` in Sparkle's relaunch allowlist.** The patch copies `HOME`, `LOCALBOX_MACHINE_ROOT` and
+  `LOCALBOX_APP` from the running app's own environment into its relaunch, so a release relaunches with exactly what
+  it already ran with; for a real install that is the account's own `HOME`. It grants nothing the running copy lacked.
+- **Kept, checked: the development-only stubs.** `LOCALBOX_APP_TEST_HOOKS`, `LOCALBOX_APP_LOGIN_ITEM=fake` and
+  `LOCALBOX_APP_SCREENS=0` are read only when `LaunchDecision.isRelease` is false, and every `--release` bundle carries
+  `SUFeedURL`, so a release can neither register a fake login item nor answer `popover.*`/`settings.*`. The launcher's
+  `-DLOCALBOX_ACCOUNT_HOME`/`-DLOCALBOX_SYSTEM_APPLICATIONS` are compile-time and absent from the release build.
+- **Kept: the app reads the daemon's shutdown lines from `hostd.log`.** It is the app's own child's output, the one
+  channel a daemon whose app was killed can still write to (§08), not Localbox state; every other read is
+  `app status`.
+- **Left: probe 44's lab harness** still has its own `processes`, `until` and `log` beside `packagedApp`'s, because
+  the lab's bundle lives in a scratch `HOME/Applications` under its own bundle id and two copies (N, N+1) replace each
+  other; folding it into `packagedApp` would mean teaching that harness about replacement. Removal condition: a second
+  probe needs an installed, replaceable bundle.
+- **Left: the contract's `linked` action kind**, unproduced since slice 10, because the firewall freezes
+  `packages/contract` beyond `cli.status` states.
+- **Size**, by `git diff --unified=0 6cd328f` over everything but the evidence and reference PNGs and the lockfile,
+  production split from comment lines by a leading `//`, `///`, `/*`, `*` or `#` (blank lines not counted), after
+  this review: production code +4,120 −904 (net +3,216), comments +885 −84 (+801), tests and proof harness +5,480
+  −739 (+4,741), specs and docs +1,524 −220 (+1,304). Production is an app (supervision, socket, popover, Settings,
+  updates), four CLI modules and the release cutover, with the old installer, updater and plists deleted; no part
+  read as out of proportion to what it does. Tests outweigh production mostly through the packaged-app probes
+  (41–44), which drive real bundles. The vendored Sparkle patch, licence and pin (+1,259) are counted apart: Sparkle's
+  code under Localbox's names, rebuilt from the pin, not code this repo maintains line by line.
+- **Decisions reconciled.** Brief 1–12, A1–A14, the contracts and the names each match the shipped code, with the
+  changes already recorded above (§10's `SUFeedURL` as the release test, §11's probe numbers, §14's
+  `update automatic on|off`). The spec README's bundle layout now lists `Resources/cli/package.json`, which the
+  assembler has always copied.
