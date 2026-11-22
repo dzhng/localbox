@@ -40,6 +40,9 @@ and no password. Nothing of the old path remains.
   4. `ditto -x -k` into a temp directory; if `~/Applications/Localbox.app`
      exists, quit it (`osascript -e 'quit app id "sh.localbox.mac"'`), wait for
      it to exit and move it to a temp backup; `ditto` the new app into
+     (spike 01: confirm no `com.apple.quarantine` attribute is on it, and
+     stop with a clear message if there is, because a quarantined app opens a
+     Gatekeeper dialog that hangs every launch; never strip the attribute)
      `~/Applications` (use `/Applications` only when a copy is already there
      and writable);
   5. open it with the command slice 01 chose;
@@ -58,7 +61,8 @@ and no password. Nothing of the old path remains.
   slice 15), `activateRelease`, `activeRelease`, `rollbackRelease` and
   `verifyInstalledRelease` in `scripts/release.ts`, the `installer`/`cli`
   fields and `releases/active` logic in `layout.ts`, `Reason` values `install`
-  and `rollback`, the non-supervised connector exit path, and their tests
+  and `rollback`, the connector's unflagged exit-when-signed-out path and its
+  `--supervised` flag (slice 08's seam: supervised is now its only mode), and their tests
   (`tests/updater.test.ts`, `tests/connector-job.test.ts`, the activation,
   rollback, installer and uninstall cases in `tests/release.test.ts`).
 - **Rewritten:** `skill-lifecycle.md`; `DEVELOPMENT.md` ("Releases are the only

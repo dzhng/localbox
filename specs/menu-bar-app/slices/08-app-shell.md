@@ -49,11 +49,13 @@ dependency on `HostDaemonCore`:
 - **CLI:** `localbox app paths --json` (new file `apps/cli/src/app.ts`) returns
   `machinePaths()` as JSON and is the only creator of the machine directories
   and the IPC token (0600), replacing the installer's token step.
-- **Connector** (`apps/connector/src/index.ts`): with `LOCALBOX_SUPERVISED=1`,
-  `runConnector` waits for credentials to appear (checking every 2 s) instead of
-  returning 0 when signed out, loops again after `RevokedError`, and exits when
-  stdin closes. Without the variable it behaves as today, until slice 10
-  removes the launchd job.
+- **Connector** (`apps/connector/src/index.ts`): `localbox connector run
+  --supervised` (the same flag name as the daemon's) waits for credentials to
+  appear (checking every 2 s) instead of returning 0 when signed out, loops
+  again after `RevokedError`, and exits when stdin closes. **Short-lived
+  seam:** without the flag it behaves as today, only because the launchd job
+  still exists. Slice 10 deletes that job and with it the unflagged behaviour
+  and the flag: supervised becomes the connector's only mode.
 - **Dev build:** `npm run app:dev` builds the package, assembles a dev bundle
   (id `sh.localbox.mac.dev`, no `SUFeedURL`) and opens it. A dev build uses its
   own machine root, `~/Library/Application Support/Localbox Dev`, which its

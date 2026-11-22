@@ -25,11 +25,8 @@ directly, and only what is new to Localbox is checked, inside slices 10 and
 
 **Warnings**
 
-- **Slice 02 is a kill switch.** If VMs cannot boot, hibernate and restore under
-  an app-supervised child, decision 1 in the brief is dead. Stop and return to
-  the user with the evidence. There is no silent fallback.
 - Any fallback that adds a launchd job, a second updater or a
-  new signing key need the user's sign-off. Stop and ask.
+  new signing key needs the user's sign-off. Stop and ask.
 - This worktree has no `.release-signing/`. Nothing before slice 10 needs it;
   spikes use scratch keys and a scratch identity. Never create new release
   keys. The real ones (`release-private.pem`, `release-identity.p12` and its
@@ -65,6 +62,8 @@ directly, and only what is new to Localbox is checked, inside slices 10 and
 - [ ] 14 [Settings window](slices/14-settings.md)
 - [ ] 15 [Updates](slices/15-updates.md)
 - [ ] 16 [Closeout](slices/16-closeout.md)
+
+Slice numbers 03 and 05 are unused (they were the dropped spikes).
 
 **Before you end a pass,** update this section: the status line and date, the
 next pickup point, any new warning, and the checklist. Record every decision
@@ -123,7 +122,8 @@ the three drafts; each names the alternative that lost.
 
 ## Ported from Bento, not re-proven
 
-Bento and Yap already ship these on self-signed apps, so the plan copies the
+Bento (`~/dev/bento`) and Yap (`~/dev/screen-recorder`) already ship these on
+self-signed apps with working automatic updates (the user's point, 2026-11-22), so the plan copies the
 working code and does not spike them: inside-out signing of a bundle with a
 CLI and a Node runtime inside (`scripts/release-signing.mjs`), the patched
 Sparkle build and its launch lock (`scripts/sparkle/`), the C launcher, the

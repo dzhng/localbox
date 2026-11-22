@@ -174,6 +174,13 @@ not modify that repo. Copy mechanisms, not capture/recording features.
 
 ## Known fog (unproven for Localbox)
 
+> **Superseded.** This was the list before the spikes ran. First launch, VMs
+> under an app child and image delivery are answered in
+> [spikes.md](spikes.md). Sparkle reuse and the signed bundle were not spiked:
+> Bento and Yap already prove them, and what is new to Localbox is checked in
+> slices 10 and 15 (README, "Ported from Bento, not re-proven"). Quit, logout
+> and headless Macs remain on the README's open verification list.
+
 - **Remote, hands-off first launch.** An agent over SSH (or a remote Claude
   session) must `open` a self-signed app that then registers
   `SMAppService.mainApp`, with no click. Does `open` work from a non-GUI
