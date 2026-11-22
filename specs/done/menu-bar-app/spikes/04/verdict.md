@@ -5,7 +5,7 @@ and installed with `verifyManifestSignature`, `expandImage` and
 `installLinuxImage` as they are. One change for slice 11: stage under
 `<root>/downloads/`, not `<images>/.linux.fetch/`.
 
-Evidence is in `specs/menu-bar-app/evidence/04/`. All keys were scratch
+Evidence is in [`evidence/04/`](../../evidence/04/). All keys were scratch
 Ed25519 pairs made in a temp directory; all temp directories were removed.
 
 ## The four outcomes
@@ -142,6 +142,9 @@ Not probed: step 3 of the slice (skip when the installed `image.json` digest
 already matches), and the lock for a second `ensure`.
 
 ## Rerun
+
+The spike's source was removed when the spec closed; check out
+`d0f7bb3`, where it lived at `specs/menu-bar-app/spikes/04/`, to rerun it.
 
 ```
 node_modules/.bin/tsx specs/menu-bar-app/spikes/04/run-fixture.ts

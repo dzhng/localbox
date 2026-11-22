@@ -4,7 +4,7 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:cry
 import { appcast, signAppcast, sparklePublicKey, sparkleSignature, verifyAppcast } from "../scripts/appcast.js";
 
 // A PKCS#8 Ed25519 key, the release key's format, from a fixed seed (bytes 0..31). The expected values are what the
-// pinned Sparkle's own `sign_update --ed-key-file SEED` printed for the same seed (specs/menu-bar-app, slice 15, A9).
+// pinned Sparkle's own `sign_update --ed-key-file SEED` printed for the same seed (specs/done/menu-bar-app/choices.md, S28).
 const seed = Buffer.from(Array.from({ length: 32 }, (_, index) => index));
 const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]), format: "der", type: "pkcs8" });
 const pem = key.export({ type: "pkcs8", format: "pem" }).toString();

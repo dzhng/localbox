@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Localbox ships under one set of names: bundle ids under `sh.localbox`, no launchd job of its own, no versioned
-// release folders, and no other product's names (specs/menu-bar-app, slice 16). Shipped sources are every tracked file
+// release folders, and no other product's names (specs/done/menu-bar-app). Shipped sources are every tracked file
 // under apps, packages, scripts, skills, bin and api, plus the root docs; specs/ is the record and is not scanned.
 
 const ROOT = new URL("..", import.meta.url).pathname;

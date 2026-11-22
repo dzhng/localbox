@@ -1,7 +1,10 @@
 # Spike verdicts
 
 One section per spike. Each full write-up, with commands and evidence, is in
-`spikes/NN/verdict.md` and `evidence/NN/`.
+`spikes/NN/verdict.md` and `evidence/NN/`. The spikes' throwaway source (none
+of it shipped) was removed when the spec closed; it is in git at `d0f7bb3`,
+under `specs/menu-bar-app/spikes/`. Slice numbers below are the build's; the
+README's [slice table](README.md#where-to-look) says what each built.
 
 ## 01 · Hands-off first launch and login item: go (real SSH leg unproven)
 
