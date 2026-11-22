@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { before, test } from "node:test";
 import { compile, run, temporary } from "./driver.mjs";
 
-// Bento's settings-cli pattern: the real `SettingsModel` over the real `CLISettingsActions` and `BundledCLI`, against a
+// The real `SettingsModel` over the real `CLISettingsActions` and `BundledCLI`, against a
 // fake bundle whose `cli/localbox` logs every invocation and answers as the CLI does: `app status` prints the facts
 // file; `login --code`, `logout`, `app login-item` and `agents setup` change it; a line in `refuse` makes that exact
 // invocation fail the way the CLI does (a sentence on stderr, exit 1). Each control must issue exactly its command,

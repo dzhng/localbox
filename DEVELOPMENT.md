@@ -372,7 +372,7 @@ Bun ([Images](#images)).
 Sparkle is built from source, never downloaded as a binary: `npm run
 sparkle:build` (full Xcode and network) fetches Sparkle at the commit pinned in
 [`apps/macos/App/sparkle/upstream.json`](apps/macos/App/sparkle/upstream.json),
-applies `localbox.patch` (Bento's patch under Localbox's names: the shared
+applies `localbox.patch` (the shared
 launch lock, a quiet relaunch with `--localbox-update-relaunch`, the host's
 permission before any replacement) and writes
 `dist/sparkle/Sparkle.framework` with a build receipt. `release.sh` uses it

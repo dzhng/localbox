@@ -2,9 +2,8 @@ import AppKit
 import LocalboxAppCore
 import SwiftUI
 
-/// The Settings window's form. About and General are Bento's (`Sources/Bento/SettingsWindow.swift` at the frozen
-/// commit) with only the product's name changed, so they keep Bento's code shape line for line; Account replaces
-/// Bento's Workspace. Every change goes through `SettingsModel`, which runs the CLI; the view spawns nothing.
+/// The Settings window's form: About, General (agent setup, open at login, updates) and Account (email-code
+/// sign-in), in a grouped form matched to the reference shots in specs/menu-bar-app/assets. Every change goes through `SettingsModel`, which runs the CLI; the view spawns nothing.
 public struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     /// Opens System Settings › General › Login Items (the app's own: `SMAppService.openSystemSettingsLoginItems`).
@@ -106,7 +105,7 @@ public struct SettingsView: View {
             .disabled(model.busy != nil)
     }
 
-    // MARK: - General (Bento's, the name changed)
+    // MARK: - General
 
     /// A row whose label runs to a second explanatory line. `LabeledContent` aligns its value with
     /// the first line, which leaves a status and its button riding high against two lines of text,
@@ -187,7 +186,7 @@ public struct SettingsView: View {
     }
 }
 
-/// A status word with a tinted symbol, the way System Settings states an access (Bento's).
+/// A status word with a tinted symbol, the way System Settings states an access.
 private struct StatusLabelStyle: LabelStyle {
     let tint: Color
     var titleTint: Color?

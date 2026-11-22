@@ -1,7 +1,7 @@
 # Localbox's Sparkle
 
 The [upstream pin](upstream.json) and [patch](localbox.patch) bind the framework's
-source: Bento's maintained patch at its frozen commit, re-applied under Localbox's
+source: the patch implements Localbox's installation contract under Localbox's
 names (the Info.plist key `LocalboxLaunchLockRelativePath`, the relaunch argument
 `--localbox-update-relaunch`, the relaunch environment `HOME`,
 `LOCALBOX_MACHINE_ROOT`, `LOCALBOX_APP`). A stock framework does not implement this

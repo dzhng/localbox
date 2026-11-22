@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Builds Localbox's patched Sparkle.framework from the pinned source: a port of Bento's scripts/sparkle/build.mjs, with
-// the patch re-applied under Localbox's names (localbox.patch).
+// Builds Localbox's patched Sparkle.framework from the pinned source and localbox.patch.
 //
 //   node apps/macos/App/sparkle/build.mjs --source CHECKOUT [--fetch] (--check | --prepare-only | --output NEW_DIRECTORY)
 //

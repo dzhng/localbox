@@ -2,7 +2,7 @@ import LocalboxAppCore
 import SwiftUI
 
 /// The status item's popover: draws `PopoverRows` and hands every click to `perform`. It runs nothing itself; the
-/// app turns actions into CLI invocations. Chrome follows Bento's capture popover (`CaptureView.swift`): 352 pt wide,
+/// app turns actions into CLI invocations. Chrome: 352 pt wide,
 /// 16 pt outer padding, a 16 pt semibold title, 11 pt section labels, 12 pt rows of 38 pt (48 pt with a second line),
 /// a separated footer, and NSPopover's own material behind a transparent view.
 public struct PopoverView: View {
@@ -156,7 +156,7 @@ private struct ProgressBar: View {
     }
 }
 
-/// A row: a 16 pt icon at x 22 and its name and state at x 50 (where Bento's row text lands), centred together;
+/// A row: a 16 pt icon at x 22 and its name and state at x 50, centred together;
 /// a progress bar or an error spans from the text to the row's right edge beneath them.
 private struct RowLayout<Trailing: View>: View {
     let symbol: String

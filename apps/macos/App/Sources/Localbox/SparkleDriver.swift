@@ -3,7 +3,7 @@ import AppKit
 import LocalboxAppCore
 import Sparkle
 
-/// The Sparkle boundary, a port of Bento's `SparkleDriver`: a user driver that shows no Sparkle UI at all. Sparkle owns
+/// The Sparkle boundary: a user driver that shows no Sparkle UI at all. Sparkle owns
 /// the schedule, the automatic-check preference (its own `SUEnableAutomaticChecks` default), the signed feed, the
 /// verified download and the replacement; `UpdateCoordinator` owns the app's permission to install. Built only when
 /// the package links the patched framework (`LOCALBOX_SPARKLE_FRAMEWORK`, apps/macos/App/sparkle).

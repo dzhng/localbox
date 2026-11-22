@@ -92,8 +92,8 @@ import SwiftUI
     }
 }
 
-/// A flat backing in place of the popover's material, which an offscreen view cannot composite (Bento's shots do the
-/// same: they check layout and type, not native glass).
+/// A flat backing in place of the popover's material, which an offscreen view cannot composite: the shots
+/// check layout and type, not native glass.
 final class Stage: NSView {
     let dark: Bool
     init(frame: NSRect, dark: Bool) { self.dark = dark; super.init(frame: frame) }

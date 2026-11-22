@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Code-signs an assembled Localbox.app inside out: a port of Bento's `signReleaseTree` (apps/macos/scripts/release-signing.mjs).
+// Code-signs an assembled Localbox.app inside out.
 //
 //   node apps/macos/App/scripts/sign.mjs APP --identity ID [--keychain PATH]          an identity already in a keychain ("-" is ad hoc)
 //   node apps/macos/App/scripts/sign.mjs APP --p12 FILE --password-file FILE [--sha1 HEX]

@@ -3,7 +3,7 @@ import Foundation
 import PackageDescription
 
 // The patched Sparkle.framework (apps/macos/App/sparkle, `npm run sparkle:build`), linked only when
-// LOCALBOX_SPARKLE_FRAMEWORK names it, as Bento links its own with BENTO_SPARKLE_FRAMEWORK. Without it the package
+// LOCALBOX_SPARKLE_FRAMEWORK names it. Without it the package
 // builds an app that cannot update itself (CI, development), whose `update` fact is null; `SparkleDriver` compiles only
 // under LOCALBOX_SPARKLE.
 let sparkle = ProcessInfo.processInfo.environment["LOCALBOX_SPARKLE_FRAMEWORK"].flatMap { $0.isEmpty ? nil : $0 }

@@ -23,7 +23,7 @@ public enum StopPolicy: Sendable, Equatable {
     /// never SIGKILL, since a daemon that is quiet may still be saving a VM (specs/menu-bar-app, invariant 3).
     case patient(quiet: TimeInterval)
 
-    /// The connector's: 4 s, SIGTERM, 2 s, SIGKILL (Bento's child window).
+    /// The connector's: 4 s, SIGTERM, 2 s, SIGKILL.
     public static let connector = StopPolicy.bounded(eof: 4, signal: 2)
     /// The daemon's: hibernating can take as long as the sandboxes need; 120 s without a progress line is a wedge.
     public static let daemon = StopPolicy.patient(quiet: 120)
@@ -64,9 +64,8 @@ public enum ChildState: String, Sendable {
     case backingOff = "backing_off"
 }
 
-/// The one supervisor of Localbox.app's children (the daemon, the connector and the built-in image's one-shot), ported
-/// from Bento's `ChildProcess`: it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its
-/// own (a `.untilSuccess` child only until it exits 0), and stops it by closing that pipe, escalating as its
+/// The one supervisor of Localbox.app's children (the daemon, the connector and the built-in image's one-shot):
+/// it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its own (a `.untilSuccess` child only until it exits 0), and stops it by closing that pipe, escalating as its
 /// `StopPolicy` allows. The pipe also stops the child when the app dies, since the kernel closes the app's end. Every line the child writes reaches `onLine` (read back from its log).
 public final class ChildProcess: @unchecked Sendable {
     public let name: String

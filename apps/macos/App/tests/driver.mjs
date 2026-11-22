@@ -1,4 +1,4 @@
-// Bento's pattern for the app's tests: a small Swift driver compiled together with the production sources of
+// The app's tests: a small Swift driver compiled together with the production sources of
 // LocalboxAppCore, run as a process in a scratch directory, so each check runs the real code with real children.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
