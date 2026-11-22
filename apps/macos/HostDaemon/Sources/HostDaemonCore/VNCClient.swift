@@ -9,15 +9,19 @@ import Vision
 
 /// A minimal RFB 3.8 client for driving a macOS guest's screen during an unattended build: raw 32-bit frames to read
 /// the screen, key and pointer events to act on it. Only what scripted setup needs; never a viewer. Every read has a
-/// deadline: a server that goes quiet cancels the connection, so a wait on the screen ends on time.
+/// deadline, and a wait on the screen (`waitForText`) bounds every read under it by its own: a server that goes quiet
+/// cancels the connection, so the wait ends on time instead of hanging.
 public final class VNCClient: @unchecked Sendable {
-    /// The longest one frame read may wait; a whole raw frame of the guest's display arrives well inside it.
-    static let frameTimeout: TimeInterval = 30
-    /// The longest the handshake may wait: Virtualization's server says nothing until the guest's display is up, which
-    /// a booting guest (Recovery included) can take minutes to bring.
+    /// The longest one frame read may wait. Virtualization's server answers an update request only once the screen
+    /// changes, so a static screen may say nothing until something on it moves (the menu bar clock's next minute).
+    static let frameTimeout: TimeInterval = 120
+    /// The longest the handshake may wait: the server says nothing until the guest's display is up, which a booting guest
+    /// (Recovery included) can take minutes to bring.
     static let handshakeTimeout: TimeInterval = 300
-    /// What the read in progress may wait: the handshake's limit while connecting, a frame's after.
+    /// What one read may wait: the handshake's limit while connecting, a frame's after.
     private var readTimeout = VNCClient.handshakeTimeout
+    /// A wait's own deadline, which no read under it outlasts.
+    private var waitDeadline: Date?
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "org.localbox.vnc")
     public private(set) var width = 0
@@ -142,6 +146,7 @@ public final class VNCClient: @unchecked Sendable {
     @discardableResult
     public func waitForText(timeout: TimeInterval, _ what: String, _ predicate: (String) -> Bool) async throws -> String {
         let deadline = Date().addingTimeInterval(timeout)
+        waitDeadline = deadline; defer { waitDeadline = nil }
         var last = ""
         while Date() < deadline {
             last = (try? await screenText()) ?? last
@@ -212,7 +217,7 @@ public final class VNCClient: @unchecked Sendable {
 
     private func read(_ count: Int) async throws -> Data {
         guard count > 0 else { return Data() }
-        let connection = connection, timeout = readTimeout
+        let connection = connection, timeout = min(readTimeout, waitDeadline.map { max(0, $0.timeIntervalSinceNow) } ?? readTimeout)
         return try await withCheckedThrowingContinuation { continuation in
             let answered = Locked(false)
             let finish: @Sendable (Result<Data, Error>) -> Void = { result in if answered.claim() { continuation.resume(with: result) } }
