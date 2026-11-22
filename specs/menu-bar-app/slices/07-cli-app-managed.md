@@ -1,6 +1,8 @@
 # 07 · CLI: app-managed layout, launcher, home command
 
-Needs 03 (go, and its tree-or-single-file decision).
+No spike dependency. The CLI ships in the bundle as today's `dist/` tree plus
+`node_modules/` and a Node binary; a single bundled file is delegated to
+slice 10 if signing the tree proves slow.
 
 ## Contract
 
@@ -59,7 +61,7 @@ after this slice; slice 10 deletes them.
 
 ## What the human can run
 
-In a scratch `HOME`, with slice 03's assembled bundle copied to
+In a scratch `HOME`, with a hand-assembled bundle (stub main executable) copied to
 `~/Applications/Localbox.app`: `localbox agents reconcile --reason explicit
 --json`, then `~/.local/bin/localbox help`, then `cmp ~/.local/bin/localbox
 <bundle>/Contents/Resources/bin/localbox`.

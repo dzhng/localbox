@@ -1,6 +1,6 @@
 # 15 · Updates
 
-Needs 05 (go, and its key verdict), 10 and 14.
+Needs 10 and 14. The Sparkle mechanism is ported from Bento, not spiked.
 
 ## Contract
 
@@ -14,7 +14,8 @@ decision 9).
 
 - **`apps/macos/App/sparkle/`**: `localbox.patch`, `upstream.json` (Sparkle
   2.10.0 at `eef1a539a373c1f1a320624b1130fc5de7b2e100`, with the patch's
-  SHA-256) and `build.mjs`, moved from spike 05. The app package links Sparkle
+  SHA-256) and `build.mjs`: Bento's `scripts/sparkle/` at the frozen commit
+  with the patch re-applied under Localbox names only (README, "Names"). The app package links Sparkle
   only when `LOCALBOX_SPARKLE_FRAMEWORK` is set (as Bento's does with
   `BENTO_SPARKLE_FRAMEWORK`); without it the package builds a dev app whose
   `update` fact is null.
@@ -50,8 +51,10 @@ decision 9).
   `SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`,
   `SUEnableAutomaticChecks`, `SUScheduledCheckInterval` 3600, and Sparkle's
   automatic-install keys off (the coordinator decides). `scripts/release.sh`
-  writes and signs `appcast.xml` as a release asset with the key spike 05
-  chose. Automatic install defaults to **on** in the app's preferences.
+  writes and signs `appcast.xml` as a release asset with the existing
+  release key (README, A9). The first step of this slice checks Sparkle accepts
+  a feed signed by a key in that format (a scratch key of the same kind); if it
+  does not, stop and ask the user before creating a separate Sparkle key. Automatic install defaults to **on** in the app's preferences.
 - **Site:** `apps/site/vercel.json` gains permanent paths that 302 to the
   latest GitHub release: `/mac/appcast.xml` →
   `releases/latest/download/appcast.xml`. The hostname and path never change
@@ -73,7 +76,7 @@ the sandbox report `woke`.
   restarted on failure, exit inside the timeout.
 - `node:test`: the `update` CLI verbs against a fake app socket; a site test
   for the redirect.
-- Probe `43-installed-update.ts` (spike 05's lab promoted; scratch signing
+- Probe `43-installed-update.ts` (a port of Bento's `scripts/installed-update-lab.mjs`; scratch signing
   identity, scratch feed key, local feed, scratch `HOME`):
   - tier `a`: N to N+1 on the fixture backend; a `localbox` call during
     replacement gets exit 75 and succeeds on retry; a long-running call delays
@@ -101,5 +104,4 @@ rows; the manifest schema and pinned key.
 
 ## Feedback that would change this slice
 
-Spike 05 ending in a fallback (then this slice is re-read against it before
-any code); the user wanting automatic install off by default.
+Sparkle refusing the release key's format (then the user decides on a separate key); the user wanting automatic install off by default.

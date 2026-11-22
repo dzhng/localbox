@@ -16,17 +16,19 @@ is [brief.md](brief.md). Read it before any slice.
 [spikes.md](spikes.md). Nothing in the product is built. The id rename
 (`com.localbox.*` → `sh.localbox.*`) is already committed (a45a38f).
 
-**You are picking this up at slice 03,** then 05 (which needs 02 and 03).
-Slice 06 can start now. Record each verdict in `spikes.md` (command, evidence,
-go or no-go) and put evidence files under `evidence/`. Do not start a build
-slice whose spike has no recorded go.
+**You are picking this up at slice 06** (daemon) and slice 07 (CLI), which
+are independent. The spikes are finished. There are no spikes 03 or 05: the
+user pointed out that signing a bundle with a CLI inside and the patched
+Sparkle update are already proven by Bento and Yap, so those are ported
+directly, and only what is new to Localbox is checked, inside slices 10 and
+15 (see "Ported from Bento, not re-proven").
 
 **Warnings**
 
 - **Slice 02 is a kill switch.** If VMs cannot boot, hibernate and restore under
   an app-supervised child, decision 1 in the brief is dead. Stop and return to
   the user with the evidence. There is no silent fallback.
-- Slice 01's and 05's fallbacks that add a launchd job, a second updater or a
+- Any fallback that adds a launchd job, a second updater or a
   new signing key need the user's sign-off. Stop and ask.
 - This worktree has no `.release-signing/`. Nothing before slice 10 needs it;
   spikes use scratch keys and a scratch identity. Never create new release
@@ -34,7 +36,7 @@ slice whose spike has no recorded go.
   password) are backed up in the Obsidian vault at
   `~/Documents/personal/dev/localbox/release-signing/`, with a working copy at
   `~/dev/agent-computer/.release-signing/`; for a release, copy that folder
-  into the checkout as `.release-signing/`. If slice 05 ends up needing a
+  into the checkout as `.release-signing/`. If slice 15 ends up needing a
   separate Sparkle key (it needs the user's sign-off first), it is backed up
   in the same vault folder, and noted in "Release signing and key backup.md"
   there, before the first publish.
@@ -51,9 +53,7 @@ slice whose spike has no recorded go.
 
 - [x] 01 [Spike: hands-off first launch and login item](slices/01-first-launch-spike.md)
 - [x] 02 [Spike: VMs under an app-supervised child](slices/02-vm-child-spike.md)
-- [ ] 03 [Spike: the whole runtime signed in one bundle](slices/03-signed-bundle-spike.md)
 - [x] 04 [Spike: built-in image fetch](slices/04-image-fetch-spike.md)
-- [ ] 05 [Spike: patched Sparkle, N to N+1](slices/05-sparkle-spike.md)
 - [ ] 06 [Daemon: supervised mode, one daemon per root](slices/06-daemon-supervised.md)
 - [ ] 07 [CLI: app-managed layout, launcher, home command](slices/07-cli-app-managed.md)
 - [ ] 08 [App shell: lifetime and supervision](slices/08-app-shell.md)
@@ -73,16 +73,15 @@ you made that a slice did not make for you in `choices.md` in this folder.
 ## Slice graph
 
 ```
-01 first launch ───────────────────────────────┐
-02 VM under app child ─┬─> 06 daemon ──┐       │
-03 signed bundle ──────┼─> 07 CLI ─────┴─> 08 app shell ─> 09 app control ─> 10 release cutover ─┬─> 11 built-in image (needs 04)
-04 image fetch         │                                         │                               │
-                       └─> 05 Sparkle lab                        └─> 12 app facts ─┬─> 13 popover │
-                                 │                                                 └─> 14 settings┤
-                                 └───────────────────────────────────────────────────> 15 updates ┴─> 16 closeout
+01 first launch ─────────────────────────┐
+02 VM under app child ──> 06 daemon ──┐  │
+04 image fetch            07 CLI ─────┴─> 08 app shell ─> 09 app control ─> 10 release cutover ─┬─> 11 built-in image
+                                                                │                               │
+                                                                └─> 12 app facts ─┬─> 13 popover │
+                                                                                  └─> 14 settings┴─> 15 updates ─> 16 closeout
 ```
 
-Slices 01–05 are throwaway spikes under `specs/menu-bar-app/spikes/`; none of
+Slices 01, 02 and 04 are throwaway spikes under `specs/menu-bar-app/spikes/`; none of
 their code ships. Between slices 10 and 15 an installed app cannot update
 itself. That is accepted: there are no users.
 
@@ -90,7 +89,7 @@ itself. That is accepted: there are no users.
 
 | What you can look at | Slice |
 | --- | --- |
-| `spikes.md` verdicts and the hibernate timing table | 01–05 |
+| `spikes.md` verdicts and the hibernate timing table | 01, 02, 04 |
 | Two daemons on one root: the second refuses | 06 |
 | `localbox help` through a launcher in a scratch `HOME` | 07 |
 | Dev app in the menu bar; quit hibernates, relaunch wakes | 08 |
@@ -115,17 +114,35 @@ the three drafts; each names the alternative that lost.
 | A6 | The CLI fetches the built-in image (`localbox app image ensure`), reusing `expandImage` and `installLinuxImage`. | A daemon host operation in Swift. |
 | A7 | The image's manifest is fetched at run time and verified against the public key sealed in the bundle. | Sealing the image descriptor in the bundle. |
 | A8 | Sparkle's patch is re-applied under Localbox names (`localbox.patch`, same pinned commit). | Vendoring Bento's patch byte-identical, Bento names included. |
-| A9 | Sparkle's appcast is signed with the existing Ed25519 release key, so there is one trust root and one secret. Slice 05 proves Sparkle accepts it. | A separate Sparkle seed (needs the user's sign-off, since it is new key material). |
+| A9 | Sparkle's appcast is signed with the existing Ed25519 release key, so there is one trust root and one secret. Slice 15 checks Sparkle accepts it. | A separate Sparkle seed (needs the user's sign-off, since it is new key material). |
 | A10 | No move-to-Applications prompt. A copy outside an Applications folder runs, warns in the popover, and skips the home command and login item. | Bento's relocator prompt. |
 | A11 | No uninstall command. `installation.md` documents the three steps. | `localbox app uninstall`. |
 | A12 | Automatic updates wait while sandboxes are running and hibernation is unavailable; a manual install proceeds and says sandboxes will restart. | Always install. |
 | A13 | A new proof tier `a`: the assembled app in a scratch root, launched `open -g`, never focused. | Folding packaged checks into tier `l`. |
 | A14 | The minimum stays macOS 14. Bento's Settings code targets macOS 26; anything newer than 14 is guarded. | Raising the minimum. |
 
+## Ported from Bento, not re-proven
+
+Bento and Yap already ship these on self-signed apps, so the plan copies the
+working code and does not spike them: inside-out signing of a bundle with a
+CLI and a Node runtime inside (`scripts/release-signing.mjs`), the patched
+Sparkle build and its launch lock (`scripts/sparkle/`), the C launcher, the
+no-UI Sparkle driver and update coordinator, and the installed-update lab.
+
+What Bento has no equivalent of is checked where it is built:
+
+| New to Localbox | Checked in |
+| --- | --- |
+| The daemon nested in the bundle keeps its virtualization entitlement (spike 02 saw it work once, self-signed) | 10 |
+| Guest agent binaries are sealed, never re-signed; digests still match `agent-version.json` | 10 |
+| The CLI's Node keeps its JIT inside the signed bundle | 10 |
+| Sandboxes hibernate before the install permit, so Sparkle's 20 s exit window is never the hibernation budget | 15 |
+| A sandbox saved by version N wakes under N+1 | 15 |
+| Sparkle accepts a feed signed by the existing release key | 15 |
+
 ## Contracts
 
-**Bundle layout** (one definition, in the assembler from slice 10; slice 03
-proves it first):
+**Bundle layout** (one definition, in the assembler from slice 10):
 
 ```
 Localbox.app/Contents/
@@ -220,11 +237,11 @@ Each is owned by a spike; see the brief's "Known fog" for the full statement.
 | Unknown | Owner |
 | --- | --- |
 | `open -g` and `SMAppService.mainApp.register()` from SSH with no click | 01 |
-| Any privacy prompt (Local Network, App Management) that needs a click | 01, 05 |
+| Any privacy prompt (Local Network, App Management) that needs a click | 01 (none seen), 15 |
 | Virtualization and hibernate under an app child; hibernate wall time | 02 |
-| Inside-out signing with guest binaries sealed; Node JIT in the bundle | 03 |
+| Guest binaries keeping their bytes when the bundle is signed; Node JIT in the bundle | 10 |
 | Range resume through GitHub's redirect; peak disk | 04 |
-| Patched Sparkle under Localbox names; the 20 s termination timeout | 05 |
+| Hibernating before Sparkle's 20 s exit window; a saved sandbox waking under the next version; the release key as the feed key | 15 |
 | Logout, shutdown and a headless Mac | [Open verification](#open-verification) |
 
 ## Open verification

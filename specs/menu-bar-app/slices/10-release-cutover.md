@@ -1,6 +1,6 @@
 # 10 · Release, agent install, and deleting the old path
 
-Needs 01 (the launch command), 03 (the layout) and 09. This is the cutover:
+Needs 01 (the launch command) and 09. This is the cutover:
 after it the tree holds one install story.
 
 ## Contract
@@ -85,6 +85,10 @@ then undo everything with the removal steps.
 - An assembler test: the plist keys; the launcher's lock string equals the
   plist key's value; guest-agent digests equal `agent-version.json`; the
   bundle's public key equals the skill's.
+- New to Localbox (README, "Ported from Bento, not re-proven"): the bundled
+  `node` runs a JIT-heavy loop without a code-signing kill; `localbox-hostd`
+  run from inside the signed bundle boots a real VM (tier `v`); a `ditto` zip
+  round trip still verifies.
 - A packaged smoke: `codesign --verify --deep --strict`, then `localbox help`
   through the home command in a scratch `HOME`.
 - Probe 14 at tiers `u` and `a`.
