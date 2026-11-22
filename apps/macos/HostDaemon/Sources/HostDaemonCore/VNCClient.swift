@@ -9,10 +9,15 @@ import Vision
 
 /// A minimal RFB 3.8 client for driving a macOS guest's screen during an unattended build: raw 32-bit frames to read
 /// the screen, key and pointer events to act on it. Only what scripted setup needs; never a viewer. Every read has a
-/// deadline (`readTimeout`): a server that goes quiet cancels the connection, so a wait on the screen ends on time.
+/// deadline: a server that goes quiet cancels the connection, so a wait on the screen ends on time.
 public final class VNCClient: @unchecked Sendable {
-    /// The longest one read may wait; a whole raw frame of the guest's display arrives well inside it.
-    static let readTimeout: TimeInterval = 30
+    /// The longest one frame read may wait; a whole raw frame of the guest's display arrives well inside it.
+    static let frameTimeout: TimeInterval = 30
+    /// The longest the handshake may wait: Virtualization's server says nothing until the guest's display is up, which
+    /// a booting guest (Recovery included) can take minutes to bring.
+    static let handshakeTimeout: TimeInterval = 300
+    /// What the read in progress may wait: the handshake's limit while connecting, a frame's after.
+    private var readTimeout = VNCClient.handshakeTimeout
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "org.localbox.vnc")
     public private(set) var width = 0
@@ -59,6 +64,7 @@ public final class VNCClient: @unchecked Sendable {
         // SetEncodings: Raw, plus the DesktopSize pseudo-encoding (-223), without which Virtualization's server traps.
         try await write(Data([2, 0, 0, 2, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x21]))
         framebuffer = Data(count: width * height * 4)
+        readTimeout = Self.frameTimeout
     }
 
     public func close() { connection.cancel() }
@@ -206,13 +212,13 @@ public final class VNCClient: @unchecked Sendable {
 
     private func read(_ count: Int) async throws -> Data {
         guard count > 0 else { return Data() }
-        let connection = connection
+        let connection = connection, timeout = readTimeout
         return try await withCheckedThrowingContinuation { continuation in
             let answered = Locked(false)
             let finish: @Sendable (Result<Data, Error>) -> Void = { result in if answered.claim() { continuation.resume(with: result) } }
-            queue.asyncAfter(deadline: .now() + Self.readTimeout) {
+            queue.asyncAfter(deadline: .now() + timeout) {
                 guard answered.claim() else { return }
-                continuation.resume(throwing: HostDaemonError.unsupported("the VNC server sent nothing for \(spoken(Self.readTimeout))"))
+                continuation.resume(throwing: HostDaemonError.unsupported("the VNC server sent nothing for \(spoken(timeout))"))
                 connection.cancel()
             }
             connection.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, complete, error in
