@@ -93,7 +93,7 @@ private struct Daemon {
     var operations: HostOperationStore { rig.operations }
     var host: SandboxHost { rig.host }
 
-    init(root: URL, freeBytes: UInt64? = nil, creating: Bool = true) async throws {
+    init(root: URL, freeBytes: UInt64 = 1 << 40, creating: Bool = true) async throws {
         rig = try await TestDaemon(root: root, factory: FakeBackendFactory(log: log, guest: answeringGuest(log: log)), freeBytes: freeBytes)
         guard creating else { return }
         _ = try await request("sandbox.create", input: ["name": "one", "image": "linux", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": 1_800_000], sandboxID: "sandbox_1")

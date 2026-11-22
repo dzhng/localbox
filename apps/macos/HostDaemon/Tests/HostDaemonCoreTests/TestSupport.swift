@@ -234,19 +234,20 @@ func answeringGuest(log: EventLog? = nil, jobs: @escaping @Sendable (String) -> 
 // MARK: - A daemon
 
 /// One daemon under `root` (`operations/`, `images/`, `sandboxes/`), wired by `HostDaemon` exactly as `localbox-hostd`
-/// wires one, with fake VMs, a fake macOS build driver and Apple catalog, and a copy transport the test picks. A second
+/// wires one, with fake VMs, a fake macOS build driver and Apple catalog, a fixed free disk (1 TiB unless the test says),
+/// and a copy transport the test picks. A second
 /// `TestDaemon` over the same root is that daemon restarted; nothing starts until the test calls `operations.start()`.
 struct TestDaemon {
     let root: URL, store: ImageStore, operations: HostOperationStore, daemon: HostDaemon
     var host: SandboxHost { daemon.sandboxes }
     var images: ImageHost { daemon.images }
 
-    init(root: URL, factory: any SandboxBackendFactory = FakeBackendFactory(), freeBytes: UInt64? = nil, hostCPUs: Int = 4, hostMemoryBytes: UInt64 = 8 * gib,
+    init(root: URL, factory: any SandboxBackendFactory = FakeBackendFactory(), freeBytes: UInt64 = 1 << 40, hostCPUs: Int = 4, hostMemoryBytes: UInt64 = 8 * gib,
          transport: any ImageCopyTransport = UnreachableTransport(tried: []), copyPeerWaitMs: Int = 10_000, macDriver: (any MacBuildDriver)? = nil, catalog: any IPSWCatalog = FakeCatalog(), http: any RangedHTTP = FakeHTTP(),
          guestAgent: URL? = nil, hostVersion: String = "27.0.1", dev: Bool = false) async throws {
         self.root = root
         operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
-        store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: freeBytes.map { bytes in { @Sendable in bytes } })
+        store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: { freeBytes })
         store.sweepTemps(keeping: await operations.runningSubjects())
         let builder = MacBaseBuilder(store: store, operations: operations, driver: macDriver ?? FakeMacDriver(journals: root.appendingPathComponent("operations")), catalog: catalog, http: http, guestAgent: guestAgent, hostVersion: { hostVersion })
         let host = SandboxHost(sandboxesDirectory: root.appendingPathComponent("sandboxes"), factory: factory, operations: operations, store: store, macBuilds: builder, hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes)

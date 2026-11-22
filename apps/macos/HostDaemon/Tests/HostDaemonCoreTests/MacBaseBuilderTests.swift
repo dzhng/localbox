@@ -180,7 +180,7 @@ final class MacBaseBuilderTests: XCTestCase {
         var operations: HostOperationStore { rig.operations }
 
         /// `leftAt` restarts a build the last run left just before that phase: its journal and files exist before the store loads.
-        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64? = nil, leftAt: MacBaseBuilder.Phase? = nil) async throws {
+        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64 = .max, leftAt: MacBaseBuilder.Phase? = nil) async throws {
             let root = try test.scratch()
             self.http = http
             try FileManager.default.createDirectory(at: root.appendingPathComponent("operations"), withIntermediateDirectories: true)
