@@ -26,3 +26,12 @@ test("a development build of the app gets its own root, logs and credential, bes
   assert.equal(release.logs, `${home}/Library/Logs/Localbox`);
   assert.equal(machinePaths({ HOME: home, LOCALBOX_MACHINE_ROOT: "/tmp/m" }, { path: "/x/Localbox Dev.app", id: "sh.localbox.mac.dev" }).root, "/tmp/m", "a relocated root wins");
 });
+
+test("only the release owns the real root: any other bundle id, whatever the bundle is called, gets its own", () => {
+  const home = "/Users/someone";
+  const rehearsal = machinePaths({ HOME: home }, { path: `${home}/Applications/Localbox.app`, id: "sh.localbox.mac.rehearsal" });
+  assert.equal(rehearsal.root, `${home}/Library/Application Support/Localbox (sh.localbox.mac.rehearsal)`);
+  assert.equal(rehearsal.credentials, `${rehearsal.root}/credentials.json`);
+  assert.equal(rehearsal.logs, `${home}/Library/Logs/Localbox (sh.localbox.mac.rehearsal)`);
+  assert.equal(machinePaths({ HOME: home }, { path: "/Applications/Renamed.app", id: "sh.localbox.mac" }).root, `${home}/Library/Application Support/Localbox`, "renaming the release changes nothing");
+});
