@@ -12,10 +12,10 @@ is [brief.md](brief.md). Read it before any slice.
 
 ## Next Agent Prompt
 
-**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell), 09 (app control), 10 (release cutover), 11 (built-in image), 12 (app facts), 13 (popover) and 14 (Settings) are
+**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell), 09 (app control), 10 (release cutover), 11 (built-in image), 12 (app facts), 13 (popover), 14 (Settings) and 15 (updates) are
 done and merged; see [spikes.md](spikes.md) and [choices.md](choices.md).
 
-**You are picking this up at slice 15** (updates), then 16 (closeout). There are no
+**You are picking this up at slice 16** (closeout). There are no
 slices 03 or 05: signing a bundle with a CLI inside and the patched Sparkle
 update are already proven by Bento and Yap, so they are ported directly, and
 only what is new to Localbox is checked, in slices 10 and 15 (see "Ported
@@ -60,7 +60,7 @@ from Bento, not re-proven").
 - [x] 12 [App facts: the one state shape](slices/12-app-facts.md)
 - [x] 13 [Popover](slices/13-popover.md)
 - [x] 14 [Settings window](slices/14-settings.md)
-- [ ] 15 [Updates](slices/15-updates.md)
+- [x] 15 [Updates](slices/15-updates.md)
 - [ ] 16 [Closeout](slices/16-closeout.md)
 
 Slice numbers 03 and 05 are unused (they were the dropped spikes).
