@@ -19,7 +19,7 @@ function fakeApp(path: string, options: { states?: string[]; quitAfter?: number 
   const seen: Array<{ operation: string; params: unknown }> = [];
   let enabled = true, state = "idle", answers = 0;
   const queue = [...(options.states ?? [])];
-  const snapshot = () => ({ available: true, enabled, can_check: state === "idle", state, status: state === "waiting" ? "Waiting: sandboxes would restart. Install from Settings, or unlock this Mac." : null, version: state === "idle" ? null : "0.9.0" });
+  const snapshot = () => ({ available: true, enabled, can_check: state === "idle", state, status: state === "waiting" ? "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway." : null, version: state === "idle" ? null : "0.9.0" });
   const server: Server = createServer((connection) => {
     let buffered = "";
     connection.setEncoding("utf8");

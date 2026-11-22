@@ -121,7 +121,7 @@ test("gate order: blockers, connector and daemon stopped (hibernating), no comma
 test("automatic installs wait while sandboxes run and this Mac cannot hibernate them; Check for Updates installs anyway, saying they restart", () => {
   const lines = scenario("locked");
   const asked = lines.indexOf("can check: true");
-  assert.ok(lines.slice(0, asked).includes("status: Waiting: sandboxes would restart. Install from Settings, or unlock this Mac."), lines.join("\n"));
+  assert.ok(lines.slice(0, asked).includes("status: Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."), lines.join("\n"));
   assert.ok(!lines.slice(0, asked).some((line) => line.startsWith("stop children")), "nothing stopped while blocked");
   const after = lines.slice(asked);
   assert.deepEqual(withoutStatus(after), ["can check: true", "facts", "stop children [quiet-otter]", "children stopped", "no commands", "grant", "authorize", "exit at once", "phase installing"]);

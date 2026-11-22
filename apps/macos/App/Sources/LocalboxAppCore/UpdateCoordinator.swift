@@ -39,7 +39,7 @@ public struct UpdateSteps: Sendable {
 public final class UpdateCoordinator {
     public enum Phase: String, Sendable { case unavailable, idle, disabled, checking, downloading, waiting, installing, failed }
 
-    public static let hibernationBlocked = "Waiting: sandboxes would restart. Install from Settings, or unlock this Mac."
+    public static let hibernationBlocked = "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."
     public static let commandsRunning = "Waiting for localbox commands to finish."
     public static let imageInstalling = "Waiting for the built-in Linux image to finish installing."
     public static let upToDate = "You’re up to date."
