@@ -6,9 +6,10 @@ import { compile, run, temporary } from "./driver.mjs";
 
 // The real `SettingsModel` over the real `CLISettingsActions` and `BundledCLI`, against a
 // fake bundle whose `cli/localbox` logs every invocation and answers as the CLI does: `app status` prints the facts
-// file; `login --code`, `logout`, `app login-item` and `agents setup` change it; a line in `refuse` makes that exact
-// invocation fail the way the CLI does (a sentence on stderr, exit 1). Each control must issue exactly its command,
-// then re-read the facts, and a refusal must show its message and keep what was typed.
+// file; `login` answers its `code_sent` or `signed_in` state; `login --code`, `logout`, `app login-item` and
+// `agents setup` change the facts; a line in `refuse` makes that exact invocation fail the way the CLI does (its
+// failure envelope on stdout, exit 1). Each control must issue exactly its command, then re-read the facts; the code
+// flow follows the answer's state, not the exit code; a refusal shows the envelope's message and keeps what was typed.
 const FIXTURES = new URL("./fixtures/facts/", import.meta.url).pathname;
 
 const DRIVER = `
@@ -26,6 +27,7 @@ import Foundation
     let model = SettingsModel(actions: CLISettingsActions(cli: cli), showAtLaunch: false, remember: { _ in })
     await model.refresh(); state(model, "opened")
     model.email = "  wrong@example.com "; await model.sendCode(); state(model, "send refused")
+    model.email = "odd@example.com"; await model.sendCode(); state(model, "send unknown answer")
     model.email = "dev@example.com"; await model.sendCode(); state(model, "code sent")
     model.code = "000000"; await model.signIn(); state(model, "code refused")
     model.useDifferentEmail(); state(model, "different email")
@@ -43,9 +45,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 echo "$*" >> "$here/log"
 if grep -qxF -- "$*" "$here/refuse" 2>/dev/null; then
   case "$*" in
-    login*--code*) echo "verification code is invalid or expired" >&2 ;;
-    *) echo "email is invalid" >&2 ;;
+    login*--code*) message="verification code is invalid or expired" ;;
+    *) message="email is invalid" ;;
   esac
+  echo "{\\"ok\\":false,\\"operation\\":\\"login\\",\\"error\\":{\\"code\\":\\"invalid_input\\",\\"message\\":\\"$message\\",\\"retryable\\":false}}"
+  echo "invalid_input: $message" >&2
   exit 1
 fi
 # The app's refusal comes back as the CLI's failure envelope, once.
@@ -56,8 +60,10 @@ if [ "$*" = "app login-item off --json" ] && [ -f "$here/refuse-login-item" ]; t
 fi
 case "$*" in
   "app status --json") cat "$here/facts.json" ;;
-  login*--code*) cp "$here/signed-in.json" "$here/facts.json"; echo '{"account_name":"dev","machine_name":"studio","machine_count":1}' ;;
-  login*) echo "Code sent to $3. Ask the user for the 6-digit code, then run: localbox login --email $3 --code NNNNNN" ;;
+  login*--code*) cp "$here/signed-in.json" "$here/facts.json"; echo "{\\"state\\":\\"signed_in\\",\\"email\\":\\"$3\\",\\"account_name\\":\\"dev\\",\\"machine_name\\":\\"studio\\",\\"machine_count\\":1}" ;;
+  # Exit 0 with an answer that is not a login state: Settings must not take it for "code sent".
+  "login --email odd@example.com --json") echo '{"state":"something_else"}' ;;
+  login*) echo "{\\"state\\":\\"code_sent\\",\\"email\\":\\"$3\\"}" ;;
   "logout --json") cp "$here/signed-out.json" "$here/facts.json"; echo '{"signed_out":true,"sandboxes_forgotten":true}' ;;
   "agents setup off --json") sed -i '' 's/"enabled": true/"enabled": false/' "$here/facts.json"; echo '{"ok":true,"result":{}}' ;;
   "app login-item off --json") sed -i '' 's/"open_at_login": "[a-z_]*"/"open_at_login": "disabled"/' "$here/facts.json"; echo '{"state":"disabled"}' ;;
@@ -88,6 +94,7 @@ test("each control runs exactly its command, then app status; nothing else is ru
   assert.deepEqual(log, [
     "app status --json",
     "login --email wrong@example.com --json", "app status --json",
+    "login --email odd@example.com --json", "app status --json",
     "login --email dev@example.com --json", "app status --json",
     "login --email dev@example.com --code 000000 --json", "app status --json",
     "login --email dev@example.com --json", "app status --json",
@@ -102,6 +109,8 @@ test("each control runs exactly its command, then app status; nothing else is ru
 test("the three account states and their transitions; a refusal keeps the email or the code that was typed", () => {
   assert.equal(steps.opened.account, "signedOut");
   assert.deepEqual([steps["send refused"].account, steps["send refused"].failure, steps["send refused"].email], ["signedOut", "Email is invalid.", "  wrong@example.com "]);
+  assert.equal(steps["send unknown answer"].account, "signedOut", "exit 0 alone is not a code sent");
+  assert.match(steps["send unknown answer"].failure, /^Localbox login gave an answer Settings does not know/);
   assert.deepEqual([steps["code sent"].account, steps["code sent"].failure], ['codeSent(email: "dev@example.com")', null]);
   assert.deepEqual([steps["code refused"].account, steps["code refused"].failure, steps["code refused"].code],
     ['codeSent(email: "dev@example.com")', "Verification code is invalid or expired.", "000000"]);

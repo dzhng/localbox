@@ -14,8 +14,8 @@ final class Calls: @unchecked Sendable { private let lock = NSLock(); private va
 struct Fake: SettingsActions {
   let calls: Calls; let current: @Sendable () -> AppFacts; var delay: Double = 0
   func facts() async throws -> AppFacts { current() }
-  func sendCode(email: String) async throws { calls.add("send \\(email)"); try await Task.sleep(nanoseconds: UInt64(delay * 1e9)) }
-  func signIn(email: String, code: String) async throws { calls.add("sign-in \\(email) \\(code)") }
+  func sendCode(email: String) async throws -> LoginStep { calls.add("send \\(email)"); try await Task.sleep(nanoseconds: UInt64(delay * 1e9)); return .codeSent(email: email) }
+  func signIn(email: String, code: String) async throws -> LoginStep { calls.add("sign-in \\(email) \\(code)"); return .signedIn(email: email, machineName: "studio") }
   func signOut() async throws { calls.add("sign-out") }
   func setAgentSetup(_ enabled: Bool) async throws { calls.add("agents \\(enabled)") }
   func setOpenAtLogin(_ enabled: Bool) async throws { calls.add("login-item \\(enabled)") }
