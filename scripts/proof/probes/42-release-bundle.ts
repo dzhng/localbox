@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, verify } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { sparklePublicKey, verifyAppcast } from "../../appcast.js";
 import { sha256 } from "../../release.js";
 import { writeImageFiles } from "../lib/images.js";
 import { installationSteps, runSteps, serveRelease, trusting } from "../lib/installation.js";
@@ -59,12 +60,22 @@ async function release(ctx: ProofContext): Promise<Check[]> {
       const refused = await ctx.exec("sh", ["scripts/release.sh", join(work, "refused")], { env: releaseEnv({ RELEASE_PRIVATE_KEY: join(work, "other.pem") }) });
       assert.equal(refused.code, 1); assert.match(refused.stderr, /RELEASE_PRIVATE_KEY does not match/);
     }));
-    checks.push(await ctx.check("release.sh writes the app zip, the image parts, release.json and SHA256SUMS, and nothing else", async () => {
+    checks.push(await ctx.check("release.sh writes the app zip, its appcast, the image parts, release.json and SHA256SUMS, and nothing else", async () => {
       const built = await ctx.exec("sh", ["scripts/release.sh", out], { env: releaseEnv() });
       assert.equal(built.code, 0, `${built.stdout.slice(-1500)}${built.stderr.slice(-1500)}`);
       const files = readdirSync(out).sort();
-      assert.deepEqual(files.filter((name) => !name.startsWith(`localbox-linux-${VERSION}.`)), ["Localbox-macos-arm64.zip", "SHA256SUMS", "release.json"], files.join(", "));
+      assert.deepEqual(files.filter((name) => !name.startsWith(`localbox-linux-${VERSION}.`)), ["Localbox-macos-arm64.zip", "SHA256SUMS", "appcast.xml", "release.json"], files.join(", "));
       assert.ok(files.includes(`localbox-linux-${VERSION}.disk.img.zst.000`));
+    }));
+    checks.push(await ctx.check("appcast.xml is signed with the manifest's key and offers this release's zip, with the zip's own signature", async () => {
+      const feed = verifyAppcast(readFileSync(join(out, "appcast.xml"), "utf8"), keys.publicKey);
+      const zip = readFileSync(join(out, "Localbox-macos-arm64.zip"));
+      assert.match(feed, new RegExp(`<sparkle:version>${VERSION.replaceAll(".", "\\.")}</sparkle:version>`));
+      const enclosure = /<enclosure url="([^"]+)" length="(\d+)" type="application\/octet-stream" sparkle:edSignature="([^"]+)"\/>/.exec(feed);
+      assert.ok(enclosure, feed);
+      assert.equal(enclosure[1], `https://github.com/dzhng/localbox/releases/download/v${VERSION}/Localbox-macos-arm64.zip`);
+      assert.equal(Number(enclosure[2]), zip.length);
+      assert.ok(verify(null, zip, keys.publicKey, Buffer.from(enclosure[3], "base64")), "the zip's signature verifies with the release key");
     }));
     checks.push(await ctx.check("the installation procedure's download, verify and place steps install it into a scratch HOME; a tampered manifest is refused", async () => {
       server = await serveRelease(out);
@@ -102,6 +113,14 @@ async function release(ctx: ProofContext): Promise<Check[]> {
     checks.push(await ctx.check("Info.plist, the CLI's version, the pinned key and the launch lock come from their one source", async () => {
       const info = (key: string) => execFileSync("plutil", ["-extract", key, "raw", "-o", "-", join(contents, "Info.plist")], { encoding: "utf8" }).trim();
       assert.deepEqual(["CFBundleIdentifier", "CFBundleShortVersionString", "LSMinimumSystemVersion", "LSUIElement", "SUFeedURL"].map(info), ["sh.localbox.mac", VERSION, "14.0", "true", "https://localbox.sh/mac/appcast.xml"]);
+      // Sparkle: the release key's public half, a signed feed and a verified archive required, hourly automatic
+      // checks, and Sparkle's own automatic installs off (UpdateCoordinator decides).
+      assert.equal(info("SUPublicEDKey"), sparklePublicKey(keys.publicKey.export({ type: "spki", format: "pem" }).toString()));
+      assert.deepEqual(["SURequireSignedFeed", "SUVerifyUpdateBeforeExtraction", "SUEnableAutomaticChecks", "SUScheduledCheckInterval", "SUAllowsAutomaticUpdates", "SUAutomaticallyUpdate"].map(info),
+        ["true", "true", "true", "3600", "false", "false"]);
+      codesign("--verify", "--strict", join(contents, "Frameworks/Sparkle.framework"));
+      assert.equal(signatureOf(join(contents, "Frameworks/Sparkle.framework")).authority, "Localbox Scratch");
+      assert.ok(readFileSync(join(contents, "Frameworks/Sparkle.framework/Versions/B/Autoupdate")).includes(Buffer.from("LocalboxLaunchLockRelativePath")), "the patched Sparkle");
       const lock = info("LocalboxLaunchLockRelativePath");
       assert.equal(lock, "Library/Caches/sh.localbox.mac/launch.lock");
       assert.ok(readFileSync(join(contents, "Resources/bin/localbox")).includes(Buffer.from(`${lock}\0`)), "the launcher holds the same lock path");

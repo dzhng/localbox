@@ -1,6 +1,7 @@
 #!/bin/sh
-# Builds one release into OUT_DIR (default dist/release): Localbox-macos-arm64.zip (the signed app, the CLI inside it),
-# the built-in linux image's parts, release.json (signed) and SHA256SUMS. DEVELOPMENT.md ("Releasing") lists the inputs.
+# Builds one release into OUT_DIR (default dist/release): Localbox-macos-arm64.zip (the signed app, the CLI and
+# Sparkle inside it), appcast.xml (Sparkle's feed for that zip, signed), the built-in linux image's parts, release.json
+# (signed) and SHA256SUMS. DEVELOPMENT.md ("Releasing") lists the inputs.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -36,6 +37,12 @@ for file in image.json disk.img boot/efi-vars; do
   fi
 done
 LOCALBOX_IMAGE=$(CDPATH= cd -- "$LOCALBOX_IMAGE" && pwd)
+# The patched Sparkle (npm run sparkle:build), checked against its receipt by build-app.mjs.
+export LOCALBOX_SPARKLE_FRAMEWORK=${LOCALBOX_SPARKLE_FRAMEWORK:-$ROOT/dist/sparkle/Sparkle.framework}
+if [ ! -d "$LOCALBOX_SPARKLE_FRAMEWORK" ]; then
+  echo "no Sparkle framework at $LOCALBOX_SPARKLE_FRAMEWORK: run npm run sparkle:build (or set LOCALBOX_SPARKLE_FRAMEWORK)" >&2
+  exit 1
+fi
 # Release credentials live in the checkout's git-ignored .release-signing/
 # (backed up outside the repository): the Ed25519 manifest key whose public half
 # is pinned in the skill, and the self-signed code-signing identity.
@@ -94,6 +101,20 @@ node "$ROOT/apps/macos/App/scripts/sign.mjs" "$STAGE/Localbox.app" "$@"
 ditto -c -k --keepParent --norsrc --noextattr --noqtn "$STAGE/Localbox.app" "$OUT_DIR/Localbox-macos-arm64.zip"
 
 cd "$ROOT"
+# Sparkle's feed offers this release's zip at its versioned URL (https://localbox.sh/mac/appcast.xml redirects to the
+# latest release's appcast.xml). The zip and the feed are signed with the same Ed25519 key as release.json, whose
+# public half the bundle carries as SUPublicEDKey (specs/menu-bar-app, A9).
+RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" \
+  RELEASE_DOWNLOAD="https://github.com/${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}/releases/download/v$VERSION" node --input-type=module <<'NODE'
+import { readFileSync, writeFileSync } from "node:fs";
+import { appcast, signAppcast, sparkleSignature } from "./dist/scripts/appcast.js";
+const dir = process.env.RELEASE_DIR, key = process.env.RELEASE_PRIVATE_KEY && readFileSync(process.env.RELEASE_PRIVATE_KEY);
+const zip = readFileSync(`${dir}/Localbox-macos-arm64.zip`);
+// An unsigned local packaging check gets an unsigned feed, which every installed app refuses.
+const feed = appcast({ version: process.env.RELEASE_VERSION, url: `${process.env.RELEASE_DOWNLOAD}/Localbox-macos-arm64.zip`, length: zip.length,
+  signature: key ? sparkleSignature(zip, key) : "", minimumSystemVersion: "14.0" });
+writeFileSync(`${dir}/appcast.xml`, key ? signAppcast(feed, key) : feed);
+NODE
 # The linux image ships beside the app (its disk as zstd parts under GitHub's 2 GiB asset cap, its boot store and
 # image.json); the app fetches them into images/linux.
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_IMAGE="$LOCALBOX_IMAGE" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'

@@ -570,3 +570,79 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
     slice 15's. Also declined: faint disabled buttons in dark mode (system style).
 - **Not run here:** the human checkpoint (the orchestrator's), and clicking the real popover's Settings… on this
   account.
+
+## 15 · Updates
+
+- **A9 answered: Sparkle accepts the release key's format.** Sparkle's EdDSA is plain Ed25519, so Node's
+  `sign(null, …)` with a PKCS#8 PEM key (as `signManifest` uses) gives exactly what Sparkle's `sign_update` gives for the
+  same seed: with a scratch key, the archive signature and the whole signed feed were byte-identical to the pinned
+  `sign_update`'s, and `sign_update --verify` accepted both (`tests/appcast.test.ts` pins a known answer from it). At run
+  time, probe 44 has Sparkle (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`) install N+1 from a feed and zip
+  signed this way, and refuse a feed signed by another key ("the update feed is improperly signed"). So `release.sh`
+  signs `appcast.xml` and the zip with `RELEASE_PRIVATE_KEY`, and `SUPublicEDKey` is the raw public half of
+  `--public-key` (base64). No separate Sparkle key exists. Reverse: a `LOCALBOX_FEED_PRIVATE_KEY` in `release.sh`.
+- **The feed generator is `scripts/appcast.ts`**, not `generate_appcast`: one item, the release's zip at its versioned
+  GitHub URL (`LOCALBOX_RELEASE_REPOSITORY` overrides the repository, as for the image), minimum macOS 14, signed as
+  `sign_update --disable-signing-warning` would. The zip Sparkle downloads is the installer's own
+  `Localbox-macos-arm64.zip`. `appcast.xml` is listed in `release.json` and `SHA256SUMS` like every other asset.
+- **The relaunch keeps `HOME` too** (patch allowlist `HOME`, `LOCALBOX_MACHINE_ROOT`, `LOCALBOX_APP`, one more than the
+  brief's names). LaunchServices will not take `HOME` from `LSEnvironment` (tried: it applies other variables, never
+  `HOME` or `PATH`), while the relaunch's `NSWorkspace` environment does override it, and agent setup decides "in an
+  Applications folder", the skill's and the command's places from `HOME`. Without it, a copy relaunched from a scratch
+  `HOME` would write this account's skill. For a real install `HOME` is the account's own, so nothing changes.
+  Reverse: drop `@"HOME"` from the patch (and its hash in `upstream.json`).
+- **Order is Bento's reversed around the permit.** Bento grants Sparkle's install and then closes its service inside
+  the helper's 20 s; here the daemon's hibernation is unbounded, so steps 1 to 4 run while Sparkle waits in
+  `showReady`, and only then is `.install` replied. The helper then takes the lock (non-blocking, as Bento's), the
+  coordinator authorizes at once, and the app terminates on `updaterWillRelaunchApplication`. Probe 44 measured the old
+  app gone within a second of the permit. A command that starts between the coordinator's last lock check and the
+  helper's makes the helper refuse; the cycle then fails, the children restart and Sparkle's next check (an hour) tries
+  again.
+- **What is manual.** `update install`, and Check for Updates (or `update check`) while an update waits, are a person's
+  install: they skip the A12 hibernation blocker. A check that finds an update installs it under the automatic rules
+  when automatic installs are on; with them off the update downloads and waits ("Localbox X is ready. Check for Updates
+  to install it."). The built-in image being swapped in blocks both. Facts are read fresh (`localbox app status`) at
+  each attempt, and every published fact change retries a blocked one.
+- **Status lines** (delegated): "Checking for updates…", "Downloading Localbox X…", "Getting ready to install Localbox
+  X…" (nothing to save), "Putting N sandbox(es) to sleep to install Localbox X…", "Installing Localbox X; sandboxes will
+  restart, since this Mac can't hibernate them while it is locked." (manual, A12), "Waiting for localbox commands to
+  finish.", "Waiting for the built-in Linux image to finish installing.", "Installing Localbox X…" (the permit),
+  Bento's "You’re up to date.", and "Update failed: WHY. Your current version is unchanged." with Sparkle's own
+  message. The app logs each change (`update PHASE: LINE` in `app.log`).
+- **Where state lives.** The automatic preference is Sparkle's own `SUEnableAutomaticChecks` default in the app's
+  domain, on by default from Info.plist (no permission prompt: the driver answers it). `app.info` carries the
+  coordinator's snapshot as `update`, which `app status` passes on as `{available, enabled, can_check, status?,
+  version?}`; `update.*` answers add `state`. The socket handlers hop to the main thread with `DispatchQueue.main.sync`,
+  as the test hooks do, so the socket stayed synchronous (choices §09).
+- **`localbox update check|install` let go of the launch lock** (they close `LOCALBOX_LAUNCH_LOCK_FD`) before asking,
+  since the install they wait for waits for every command holding it; they poll the socket directly afterwards, so an
+  app that quit to install is never started again from there.
+- **Stopping and restarting the children for an update** is `Lifetime.stop(.update)` and a new `Lifetime.restart()`,
+  which only undoes an update's stop once it is over. `Lifetime.ensureImage()` is gone: every Sparkle install ends in
+  a relaunch, whose `start()` runs `app image ensure` (probe 44 checks N+1 ran it). While an update stops the
+  children, the popover shows the quitting rows ("Putting 1 sandbox to sleep…"), and returns to normal on restart.
+- **The killed-installer case** ends Sparkle's cycle while the coordinator waits for commands; the wait is cancelled
+  (`LaunchLock.waitUntilFree` polls a flag) and the children restart at once, rather than after the command ends.
+- **Build.** `build-app.mjs` links and embeds Sparkle whenever `LOCALBOX_SPARKLE_FRAMEWORK` is set (a release defaults it
+  to `dist/sparkle/Sparkle.framework`), after checking its receipt; the dev bundle then still has no feed. Sparkle's
+  keys are Bento's `configureReleasePlist` set, including `SUSignedFeedFailureExpirationInterval` 0.
+  `npm run sparkle:build` (new) fetches the pinned commit into `dist/sparkle-source`. The site redirect is a 302
+  (`statusCode`), as the slice says.
+- **Probe 44's isolation.** Sparkle's helper resolves the launch lock under the account's real home
+  (`NSHomeDirectory()`, which ignores `HOME`, as the launcher's `getpwuid` does), so each run uses its own bundle id
+  `sh.localbox.mac.lab<hex>` and a launcher compiled with that lock path (the `#define` the release leaves at its
+  default); the run deletes `~/Library/{Caches,HTTPStorages,Preferences,…}/<id>*` afterwards and checks nothing is
+  left. The lab bundles are dev Swift builds (the fixture) made release-shaped by Info.plist edits before signing,
+  with `LSEnvironment` carrying the scratch variables to Sparkle's relaunch; they live in the scratch `HOME`'s
+  Applications, which the app (judging by the real home) does not count, so it registers no login item. N's and N+1's
+  launchers differ only by optimisation level. The 75 check watches the lock with a one-millisecond shared try and then
+  runs `localbox help` through the home command until it works. Tier `a` has no sandbox (Sparkle's relaunch gets no
+  `PATH` with Node for the fixture's guest); tier `v` triggers the cycle with `localbox update check`.
+- **Compare (General section, bottom-anchored, 1x, Bento's six same-named states rendered from its export;
+  `evidence/15/compare/`).** Every row, toggle, button and line sits at Bento's offset from the section's bottom;
+  differences are the name, the footer's first sentence, Localbox's waiting sentence (with Check for Updates enabled,
+  since it installs), and the failure line wrapping to two lines with Sparkle's longer message. Parity distance
+  0.022–0.077 for the one-line states, 0.13–0.14 for `failed` (the wrap). Verdict: pass.
+- **Critique (`evidence/15/critique.md`).** Declined as Bento's own traits: grey "on" toggles in the offscreen capture,
+  an undecorated failure line, no spinner while checking, the layout. Open: "Install from Settings" names no control
+  that says Install (Check for Updates does it); the sentence is the slice's, so it stays for the user to decide.

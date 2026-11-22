@@ -66,6 +66,16 @@ test("the not-found page is not indexed and has no view switch", () => {
   assert.doesNotMatch(missing, /rel="canonical"/);
 });
 
+test("the update feed's permanent address sends Sparkle to the latest release's appcast", () => {
+  const { redirects } = JSON.parse(readFileSync(new URL("./vercel.json", import.meta.url), "utf8"));
+  // The URL every installed app carries (apps/macos/App/scripts/build-app.mjs); it may never change once an app ships.
+  const feed = /const FEED_URL = "([^"]+)"/.exec(readFileSync(new URL("../macos/App/scripts/build-app.mjs", import.meta.url), "utf8"))[1];
+  assert.equal(feed, "https://localbox.sh/mac/appcast.xml");
+  const rule = redirects.find((redirect) => redirect.source === new URL(feed).pathname);
+  assert.deepEqual(rule, { source: "/mac/appcast.xml", destination: "https://github.com/dzhng/localbox/releases/latest/download/appcast.xml", statusCode: 302 });
+  assert.ok(redirects.indexOf(rule) > redirects.findIndex((redirect) => redirect.has?.[0]?.value === "www.localbox.sh"), "www.localbox.sh still goes to the apex first");
+});
+
 test("llms.txt sells and installs; usage lives in the skill", () => {
   const llms = site().read("llms.txt");
   assert.match(llms, /installation procedure/);

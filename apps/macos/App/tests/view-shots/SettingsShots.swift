@@ -61,6 +61,26 @@ enum SettingsShots {
         }),
     ]
 
+    /// Slice 15's update rows, named and switched as Bento's `settings-view-shots.mjs` states are (Bento's `failure` is
+    /// `failed` here), with the same window-at-launch and login-item switches as `manual-updates`, so a compare against
+    /// Bento's same-named shot changes only the product's name, the first footer sentence and Localbox's own status
+    /// lines. "Waiting" is the A12 blocker, where Check for Updates installs anyway (so it stays enabled).
+    static let updateStates: [State] = [
+        update("enabled", ["enabled": true, "can_check": true]),
+        update("disabled", ["enabled": false, "can_check": true]),
+        update("checking", ["enabled": false, "can_check": false, "status": "Checking for updates…"]),
+        update("up-to-date", ["enabled": false, "can_check": true, "status": UpdateCoordinator.upToDate]),
+        update("waiting", ["enabled": true, "can_check": true, "status": UpdateCoordinator.hibernationBlocked, "version": "0.2.1"]),
+        update("failed", ["enabled": true, "can_check": true, "status": "Update failed: the update feed is improperly signed and could not be validated. Your current version is unchanged."]),
+    ]
+
+    private static func update(_ name: String, _ update: [String: Any]) -> State {
+        State(name: name, fixture: "idle", showAtLaunch: true, change: { facts in
+            facts["open_at_login"] = "disabled"
+            facts["update"] = update.merging(["available": true]) { current, _ in current }
+        })
+    }
+
     /// Runs the main run loop until `work` has finished (the model's intents are async; the views need the loop).
     @MainActor static func settle(_ work: @escaping @MainActor () async -> Void) {
         var done = false
@@ -68,7 +88,7 @@ enum SettingsShots {
         while !done { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
     }
 
-    @MainActor static func render(fixtures: URL, output: URL) throws {
+    @MainActor static func render(fixtures: URL, output: URL, states: [State]) throws {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         var report: [[String: Any]] = []
         for (theme, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {

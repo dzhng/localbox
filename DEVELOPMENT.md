@@ -87,8 +87,9 @@ toolchain or a network package fetch. The
 the public key printed in it, never key metadata carried inside the manifest it
 is verifying, and checks the signature with what every Mac has. Once installed,
 the app is the only supervisor of the daemon and the connector; there is no
-launchd job. Until the app updates itself, a newer release is installed by the
-same procedure, which replaces the app in place.
+launchd job. After that the app updates itself with Sparkle from the release
+feed, signed with the same key as the manifest; the procedure also reinstalls
+over an existing copy.
 
 ## Documentation ownership
 
@@ -359,13 +360,34 @@ and they share the IPSW and base cache with tier `m` ([Proofs](#proofs)).
 Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
 hand; no CI publishes them. `scripts/release.sh` builds, for the `version` in
 `package.json` (override with `VERSION`), `Localbox-macos-arm64.zip` (the signed
-app with the CLI inside), the built-in linux image's parts, `release.json` (the
-signed manifest) and `SHA256SUMS`. Set `LOCALBOX_IMAGE` to the image directory
+app with the CLI and Sparkle inside), `appcast.xml` (Sparkle's feed for that
+zip), the built-in linux image's parts, `release.json` (the signed manifest) and
+`SHA256SUMS`. Set `LOCALBOX_IMAGE` to the image directory
 `npm run image:build -- --out DIR` wrote, and `IMAGE_DIGEST` to the `digest` in
 `dist/vm-image/full/manifest.json`. The image's own agent doesn't have to match:
 the app ships the release's agent and the daemon pushes it into every guest whose
 agent build differs. The script needs `zstd` (`brew install zstd`) and the pinned
 Bun ([Images](#images)).
+
+Sparkle is built from source, never downloaded as a binary: `npm run
+sparkle:build` (full Xcode and network) fetches Sparkle at the commit pinned in
+[`apps/macos/App/sparkle/upstream.json`](apps/macos/App/sparkle/upstream.json),
+applies `localbox.patch` (Bento's patch under Localbox's names: the shared
+launch lock, a quiet relaunch with `--localbox-update-relaunch`, the host's
+permission before any replacement) and writes
+`dist/sparkle/Sparkle.framework` with a build receipt. `release.sh` uses it
+(or `LOCALBOX_SPARKLE_FRAMEWORK`), and `build-app.mjs` refuses a framework whose
+receipt does not match the pin. A changed patch needs its SHA-256 in
+`upstream.json` and a fresh build (delete `dist/sparkle` and
+`dist/sparkle-source`).
+
+The feed is signed with the manifest key: `release.sh` signs the zip and the
+feed with `RELEASE_PRIVATE_KEY` as Sparkle's `sign_update` would
+([`scripts/appcast.ts`](scripts/appcast.ts)), and the bundle carries that key's
+raw public half as `SUPublicEDKey`, so there is one key to keep. The feed's item
+points at the zip's versioned URL (`LOCALBOX_RELEASE_REPOSITORY` overrides the
+repository); installed apps read `https://localbox.sh/mac/appcast.xml`, which
+the site redirects to the latest release's `appcast.xml`.
 
 The bundle's layout has one definition,
 [`build-app.mjs`](apps/macos/App/scripts/build-app.mjs) (`--release` for this
@@ -419,3 +441,8 @@ installation procedure's own blocks against it, served over HTTP
 the daemon from inside the signed bundle. To rehearse by hand, serve the output
 directory (`python3 -m http.server -d dist/release`), set `LOCALBOX_RELEASE_URL`
 to it and follow the procedure with the scratch public key in step 3.
+
+`npm run proof -- 44 --tier a` (and `--tier v`, with one real VM) rehearses an
+update: two scratch-signed bundles, a scratch feed key, a local feed and a
+scratch `HOME`. Each run gets its own bundle id, whose launch lock, Sparkle
+cache and defaults under this account's `~/Library` it removes afterwards.

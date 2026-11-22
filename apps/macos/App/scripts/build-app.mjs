@@ -10,16 +10,23 @@
 // - Development (default): `DIR/Localbox Dev.app` (default dist/app-dev), bundle id sh.localbox.mac.dev, debug Swift
 //   builds (probes run the daemon on the process fixture, which release builds refuse), no update feed, the guest
 //   agent only if it was built, signed ad hoc. `--open` then starts it without focusing it.
-// - `--release`: `DIR/Localbox.app` (default dist/app-release), bundle id sh.localbox.mac, release Swift builds, the
-//   update feed, the guest agent required, and unsigned: scripts/release.sh signs it with sign.mjs.
+// - `--release`: `DIR/Localbox.app` (default dist/app-release), bundle id sh.localbox.mac, release Swift builds,
+//   Sparkle and its update feed, the guest agent required, and unsigned: scripts/release.sh signs it with sign.mjs.
 //
 // `--version` replaces package.json's version, `--node` the running Node, `--public-key` the skill's
-// release-public.pem (a scratch release signed with a scratch key carries that key).
+// release-public.pem (a scratch release signed with a scratch key carries that key; it is also the update feed's key,
+// `SUPublicEDKey`).
+//
+// Sparkle: with LOCALBOX_SPARKLE_FRAMEWORK naming the patched framework (`npm run sparkle:build`), the app links it
+// and the bundle carries it in Contents/Frameworks, after its build receipt is checked against the pin. A release
+// always does (dist/sparkle/Sparkle.framework when the variable is unset) and adds Sparkle's Info.plist keys; a
+// development build without the variable cannot update itself.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { frameworkIdentity } from "../sparkle/framework.mjs";
 import { signApp } from "./sign.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -34,13 +41,15 @@ const publicKey = resolve(argument("--public-key") ?? join(root, "skills/localbo
 const name = release ? "Localbox" : "Localbox Dev";
 const guestAgent = join(root, "dist/guest-agent");
 
-/** The update feed (Sparkle reads it from slice 15 of specs/menu-bar-app); the app treats a bundle with one as a release. */
+/** The update feed; the app treats a bundle with one as a release. apps/site redirects it to the latest release's asset. */
 const FEED_URL = "https://localbox.sh/mac/appcast.xml";
 /** The launch lock's path under the account home has one source, the launcher; the Info.plist key is copied from it. */
 const launchLock = /#define LOCALBOX_LAUNCH_LOCK_RELATIVE_PATH "([^"]+)"/.exec(readFileSync(join(root, "apps/macos/App/launcher/main.c"), "utf8"))?.[1] ?? fail("main.c defines no LOCALBOX_LAUNCH_LOCK_RELATIVE_PATH");
 
 if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(version)) fail(`invalid version ${version}`);
-for (const built of ["dist/apps/cli/src/index.js", "dist/launcher/localbox"]) if (!existsSync(join(root, built))) fail(`missing ${built}: run npm run build first`);
+for (const built of ["dist/apps/cli/src/index.js", "dist/launcher/localbox", "dist/scripts/appcast.js"]) if (!existsSync(join(root, built))) fail(`missing ${built}: run npm run build first`);
+const sparkle = process.env.LOCALBOX_SPARKLE_FRAMEWORK || (release ? join(root, "dist/sparkle/Sparkle.framework") : undefined);
+if (sparkle) verifyFramework(resolve(sparkle));
 if (release) {
   if (!existsSync(join(guestAgent, "agent-version.json"))) fail("missing dist/guest-agent: run npm run build:guest-agent first");
   // The bundled Node must run on any Mac: an arm64 build linked only against the system's libraries (nvm's and
@@ -50,13 +59,16 @@ if (release) {
   if (foreign.length) fail(`${node} links libraries a stock Mac lacks: ${foreign.join(", ")}`);
 }
 
-const swift = (packagePath, product) => {
+const swift = (packagePath, product, env = process.env) => {
   const configuration = release ? ["-c", "release"] : [];
-  run("swift", ["build", "--package-path", packagePath, "--product", product, ...configuration]);
-  return join(run("swift", ["build", "--package-path", packagePath, "--show-bin-path", ...configuration]), product);
+  run("swift", ["build", "--package-path", packagePath, "--product", product, ...configuration], { env });
+  return join(run("swift", ["build", "--package-path", packagePath, "--show-bin-path", ...configuration], { env }), product);
 };
-const appBinary = swift("apps/macos/App", "Localbox");
+// The app links Sparkle exactly when this bundle carries it (Package.swift reads the variable).
+const { LOCALBOX_SPARKLE_FRAMEWORK: _, ...withoutSparkle } = process.env;
+const appBinary = swift("apps/macos/App", "Localbox", sparkle ? { ...process.env, LOCALBOX_SPARKLE_FRAMEWORK: resolve(sparkle) } : withoutSparkle);
 const daemonBinary = swift("apps/macos/HostDaemon", "localbox-hostd");
+const { sparklePublicKey } = await import(pathToFileURL(join(root, "dist/scripts/appcast.js")).href);
 
 const app = join(out, `${name}.app`);
 const staging = join(out, `.${name}.app.${process.pid}`);
@@ -68,9 +80,10 @@ writeFileSync(join(contents, "Info.plist"), plist({
   CFBundleDevelopmentRegion: "en", CFBundleExecutable: "Localbox", CFBundleIdentifier: release ? "sh.localbox.mac" : "sh.localbox.mac.dev",
   CFBundleInfoDictionaryVersion: "6.0", CFBundleName: name, CFBundlePackageType: "APPL",
   CFBundleShortVersionString: version, CFBundleVersion: version, LSMinimumSystemVersion: "14.0", LSUIElement: true,
-  LocalboxLaunchLockRelativePath: launchLock, ...(release ? { SUFeedURL: FEED_URL } : {}),
+  LocalboxLaunchLockRelativePath: launchLock, ...(release ? sparkleKeys() : {}),
 }));
 cpSync(appBinary, join(contents, "MacOS/Localbox"));
+if (sparkle) cpSync(resolve(sparkle), join(contents, "Frameworks/Sparkle.framework"), { recursive: true, verbatimSymlinks: true });
 cpSync(daemonBinary, join(contents, "MacOS/localbox-hostd"));
 // The home command's bytes (AgentSetup copies them to ~/.local/bin/localbox for an app in an Applications folder).
 cpSync(join(root, "dist/launcher/localbox"), join(resources, "bin/localbox"));
@@ -117,7 +130,30 @@ function productionModules() {
   return join(cache, "node_modules");
 }
 
+/**
+ * Sparkle's keys (Bento's `configureReleasePlist`): the feed and the key it must be signed with, a signed feed and a
+ * verified archive required, hourly checks on by default, and Sparkle's own automatic installs off, since
+ * `UpdateCoordinator` decides when to install.
+ */
+function sparkleKeys() {
+  return {
+    SUFeedURL: FEED_URL, SUPublicEDKey: sparklePublicKey(readFileSync(publicKey, "utf8")), SURequireSignedFeed: true, SUVerifyUpdateBeforeExtraction: true,
+    SUSignedFeedFailureExpirationInterval: 0, SUEnableAutomaticChecks: true, SUScheduledCheckInterval: 3600,
+    SUAllowsAutomaticUpdates: false, SUAutomaticallyUpdate: false,
+  };
+}
+
+/** The framework `npm run sparkle:build` made from the pinned source and patch, unchanged since (its receipt). */
+function verifyFramework(framework) {
+  if (!existsSync(framework)) fail(`no Sparkle framework at ${framework}: run npm run sparkle:build, or set LOCALBOX_SPARKLE_FRAMEWORK`);
+  const receipt = JSON.parse(readFileSync(join(framework, "../build-receipt.json"), "utf8"));
+  const pin = JSON.parse(readFileSync(join(root, "apps/macos/App/sparkle/upstream.json"), "utf8"));
+  if (receipt.inputs?.commit !== pin.commit || receipt.inputs?.patchSha256 !== pin.patchSha256 || frameworkIdentity(framework).sha256 !== receipt.framework?.sha256)
+    fail(`${framework} does not match its build receipt and apps/macos/App/sparkle/upstream.json; rebuild it with npm run sparkle:build`);
+}
+
 function plist(values) {
-  const entry = ([key, value]) => `  <key>${key}</key>\n  ${typeof value === "boolean" ? `<${value}/>` : `<string>${value}</string>`}`;
+  const value = (item) => typeof item === "boolean" ? `<${item}/>` : typeof item === "number" ? `<integer>${item}</integer>` : `<string>${item}</string>`;
+  const entry = ([key, item]) => `  <key>${key}</key>\n  ${value(item)}`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n${Object.entries(values).map(entry).join("\n")}\n</dict>\n</plist>\n`;
 }

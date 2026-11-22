@@ -15,6 +15,11 @@
       ],
       "destination": "https://localbox.sh/$1",
       "permanent": true
+    },
+    {
+      "source": "/mac/appcast.xml",
+      "destination": "https://github.com/dzhng/localbox/releases/latest/download/appcast.xml",
+      "statusCode": 302
     }
   ],
   "headers": [
