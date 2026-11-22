@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchingChanged()
         facts.start()
         // A person's own choice; never on the relaunch after an update.
-        if settings.model.showAtLaunch && !CommandLine.arguments.contains("--localbox-update-relaunch") { settings.show() }
+        if settings.model.showAtLaunch && !CommandLine.arguments.contains(LaunchDecision.updateRelaunchArgument) { settings.show() }
     }
 
     /// The facts are long-polled while the popover or Settings shows.
@@ -146,17 +146,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         !isRelease && environment["LOCALBOX_APP_LOGIN_ITEM"] == "fake" ? .fake() : LoginItem(defaults: .standard)
     }
 
-    /// The popover's and Settings' test hooks on the app socket: a development build launched with
-    /// `LOCALBOX_APP_TEST_HOOKS=1` only.
-    private func testHooks() -> AppControl.Hook? {
-        guard testHooksEnabled else { return nil }
-        // The socket answers on its own queue; the popover and Settings live on the main thread.
+    /// A socket handler run on the main thread: the socket answers on its own queue, while the popover, Settings and
+    /// the update coordinator live on the main thread.
+    private func onMain(_ body: @escaping @MainActor @Sendable (AppDelegate, String, [String: Any]) -> Result<[String: Any], AppSocketFailure>) -> AppControl.Hook {
         return { [weak self] operation, params in
             nonisolated(unsafe) let params = params
             return DispatchQueue.main.sync { MainActor.assumeIsolated {
                 guard let self else { return .failure(AppSocketFailure(code: "unsupported", message: "the app is going away")) }
-                return operation.hasPrefix("settings.") ? self.settingsHook(operation, params) : self.menuBar.testHook(operation, params)
+                return body(self, operation, params)
             } }
+        }
+    }
+
+    /// The popover's and Settings' test hooks on the app socket: a development build launched with
+    /// `LOCALBOX_APP_TEST_HOOKS=1` only.
+    private func testHooks() -> AppControl.Hook? {
+        guard testHooksEnabled else { return nil }
+        return onMain { app, operation, params in
+            operation.hasPrefix("settings.") ? app.settingsHook(operation, params) : app.menuBar.testHook(operation, params)
         }
     }
 
@@ -275,12 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app socket's `update.*` (answered on the main thread, where the coordinator lives); nil without updates.
     private func updateHook() -> AppControl.Hook? {
         guard updates != nil else { return nil }
-        return { [weak self] operation, params in
-            nonisolated(unsafe) let params = params
-            return DispatchQueue.main.sync { MainActor.assumeIsolated {
-                self?.updateOperation(operation, params) ?? .failure(AppSocketFailure(code: "unsupported", message: "the app is going away"))
-            } }
-        }
+        return onMain { app, operation, params in app.updateOperation(operation, params) }
     }
 
     /// `app.info`'s `update`.
