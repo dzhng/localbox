@@ -138,7 +138,7 @@ public actor MacBaseBuilder: HostOperationKind {
 
     private func build(_ context: HostOperationContext) async throws -> JSONValue {
         var checkpoint: Checkpoint
-        do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch { throw HostOperationFailure(code: "invalid_input", message: "macos.build needs a checkpoint { phase, ipsw }") }
+        do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch { throw HostOperationFailure(code: "invalid_input", message: "macos.build needs a checkpoint { phase, ipsw, made_room }") }
         let imageID = context.subject
         if let manifest = try? store.manifest(imageID) { return result(manifest, checkpoint, chrome: nil) }
         let build = try store.buildDirectory(imageID)
