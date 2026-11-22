@@ -1,12 +1,10 @@
 import { closeSync } from "node:fs";
 import { ContractError, type Json } from "../../../packages/contract/src/index.js";
 import { machinePaths } from "../../../packages/config/src/index.js";
-import type { AppDeps } from "./app.js";
-import { askApp, callApp, type AppOperation } from "./app-socket.js";
-import { layout } from "./layout.js";
+import { askApp, callApp, type AppDeps, type AppOperation } from "./app-socket.js";
 
 /**
- * What `localbox update` prints: Localbox.app's updater (`UpdateCoordinator`, specs/menu-bar-app slice 15). `state`
+ * What `localbox update` prints: Localbox.app's updater (`UpdateCoordinator`). `state`
  * is one of `idle`, `disabled`, `checking`, `downloading`, `waiting`, `installing`, `failed`; `status` the sentence
  * Settings shows under its button.
  */
@@ -32,7 +30,7 @@ export async function updateCommand(words: string[], deps: UpdateDeps = {}): Pro
   const [verb, choice, ...rest] = words;
   const socket = (deps.paths ?? machinePaths()).appSocket;
   const ask = async (operation: AppOperation, params: Record<string, Json> = {}) =>
-    await askApp(deps.layout ?? layout(), { appSocket: socket }, operation, params, deps.launch) as unknown as UpdateStatus;
+    await askApp(operation, params, deps) as unknown as UpdateStatus;
   if (verb === "automatic") {
     if ((choice !== "on" && choice !== "off") || rest.length) throw new ContractError("invalid_input", "localbox update automatic takes on or off");
     return await ask("update.set_automatic", { enabled: choice === "on" }) as unknown as Json;

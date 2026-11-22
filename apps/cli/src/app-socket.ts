@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import { ContractError, ERROR_CODES, type ErrorCode, type Json } from "../../../packages/contract/src/index.js";
-import type { MachinePaths } from "../../../packages/config/src/index.js";
+import { machinePaths, type MachinePaths } from "../../../packages/config/src/index.js";
 import { ensureApp, type AppLaunchOptions } from "./app-launch.js";
-import type { Layout } from "./layout.js";
+import { layout, type Layout } from "./layout.js";
 
 /** Localbox.app's operations (`AppControl` in apps/macos/App); none is a catalog operation. */
 export type AppOperation = "app.info" | "login_item.get" | "login_item.set" | "update.status" | "update.check" | "update.install" | "update.set_automatic";
@@ -37,13 +37,18 @@ export function callApp(socket: string, operation: AppOperation, params: Record<
   });
 }
 
+/** Where `askApp` finds the app and how it starts one: this CLI's own by default, a fake app in tests. */
+export interface AppDeps { layout?: Pick<Layout, "app">; paths?: Pick<MachinePaths, "appSocket">; launch?: AppLaunchOptions }
+
 /**
  * `callApp` for a CLI inside Localbox.app: the app is started first if it is quit (`ensureApp`, waiting on the app's
  * socket, which answers even while the daemon is down). Any other CLI has no app to ask.
  */
-export async function askApp(layout: Pick<Layout, "app">, paths: Pick<MachinePaths, "appSocket">, operation: AppOperation, params: Record<string, Json> = {}, options: AppLaunchOptions = {}): Promise<Json> {
-  if (!layout.app) throw new ContractError("unsupported", NEEDS_APP);
-  const started = await ensureApp(layout, { socket: paths.appSocket }, options);
+export async function askApp(operation: AppOperation, params: Record<string, Json> = {}, deps: AppDeps = {}): Promise<Json> {
+  const { app } = deps.layout ?? layout();
+  if (!app) throw new ContractError("unsupported", NEEDS_APP);
+  const socket = (deps.paths ?? machinePaths()).appSocket;
+  const started = await ensureApp({ app }, { socket }, deps.launch);
   if (started.state === "failed") throw new ContractError("guest_unreachable", started.message, undefined, true);
-  return callApp(paths.appSocket, operation, params);
+  return callApp(socket, operation, params);
 }

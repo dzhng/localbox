@@ -43,7 +43,7 @@ test("login-item reads the app's login item; on and off change it", async () => 
   const server = await fakeApp(appSocket, seen);
   try {
     const deps = { layout: { app: APP }, paths: { appSocket }, launch };
-    assert.deepEqual(await askApp(deps.layout, deps.paths, "app.info", {}, launch), { version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null, update: null });
+    assert.deepEqual(await askApp("app.info", {}, deps), { version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null, update: null });
     assert.deepEqual(await appLoginItem(undefined, deps), { state: "disabled" });
     assert.deepEqual(await appLoginItem(true, deps), { state: "requires_approval" });
     assert.deepEqual(await appLoginItem(undefined, deps), { state: "requires_approval" });
@@ -56,7 +56,7 @@ test("login-item reads the app's login item; on and off change it", async () => 
 test("an operation the running app does not know comes back as its unsupported refusal", async () => {
   const appSocket = socketPath(), server = await fakeApp(appSocket);
   try {
-    assert.deepEqual(await refusal(askApp({ app: APP }, { appSocket }, "update.status" as never, {}, launch)),
+    assert.deepEqual(await refusal(askApp("update.status" as never, {}, { layout: { app: APP }, paths: { appSocket }, launch })),
       { code: "unsupported", message: "this Localbox app (0.1.0) does not answer update.status", retryable: false });
   } finally { server.close(); }
 });
