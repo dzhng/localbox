@@ -263,12 +263,15 @@ test("a replayed create relays the first create again and makes no second sandbo
 });
 
 test("a create that outlives its deadline keeps its reservation and says it may still complete", async () => {
-  let finish!: () => void; const b = machine();
-  const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: async (request) => { await new Promise<void>((resolve) => { finish = resolve; }); return await b.answer(request); } } });
+  // The machine holds the request until `finish`; `reached` resolves once it has it, because under load the 100 ms
+  // deadline can pass before the mailbox has delivered the request at all.
+  let finish!: () => void; let reached!: () => void; const delivered = new Promise<void>((resolve) => { reached = resolve; }); const b = machine();
+  const { deps, sandboxes } = memoryMailbox({ machines, connectors: { m_b: async (request) => { const held = new Promise<void>((resolve) => { finish = resolve; }); reached(); await held; return await b.answer(request); } } });
   const late = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", deadline_ms: 100, machine: "attic", input: { name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
   assert.equal(!late.ok && late.error.code, "operation_uncertain");
   assert.match(!late.ok ? late.error.message : "", /the create may still complete on attic: slow-box stays reserved \(replay with mutation id cli-late/);
   assert.deepEqual(sandboxes.map((row) => row.name), ["slow-box"]);
+  await delivered;
   finish();
   const replay = await ops(deps, { operation: "sandbox.create", mutation_id: "cli-late", machine: "attic", input: { name: "slow-box", cpus: 2, memory_bytes: 2 * GIB } });
   assert.equal(replay.ok, true, JSON.stringify(replay)); assert.equal(sandboxes.length, 1);
