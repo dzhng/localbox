@@ -95,7 +95,7 @@ public final class UpdateCoordinator {
     public func check() {
         if pending != nil { requested = true; progress(); return }
         guard canCheck else { return }
-        startCheck()
+        beginCheck()
     }
 
     /// `update.install`: installs the update that waits, else looks for one and installs what it finds.
@@ -103,6 +103,13 @@ public final class UpdateCoordinator {
         requested = true
         if pending != nil { progress(); return }
         guard canCheck else { return }
+        beginCheck()
+    }
+
+    /// Reports the check as started before Sparkle, which answers asynchronously, has said so: whoever asked reads
+    /// `checking` at once, never the last cycle's answer. Sparkle ends every check it starts with a result.
+    private func beginCheck() {
+        checking()
         startCheck()
     }
 
