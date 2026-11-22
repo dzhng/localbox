@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let environment = ProcessInfo.processInfo.environment
     private var isRelease = false
     private var lifetime: Lifetime?
+    private var appSocket: AppSocket?
+    private var inApplications = false
     /// A quit that arrived before supervision started: the startup finishes by answering it instead.
     private var quitBeforeStart = false
     private var startupFinished = false
@@ -52,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             diagnostic("another copy is running (pid \(pid)); exiting")
             exit(0)
         }
-        let inApplications = LaunchDecision.isInApplicationsFolder(bundle.bundleURL, home: FileManager.default.homeDirectoryForCurrentUser)
+        inApplications = LaunchDecision.isInApplicationsFolder(bundle.bundleURL, home: FileManager.default.homeDirectoryForCurrentUser)
         diagnostic("launched \(bundle.bundleURL.path) (\(bundle.bundleIdentifier ?? "no bundle id"), \(decision), \(inApplications ? "in" : "not in") an Applications folder)")
         // Supervision never waits on the UI: a Mac with no display (a headless mini) still serves its sandboxes.
         startSupervision(bundle: bundle.bundleURL)
@@ -87,7 +89,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lifetimeBox.value = lifetime
         self.lifetime = lifetime
+        let loginItem = makeLoginItem()
+        diagnostic(loginItem.launched(isRelease: isRelease, inApplications: inApplications))
+        serveAppSocket(paths: paths, control: AppControl(
+            identity: .init(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", isRelease: isRelease, inApplications: inApplications),
+            children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem))
         lifetime.start()
+    }
+
+    /// `SMAppService.mainApp`, except that a development build can stand in a fake (`LOCALBOX_APP_LOGIN_ITEM=fake`,
+    /// as probes do), so a run on scratch roots never touches this account's login items.
+    private func makeLoginItem() -> LoginItem {
+        !isRelease && environment["LOCALBOX_APP_LOGIN_ITEM"] == "fake" ? .fake() : LoginItem(defaults: .standard)
+    }
+
+    /// The CLI's way to the app's native powers. A socket that cannot be served (another copy answers on this root)
+    /// costs only `localbox app`; supervision goes on.
+    private func serveAppSocket(paths: AppPaths, control: AppControl) {
+        let socket = AppSocket(path: paths.appSocket) { operation, params in control.handle(operation, params) }
+        do { try socket.start(); appSocket = socket } catch { diagnostic("app socket unavailable: \(error)") }
     }
 
     private func startupFailed() {
@@ -166,6 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func answerTermination() {
         guard replyPending else { return }
         replyPending = false
+        // Answering until here lets `localbox app status` show the stop in progress.
+        appSocket?.stop(); appSocket = nil
         NSApplication.shared.reply(toApplicationShouldTerminate: true)
     }
 

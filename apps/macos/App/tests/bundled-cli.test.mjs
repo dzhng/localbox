@@ -35,7 +35,7 @@ function bundle(script, guestAgent = false) {
   return app;
 }
 
-const PATHS = { root: "/r", credentials: "/r/credentials.json", ipc_token: "/r/ipc-token", socket: "/r/agent.sock", hostd_lock: "/r/hostd.lock", sandboxes: "/r/sandboxes", operations: "/r/operations", images: "/r/images", logs: "/logs", bin_dir: "/home/.local/bin" };
+const PATHS = { root: "/r", credentials: "/r/credentials.json", ipc_token: "/r/ipc-token", socket: "/r/agent.sock", hostd_lock: "/r/hostd.lock", app_socket: "/r/app.sock", sandboxes: "/r/sandboxes", operations: "/r/operations", images: "/r/images", logs: "/logs", bin_dir: "/home/.local/bin" };
 
 test("the daemon runs supervised with every path app paths printed, this bundle's CLI and guest agent, and no inherited token", () => {
   const app = bundle(`[ "$*" = "app paths --json" ] || exit 9\ncat <<'EOF'\n${JSON.stringify(PATHS)}\nEOF`, true);

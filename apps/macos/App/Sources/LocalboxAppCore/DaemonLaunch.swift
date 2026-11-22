@@ -3,7 +3,7 @@ import Foundation
 /// This Mac's Localbox paths as `localbox app paths --json` prints them (`machinePaths()` in packages/config, the one
 /// definition). The app never derives a path itself (specs/menu-bar-app, invariant 4).
 public struct AppPaths: Decodable, Equatable, Sendable {
-    public let root: String, credentials: String, ipcToken: String, socket: String, hostdLock: String
+    public let root: String, credentials: String, ipcToken: String, socket: String, hostdLock: String, appSocket: String
     public let sandboxes: String, operations: String, images: String, logs: String, binDir: String
 
     /// Asks the bundled CLI, which also creates the machine directories and the IPC token.

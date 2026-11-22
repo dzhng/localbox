@@ -37,6 +37,18 @@ public struct Backoff: Sendable, Equatable {
     }
 }
 
+/// Where a supervised child is, as `app.info` reports it. `running` means its process is alive (a child still
+/// stopping is running until it exits), not that it serves yet: whether the daemon answers is the CLI's to check.
+public enum ChildState: String, Sendable {
+    case running
+    /// Started, before its first launch.
+    case starting
+    /// Not supervised: never started, or stopped.
+    case stopped
+    /// It exited or could not be launched, and a restart is scheduled.
+    case backingOff = "backing_off"
+}
+
 /// The one supervisor of Localbox.app's long-running children (the daemon and the connector), ported from Bento's
 /// `ChildProcess`: it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its own, and
 /// stops it by closing that pipe, escalating as its `StopPolicy` allows. The pipe also stops the child when the app
@@ -53,6 +65,8 @@ public final class ChildProcess: @unchecked Sendable {
     private var process: Process?
     private var input: Pipe?
     private var enabled = false
+    /// Whether this start has launched (or tried to launch) a process yet.
+    private var launched = false
     private var generation = 0
     private var tail: LogTail?
     private var lastOutput = Date()
@@ -68,11 +82,19 @@ public final class ChildProcess: @unchecked Sendable {
     /// The running child's pid, if one is running.
     public var pid: pid_t? { queue.sync { process.map(\.processIdentifier) } }
 
+    public var state: ChildState {
+        queue.sync {
+            if process != nil { return .running }
+            if !enabled { return .stopped }
+            return launched ? .backingOff : .starting
+        }
+    }
+
     /// Starts the child; a child that cannot be launched is retried on the same backoff as one that exits.
     public func start() {
         queue.sync {
             guard !enabled else { return }
-            enabled = true
+            enabled = true; launched = false
             if tail == nil { tail = LogTail(url: launch.log) { [weak self] line in self?.heard(line) } }
             startTailing()
             spawn()
@@ -80,6 +102,7 @@ public final class ChildProcess: @unchecked Sendable {
     }
 
     private func spawn() {
+        launched = true
         let child = Process()
         child.executableURL = launch.executable
         child.arguments = launch.arguments
