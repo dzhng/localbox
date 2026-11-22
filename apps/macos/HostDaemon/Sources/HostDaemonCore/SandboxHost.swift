@@ -356,9 +356,12 @@ public actor SandboxHost {
             await waitForChange(since: since, timeoutMs: timeout)
             let version = stateVersion
             let all = await snapshots()
-            let states = all.map { ["sandbox_id": $0.record.sandboxID, "state": $0.status.lifecycle.sandboxState, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes] as [String: Any] }
+            // `name`, `os` and `lifecycle` (which tells a paused sandbox from one saved to disk, both `sleeping`) are
+            // for `localbox app status`, which shows this Mac's sandboxes from this one answer.
+            let states = all.map { ["sandbox_id": $0.record.sandboxID, "name": $0.record.name, "os": $0.record.os.rawValue, "state": $0.status.lifecycle.sandboxState,
+                                    "lifecycle": $0.status.lifecycle.rawValue, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes] as [String: Any] }
             let deleted = idleDeletions.sorted { $0.key < $1.key }.map { ["sandbox_id": $0.key, "name": $0.value.name, "reason": $0.value.reason] }
-            return Reply.success(object, ["version": version, "capacity": await capacity(), "sandboxes": states, "deleted": deleted])
+            return Reply.success(object, ["version": version, "capacity": await capacity(), "sandboxes": states, "deleted": deleted, "operations": await workInProgress()])
         case "connector.report":
             guard let state = input["state"] as? String, !state.isEmpty else { return Reply.failure(object, code: "invalid_input", message: "connector.report requires state") }
             connectorReport = ConnectorReport(state: state, detail: input["detail"] as? String, reportedAt: now())
@@ -743,6 +746,23 @@ public actor SandboxHost {
 
     private func report(_ requested: [String: Any], produced: [String: Any], actions: [[String: Any]]) -> [String: Any] {
         ["requested": requested, "produced": produced, "actions": actions]
+    }
+
+    /// This Mac's image work for `host.watch`: every running operation, and each image's latest operation when it
+    /// failed, as `image.wait` shows a record (no checkpoint). A sandbox waiting for its image's copy also names the
+    /// sandbox (`sandbox: { sandbox_id, name }`), which only its checkpoint knows. Progress does not bump the watch
+    /// version; a caller showing it polls while anything here runs.
+    private func workInProgress() async -> [[String: Any]] {
+        let records = await operations.current()
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        return records.compactMap { record in
+            guard let data = try? encoder.encode(record), var view = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            view["checkpoint"] = nil
+            if record.kind == SandboxCreateAfterCopy.kind, let waiting = try? record.checkpoint.decoded(as: SandboxCreateAfterCopy.Checkpoint.self) {
+                view["sandbox"] = ["sandbox_id": waiting.sandboxID, "name": waiting.create.name]
+            }
+            return view
+        }
     }
 
     /// Returns once the state version passes `since`, or at the timeout.

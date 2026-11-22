@@ -22,9 +22,13 @@ public final class BundledCLI: Sendable {
         self.environment = environment; self.deadline = deadline
     }
 
-    /// `localbox <arguments> --json`: its stdout when it exits 0, else the failure it reports.
+    /// `localbox <arguments> --json`: its stdout when it exits 0, else the failure it reports. Cancelling the task
+    /// sends the command SIGTERM and throws `CancellationError`, so a long poll nobody waits for ends at once.
     public func run(_ arguments: [String]) async throws -> Data {
-        try await Task.detached { [self] in try execute(arguments) }.value
+        let running = RunningCommand()
+        return try await withTaskCancellationHandler {
+            try await Task.detached { [self] in try execute(arguments, running) }.value
+        } onCancel: { running.cancel() }
     }
 
     /// The connector as the app's child: `localbox connector run`, with the app's environment; it stops when its stdin closes.
@@ -32,7 +36,7 @@ public final class BundledCLI: Sendable {
         ChildLaunch(executable: executable, arguments: ["connector", "run"], environment: environment, log: log)
     }
 
-    private func execute(_ arguments: [String]) throws -> Data {
+    private func execute(_ arguments: [String], _ running: RunningCommand) throws -> Data {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments + ["--json"]
@@ -50,12 +54,16 @@ public final class BundledCLI: Sendable {
         process.standardError = errors
         let output = Pipe()
         process.standardOutput = output
+        if running.isCancelled { throw CancellationError() }
         do { try process.run() } catch { throw CLIFailure(code: "cli_unavailable", message: "cannot run \(executable.path): \(error.localizedDescription)") }
+        running.started(process.processIdentifier)
         let expiry = DispatchWorkItem { if process.isRunning { kill(process.processIdentifier, SIGTERM) } }
         DispatchQueue.global().asyncAfter(deadline: .now() + deadline, execute: expiry)
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        running.finished()
         expiry.cancel()
+        if running.isCancelled { throw CancellationError() }
         if process.terminationReason == .exit && process.terminationStatus == 0 { return data }
         throw Self.failure(stdout: data, stderr: (try? Data(contentsOf: errorURL)) ?? Data(), status: process.terminationStatus, signalled: process.terminationReason == .uncaughtSignal)
     }
@@ -75,5 +83,28 @@ public final class BundledCLI: Sendable {
         guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               let error = object["error"] as? [String: Any], let message = error["message"] as? String else { return nil }
         return CLIFailure(code: error["code"] as? String ?? "cli_failed", message: message)
+    }
+}
+
+/// The pid of a command `BundledCLI.run` started, so cancelling its task can stop it from another thread.
+private final class RunningCommand: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pid: pid_t = 0
+    private var cancelled = false
+
+    var isCancelled: Bool { lock.withLock { cancelled } }
+
+    /// A cancel that came before the start stops the command as soon as it exists.
+    func started(_ pid: pid_t) {
+        let stop: Bool = lock.withLock { self.pid = pid; return cancelled }
+        if stop { kill(pid, SIGTERM) }
+    }
+
+    /// Once it has exited its pid may be reused, so a late cancel signals nothing.
+    func finished() { lock.withLock { pid = -1 } }
+
+    func cancel() {
+        let pid: pid_t = lock.withLock { cancelled = true; return self.pid }
+        if pid > 0 { kill(pid, SIGTERM) }
     }
 }

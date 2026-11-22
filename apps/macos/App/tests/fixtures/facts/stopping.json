@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": {
+    "email": "dev@example.com",
+    "machine_name": "studio"
+  },
+  "daemon": "starting",
+  "connector": {
+    "state": "connecting",
+    "detail": "waiting for this Mac's sandbox service"
+  },
+  "capacity": null,
+  "hibernate": "available",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": {
+    "reason": "quit",
+    "pending": [
+      "calm-heron",
+      "quiet-otter"
+    ]
+  },
+  "update": null,
+  "warnings": [],
+  "watch_version": 128134338639836
+}

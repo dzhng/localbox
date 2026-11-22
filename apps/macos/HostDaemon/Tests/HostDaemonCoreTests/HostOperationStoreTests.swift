@@ -108,6 +108,22 @@ final class HostOperationStoreTests: XCTestCase {
         XCTAssertLessThan(clock.now - again, .seconds(1), "a finished record answers without waiting")
     }
 
+    /// `current()` is what `host.watch` shows of image work: what runs, and a subject's failure until it is retried.
+    func testCurrentIsWhatRunsAndEachSubjectsLatestFailure() async throws {
+        let store = try HostOperationStore(operationsDirectory: try scratch())
+        let fails: HostOperationWork = { _ in throw HostOperationFailure(code: "internal", message: "no") }
+        let holds: HostOperationWork = { _ in try await Task.sleep(nanoseconds: 60_000_000_000); return .null }
+        await store.register(kind: "fails", resume: fails); await store.register(kind: "holds", resume: holds); await store.register(kind: "works", resume: { _ in .null })
+        for (key, kind, subject) in [("f-1", "fails", "retried"), ("f-2", "fails", "broken"), ("w-1", "works", "fine")] {
+            _ = try await store.begin(kind: kind, key: key, subject: subject, work: kind == "fails" ? fails : { _ in .null })
+            _ = await store.wait(key, timeoutMs: 5_000)
+        }
+        _ = try await store.begin(kind: "holds", key: "h-1", subject: "retried", work: holds)
+        let current = await store.current()
+        XCTAssertEqual(current.map(\.key), ["f-2", "h-1"], "a retry hides the failure it replaces; a success is not listed")
+        await store.stop()
+    }
+
     func testAKindWithNoResumerIsRefusedAndAnOrphanedRecordFails() async throws {
         let directory = try scratch()
         let store = try HostOperationStore(operationsDirectory: directory)

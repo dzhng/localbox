@@ -35,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRelease = false
     private var lifetime: Lifetime?
     private var appSocket: AppSocket?
+    /// This Mac's facts, read through the CLI; the popover and Settings (slices 13, 14) set it watching.
+    private var facts: FactsSource?
     private var inApplications = false
     /// A quit that arrived before supervision started: the startup finishes by answering it instead.
     private var quitBeforeStart = false
@@ -95,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             identity: .init(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", isRelease: isRelease, inApplications: inApplications),
             children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem))
         lifetime.start()
+        let facts = FactsSource(cli: cli, published: { _ in }, failed: { error in diagnostic("app status failed: \(error)") })
+        self.facts = facts
+        facts.start()
     }
 
     /// `SMAppService.mainApp`, except that a development build can stand in a fake (`LOCALBOX_APP_LOGIN_ITEM=fake`,
@@ -120,6 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch state {
         case .running: break
         case .stopping(let reason, let pending):
+            // A read now could find the app socket gone and start another copy of the app.
+            facts?.stop()
             diagnostic("stopping (\(reason.rawValue))\(pending.isEmpty ? "" : ": waiting for \(pending.joined(separator: ", "))")")
             headline?.title = pending.isEmpty ? "Stopping: hibernating sandboxes…" : "Stopping: hibernating \(pending.joined(separator: ", "))…"
             quitItem?.isEnabled = false
@@ -179,7 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if lifetime.state == .stopped { return .terminateNow }
         replyPending = true
-        lifetime.stop(Self.reason())
+        // The names the daemon reports as it saves each one, so the stop can say what it still waits for.
+        lifetime.stop(Self.reason(), running: facts?.latest?.hibernating ?? [])
         return .terminateLater
     }
 

@@ -1,0 +1,60 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": null,
+  "daemon": "stopped",
+  "connector": {
+    "state": "signed_out"
+  },
+  "capacity": null,
+  "hibernate": "only_while_unlocked",
+  "open_at_login": "requires_approval",
+  "agent_setup": {
+    "enabled": true,
+    "command": "missing",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "missing",
+  "stopping": null,
+  "update": null,
+  "warnings": [
+    {
+      "code": "daemon_down",
+      "message": "Localbox's sandbox service isn't running, so sandboxes on this Mac can't start or answer.",
+      "fix": "Localbox keeps restarting it; if this lasts, quit Localbox and open it again."
+    },
+    {
+      "code": "signed_out",
+      "message": "This Mac isn't signed in, so other computers and cloud agents can't reach its sandboxes.",
+      "fix": "Sign in from Settings, or run localbox login --email you@example.com."
+    },
+    {
+      "code": "builtin_image_missing",
+      "message": "The built-in Linux image isn't on this Mac, so new Linux sandboxes can't start.",
+      "fix": "Quit Localbox and open it again to download it."
+    },
+    {
+      "code": "hibernate_blocked",
+      "message": "While this Mac is locked, idle sandboxes can't free their memory, because the lock screen asks for a password.",
+      "fix": "System Settings > Lock Screen: set \"Require password after screen saver begins or display is turned off\" to Never"
+    },
+    {
+      "code": "not_in_applications",
+      "message": "Localbox isn't in your Applications folder, so it can't open at login or install the localbox command.",
+      "fix": "Move Localbox to the Applications folder and open it from there."
+    },
+    {
+      "code": "login_item_needs_approval",
+      "message": "Localbox won't open at login until you allow it.",
+      "fix": "In System Settings > General > Login Items, turn on Localbox."
+    },
+    {
+      "code": "command_not_installed",
+      "message": "The localbox command isn't installed, so agents on this Mac can't run it.",
+      "fix": "Quit Localbox and open it again to install it."
+    }
+  ],
+  "watch_version": 178663214643176
+}

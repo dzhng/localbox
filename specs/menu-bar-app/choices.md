@@ -302,3 +302,53 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   else touches the real account.
 - **Not run here:** the real-account install from `ssh localhost` (the orchestrator's), and a real Gatekeeper
   quarantine case.
+
+## 12 · App facts: the one state shape
+
+- **One additive daemon change, to `host.watch`** (internal, not in the catalog): each sandbox row gains `name`, `os`
+  and `lifecycle` (the raw runtime state, since the catalog's `sleeping` hides paused versus saved to disk), and the
+  answer gains `operations`, `HostOperationStore.current()`: every running operation plus each image's latest one when
+  it failed, as `image.wait` shows a record, with `sandbox: { sandbox_id, name }` on a create waiting for its copy (only
+  its checkpoint knows the name). Why: the daemon has no local `image.list` (that is the account's), and one answer
+  keeps `app status` to two daemon calls (`host.watch`, `relay.status`) instead of `sandbox.list` plus an
+  `image.wait` per image. Reverse: drop the fields and compose `sandbox.list` and `image.wait`.
+- **`watch_version` is a fingerprint of the facts** (48 bits of the SHA-256 of everything else), not the daemon's
+  version. `--since N` waits until the facts differ from N, so a change the daemon does not announce (the app's
+  children, the login item, a sign-in, image progress, `builtin-image.json`) also ends the wait. While waiting, the CLI
+  long-polls `host.watch` on the daemon's own version in 2 s slices and recomposes between them; with the daemon down
+  it rechecks every second. `checkHost()` and agent setup (they spawn processes) are read once per invocation.
+  Reverse: `appFacts` in `apps/cli/src/app-facts.ts`.
+- **States.** `daemon`: `running` when the daemon answers; the app's child state otherwise, with an app-side `running`
+  that does not answer reading `starting`. `connector`: `signed_out` without credentials or when the relay reports
+  `revoked` (with the account still named); `down` when the app's child is not running or its last report is stale;
+  `connecting` when it has not reported yet or the daemon is down. Sandbox states map the daemon's lifecycle
+  (`ready`/`freezing` running, `paused`, `asleep`, `starting`, `stopping`/`stopped` stopped, `error` failed).
+  `capacity.cpus_free` is cores minus the CPUs of running sandboxes (the daemon reserves memory, not CPUs);
+  `memory_free_bytes` is the admission room.
+- **Images by id.** The daemon knows images only by id, so `images[].name` is the id (`linux` for the built-in).
+  An image already in the images folder is not listed (this also leaves out the sending side of a copy). A failure
+  (image or waiting sandbox) shows for an hour after it ended; a cancelled create (its sandbox was deleted) never.
+  Failed rows carry `error` (the record's message), a field the slice did not name.
+- **`account.email`** comes from the credential: `localbox login` now writes the `email` it was given (the account
+  itself holds only a generated name). Credentials written before this have none and show `email: null`.
+- **Warnings, most severe first:** `daemon_down` (not while quitting), `signed_out` / `connector_down`,
+  `builtin_image_failed` / `builtin_image_missing`, `hibernate_blocked` (fix: `checkHost().fixes` joined with
+  "; then "), `not_in_applications` (release builds only: a dev build always runs from where it was built),
+  `login_item_needs_approval`, `command_not_installed` (agent setup on and the command `missing` or someone else's
+  file; an app outside Applications is `not_in_applications`'s). `builtin_image` reads `builtin-image.json` when
+  present, but `ready` there with no `images/linux` is `missing`.
+- **An app that cannot be reached** is the error slice 09 gave (`guest_unreachable`, or `unsupported` outside an app):
+  the facts start from the app socket. `appStatus` in `app.ts` is gone; `app status` is `appFacts`.
+- **`FactsSource`** publishes a value only when its `watch_version` changes (that is the debounce). Watching, it reads
+  once without `--since` and then long-polls; a failure is retried after 2 s watching, 60 s idle. Not watching, it
+  cancels the poll (`BundledCLI.run` is now cancellable: SIGTERM to the child, `CancellationError`) and reads every
+  60 s. The app stops it as soon as a quit begins, since a read after the app socket closes could start another copy
+  of the app. `Lifetime.stop` gets `facts.latest.hibernating` (running and paused names, what the daemon saves). The
+  popover and Settings are what will call `setWatching`; until slice 13 nothing does.
+- **Swift `AppFacts`** uses strict enums for every closed state, so a new CLI state fails the shared-fixture test
+  instead of decoding silently; `agent_setup.command`/`skill` and warning codes stay strings. `update` is not decoded
+  until slice 15. The fixture test re-encodes each fixture and compares it (nulls dropped) to the file.
+- **Probe 41 tier `a` sees `paused`, not `asleep`.** The process fixture cannot save its state, so its sleep is
+  SIGSTOP and the facts truthfully say `paused`; the check is that the long poll answers with the new state well
+  before its 25 s timeout. `asleep` needs a real VM (tier `v`, not extended here). The probe saves its `app status`
+  sample to the run's evidence folder.

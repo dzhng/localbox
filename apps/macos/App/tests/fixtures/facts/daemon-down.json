@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": {
+    "email": "dev@example.com",
+    "machine_name": "studio"
+  },
+  "daemon": "backing_off",
+  "connector": {
+    "state": "connecting",
+    "detail": "waiting for this Mac's sandbox service"
+  },
+  "capacity": null,
+  "hibernate": "available",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": null,
+  "update": null,
+  "warnings": [
+    {
+      "code": "daemon_down",
+      "message": "Localbox's sandbox service isn't running, so sandboxes on this Mac can't start or answer.",
+      "fix": "Localbox keeps restarting it; if this lasts, quit Localbox and open it again."
+    }
+  ],
+  "watch_version": 208065650831733
+}

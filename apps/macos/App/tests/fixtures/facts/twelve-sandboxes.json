@@ -1,0 +1,106 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": {
+    "email": "dev@example.com",
+    "machine_name": "studio"
+  },
+  "daemon": "running",
+  "connector": {
+    "state": "connected"
+  },
+  "capacity": {
+    "cpus_free": 4,
+    "cpus_total": 10,
+    "memory_free_bytes": 25769803776,
+    "memory_total_bytes": 34359738368,
+    "disk_free_bytes": 210000000000
+  },
+  "hibernate": "available",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [
+    {
+      "sandbox_id": "sandbox_1",
+      "name": "sandbox-01",
+      "os": "linux",
+      "state": "running"
+    },
+    {
+      "sandbox_id": "sandbox_2",
+      "name": "sandbox-02",
+      "os": "linux",
+      "state": "asleep"
+    },
+    {
+      "sandbox_id": "sandbox_3",
+      "name": "sandbox-03",
+      "os": "linux",
+      "state": "paused"
+    },
+    {
+      "sandbox_id": "sandbox_4",
+      "name": "sandbox-04",
+      "os": "linux",
+      "state": "stopped"
+    },
+    {
+      "sandbox_id": "sandbox_5",
+      "name": "sandbox-05",
+      "os": "linux",
+      "state": "running"
+    },
+    {
+      "sandbox_id": "sandbox_6",
+      "name": "sandbox-06",
+      "os": "linux",
+      "state": "asleep"
+    },
+    {
+      "sandbox_id": "sandbox_7",
+      "name": "sandbox-07",
+      "os": "linux",
+      "state": "paused"
+    },
+    {
+      "sandbox_id": "sandbox_8",
+      "name": "sandbox-08",
+      "os": "linux",
+      "state": "stopped"
+    },
+    {
+      "sandbox_id": "sandbox_9",
+      "name": "sandbox-09",
+      "os": "linux",
+      "state": "running"
+    },
+    {
+      "sandbox_id": "sandbox_10",
+      "name": "sandbox-10",
+      "os": "linux",
+      "state": "asleep"
+    },
+    {
+      "sandbox_id": "sandbox_11",
+      "name": "sandbox-11",
+      "os": "linux",
+      "state": "paused"
+    },
+    {
+      "sandbox_id": "sandbox_12",
+      "name": "sandbox-12",
+      "os": "macos",
+      "state": "stopped"
+    }
+  ],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": null,
+  "update": null,
+  "warnings": [],
+  "watch_version": 94438191732843
+}
