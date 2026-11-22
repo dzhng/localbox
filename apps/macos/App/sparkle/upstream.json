@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/sparkle-project/Sparkle.git",
+  "version": "2.10.0",
+  "commit": "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+  "license": "MIT",
+  "patchSha256": "280016676504f662ce28003c80e4eaf9742274e0e80989cc12d7ab16b718a77f"
+}
