@@ -68,7 +68,7 @@ test("--to resolves like --machine: unknown, offline, unread disk and linux refu
   assert.match((await refused({ image: "rails-dev", to: "garage" })).message, /^no machine garage on this account; machines: /);
   assert.equal((await refused({ image: "rails-dev", to: "den" })).code, "machine_offline");
   const disk = await refused({ image: "rails-dev", to: "loft" });
-  assert.deepEqual([disk.code, disk.message], ["disk_full", "loft has not reported its free disk, and copying rails-dev there needs 3 GiB"]);
+  assert.deepEqual([disk.code, disk.message], ["disk_full", "loft has not reported its free disk, and copying rails-dev there needs 4 GiB"]);
   assert.equal((await refused({ image: "linux", to: "attic" })).code, "invalid_input");
   assert.equal((await refused({ image: "nope", to: "attic" })).code, "image_not_found");
   assert.deepEqual(await holders(), [["studio", "ready"]], "nothing was reserved");
