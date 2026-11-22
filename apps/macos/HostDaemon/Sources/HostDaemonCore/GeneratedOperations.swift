@@ -3,6 +3,11 @@
 public let protocolVersion = "v1"
 public let releaseID = "localbox-contract-v1"
 
+/// Free disk an image write leaves beyond what it writes, so a copy or a capture never fills the Mac.
+public let imageDiskMarginBytes: UInt64 = 1073741824
+/// The one "does it fit" rule for writing an image of `bytes` here; placement plans copies by the same rule.
+public func imageDiskNeedBytes(_ bytes: UInt64) -> UInt64 { bytes + imageDiskMarginBytes }
+
 /// Catalog operations HostDaemon routes itself; the rest go straight to the guest.
 public enum HostOperation: String, CaseIterable, Sendable {
     case sandboxCreate = "sandbox.create"

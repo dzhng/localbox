@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { atLeast, place, type PlacementImage, type PlacementInput, type PlacementMachine } from "../packages/placement/src/index.js";
+import { imageDiskNeedBytes } from "../packages/contract/src/index.js";
 
 const GIB = 1024 ** 3;
 const machine = (id: string, name: string, room: number, total: number, reported = true): PlacementMachine => ({ id, name, reported, roomBytes: room * GIB, totalBytes: total * GIB, lastReportAt: Date.UTC(2026, 9, 15) });
@@ -132,16 +133,29 @@ test("a macOS image never goes to a Mac older than it needs", () => {
 
 test("a copy that can't happen is refused with the numbers", () => {
   const cases: Array<[string, Partial<PlacementInput>, string, RegExp]> = [
-    ["named machine without disk for the copy", { machine: "attic", machines: imaged({ attic: { freeDiskBytes: 3 * GIB } }) }, "disk_full", /attic has 3 GiB of free disk, and copying rails-dev there needs 8 GiB/],
+    ["named machine without disk for the copy", { machine: "attic", machines: imaged({ attic: { freeDiskBytes: 3 * GIB } }) }, "disk_full", /attic has 3 GiB of free disk, and copying rails-dev there needs 9 GiB/],
     ["named machine that has not reported its disk", { machine: "attic", machines: imaged({ attic: { freeDiskBytes: undefined } }) }, "disk_full", /attic has not reported its free disk/],
     ["every holder offline", { machine: "attic", machines: imaged({ studio: { holds: false } }) }, "machine_offline", /every machine holding rails-dev is offline.*garage \(offline/],
     ["no holder anywhere", { machine: "attic", machines: imaged({ studio: { holds: false }, garage: { holds: false } }) }, "image_not_found", /no machine holds rails-dev/],
     ["auto where only an offline machine holds it", { placement: "auto", machines: imaged({ studio: { holds: false } }) }, "machine_offline", /every machine holding rails-dev is offline, so it can't be copied to attic/],
-    ["auto with no holder online and no disk anywhere", { placement: "auto", machines: imaged({ studio: { holds: false, freeDiskBytes: 0 }, attic: { freeDiskBytes: 0 } }) }, "disk_full", /no online machine has 8 GiB of free disk to copy rails-dev to/],
+    ["auto with no holder online and no disk anywhere", { placement: "auto", machines: imaged({ studio: { holds: false, freeDiskBytes: 0 }, attic: { freeDiskBytes: 0 } }) }, "disk_full", /no online machine has 9 GiB of free disk to copy rails-dev to/],
   ];
   for (const [label, input, code, message] of cases) {
     const result = where({ image: railsDev, ...input });
     assert.ok("error" in result, label);
     assert.equal(result.error, code, label); assert.match(result.message, message, label);
   }
+});
+
+test("a copy is planned only where the image plus the receiver's margin fits, by the receiver's own rule", () => {
+  const small: PlacementImage = { ...railsDev, sizeBytes: 4 * GIB };
+  assert.equal(imageDiskNeedBytes(4 * GIB), 5 * GIB, "the image plus 1 GiB, as the receiving daemon checks");
+  const tight = imaged({ attic: { freeDiskBytes: 4.5 * GIB } });
+  const named = where({ image: small, machine: "attic", machines: tight });
+  assert.ok("error" in named && named.error === "disk_full", JSON.stringify(named));
+  assert.match(named.message, /attic has 4.5 GiB of free disk, and copying rails-dev there needs 5 GiB/);
+  const auto = where({ image: small, placement: "auto", neededBytes: 6 * GIB, machines: tight });
+  assert.ok("machineId" in auto && auto.machineId === "m_studio" && auto.copy === undefined, `no copy to attic: ${JSON.stringify(auto)}`);
+  const exact = where({ image: small, machine: "attic", machines: imaged({ attic: { freeDiskBytes: 5 * GIB } }) });
+  assert.ok("copy" in exact && exact.copy?.fromMachineId === "m_studio", JSON.stringify(exact));
 });

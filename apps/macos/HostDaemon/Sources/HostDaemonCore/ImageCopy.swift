@@ -13,8 +13,6 @@ import Foundation
 /// (its unacknowledged candidates).
 public actor ImageCopy: HostOperationKind {
     public static let kind = "image.copy"
-    /// Free disk a receiver leaves beyond the image, so a copy never fills the Mac.
-    public static let marginBytes: UInt64 = 1 << 30
     public static let unreachableNextStep = "put both Macs on the same network once, then copy"
     /// How often a running copy journals its byte count.
     static let progressIntervalMs = 250
@@ -116,7 +114,7 @@ public actor ImageCopy: HostOperationKind {
             return .object(checkpoint.merging(["size_bytes": .number(Double(manifest.sizeBytes))]) { $1 })
         }
         try await context.report(HostOperationProgress(phase: "checking_disk"), checkpoint: .object(checkpoint))
-        try store.requireFree((row.sizeBytes ?? 0) + Self.marginBytes, for: "copying image \(imageID) here", because: "the image plus a \(gibibytes(Self.marginBytes)) margin", then: "copy again")
+        try store.requireFree(imageDiskNeedBytes(row.sizeBytes ?? 0), for: "copying image \(imageID) here", because: "the image plus a \(gibibytes(imageDiskMarginBytes)) margin", then: "copy again")
         let temp = try store.resumableTemp(imageID, key: context.key)
         do {
             try await context.report(HostOperationProgress(phase: "receiving", completed: 0, total: row.sizeBytes.map(Int.init)), checkpoint: .object(checkpoint))

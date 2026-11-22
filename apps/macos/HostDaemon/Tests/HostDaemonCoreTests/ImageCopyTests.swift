@@ -50,6 +50,19 @@ final class ImageCopyTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: to.store.root.path).filter { $0.hasPrefix(".") }, [])
     }
 
+    /// The receiver's check is the contract's one copy-fits rule (`imageDiskNeedBytes`, the image plus a 1 GiB margin),
+    /// the rule placement plans by: a 4 GiB image doesn't fit in 4.5 GiB.
+    func testTheReceiverNeedsTheImagePlusTheMarginFree() async throws {
+        let (from, to) = try await pair(receiverFreeBytes: 9 << 29)
+        _ = try from.plant(Self.image, bytes: 1 << 20)
+        let account = Account(from: from, to: to, sizeBytes: 4 << 30)
+        for mac in [from, to] { _ = try await mac.request("image.copy", ["image": Self.image, "to": "m2"], mutation: "copy-2") }
+        let finished = try await account.run(until: "copy-2", sender: false)
+        XCTAssertEqual(finished.to.error?.code, "disk_full")
+        XCTAssertEqual(finished.to.error?.message, "copying image \(Self.image) here needs 5 GiB free on this Mac (the image plus a 1 GiB margin), and 4.5 GiB is free")
+        XCTAssertEqual(imageDiskNeedBytes(4 << 30), 5 << 30)
+    }
+
     func testNoPathBetweenTheMacsIsCopyUnreachableListingEveryPathTriedAndTheNextStep() async throws {
         let tried = [ImageCopyAttempt(path: .localNetwork, candidate: "10.0.0.1:50000", reason: "timed out"), ImageCopyAttempt(path: .internet, candidate: "203.0.113.9:61000", reason: "no reply to the punch")]
         let (from, to) = try await pair(receiverTransport: UnreachableTransport(tried: tried))

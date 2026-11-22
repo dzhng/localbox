@@ -1,4 +1,4 @@
-import { BUILT_IN_IMAGE, gibibytes as gib, type ImageOS } from "../../contract/src/index.js";
+import { BUILT_IN_IMAGE, gibibytes as gib, imageDiskNeedBytes, type ImageOS } from "../../contract/src/index.js";
 
 /** Where a sandbox goes, where an image is copied to, and which Mac can build a macOS image. Pure: the agent API feeds it. */
 
@@ -13,7 +13,7 @@ export interface PlacementMachine {
   holds?: boolean;
   /** When its holding last changed (ms); a copy comes from the holder that changed most recently. */
   heldAt?: number;
-  /** Free disk for a copy; absent until the machine reports it, and then no copy is planned to it. */
+  /** Free disk for a copy, which must hold `imageDiskNeedBytes` of the image; absent until the machine reports it, and then no copy is planned to it. */
   freeDiskBytes?: number;
   /** The host's macOS version, e.g. "27.0.1"; absent until the machine reports it, and then no macOS image goes there. */
   macOSVersion?: string;
@@ -98,11 +98,12 @@ export function place(input: PlacementInput): Placement {
   const builtIn = image.id === BUILT_IN_IMAGE;
   const holds = (machine: PlacementMachine) => builtIn || machine.holds === true;
   const fits = (machine: PlacementMachine) => machine.roomBytes >= neededBytes;
-  const hasDisk = (machine: PlacementMachine) => machine.freeDiskBytes !== undefined && machine.freeDiskBytes >= image.sizeBytes;
+  const copyNeeds = imageDiskNeedBytes(image.sizeBytes);
+  const hasDisk = (machine: PlacementMachine) => machine.freeDiskBytes !== undefined && machine.freeDiskBytes >= copyNeeds;
   /** `target` as the answer, with the copy it needs when it doesn't hold the image. */
   const onto = (target: PlacementMachine, reason: string): Placement => {
     if (holds(target)) return { machineId: target.id, reason };
-    if (!hasDisk(target)) return fail("disk_full", `${target.name} ${target.freeDiskBytes === undefined ? "has not reported its free disk" : `has ${gib(target.freeDiskBytes)} of free disk`}, and copying ${image.name} there needs ${gib(image.sizeBytes)}`);
+    if (!hasDisk(target)) return fail("disk_full", `${target.name} ${target.freeDiskBytes === undefined ? "has not reported its free disk" : `has ${gib(target.freeDiskBytes)} of free disk`}, and copying ${image.name} there needs ${gib(copyNeeds)}`);
     const holders = all.filter((machine) => machine.id !== target.id && holds(machine));
     const [source] = holders.filter((machine) => machine.reported).sort((a, b) => (b.heldAt ?? 0) - (a.heldAt ?? 0) || a.name.localeCompare(b.name));
     if (!source) return holders.length ? fail("machine_offline", `every machine holding ${image.name} is offline, so it can't be copied to ${target.name}; holders: ${holders.map(room).join(", ")}`)
@@ -149,7 +150,7 @@ export function place(input: PlacementInput): Placement {
     if (roomyTarget) return onto(roomyTarget, `on ${roomyTarget.name}, ${which} (${gib(roomyTarget.roomBytes)} free), since no machine holding ${image.name} has room${skippedNote}`);
     if (holders.length) return holderAnswer(roomiest(holders)!);
     const target = roomiest(copyTargets);
-    if (!target) return fail("disk_full", `no online ${remote ? "other " : ""}machine has ${gib(image.sizeBytes)} of free disk to copy ${image.name} to; machines: ${listed}`);
+    if (!target) return fail("disk_full", `no online ${remote ? "other " : ""}machine has ${gib(copyNeeds)} of free disk to copy ${image.name} to; machines: ${listed}`);
     return onto(target, `on ${target.name}, ${which} (${gib(target.roomBytes)} free)${roomNote(target)}${skippedNote}`);
   }
   const own = callerMachineId === undefined ? undefined : all.find((machine) => machine.id === callerMachineId);

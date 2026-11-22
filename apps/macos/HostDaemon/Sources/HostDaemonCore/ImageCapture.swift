@@ -10,9 +10,6 @@ import Foundation
 /// temporary, and the sandbox's disk has moved on since, so the clone is retaken.
 public actor ImageCapture: HostOperationKind {
     public static let kind = "image.capture"
-    /// Free disk a capture leaves beyond the source disk's allocated bytes, which the clone may come to hold in full
-    /// as the sandbox writes on.
-    public static let marginBytes: UInt64 = 1 << 30
 
     private let store: ImageStore
     private let operations: HostOperationStore
@@ -46,8 +43,8 @@ public actor ImageCapture: HostOperationKind {
 
         // 1. Room for the clone to grow into, before anything is frozen (E3).
         try await context.report(HostOperationProgress(phase: "checking_disk"), checkpoint: .object(checkpoint))
-        try store.requireFree(allocatedBytes(disk) + allocatedBytes(boot) + Self.marginBytes, for: "saving \(record.name)",
-                              because: "its disk plus a \(gibibytes(Self.marginBytes)) margin", then: "delete the failed image and save it again")
+        try store.requireFree(imageDiskNeedBytes(allocatedBytes(disk) + allocatedBytes(boot)), for: "saving \(record.name)",
+                              because: "its disk plus a \(gibibytes(imageDiskMarginBytes)) margin", then: "delete the failed image and save it again")
 
         // 2–4. Clone as it lies when down; otherwise wake it if it sleeps, then freeze around the clone.
         try await context.report(HostOperationProgress(phase: "saving"), checkpoint: .object(checkpoint))

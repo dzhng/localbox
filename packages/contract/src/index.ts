@@ -383,6 +383,14 @@ export function sizeText(bytes: number | null): string {
   if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MiB`;
   return `${bytes} B`;
 }
+/** Free disk an image write leaves beyond what it writes, so a copy or a capture never fills the Mac. */
+export const IMAGE_DISK_MARGIN_BYTES = GIB;
+/**
+ * The one "does it fit" rule for writing an image of `bytes` to a Mac: placement plans a copy only to a Mac whose free
+ * disk is at least this for the image's size, and the receiving daemon (`ImageCopy`) and a capture (`ImageCapture`)
+ * refuse below it. HostDaemon gets it as generated Swift (`swiftHostOperations`).
+ */
+export const imageDiskNeedBytes = (bytes: number) => bytes + IMAGE_DISK_MARGIN_BYTES;
 /** The smallest size `defaultSize` gives; placement asks for room for this much when a create names no memory. */
 export const DEFAULT_SIZE_MINIMUM = { cpus: 2, memory_bytes: 2 * GIB } as const;
 /** A new sandbox's size when its create asks for none: half the host's cores and a quarter of its RAM in whole GiB, at least `DEFAULT_SIZE_MINIMUM`. */
@@ -402,7 +410,7 @@ export function hostOperationIds(): OperationId[] {
   return operationCatalog.filter((entry) => entry.executor === "host" || (entry.executor === "account" && entry.routing !== "account") || ANSWERED_BY_HOST_TOO.includes(entry.id)).map((entry) => entry.id);
 }
 
-/** HostDaemon's copy of the contract: its protocol and release ids and the `HostOperation`s it routes. Written by `contract generate-snapshots`. */
+/** HostDaemon's copy of the contract: its protocol and release ids, the image disk rule and the `HostOperation`s it routes. Written by `contract generate-snapshots`. */
 export function swiftHostOperations(): string {
   const caseName = (id: string) => id.split(/[._]/).map((part, index) => index === 0 ? part : part[0].toUpperCase() + part.slice(1)).join("");
   return [
@@ -410,6 +418,11 @@ export function swiftHostOperations(): string {
     "",
     `public let protocolVersion = "${PROTOCOL_VERSION}"`,
     `public let releaseID = "${RELEASE_ID}"`,
+    "",
+    "/// Free disk an image write leaves beyond what it writes, so a copy or a capture never fills the Mac.",
+    `public let imageDiskMarginBytes: UInt64 = ${IMAGE_DISK_MARGIN_BYTES}`,
+    "/// The one \"does it fit\" rule for writing an image of `bytes` here; placement plans copies by the same rule.",
+    "public func imageDiskNeedBytes(_ bytes: UInt64) -> UInt64 { bytes + imageDiskMarginBytes }",
     "",
     "/// Catalog operations HostDaemon routes itself; the rest go straight to the guest.",
     "public enum HostOperation: String, CaseIterable, Sendable {",
