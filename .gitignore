@@ -11,3 +11,5 @@ apps/macos/**/.build/
 .vercel
 .env*
 .release-signing/
+.release-signing/
+.claude/worktrees/
