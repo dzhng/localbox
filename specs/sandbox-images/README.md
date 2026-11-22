@@ -20,9 +20,10 @@ sandboxes. You already own them."
 ## Next Agent Prompt
 
 *Status 2026-11-21: every slice is built and proven (spike 20 with its throughput gate
-restated, choice 20). The whole-spec review's docs and TypeScript findings are
-applied. Slice numbers start at 15 because `scripts/proof/run.ts` keys probes on a
-two-digit prefix.*
+restated, choice 20). The whole-spec review's docs, TypeScript and Swift findings are
+applied, and the macOS base image's desktop is quiet (no banners, one browser tab, no
+sign-in prompt; probe 34 on a fresh build, an unprimed critique accepted it). Slice
+numbers start at 15 because `scripts/proof/run.ts` keys probes on a two-digit prefix.*
 
 You are picking up the sandbox-images plan. Where things stand:
 
@@ -31,11 +32,9 @@ You are picking up the sandbox-images plan. Where things stand:
   Recovery screen disable SIP with no human (spike 17). Recovery's `halt` leaves
   the VM on, so builds stop it after csrutil. The darwin forwarder works (19).
 - **Next pickup, in priority order:**
-  1. **The whole-spec review's Swift fixes**, including admission counting a
-     running macOS base build against the two-macOS-VM limit (the skill already
-     tells agents a build takes a slot), and tidying the macOS base image's desktop
-     (background-activity and Chrome notification banners, the stray `about:blank`
-     tab and Chrome's first-run sign-in; slice 35's review).
+  1. **Probe 35 at tier `m` on a Mac with about 62 GiB free.** After the review it
+     passes through sleep and wake; its capture step refused `disk_full` (20.6 GiB free
+     after the build, 30.9 GiB needed), and the checks after it follow from that.
   2. **Ledger consolidation**, then
      [close-spec](../../.agents/skills/close-spec/SKILL.md). The durable
      single-owner rules already live in the
