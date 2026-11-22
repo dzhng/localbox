@@ -46,11 +46,14 @@ public struct ClonedImage: Sendable {
 /// The only code that touches `images/<id>/`: `image.json`, `disk.img`, `boot/` (`efi-vars`, or `aux.img` for macOS)
 /// and this Mac's own `listed-by` mark. An image is written into a dot-prefixed temporary directory and committed by one
 /// rename, so a reader never sees half an image and a crash leaves only a temporary that the next start sweeps. It also
-/// answers how much the images volume has free, for capacity and for every operation that writes an image.
+/// answers how much the images volume has free, for capacity and for every operation that writes an image, and keeps
+/// the account's names for the images its catalog lists here (`accountName`).
 public struct ImageStore: Sendable {
     public let root: URL
     /// A free-disk figure in place of the volume's: proof runs fix it (`LOCALBOX_DEV_FREE_DISK_BYTES`), tests script it.
     private let freeBytesOverride: (@Sendable () -> UInt64)?
+    /// Shared by every copy of this store, so the daemon's image work reads the names the mirror last gave.
+    private let names = AccountImageNames()
 
     public init(imagesDirectory: URL, freeBytesOverride: (@Sendable () -> UInt64)? = nil) throws {
         root = imagesDirectory; self.freeBytesOverride = freeBytesOverride
@@ -193,6 +196,18 @@ public struct ImageStore: Sendable {
 
     private func listingMark(_ id: String) throws -> URL { try imageDirectory(id).appendingPathComponent("listed-by") }
 
+    /// The account's name for image `id`, as the catalog last listed it here, held or still being built or copied in.
+    /// Nil until the connector's first mirror after a start: the names are kept in memory only, since the images shown by
+    /// name are the ones in progress, which have no directory to keep a mark in, and the connector re-sends them as soon
+    /// as it reaches the account.
+    public func accountName(_ id: String) -> String? { names.get(id) }
+
+    /// What a message about image `id` calls it: its account name, else its id.
+    public func displayName(_ id: String) -> String { accountName(id) ?? id }
+
+    /// Replaces the account's names with those of the images its catalog lists here now.
+    public func setAccountNames(_ listed: [String: String]) { names.set(listed) }
+
     /// The IPSW cache (`.ipsw/`): kept across starts and never swept, since it holds downloads that took an hour.
     public var ipswDirectory: URL { root.appendingPathComponent(".ipsw", isDirectory: true) }
 
@@ -250,6 +265,15 @@ public struct ImageStore: Sendable {
     static func bootStore(in image: URL, os: GuestOS) -> URL {
         image.appendingPathComponent("boot", isDirectory: true).appendingPathComponent(os.bootStoreName)
     }
+}
+
+/// `ImageStore`'s in-memory names, behind a lock: the mirror writes them from `ImageHost`, `host.watch` reads them from
+/// `SandboxHost`.
+private final class AccountImageNames: @unchecked Sendable {
+    private let lock = NSLock()
+    private var byID: [String: String] = [:]
+    func get(_ id: String) -> String? { lock.withLock { byID[id] } }
+    func set(_ names: [String: String]) { lock.withLock { byID = names } }
 }
 
 /// A macOS base build's working files, in its `ImageStore` build directory (`images/.<id>.build/`): the installed

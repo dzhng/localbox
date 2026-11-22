@@ -78,7 +78,7 @@ test("lifecycle: both ends publish candidates (copying), each sees the other's, 
   assert.deepEqual(await holders(), [["attic", "ready", "copy-1"], ["studio", "ready", "capture-1"]]);
   const done = await agent.query(ref("images:copyByOperation"), { operationId: "copy-1" }) as any;
   assert.deepEqual([done.state, done.result], ["copied", { bytes: 3 * GIB, duration_ms: 9_500, path: "local_network" }]);
-  assert.deepEqual(await m2.query(ref("images:forMachine"), {}), [{ image_id: copy.image_id, state: "ready" }], "the receiver's image mirror now lists it ready");
+  assert.deepEqual(await m2.query(ref("images:forMachine"), {}), [{ image_id: copy.image_id, name: "rails-dev", state: "ready" }], "the receiver's image mirror now lists it ready");
 });
 
 test("a sender that fails fails the copy, so the receiver stops waiting; the receiver's failure is its holding's", async () => {

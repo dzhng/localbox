@@ -41,6 +41,8 @@ export interface SandboxState { sandbox_id: string; state: string; cpus?: number
 interface ReportedResult { size_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" }
 /** One of this machine's copies as `images:copiesForMachine` lists it: what its daemon's side needs, key included. */
 export interface CopyRendezvous { copy_id: string; operation_id: string; image_id: string; role: "sender" | "receiver"; key: string; size_bytes: number | null; state: string; candidates: Json[] | null; peer_candidates: Json[] | null; error: Json }
+/** One image the account lists on this machine (`images:forMachine`), as the daemon's image mirror takes it. */
+type MirroredImage = { image_id: string; name: string | null };
 /** Where this Mac's side of a copy can be reached, as its daemon hands it over to publish; `generation` acknowledges it. */
 interface CandidateOffer { copy_id: string; candidates: Json[]; generation: number }
 
@@ -116,7 +118,7 @@ export class Connector {
     this.unsubscribeMirror = this.deps.convex.onUpdate(machineFunctions.forMachine, {}, (rows: Json[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirror(rows)); },
       (error) => { if (!this.ended) { this.deps.log(`sandbox mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // Image files follow the catalog the same way: an image deleted while this Mac was offline goes when it reconnects.
-    this.unsubscribeImageMirror = this.deps.convex.onUpdate(machineFunctions.imagesForMachine, {}, (rows: Array<{ image_id: string }> | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map((row) => row.image_id))); },
+    this.unsubscribeImageMirror = this.deps.convex.onUpdate(machineFunctions.imagesForMachine, {}, (rows: MirroredImage[] | null | undefined) => { if (!Array.isArray(rows)) return; this.mirrorQueue = this.mirrorQueue.then(() => this.mirrorImages(rows.map(({ image_id, name }) => ({ image_id, name })))); },
       (error) => { if (!this.ended) { this.deps.log(`image mirror subscription error: ${message(error)}`); this.recheckIdentity(error); } });
     // A copy's rendezvous (its key, the peer's candidates, its state) reaches the daemon whenever the row changes.
     this.unsubscribeCopies = this.deps.convex.onUpdate(machineFunctions.copiesForMachine, {}, (rows: CopyRendezvous[] | null | undefined) => { if (!Array.isArray(rows)) return; this.copies = rows; this.mirrorQueue = this.mirrorQueue.then(() => this.pushCopies()); },
@@ -211,8 +213,11 @@ export class Connector {
     } catch (error) { this.deps.log(`sandbox mirror failed: ${message(error)}`); }
   }
 
-  /** Pushes the image ids the catalog lists on this machine; the daemon removes the files of any its catalog listed before and no longer does. */
-  private async mirrorImages(images: string[]): Promise<void> {
+  /**
+   * Pushes the images the catalog lists on this machine, each with its name, which the daemon shows in this Mac's image
+   * work (a rename re-sends); the daemon removes the files of any its catalog listed before and no longer does.
+   */
+  private async mirrorImages(images: MirroredImage[]): Promise<void> {
     if (this.ended) return;
     try {
       const response = await this.deps.daemon.dispatch(hostRequest("image.mirror", { machine_id: this.deps.machineId, images }, `image-mirror-${++this.mirrorSeq}`));

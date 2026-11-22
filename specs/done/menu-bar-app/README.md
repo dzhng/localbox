@@ -13,8 +13,9 @@ launchd jobs, the installer script, the updater job and rollback are gone.
   1–12, the Bento reference digest) and the [plan decisions](#plan-decisions)
   below (A1–A14).
 - Every further choice the build made, and its verdict: the
-  [choices ledger](choices.md). Its **Needs your call** entries (N1–N7) are
-  live trade-offs the user owns, its **Unsound** group is empty (the closing
+  [choices ledger](choices.md). Its **Needs your call** entries (N1, N2,
+  N4–N7; N3 was fixed and is now S42) are live trade-offs the user owns, its
+  **Unsound** group is empty (the closing
   audit's U1 and U2 were redone and are now S40 and S41), and its
   **Provisional** entries (V1–V6) each wait on something named.
 - What the spikes found: [spikes.md](spikes.md), with each full write-up in
@@ -99,7 +100,7 @@ the existing release key, so there is one trust root (A9).
 | --- | --- | --- |
 | 1 | The app owns everything | `ChildProcess` supervises the daemon, the connector and the image one-shot; no launchd job remains. |
 | 2 | Sparkle, Bento's patch, appcast via `localbox.sh`, image fetched separately | Patch re-applied under Localbox names (A8), plus `HOME` in the relaunch (N4 ⚠). `https://localbox.sh/mac/appcast.xml` 302s to the latest release's `appcast.xml` (`apps/site/vercel.json`). |
-| 3 | Bento-style popover | `NSStatusItem` + `NSPopover`: header, warning band, sandboxes with Copy Name, Sleep/Wake, Open Log, images in progress, Settings…, Quit. Image rows show ids, not names (N3 ⚠). |
+| 3 | Bento-style popover | `NSStatusItem` + `NSPopover`: header, warning band, sandboxes with Copy Name, Sleep/Wake, Open Log, images in progress (by the account's name, S42), Settings…, Quit. |
 | 4 | Settings copies Bento's window | About and General are Bento's, row for row; Workspace became Account. |
 | 5 | Open at login on by default | Registered once by a release in an Applications folder; the person's choice stands after (S12). |
 | 6 | A command with the app quit launches it quietly | `ensureApp`: `open -g`, one retry, up to 20 s (S14). |
@@ -259,6 +260,9 @@ Sparkle accepting a feed signed by the release key (slice 15). All held.
   was changed to answer with its envelope (S40), and automatic updates were
   changed to wait on the screen being locked now rather than on the lock
   setting alone (S41).
+- The popover's image rows showed image ids, since the daemon knew no names.
+  After the closing audit the connector's image mirror was changed to carry
+  each image's name, which the daemon hands to the facts (S42).
 - Probe numbers moved: the release is 42, the image 43, the update 44.
 - The daemon's fallback lock path, kept for the deleted launchd plist, went in
   the whole-spec review; the variable is now required.

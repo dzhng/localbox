@@ -36,7 +36,7 @@
       }
     },
     {
-      "name": "img_macos",
+      "name": "macos-base",
       "state": "building",
       "phase": "install"
     }
@@ -45,5 +45,5 @@
   "stopping": null,
   "update": null,
   "warnings": [],
-  "watch_version": 22192220956134
+  "watch_version": 230600759923296
 }
