@@ -10,7 +10,7 @@ export const tiers = ["m"];
 /** Confirm item 3: provisioning options instead of Setup Assistant, code in over SSH, SIP disabled through one
  * scripted Recovery session, Remote Login turned off afterwards. No human input at any step. */
 export async function run(ctx: ProofContext): Promise<Check[]> {
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   let verdict: Record<string, unknown> = {};
   const checks = [await ctx.check("provisioned, SSH bootstrap ran, SIP disabled in Recovery, Remote Login turns off", async () => {
     if (!hasMacOSBase()) throw new Error("blocked: no cached macOS base; run npm run proof -- 16 --tier m");

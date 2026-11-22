@@ -37,7 +37,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     assert.equal(verdict.self_thawed, true, JSON.stringify(verdict.phase2));
     assert.equal(verdict.ok, true);
   }));
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, "27-control-lane.json"), `${JSON.stringify({ checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), vmlab: verdict }, null, 2)}\n`);
   return checks;
 }

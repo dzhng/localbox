@@ -28,7 +28,7 @@ type Event = Record<string, any> & { event: string };
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "x") {
     const check = await ctx.check("punch and transfer between this Mac and a second Mac on another network", () => {
-      throw new Error("blocked: no second Mac on another network; run `localbox-punchlab offer --send <file> --offer offer.json --answer answer.json` here, paste offer.json to the other Mac, run `localbox-punchlab answer offer.json --receive <dir> --answer answer.json` there, paste answer.json back (see slices/20-punch-spike.md)");
+      throw new Error("blocked: no second Mac on another network; run `localbox-punchlab offer --send <file> --offer offer.json --answer answer.json` here, paste offer.json to the other Mac, run `localbox-punchlab answer offer.json --receive <dir> --answer answer.json` there, paste answer.json back (see step 8 of specs/durable-sandboxes/two-mac-runbook.md)");
     });
     recordEvidence(ctx, "x", [check], {});
     return [check];
@@ -298,7 +298,7 @@ function median(values: number[]): number {
 
 /** One evidence file for every tier, so `--tier s` then `--tier l` both land in it. */
 function recordEvidence(ctx: ProofContext, tier: string, checks: Check[], measured: Record<string, unknown>) {
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   const path = join(directory, "20-punch.json");
   const evidence = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
   evidence[tier] = { at: new Date().toISOString(), checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), ...measured };

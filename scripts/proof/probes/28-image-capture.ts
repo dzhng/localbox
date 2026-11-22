@@ -138,7 +138,7 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
     }));
   } finally {
     await cleanup();
-    const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+    const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
     writeFileSync(join(directory, "28-image-capture.json"), `${JSON.stringify({ checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), stall_ms: record?.result?.stall_ms ?? null, ...evidence }, null, 2)}\n`);
   }
   return checks;

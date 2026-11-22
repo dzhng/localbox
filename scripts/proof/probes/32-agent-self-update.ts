@@ -110,7 +110,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     await daemon.cleanup();
     rmSync(hostAgent, { recursive: true, force: true }); rmSync(nextBuild, { recursive: true, force: true });
   }
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, "32-agent-update.json"), `${JSON.stringify({ checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), ...evidence }, null, 2)}\n`);
   return checks;
 }

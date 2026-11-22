@@ -4,8 +4,8 @@ The user's own end-to-end test on two real Macs. Everything here was proven on
 one Mac with a simulated second one (`npm run proof -- 13 --tier l,v`); this run
 checks what a simulation cannot: two real machines on different networks, real
 sign-in email, a cloud agent on the internet, and an image copied directly
-between the two Macs across the internet (step 8, the sandbox-images plan's
-tier `x`).
+between the two Macs across the internet (step 8, the open tier `x` check in
+[sandbox images](../done/sandbox-images/README.md#open-verification)).
 
 **Before you start** (the orchestrator confirms these):
 

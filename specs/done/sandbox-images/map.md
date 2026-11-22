@@ -215,9 +215,9 @@ L3 is written against those.
 ## Confirm before coding
 
 > Superseded by the plan: each item is now a spike with a pass/fail gate and a
-> written fallback, slices 15–20 in the [README](README.md). Item 3 is split into
-> slices 16 and 17 (plan decision P11), and its "signed, notarized daemon" premise
-> is corrected there: releases are self-signed and not notarized
+> written fallback, build steps 15–20 in the [README](README.md#where-to-look). Item 3
+> was split into steps 16 and 17 (plan decision P11), and its "signed, notarized
+> daemon" premise is corrected in the [README](README.md#plan-decisions): releases are self-signed and not notarized
 > (`SECURITY.md:160-161`).
 
 1. A Linux guest under `VZEFIBootLoader` plus `VZGenericPlatformConfiguration`

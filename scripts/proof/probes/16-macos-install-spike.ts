@@ -30,7 +30,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     evidence.hibernate = verdict;
     assert.equal(verdict.ok, true, JSON.stringify(verdict) + stderr.slice(-2000));
   }));
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, "16-macos-install.json"), `${JSON.stringify({ checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), ...evidence }, null, 2)}\n`);
   return checks;
 }

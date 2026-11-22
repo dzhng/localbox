@@ -41,7 +41,7 @@ async function realBuild(ctx: ProofContext): Promise<Check[]> {
   const ipsw = cachedIpsw();
   if (!ipsw) throw new Error("blocked: no cached IPSW; run npm run proof -- 16 --tier m");
   const evidence: Record<string, unknown> = { host_macos: version, uncached_build: "not measured: an uncached build needs the 25.6 GB IPSW plus the 50 GB disk free, more than this Mac has; the IPSW cache was seeded from the lab's by APFS clone" };
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   const agents = join(ctx.root, "dist/guest-agent");
   const daemon = realDaemon(ctx, { probe: "34", env: { LOCALBOX_GUEST_AGENT: agents } });
   const checks: Check[] = [];

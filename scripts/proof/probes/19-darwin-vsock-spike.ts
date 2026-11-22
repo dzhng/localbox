@@ -10,7 +10,7 @@ export const tiers = ["m"];
 /** Confirm item 5: the darwin vsock forwarder carries framed traffic byte for byte on ports 1024 and 1025, survives
  * host reconnects, and refuses peers other than the host. */
 export async function run(ctx: ProofContext): Promise<Check[]> {
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   let verdict: Record<string, unknown> = {};
   const checks = [await ctx.check("vsock forwarder: 10,016 echoed frames, reconnect, host-only peers", async () => {
     if (!existsSync(join(vmlabDir(), "macos-provisioned", "disk.img"))) throw new Error("blocked: no provisioned macOS base; run npm run proof -- 17 --tier m");

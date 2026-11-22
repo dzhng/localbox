@@ -24,8 +24,8 @@ gone too.
 Within each group the least confident entry comes first. **Confidence** means how
 sure the audit is that the user would have made the same call. **When** gives the
 slice or slices that made the choice (`review` means the whole-spec review at the
-end). Slice files and the README cite choices as "choice NN", which means the
-entries whose **When** includes slice NN. ⚠ marks a choice that stretches or contradicts
+end). The numbers are the build steps listed in the
+[README](README.md#where-to-look); the README cites entries by their id (N1, S59). ⚠ marks a choice that stretches or contradicts
 a decision in the map.
 
 **Review these first:** N1 (the macOS disk may be too small for Xcode), N2 (macOS
@@ -94,7 +94,7 @@ enrolled in device management.
 
 ### N3. The copy-speed gate compares against the best the transport layer can do, not against `iperf3`
 
-**When:** 20 (restated), still waiting on the two-Mac run · **Owner:** `scripts/proof/probes/20-punch.ts` (`THROUGHPUT_GATE`, `MIN_GBPS`)
+**When:** 20 (restated), still waiting on the two-Mac run · **Owner:** `scripts/proof/probes/20-punch-spike.ts` (`THROUGHPUT_GATE`, `MIN_GBPS`)
 
 The map asked that a direct copy reach about local-network speed, and the slice
 set "at least 70% of `iperf3`" (`iperf3` is the standard network speed tool). On
@@ -112,7 +112,7 @@ which is faster than gigabit Ethernet or Wi-Fi, so on a real link the link sets 
 - **Reach:** this is what "the copy is fast enough" means until two Macs run it.
   On 10 GbE the Network.framework layer, not the link, may be the limit.
 - **Verdict:** needs your call. **Provisional call:** keep the restated gate, and
-  let the two-Mac, two-network run (the README's open TODO) confirm it on a real
+  let the two-Mac, two-network run (the README's [open verification](README.md#open-verification)) confirm it on a real
   link. To reverse it, gate on `iperf3` UDP again, which would reopen the
   transport choice (P13). Alternatives the spike measured or named: BSD sockets
   (about 1.35× faster here, which matters only on 10 GbE); QUIC with a pre-shared key.
@@ -294,7 +294,7 @@ Mac, where the "network" is loopback.
 - **Reach:** speed and reliability of every copy across networks. IPv6-only
   networks can't copy.
 - **Verdict:** provisional. Revisit after the two-Mac, two-network run
-  (README TODO). Watch for fragmentation, which would mean using 1200-byte
+  ([README](README.md#open-verification)). Watch for fragmentation, which would mean using 1200-byte
   datagrams, and for loss under real queues. Alternatives: fixed rate, or BBR
   (a model-based congestion control); IPv6 candidates.
 - **Confidence:** low–medium.

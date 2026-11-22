@@ -12,7 +12,7 @@ export const tiers = ["m"];
  * post a click with no prompt; whether the grant survives a replaced binary is recorded (it doesn't: P6's fallback),
  * and an agent update keeps it. Since slice 33 the lab installs the real darwin agent, so this is also its real run. */
 export async function run(ctx: ProofContext): Promise<Check[]> {
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   let verdict: Record<string, unknown> = {};
   const checks = [await ctx.check("TCC rows grant screen capture, accessibility and event posting to the desktop role", async () => {
     if (!existsSync(join(vmlabDir(), "macos-provisioned", "disk.img"))) throw new Error("blocked: no provisioned macOS base; run npm run proof -- 17 --tier m");

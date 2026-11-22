@@ -42,7 +42,7 @@ async function realSandboxes(ctx: ProofContext): Promise<Check[]> {
   const reuse = process.env.LOCALBOX_MACOS_IMAGE;
   const ipsw = cachedIpsw();
   if (!reuse && !ipsw) throw new Error("blocked: no cached IPSW and no LOCALBOX_MACOS_IMAGE; run npm run proof -- 16 --tier m");
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   const agents = join(ctx.root, "dist/guest-agent");
   const daemon = realDaemon(ctx, { probe: "35", env: { LOCALBOX_GUEST_AGENT: agents } });
   const { ok, call, sh, record } = daemon;

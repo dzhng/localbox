@@ -43,7 +43,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
     const { verdict, stderr } = await vmlab("efi-clones");
     assert.equal(verdict.ok, true, JSON.stringify(verdict) + stderr.slice(-2000));
   }));
-  const directory = join(ctx.root, "specs/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
+  const directory = join(ctx.root, "specs/done/sandbox-images/evidence"); mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, "15-efi.json"), `${JSON.stringify({ checks: checks.map(({ name, ok, detail }) => ({ name, ok, detail })), ...evidence }, null, 2)}\n`);
   return checks;
 }
