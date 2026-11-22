@@ -126,13 +126,9 @@ public final class VNCClient: @unchecked Sendable {
         try await write(request)
     }
 
-    /// A frame that isn't blank: right after a display change the server can send an all-black frame first.
-    public func captureLit(timeout: TimeInterval = 15) async throws -> CGImage {
-        let deadline = Date().addingTimeInterval(timeout)
-        var frame = try await capture()
-        while framebuffer.allSatisfy({ $0 == 0 }), Date() < deadline { try await Task.sleep(nanoseconds: 1_000_000_000); frame = try await capture() }
-        return frame
-    }
+    /// The frame the last capture read, without asking for another: the server answers a request only once the screen
+    /// changes, so a screen just read (by `waitForText`) is saved from what it sent.
+    public func lastFrame() throws -> CGImage { try image() }
 
     /// The screen's text, top to bottom, from Vision's text recognition.
     public func screenText() async throws -> String {

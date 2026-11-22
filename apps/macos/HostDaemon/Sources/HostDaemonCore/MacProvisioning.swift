@@ -113,7 +113,7 @@ public enum MacProvisioning {
             }
             try await screen.type("\(user.password)\n")
             let done = try await screen.waitForText(timeout: 120, "SIP disabled") { $0.contains("disabled") || $0.contains("is off") }
-            if let screenshot { try screen.savePNG(try await screen.captureLit(), to: screenshot) }
+            if let screenshot { try screen.savePNG(try screen.lastFrame(), to: screenshot) }
             transcript.append(done.split(separator: "\n").suffix(4).joined(separator: " | "))
             try await screen.type("halt\n")
         } catch { try? await vm.stop(); throw error }

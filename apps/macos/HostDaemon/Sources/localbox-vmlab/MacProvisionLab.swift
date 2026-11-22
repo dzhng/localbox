@@ -70,7 +70,7 @@ extension MacLab {
         let screen = try await VNCClient.connect(to: server)
         defer { screen.close() }
         let text = try await screen.waitForText(timeout: 300, "the logged-in desktop") { text in ["Finder", "File", "Edit", "View", "Go", "Window", "Help"].filter { text.contains($0) }.count >= 4 }
-        try screen.savePNG(try await screen.capture(), to: url)
+        try screen.savePNG(try screen.lastFrame(), to: url)
         return text.replacingOccurrences(of: "\n", with: " | ")
     }
 }
