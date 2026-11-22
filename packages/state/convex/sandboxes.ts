@@ -8,7 +8,7 @@ import { sandboxName, validateLabel } from "../../names/src/index.js";
 import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
 
 /** Idle time before a sandbox sleeps, unless its create asks for another; the daemon applies it. */
-const DEFAULT_SLEEP_AFTER_MS = 30 * 60_000;
+export const DEFAULT_SLEEP_AFTER_MS = 5 * 60_000;
 const NAME_ATTEMPTS = 20;
 
 const accountRows = async (ctx: any, accountId: string) => await boundedRows(ctx.db.query("sandboxes").withIndex("by_account", (q: any) => q.eq("accountId", accountId)), "sandbox list");

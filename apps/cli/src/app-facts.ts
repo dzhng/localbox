@@ -22,6 +22,8 @@ export interface AppFacts {
   daemon: "running" | "starting" | "stopped" | "backing_off";
   connector: { state: "connected" | "connecting" | "signed_out" | "down"; detail?: string };
   capacity: { cpus_free: number; cpus_total: number; memory_free_bytes: number; memory_total_bytes: number; disk_free_bytes: number | null } | null;
+  /** Whether this Mac's daemon is holding off idle sleep (a sandbox or long host work is running); false without one. */
+  keeping_awake: boolean;
   hibernate: HostCheck["hibernate"];
   /**
    * Whether the screen is locked at this moment. Saving a sandbox fails only while the screen is locked and the lock
@@ -58,6 +60,7 @@ interface Watch {
   sandboxes?: Array<{ sandbox_id: string; name: string; os: string; lifecycle: string; cpus: number }>;
   /** `image_name` is the account's name for the record's image, once the connector's mirror has given it. */
   operations?: Array<HostOperationRecord & { updated_at: number; image_name?: string; sandbox?: { sandbox_id: string; name: string } }>;
+  keeping_awake?: boolean;
 }
 interface AppInfo {
   version: string; build: "release" | "dev"; in_applications: boolean; children: { daemon: AppFacts["daemon"]; connector: string }; stopping: AppFacts["stopping"];
@@ -175,7 +178,7 @@ async function compose({ deps, daemon, watch, host, setup, progressFile, images,
     version: info.version, build: info.build,
     account: credentials ? { email: credentials.email ?? null, machine_name: credentials.machine_name } : null,
     daemon: daemonState, connector,
-    capacity: watch?.capacity ? capacityFact(watch) : null,
+    capacity: watch?.capacity ? capacityFact(watch) : null, keeping_awake: watch?.keeping_awake ?? false,
     hibernate: host.hibernate, screen_locked_now: (deps.screenLocked ?? screenLockedNow)(), open_at_login: loginItem.state, agent_setup: setup,
     sandboxes: sandboxFacts(watch, recent),
     images: [...builtinRow(builtinImage, builtin), ...imageFacts(recent, images)],

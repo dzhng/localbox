@@ -153,12 +153,12 @@ extension XCTestCase {
     /// of sandboxes alone (no operation kinds registered; `TestDaemon` wires everything).
     func sandboxHost(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false,
                      agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, freeDiskBytes: (@Sendable () -> UInt64)? = nil, store: ImageStore? = nil, builtinImage: BuiltinImageWait? = nil,
-                     now: @escaping @Sendable () -> Date = { Date() }) throws -> SandboxHost {
+                     idleSleep: any IdleSleepPrevention = NoIdleSleepPrevention(), now: @escaping @Sendable () -> Date = { Date() }) throws -> SandboxHost {
         let root = try scratch()
         let operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
         let store = try store ?? ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: freeDiskBytes)
         return SandboxHost(sandboxesDirectory: sandboxesDirectory, factory: factory, operations: operations, store: store, hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes, admissionBytes: admissionBytes,
-                           allowsSimulatedPower: allowsSimulatedPower, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage, now: now)
+                           allowsSimulatedPower: allowsSimulatedPower, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage, idleSleep: idleSleep, now: now)
     }
 }
 
@@ -244,12 +244,12 @@ struct TestDaemon {
 
     init(root: URL, factory: any SandboxBackendFactory = FakeBackendFactory(), freeBytes: UInt64 = 1 << 40, hostCPUs: Int = 4, hostMemoryBytes: UInt64 = 8 * gib,
          transport: any ImageCopyTransport = UnreachableTransport(tried: []), copyPeerWaitMs: Int = 10_000, macDriver: (any MacBuildDriver)? = nil, catalog: any IPSWCatalog = FakeCatalog(), http: any RangedHTTP = FakeHTTP(),
-         guestAgent: URL? = nil, hostVersion: String = "27.0.1", dev: Bool = false) async throws {
+         guestAgent: URL? = nil, hostVersion: String = "27.0.1", dev: Bool = false, idleSleep: any IdleSleepPrevention = NoIdleSleepPrevention()) async throws {
         self.root = root
         operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
         store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: { freeBytes })
         store.sweepTemps(keeping: await operations.runningSubjects())
-        let host = SandboxHost(sandboxesDirectory: root.appendingPathComponent("sandboxes"), factory: factory, operations: operations, store: store, hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes)
+        let host = SandboxHost(sandboxesDirectory: root.appendingPathComponent("sandboxes"), factory: factory, operations: operations, store: store, hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes, idleSleep: idleSleep)
         let builder = MacBaseBuilder(store: store, operations: operations, sandboxes: host, driver: macDriver ?? FakeMacDriver(journals: root.appendingPathComponent("operations")), catalog: catalog, http: http, guestAgent: guestAgent, hostVersion: { hostVersion })
         daemon = await HostDaemon(sandboxes: host, macBuilder: builder, transport: transport, copyPeerWaitMs: copyPeerWaitMs, dev: dev)
     }

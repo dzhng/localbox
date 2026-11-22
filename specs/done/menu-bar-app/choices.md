@@ -211,6 +211,32 @@ Three things Bento has that Localbox does not:
   previous bundle and a way to swap it in, which brief 9 ruled out.
 - **Confidence:** medium–high.
 
+### N8. The Mac stays awake while a sandbox runs, on battery too, with no setting
+
+**When:** after the build (idle sleep went to 5 minutes the same day) · **Owner:** `SandboxHost` (`KeepAwake`, `IOKitIdleSleepPrevention` in `SystemPower.swift`)
+
+While any sandbox is starting, running, freezing for a clone or saving, or any
+long host work runs (an image build, capture or copy), the daemon holds one
+`PreventUserIdleSystemSleep` assertion ("Localbox is running sandboxes" in
+`pmset -g assertions`), as Caffeine would; once every sandbox is asleep, paused
+or stopped and no work runs, it lets go, and it lets go at exit. The display
+still sleeps, and a closed lid or a sleep someone asks for still sleeps the Mac,
+hibernating the sandboxes first as before. Only a daemon on real VMs holds it;
+the process fixture holds nothing. The popover's header says "Keeping this Mac
+awake while sandboxes run" while it is held. The trade-off: a sandbox sleeps
+after 5 idle minutes, but one running a background job never does, so a laptop
+on battery with a forgotten job stays awake until the lid closes or the job
+ends.
+
+- **Gap:** the request said to keep the Mac awake and asked for no Settings
+  toggle; nobody said whether battery power changes that.
+- **Reach:** every Mac with a running sandbox; on a laptop, battery life.
+- **Verdict:** needs your call. **Provisional call:** held whatever the power
+  source, no setting. To reverse: have `IOKitIdleSleepPrevention` skip the
+  assertion on battery (`IOPSCopyPowerSourcesInfo`, re-checked on power-source
+  change), or add a Settings switch the daemon reads.
+- **Confidence:** medium.
+
 ---
 
 ## Unsound

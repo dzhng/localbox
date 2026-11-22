@@ -13,7 +13,7 @@ localbox help --json             # the whole catalog as JSON
 Each catalog operation id (`sandbox.create`, `fs.read`, `skill.status`) is a
 command (`localbox sandbox create`, `localbox fs read`, `localbox skill status`)
 and an MCP tool of the same name with the same schema. Flags are the schema's
-fields (`--memory 4G` and `--sleep-after 30m` take sizes and durations). For
+fields (`--memory 4G` and `--sleep-after 5m` take sizes and durations). For
 input that is awkward as flags, pass the schema's JSON directly:
 
 ```sh

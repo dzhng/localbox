@@ -90,7 +90,9 @@ export function realDaemon(ctx: ProofContext, options: { probe: string; env?: No
   };
   /** Resident memory of this daemon's VM services, by pid, in KiB. */
   const vmRSS = () => new Map([...virtualizationRSS()].filter(([pid]) => ours(pid)));
-  return { machine, sandboxes, env, log, start, stop, closeStdin, call, ok, sh, record, vmRSS, cleanup };
+  /** The running daemon's pid, while one runs. */
+  const pid = () => daemon?.exitCode === null ? daemon.pid : undefined;
+  return { machine, sandboxes, env, log, start, stop, closeStdin, call, ok, sh, record, vmRSS, pid, cleanup };
 }
 
 /**

@@ -186,15 +186,20 @@ public actor SandboxHost {
     /// macOS image builds holding a macOS VM slot (`takeMacOSSlot`), by operation key: with running macOS sandboxes, the
     /// one count of this Mac's macOS VMs.
     private var macOSBuilds: Set<String> = []
+    /// The Mac's idle-sleep prevention, held while `KeepAwake` says so. It follows every state change (`bumpStateVersion`)
+    /// and every start or end of host work (`hostWorkChanged`), one refresh at a time; `releaseIdleSleep` ends it for good.
+    private let idleSleep: any IdleSleepPrevention
+    private var idleSleepRefreshing = false, idleSleepStale = false, idleSleepReleased = false
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
     public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, operations: HostOperationStore, store: ImageStore, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil,
-                allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, builtinImage: BuiltinImageWait? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+                allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, builtinImage: BuiltinImageWait? = nil,
+                idleSleep: any IdleSleepPrevention = NoIdleSleepPrevention(), now: @escaping @Sendable () -> Date = { Date() }) {
         root = sandboxesDirectory; self.factory = factory; self.operations = operations; self.store = store; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater
-        self.builtinImage = builtinImage
+        self.builtinImage = builtinImage; self.idleSleep = idleSleep
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -365,7 +370,7 @@ public actor SandboxHost {
             let states = all.map { ["sandbox_id": $0.record.sandboxID, "name": $0.record.name, "os": $0.record.os.rawValue, "state": $0.status.lifecycle.sandboxState,
                                     "lifecycle": $0.status.lifecycle.rawValue, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes] as [String: Any] }
             let deleted = idleDeletions.sorted { $0.key < $1.key }.map { ["sandbox_id": $0.key, "name": $0.value.name, "reason": $0.value.reason] }
-            return Reply.success(object, ["version": version, "capacity": await capacity(), "sandboxes": states, "deleted": deleted, "operations": await workInProgress()])
+            return Reply.success(object, ["version": version, "capacity": await capacity(), "sandboxes": states, "deleted": deleted, "operations": await workInProgress(), "keeping_awake": await shouldStayAwake()])
         case "connector.report":
             guard let state = input["state"] as? String, !state.isEmpty else { return Reply.failure(object, code: "invalid_input", message: "connector.report requires state") }
             connectorReport = ConnectorReport(state: state, detail: input["detail"] as? String, reportedAt: now())
@@ -784,6 +789,39 @@ public actor SandboxHost {
     fileprivate func bumpStateVersion() {
         stateVersion += 1
         watchers.wakeAll()
+        refreshIdleSleep()
+    }
+
+    /// Host work started or ended (`HostOperationStore.onRunningChange`, wired by `HostDaemon`).
+    func hostWorkChanged() { refreshIdleSleep() }
+
+    /// At daemon exit: lets the Mac idle-sleep, and holds nothing again whatever changes after.
+    public func releaseIdleSleep() {
+        idleSleepReleased = true
+        idleSleep.hold(false)
+    }
+
+    /// `KeepAwake`'s answer for every sandbox here (hidden ones too: their VMs run all the same) and this Mac's host work.
+    private func shouldStayAwake() async -> Bool {
+        var lifecycles: [RuntimeLifecycle] = []
+        for runtime in runtimes.values { lifecycles.append(await runtime.status().lifecycle) }
+        return KeepAwake.shouldStayAwake(lifecycles, hostWorkRunning: !(await operations.runningSubjects()).isEmpty)
+    }
+
+    /// Brings the assertion to `shouldStayAwake`. Changes that land while one refresh awaits are folded into one more
+    /// pass of the same refresh, so an older answer never overwrites a newer one.
+    private func refreshIdleSleep() {
+        idleSleepStale = true
+        guard !idleSleepRefreshing else { return }
+        idleSleepRefreshing = true
+        Task {
+            while idleSleepStale {
+                idleSleepStale = false
+                let awake = await shouldStayAwake()
+                if !idleSleepReleased { idleSleep.hold(awake) }
+            }
+            idleSleepRefreshing = false
+        }
     }
 
     /// Agent setup belongs to the CLI; the daemon runs it here and answers with its envelope's result or error.

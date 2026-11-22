@@ -51,6 +51,19 @@ password) or the backend cannot save (the process fixture), it stops the sandbox
 and records why; the next start cold-boots it and reports `cold_booted` with
 that reason.
 
+`SandboxHost` also owns the Mac's idle-sleep assertion
+(`PreventUserIdleSystemSleep`, named "Localbox is running sandboxes"). It holds
+it while any sandbox is starting, running, freezing or stopping (a save
+included) or any `HostOperationStore` work runs, and lets go once every sandbox
+is asleep, paused, stopped or failed, and at exit. The decision is the pure
+`KeepAwake`; it is re-taken after every lifecycle change (wherever the watch
+version moves) and every start or end of host work, never on a timer, and
+`host.watch` reports it as `keeping_awake`. Display sleep, a closed lid and a
+requested sleep are never held off: the Mac's sleep notices hibernate the
+sandboxes as before (`SystemPower.swift`, which holds the IOKit side). Only a
+daemon on real VMs holds the assertion; on the process fixture, as in tests, it
+holds nothing. There is no setting for it.
+
 `ImageStore` is the only code that touches image files on a Mac; anything else
 that needs an image's disk, boot store or manifest asks it.
 `LOCALBOX_IMAGES` (`machinePaths().images/<id>/`) holds `image.json` (its fields

@@ -67,6 +67,8 @@ public struct AppFacts: Codable, Equatable, Sendable {
     public let daemon: Daemon
     public let connector: Connector
     public let capacity: Capacity?
+    /// Whether the daemon holds off this Mac's idle sleep (a sandbox or long host work is running).
+    public let keepingAwake: Bool
     public let hibernate: Hibernate
     /// Whether the screen is locked at this moment.
     public let screenLockedNow: Bool

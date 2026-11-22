@@ -16,6 +16,7 @@
     "memory_total_bytes": 34359738368,
     "disk_free_bytes": 210000000000
   },
+  "keeping_awake": false,
   "hibernate": "only_while_unlocked",
   "screen_locked_now": true,
   "open_at_login": "enabled",
@@ -36,5 +37,5 @@
       "fix": "System Settings > Lock Screen: set \"Require password after screen saver begins or display is turned off\" to Never; then System Settings > Users & Groups: turn on automatic login"
     }
   ],
-  "watch_version": 185792549150955
+  "watch_version": 102595256480570
 }

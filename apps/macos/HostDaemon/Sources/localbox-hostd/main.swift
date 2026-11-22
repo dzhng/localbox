@@ -34,8 +34,11 @@ struct HostDaemonMain {
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
             // Only Localbox.app fetches the built-in image, so only under it does a create wait for one.
             let builtinImage = ProcessInfo.processInfo.environment["LOCALBOX_BUILTIN_IMAGE_PROGRESS"].flatMap { $0.isEmpty ? nil : BuiltinImageWait(progressFile: URL(fileURLWithPath: expanded($0))) }
-            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), operations: operations, store: images, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
-                                   admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage)
+            let backends = try factory(images)
+            // Only real VMs keep the Mac awake: a daemon on the process fixture (probes, scratch roots) holds no assertion.
+            let idleSleep: any IdleSleepPrevention = backends is AppleSandboxFactory ? IOKitIdleSleepPrevention(log: { log($0) }) : NoIdleSleepPrevention()
+            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: backends, operations: operations, store: images, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
+                                   admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage, idleSleep: idleSleep)
             let macBuilder = MacBaseBuilder(store: images, operations: operations, sandboxes: host, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
             // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
             let daemon = await HostDaemon(sandboxes: host, macBuilder: macBuilder, transport: ImageTransferCopyTransport(), dev: isDev)

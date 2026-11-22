@@ -40,7 +40,7 @@ is the usual error envelope (`invalid_input`, `conflict`).
   default image (initially the built-in `linux`); `--image NAME` picks another,
   and `--image macos` the account's macOS base ([images](references/images.md)).
   Override with `--name`, `--cpus`,
-  `--memory 4G`, `--sleep-after 10m` (default 30 min idle), `--delete-after 2h`
+  `--memory 4G`, `--sleep-after 10m` (default 5 min idle), `--delete-after 2h`
   (only when it should be disposable).
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
   user's machines (`localbox machine list`); `--placement auto` takes the online
@@ -111,7 +111,8 @@ commands run as root in both; a macOS sandbox has macOS's own tools (`zsh`,
   such as a restarted dev server.
 - A sandbox idle for its sleep time (no request, no running job) sleeps. The next
   command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
-  job never sleeps to make room.
+  job never sleeps to make room. While any sandbox runs, the Mac does not idle-sleep
+  (its display still does, and closing the lid still sleeps it).
 - Sleep frees RAM only where the Mac can hibernate; otherwise the `slept`
   detail says the sandbox paused in memory. `localbox host check` says which
   ([why and the settings](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).

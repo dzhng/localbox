@@ -6,6 +6,7 @@ import { runOps } from "../apps/relay/src/ops.js";
 import { success, type Json, type RequestEnvelope, type ResponseEnvelope } from "../packages/contract/src/index.js";
 import type { ImageRow } from "../apps/relay/src/image-state.js";
 import { memoryMailbox } from "./fixtures/memory-mailbox.js";
+import { DEFAULT_SLEEP_AFTER_MS } from "../packages/state/convex/sandboxes.js";
 
 const ref = (name: string) => makeFunctionReference(name) as any;
 const GIB = 1024 ** 3;
@@ -72,8 +73,8 @@ test("the idle policy is the catalog's: mirrored to the machine, and only that m
   const { t, m1, m2 } = await setup();
   const kept = await create(m1, { machineId: "m1", name: "kept" });
   const idle = await create(m1, { machineId: "m1", name: "idle", sleepAfterMs: 5_000, deleteAfterMs: 10_000 });
-  assert.deepEqual([kept.sleep_after_ms, kept.delete_after_ms, idle.sleep_after_ms, idle.delete_after_ms], [1_800_000, null, 5_000, 10_000]);
-  assert.deepEqual((await m1.query(ref("sandboxes:forMachine"), {})).map((row: any) => [row.name, row.sleep_after_ms, row.delete_after_ms]), [["kept", 1_800_000, null], ["idle", 5_000, 10_000]]);
+  assert.deepEqual([kept.sleep_after_ms, kept.delete_after_ms, idle.sleep_after_ms, idle.delete_after_ms], [DEFAULT_SLEEP_AFTER_MS, null, 5_000, 10_000]);
+  assert.deepEqual((await m1.query(ref("sandboxes:forMachine"), {})).map((row: any) => [row.name, row.sleep_after_ms, row.delete_after_ms]), [["kept", DEFAULT_SLEEP_AFTER_MS, null], ["idle", 5_000, 10_000]]);
   await assert.rejects(() => m2.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle" }), (error: any) => error.data?.code === "sandbox_not_found", "another machine of the account cannot");
   assert.deepEqual(await m1.mutation(ref("sandboxes:removeIdle"), { sandboxId: idle.sandbox_id, reason: "idle for 11 s, past its delete-after of 10 s" }), { sandbox_id: idle.sandbox_id, name: "idle", removed: true, reason: "idle for 11 s, past its delete-after of 10 s" });
   assert.deepEqual((await rows(t)).map((row: any) => row.name), ["kept"]);
@@ -99,9 +100,9 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const created = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
-  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", image: "linux", image_reason: "the account default", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: 1_800_000, delete_after_ms: null });
+  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", image: "linux", image_reason: "the account default", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: DEFAULT_SLEEP_AFTER_MS, delete_after_ms: null });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
-  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", image: "linux", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: 1_800_000 }]);
+  assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", image: "linux", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: DEFAULT_SLEEP_AFTER_MS }]);
   assert.equal(sandboxes.length, 1);
   const taken = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(!taken.ok && taken.error.code, "name_conflict"); assert.match(!taken.ok ? taken.error.message : "", /sandboxes: build-box/);

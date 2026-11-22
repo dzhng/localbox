@@ -8,7 +8,7 @@ import Glibc
 
 /// The daemon's one way down. SIGTERM and SIGINT (a quiet supervisor's escalation, a probe, a terminal) and, for a supervised daemon, the end
 /// of its stdin (the parent closed the pipe, or died and the kernel closed it) all run the same steps, once: stop taking
-/// requests, hibernate every running sandbox, exit 0. A supervisor learns about each sandbox from one stderr line as it is
+/// requests, hibernate every running sandbox, let the Mac idle-sleep again, exit 0. A supervisor learns about each sandbox from one stderr line as it is
 /// done, `hibernated NAME` or `stopped NAME: reason`, so it can show progress from real events, and it only ever waits
 /// for the exit: nothing here has a deadline, because a save that is cut off loses that sandbox's memory.
 public final class DaemonShutdown: Sendable {
@@ -70,6 +70,7 @@ public final class DaemonShutdown: Sendable {
             log("stopping (\(reason)): hibernating running sandboxes")
             await server.stop()
             await host.shutdown { [log] name, failure in log(failure.map { "stopped \(name): \($0)" } ?? "hibernated \(name)") }
+            await host.releaseIdleSleep()
             exit(0)
         }
     }

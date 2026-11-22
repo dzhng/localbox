@@ -11,6 +11,7 @@
     "detail": "waiting for this Mac's sandbox service"
   },
   "capacity": null,
+  "keeping_awake": false,
   "hibernate": "available",
   "screen_locked_now": false,
   "open_at_login": "enabled",
@@ -31,5 +32,5 @@
       "fix": "Localbox keeps restarting it; if this lasts, quit Localbox and open it again."
     }
   ],
-  "watch_version": 248559209943302
+  "watch_version": 6356972801926
 }

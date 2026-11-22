@@ -36,7 +36,7 @@
   },
   {
     "appearance" : "light",
-    "height" : 332,
+    "height" : 349,
     "scale" : 2,
     "state" : "images-in-progress",
     "width" : 352
@@ -57,21 +57,21 @@
   },
   {
     "appearance" : "light",
-    "height" : 394,
+    "height" : 411,
     "scale" : 2,
     "state" : "three-sandboxes",
     "width" : 352
   },
   {
     "appearance" : "light",
-    "height" : 530,
+    "height" : 547,
     "scale" : 2,
     "state" : "twelve-sandboxes",
     "width" : 352
   },
   {
     "appearance" : "light",
-    "height" : 422,
+    "height" : 439,
     "scale" : 2,
     "state" : "action-failed",
     "width" : 352
@@ -134,7 +134,7 @@
   },
   {
     "appearance" : "dark",
-    "height" : 332,
+    "height" : 349,
     "scale" : 2,
     "state" : "images-in-progress",
     "width" : 352
@@ -155,21 +155,21 @@
   },
   {
     "appearance" : "dark",
-    "height" : 394,
+    "height" : 411,
     "scale" : 2,
     "state" : "three-sandboxes",
     "width" : 352
   },
   {
     "appearance" : "dark",
-    "height" : 530,
+    "height" : 547,
     "scale" : 2,
     "state" : "twelve-sandboxes",
     "width" : 352
   },
   {
     "appearance" : "dark",
-    "height" : 422,
+    "height" : 439,
     "scale" : 2,
     "state" : "action-failed",
     "width" : 352

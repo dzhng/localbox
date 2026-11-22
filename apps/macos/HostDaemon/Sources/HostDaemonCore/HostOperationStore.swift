@@ -146,6 +146,8 @@ public actor HostOperationStore {
     private var stopped = false
     /// The last `startedAt` given out: each begin takes a later one, so "the most recent operation" never ties.
     private var lastStartedAt = 0
+    /// Told whenever an operation starts running or stops (`onRunningChange`).
+    private var runningChanged: (@Sendable () -> Void)?
 
     /// Loads every journal under `operationsDirectory`; nothing runs until `start()`.
     public init(operationsDirectory: URL) throws {
@@ -166,6 +168,9 @@ public actor HostOperationStore {
         resumers[kind] = resume
     }
 
+    /// `handler` hears every operation starting to run or ending; `SandboxHost` keeps the Mac awake while any runs.
+    public func onRunningChange(_ handler: @escaping @Sendable () -> Void) { runningChanged = handler }
+
     func register<Kind: HostOperationKind>(_ kind: Kind) {
         register(kind: Kind.kind) { context in try await kind.run(context) }
     }
@@ -179,6 +184,7 @@ public actor HostOperationStore {
             if let resume = resumers[record.kind] { launch(record, work: resume); resumed.append(key) }
             else { finish(key, .failure(HostOperationFailure(code: "unsupported", message: "no \(record.kind) operations in this daemon"))) }
         }
+        if !resumed.isEmpty { runningChanged?() }
         return resumed
     }
 
@@ -195,6 +201,7 @@ public actor HostOperationStore {
         try save(record)
         records[key] = record
         launch(record, work: work)
+        runningChanged?()
         return record
     }
 
@@ -332,6 +339,7 @@ public actor HostOperationStore {
         records[key] = record
         waiters.wake { $0.key == key }
         outcomeWaiters.wakeAll()
+        runningChanged?()
     }
 
     private func save(_ record: HostOperationRecord) throws {
