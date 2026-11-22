@@ -179,15 +179,16 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(woke.envelope.result.stdout.trim(), real ? evidence.node_server_pid : "awake");
     }));
 
-    checks.push(await ctx.check("machine remove <B> from A: B's connector exits with code 0, A's account shows 1 machine and none of B's sandboxes", async () => {
-      const child = connectors.b!; const exited = new Promise<number | null>((resolve) => { if (child.exitCode !== null) resolve(child.exitCode); else child.once("exit", (code) => resolve(code)); });
-      const started = Date.now();
+    checks.push(await ctx.check("machine remove <B> from A: B's connector drops the revoked credential and waits for a new sign-in, A's account shows 1 machine and none of B's sandboxes", async () => {
+      const log = () => readFileSync(join(roots.b, "logs/connector.log"), "utf8");
+      const before = log().length, started = Date.now();
       const removed = await as("a", ["machine", "remove", machineId("b"), "--json"]);
       assert.equal(removed.envelope.ok, true, removed.stdout + removed.stderr);
-      const code = await Promise.race([exited, sleep(60_000).then(() => "timeout" as const)]);
-      assert.equal(code, 0, `B's connector ${code === "timeout" ? "was still running 60 s after the removal" : `exited with ${code}`}`);
-      evidence.connector_exit = { code, ms: Date.now() - started, log: readFileSync(join(roots.b, "logs/connector.log"), "utf8").split("\n").filter((line) => /revoked|stopping/.test(line)) };
-      delete connectors.b;
+      while (!log().slice(before).includes("waiting for this Mac to be signed in again") && Date.now() - started < 60_000) await sleep(250);
+      assert.match(log().slice(before), /waiting for this Mac to be signed in again/, "B's connector was still connected 60 s after the removal");
+      assert.equal(connectors.b!.exitCode, null, "it keeps running, as the app's child does");
+      evidence.connector_revoked = { ms: Date.now() - started, log: log().slice(before).split("\n").filter((line) => /revoked|waiting|ended/.test(line)) };
+      stopConnector(connectors.b); delete connectors.b;
       const machines = (await as("a", ["machine", "list", "--json"])).envelope.result ?? [];
       assert.deepEqual(machines.map((row: any) => row.name), [names.a]);
       // B and its disks are gone from the account, so its sandboxes' catalog rows went with it.

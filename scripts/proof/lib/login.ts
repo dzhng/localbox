@@ -20,12 +20,15 @@ export async function login(root: string, machine: string, email: string, env: N
   return await asMachine(machine, ["login", "--email", email, "--code", code], options);
 }
 
-/** Starts `localbox connector run` for a proof machine, detached, logging next to its daemon. `at` is its machine root. */
+/**
+ * Starts `localbox connector run` for a proof machine, detached, logging next to its daemon. `at` is its machine
+ * root. Its stdin is a pipe held by this process, as the app holds it: the connector stops when the proof exits.
+ */
 export function startConnector(root: string, machine: string, at = machineRoot(root, machine)): ChildProcess {
   const logs = join(at, "logs"); mkdirSync(logs, { recursive: true });
   const fd = openSync(join(logs, "connector.log"), "a");
-  const child = spawn(process.execPath, ["bin/localbox.js", "connector", "run"], { cwd: root, detached: true, stdio: ["ignore", fd, fd], env: { ...process.env, LOCALBOX_API_ORIGIN: API_ORIGIN, LOCALBOX_MACHINE_ROOT: at } });
-  closeSync(fd); child.unref(); return child;
+  const child = spawn(process.execPath, ["bin/localbox.js", "connector", "run"], { cwd: root, detached: true, stdio: ["pipe", fd, fd], env: { ...process.env, LOCALBOX_API_ORIGIN: API_ORIGIN, LOCALBOX_MACHINE_ROOT: at } });
+  closeSync(fd); child.unref(); (child.stdin as unknown as { unref(): void }).unref(); return child;
 }
 
 export function stopConnector(child: ChildProcess | undefined, signal: NodeJS.Signals = "SIGTERM"): void {

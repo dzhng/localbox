@@ -1,7 +1,7 @@
-import { createHash, randomUUID, sign, verify, type KeyObject } from "node:crypto";
+import { createHash, sign, verify, type KeyObject } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { copyFile, writeFile, readdir, readFile, mkdir, open, readlink, rm, symlink, rename, stat, unlink } from "node:fs/promises";
+import { copyFile, writeFile, readdir, readFile, mkdir, open, rm, rename, stat } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -15,12 +15,12 @@ export interface ReleaseArtifact { name: string; sha256: string; size: number; a
 /**
  * The built-in `linux` image ships beside the app, not in it, as three kinds of artifact: its disk zstd-compressed and
  * split into `parts` (in order, because GitHub caps a release asset at 2 GiB), its boot store (`bootStore`, the EFI
- * variable store) and its `image.json` (`manifest`). An install expands them into `images/linux/` in the release
- * directory, checking the disk against `sha256` and `size`, and keeps only that directory.
+ * variable store) and its `image.json` (`manifest`). `expandImage` turns them back into an image directory, checking
+ * the disk against `sha256` and `size`.
  */
 export interface ReleaseImage { sha256: string; size: number; parts: string[]; bootStore: string; manifest: string }
 export interface ReleaseManifest { schema: "agent-computer.release.v1"; version: string; imageDigest: string; artifacts: ReleaseArtifact[]; image?: ReleaseImage; minimumMacOS: string; signature?: { algorithm: "ed25519"; keyId: string; value: string } }
-/** The installed image directory, relative to a release directory. */
+/** Where a release's image is expanded, relative to the directory that holds it. */
 export const IMAGE_PATH = `images/${BUILT_IN_IMAGE}`;
 /** The image directory's files, as the host daemon's `ImageStore` reads them. */
 export const IMAGE_FILES = { manifest: "image.json", disk: "disk.img", bootStore: "boot/efi-vars" } as const;
@@ -32,15 +32,6 @@ export async function writeRelease(dir: string, manifest: ReleaseManifest): Prom
 export async function verifyRelease(dir: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
   checkManifest(manifest, platformArch);
   for (const artifact of manifest.artifacts) await verifyArtifact(dir, artifact);
-}
-/** The artifacts an install expands into `images/linux/` and does not keep. */
-function imageArtifacts(image: ReleaseImage | undefined): Set<string> { return new Set(image ? [...image.parts, image.bootStore, image.manifest] : []); }
-/** Verify an installed release: its artifacts except the image's, which an install does not keep, and the expanded image. */
-export async function verifyInstalledRelease(dir: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
-  checkManifest(manifest, platformArch);
-  const expanded = imageArtifacts(manifest.image);
-  for (const artifact of manifest.artifacts) if (!expanded.has(artifact.name)) await verifyArtifact(dir, artifact);
-  if (manifest.image) await verifyImageDirectory(join(dir, IMAGE_PATH), manifest);
 }
 async function verifyImageDirectory(directory: string, manifest: ReleaseManifest): Promise<void> {
   const image = manifest.image!;
@@ -141,9 +132,9 @@ export async function expandImage(dir: string, manifest: ReleaseManifest, destin
   }
 }
 /**
- * Make an installed release's image this Mac's `images/linux`: an APFS clone (sharing every block, so it costs no
- * space) assembled under a dot-prefixed name, which `ImageStore` sweeps if a crash leaves it, then swapped in. Install
- * and rollback both run it, so the Mac always runs the image its active release shipped.
+ * Make the image expanded under `releaseDir` (at `IMAGE_PATH`) this Mac's `images/linux`: an APFS clone (sharing every
+ * block, so it costs no space) assembled under a dot-prefixed name, which `ImageStore` sweeps if a crash leaves it,
+ * then swapped in.
  */
 export async function installLinuxImage(releaseDir: string, imagesDir: string): Promise<void> {
   const source = join(releaseDir, IMAGE_PATH);
@@ -169,38 +160,10 @@ export function signManifest(manifest: ReleaseManifest, privateKey: string | Buf
   const value = sign(null, payload, privateKey).toString("base64url");
   return { ...manifest, signature: { algorithm: "ed25519", keyId, value } };
 }
-/** Verify an Ed25519 manifest signature before an installer accepts artifacts. */
+/** Verify an Ed25519 manifest signature against the pinned key before any artifact is trusted. */
 export function verifyManifestSignature(manifest: ReleaseManifest, publicKey: string | Buffer | KeyObject): void {
   if (!manifest.signature || manifest.signature.algorithm !== "ed25519") throw new Error("release signature is missing or unsupported");
   const unsigned = { ...manifest, signature: undefined };
   const valid = verify(null, Buffer.from(JSON.stringify(unsigned)), publicKey, Buffer.from(manifest.signature.value, "base64url"));
   if (!valid) throw new Error("release signature verification failed");
 }
-/** Atomically switch the product's active release symlink after verification. */
-export async function activateRelease(root: string, version: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
-  validateVersion(version);
-  if (manifest.version !== version) throw new Error("release version mismatch");
-  const releaseDir = join(root, version);
-  await verifyInstalledRelease(releaseDir, manifest, platformArch);
-  await mkdir(root, { recursive: true });
-  const temporary = join(root, `.active-${process.pid}-${randomUUID()}`);
-  await symlink(version, temporary, "dir");
-  try { await rename(temporary, join(root, "active")); }
-  catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
-}
-/** Return the version currently selected by the atomic active symlink. */
-export async function activeRelease(root: string): Promise<string | undefined> {
-  try {
-    const version = await readlink(join(root, "active"));
-    validateVersion(version);
-    return version;
-  } catch { return undefined; }
-}
-/** Select a previously verified release using the same atomic switch as install. */
-export async function rollbackRelease(root: string, version: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
-  await activateRelease(root, version, manifest, platformArch);
-}
-function validateVersion(version: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(version)) throw new Error("invalid release version");
-}
-export const artifactName = basename;

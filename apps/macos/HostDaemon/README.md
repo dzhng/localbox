@@ -66,7 +66,7 @@ itself does no image file I/O; it asks `ImageStore` for free disk for capacity.
 `ImageStore` is also the one answer to "how much is free" (`freeBytes`, with
 `LOCALBOX_DEV_FREE_DISK_BYTES` fixing it in proof runs) and refuses every image
 write that would not fit (`requireFree`, `disk_full`).
-The one exception is the built-in `linux` image, which the installer writes
+The one exception is the built-in `linux` image, which comes from the release
 ([releasing](../../../DEVELOPMENT.md#releasing)); the daemon reads it like any
 other.
 
@@ -122,7 +122,7 @@ the host. What a copy exposes on the network is in the
 owner-only IPC token and forwards the envelope to `SandboxHost.request` without
 duplicating lifecycle state.
 
-`UnixDomainSocketServer` is the launchd-compatible local transport around that
+`UnixDomainSocketServer` is the local transport around that
 seam. It creates the configured socket path (expanding `~`), refuses to replace
 an unrelated file, applies owner-only `0600` permissions, and serves one
 big-endian length-prefixed JSON request per connection. The response carries
@@ -130,8 +130,7 @@ big-endian length-prefixed JSON request per connection. The response carries
 `Sources/HostDaemonCore/LocalIPC.swift`. The listener is non-blocking while
 accepted connections use blocking reads on detached tasks, so a slow CLI
 cannot stall other clients. `stop()` cancels the listener and removes the
-socket path; launchd packaging can own process startup and call the same
-server lifecycle in the signed product bundle.
+socket path.
 
 `AppleVirtualizationBackend` runs one sandbox's `VirtualMachine` for one boot
 and attaches the framed `GuestService` channel over vsock.
@@ -164,23 +163,21 @@ sandbox never stops. A version the guest refuses is not pushed again until the
 next boot; an agent that does not come back loses the guest like any other
 close.
 
-The `localbox-hostd` executable is the launchd process boundary. It reads
+The `localbox-hostd` executable is the process boundary; Localbox.app starts
+it as a child, `--supervised`, from inside its bundle. It reads
 the sandboxes, operations and images directories and an owner-only IPC
 token file from environment variables, starts the same `SandboxHost` and
 `UnixDomainSocketServer` used by tests, brings back what the last run left
-running, and hibernates on `SIGTERM`/`SIGINT` (the plist's `ExitTimeOut` bounds
-the saves). One daemon serves a machine root: before it touches the root it
+running, and hibernates on `SIGTERM`/`SIGINT`, taking as long as the saves
+take. One daemon serves a machine root: before it touches the root it
 takes `MachineLock`, a kernel `flock` on `LOCALBOX_HOSTD_LOCK` (default
 `hostd.lock` beside the socket), and a second daemon exits 75 naming the lock,
 so it never unlinks a running daemon's socket or sweeps its temporaries.
 Started `--supervised` (an app's child, with stdin a pipe), the end of its
 stdin is a stop request too; every stop runs `DaemonShutdown`, which prints
 `hibernated NAME` or `stopped NAME: reason` on stderr as each sandbox is done
-and exits 0 when all are. The checked-in
-`Resources/sh.localbox.hostd.plist` is a bundle template; an installer
-must materialize its paths, create the token file with mode `0600`, load it with
-`launchctl`, and unload it before replacement.
-
-`scripts/install-release.sh` does that materialization in a versioned release
-root; the [development guide](../../../DEVELOPMENT.md#installing-rolling-back-and-uninstalling)
-covers install, rollback and uninstall.
+and exits 0 when all are. Its environment is built in one place, the app's
+`DaemonLaunch`, from the paths `localbox app paths` prints (which also creates
+the owner-only token file); the [app's README](../App/README.md) covers the
+supervision and the [development guide](../../../DEVELOPMENT.md#releasing) the
+signed bundle it ships in. Probes still start it directly on scratch roots.

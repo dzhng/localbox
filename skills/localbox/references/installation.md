@@ -1,12 +1,19 @@
 # Install Localbox
 
-Use this when `localbox` is missing and the user asked for it. You install one
-signed GitHub release; the release's own installer sets up everything else,
-including this skill. Do not build from source, do not run `npx skills add`, and
-do not copy the skill into any agent directory yourself: the installer does it,
-records that Localbox owns it, and keeps it matched to every later release.
+Use this when `localbox` is missing and the user asked for it, or to update an
+installed Localbox to the latest release. Localbox is a menu bar app,
+`Localbox.app`, with the `localbox` CLI inside it. You install one signed
+GitHub release into `~/Applications` and open it; the app sets up everything
+else, including this skill and the `~/.local/bin/localbox` command, and keeps
+both matched to itself at every launch. Do not build from source, do not run
+`npx skills add`, and do not copy the skill or the CLI anywhere yourself.
 
-## Check the Mac
+Nothing here needs a click, a password or the host's Node. Each block stands
+alone (they share a download folder in your private `$TMPDIR`); run them in
+order and stop at the first failure: a network, checksum or signature failure
+is a blocker to report, not something to work around.
+
+## 1. Check the Mac
 
 `uname -m` must print `arm64` and `sw_vers -productVersion` must be 14 or newer.
 Anything else (Intel, Linux, Docker) cannot run Localbox; say so and stop. Linux
@@ -36,76 +43,204 @@ session, and refuses while that session is locked with a password. So:
 
 After installing, `localbox host check` reports `hibernate` as `available`,
 `only_while_unlocked` or `unknown`; anything but `available` lists the fixes.
-The installer prints a `Sleep:` line with the same fixes when something needs
-changing.
 
-## Download and verify one release
+## 2. Download the release
 
-Resolve the latest tag once and take every file from that tag. A network,
-rate-limit or checksum failure is a blocker to report, not something to work
-around.
+Take the three files from the latest release. The app fetches the built-in
+linux image itself, after checking it against the same signed manifest.
 
 ```sh
 set -eu
-download=$(mktemp -d)
-cd "$download"
-repo="${LOCALBOX_RELEASE_REPOSITORY:-dzhng/localbox}"
-curl --fail --location "https://api.github.com/repos/$repo/releases/latest" -o latest.json
-tag=$(/usr/bin/plutil -extract tag_name raw -o - latest.json)
-release="https://github.com/$repo/releases/download/$tag"
-curl --fail --location "$release/release.json" -o release.json
-curl --fail --location "$release/SHA256SUMS" -o SHA256SUMS
-# Every listed file: the app, the CLI, and the built-in linux image's parts (about 2 GB).
-for name in $(awk '{ print $2 }' SHA256SUMS); do
-  case "$name" in */*|.*) echo "unexpected release file: $name" >&2; exit 1 ;; esac
-  curl --fail --location "$release/$name" -o "$name"
+download="${TMPDIR:-/tmp}/localbox-install"
+rm -rf "$download"; mkdir -p "$download"; cd "$download"
+release="${LOCALBOX_RELEASE_URL:-https://github.com/dzhng/localbox/releases/latest/download}"
+for name in release.json SHA256SUMS Localbox-macos-arm64.zip; do
+  curl --fail --location --silent --show-error "$release/$name" -o "$name"
 done
-shasum -a 256 -c SHA256SUMS
-archive=$(awk '/localbox-cli-.*\.tar\.gz$/ { print $2 }' SHA256SUMS)
-test -n "$archive"
-tar -xzf "$archive" -C "$download"
 ```
 
-## Run the installer
+## 3. Verify it
 
-The installer verifies the Ed25519 signature on `release.json` against the
-pinned release public key before it writes anything. The key is pinned here,
-in this procedure, and nowhere else you can trust yet: never take it from the
-download you are verifying, and never set `ALLOW_UNSIGNED`. Write it exactly:
+`release.json` lists every file's SHA-256 and carries an Ed25519 signature. The
+key that signs it is pinned here, in this procedure, and nowhere else you can
+trust yet: never take a key from the download you are verifying. The check runs
+in JavaScriptCore, which every Mac has, and verifies exactly the bytes the
+release signed; it also requires `SHA256SUMS` to list exactly the signed
+digests. `shasum` then checks the app against them.
 
 ```sh
-cat > "$download/release-public.pem" <<'EOF'
+set -eu
+cd "${TMPDIR:-/tmp}/localbox-install"
+cat > release-public.pem <<'EOF'
 -----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAMh6Vd0tBiVA5V/maXs8t3SPh6xPNjuPhJqeD3OeFAq8=
 -----END PUBLIC KEY-----
 EOF
-RELEASE_PUBLIC_KEY="$download/release-public.pem" \
-  "$download/localbox-cli/scripts/install-release.sh" "$download"
+cat > verify-release.js <<'EOF'
+// release.json's Ed25519 signature (RFC 8032) over the manifest without its signature, as JSON.stringify writes it,
+// checked against the pinned key; then SHA256SUMS must list exactly the signed artifacts.
+const [manifestFile, sumsFile, keyFile] = arguments;
+const fail = (why) => { throw new Error(`release check failed: ${why}`); };
+const p = 2n ** 255n - 19n, L = 2n ** 252n + 27742317777372353535851937790883648493n;
+const mod = (a, m = p) => ((a % m) + m) % m;
+const pow = (b, e, m = p) => { let r = 1n; for (b = mod(b, m); e > 0n; e >>= 1n, b = b * b % m) if (e & 1n) r = r * b % m; return r; };
+const inv = (a) => pow(a, p - 2n);
+const D = mod(-121665n * inv(121666n)), SQRT_M1 = pow(2n, (p - 1n) / 4n);
+const le = (bytes) => bytes.reduceRight((n, byte) => (n << 8n) | BigInt(byte), 0n);
+const add = ([X1, Y1, Z1, T1], [X2, Y2, Z2, T2]) => {
+  const A = mod((Y1 - X1) * (Y2 - X2)), B = mod((Y1 + X1) * (Y2 + X2)), C = mod(2n * D * T1 * T2), Z = mod(2n * Z1 * Z2);
+  const E = B - A, F = Z - C, G = Z + C, H = B + A;
+  return [mod(E * F), mod(G * H), mod(F * G), mod(E * H)];
+};
+const times = (n, P) => { let Q = [0n, 1n, 1n, 0n]; for (; n > 0n; n >>= 1n, P = add(P, P)) if (n & 1n) Q = add(Q, P); return Q; };
+const encode = ([X, Y, Z]) => { const z = inv(Z), x = mod(X * z), y = mod(Y * z); return Array.from({ length: 32 }, (_, i) => Number(((y | ((x & 1n) << 255n)) >> BigInt(8 * i)) & 255n)); };
+const point = (y, sign) => {
+  if (y >= p) fail("bad point");
+  const u = mod(y * y - 1n), v = mod(D * y * y + 1n);
+  let x = mod(u * pow(v, 3n) * pow(u * pow(v, 7n), (p - 5n) / 8n));
+  if (mod(v * x * x) !== u) { if (mod(v * x * x) !== mod(-u)) fail("bad point"); x = mod(x * SQRT_M1); }
+  if (x === 0n && sign) fail("bad point");
+  if ((x & 1n) !== sign) x = p - x;
+  return [x, y, 1n, mod(x * y)];
+};
+const decode = (bytes) => point(le(bytes) & ((1n << 255n) - 1n), BigInt(bytes[31] >> 7));
+const base64 = (text) => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", out = [];
+  let bits = 0, value = 0;
+  for (const c of text.replace(/-/g, "+").replace(/_/g, "/").replace(/[=\s]/g, "")) {
+    const index = alphabet.indexOf(c); if (index < 0) fail("bad base64");
+    value = ((value << 6) | index) & 0xffff; bits += 6;
+    if (bits >= 8) { bits -= 8; out.push((value >> bits) & 255); }
+  }
+  return out;
+};
+const sha512 = (bytes) => {
+  // The constants are the fractional parts of the first primes' square and cube roots (FIPS 180-4), computed here.
+  const M = (1n << 64n) - 1n, K = [], H = [], primes = [];
+  for (let n = 2; primes.length < 80; n++) if (primes.every((q) => n % q)) primes.push(n);
+  const root = (x, k) => { for (let r = 1n << BigInt(Math.ceil(x.toString(2).length / k)); ;) { const s = ((BigInt(k) - 1n) * r + x / r ** BigInt(k - 1)) / BigInt(k); if (s >= r) return r; r = s; } };
+  primes.forEach((q, i) => { K.push(root(BigInt(q) << 192n, 3) & M); if (i < 8) H.push(root(BigInt(q) << 128n, 2) & M); });
+  const data = [...bytes, 0x80]; while (data.length % 128 !== 112) data.push(0);
+  for (let i = 15; i >= 0; i--) data.push(Number((BigInt(bytes.length) * 8n >> BigInt(8 * i)) & 255n));
+  const rotr = (x, k) => ((x >> BigInt(k)) | (x << BigInt(64 - k))) & M;
+  for (let at = 0; at < data.length; at += 128) {
+    const w = [];
+    for (let i = 0; i < 16; i++) w.push(data.slice(at + 8 * i, at + 8 * i + 8).reduce((n, byte) => (n << 8n) | BigInt(byte), 0n));
+    for (let i = 16; i < 80; i++) w.push((w[i - 16] + (rotr(w[i - 15], 1) ^ rotr(w[i - 15], 8) ^ (w[i - 15] >> 7n)) + w[i - 7] + (rotr(w[i - 2], 19) ^ rotr(w[i - 2], 61) ^ (w[i - 2] >> 6n))) & M);
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 80; i++) {
+      const t1 = (h + (rotr(e, 14) ^ rotr(e, 18) ^ rotr(e, 41)) + ((e & f) ^ (~e & M & g)) + K[i] + w[i]) & M;
+      const t2 = ((rotr(a, 28) ^ rotr(a, 34) ^ rotr(a, 39)) + ((a & b) ^ (a & c) ^ (b & c))) & M;
+      [a, b, c, d, e, f, g, h] = [(t1 + t2) & M, a, b, c, (d + t1) & M, e, f, g];
+    }
+    H.forEach((value, i) => { H[i] = (value + [a, b, c, d, e, f, g, h][i]) & M; });
+  }
+  return H.flatMap((value) => Array.from({ length: 8 }, (_, i) => Number((value >> BigInt(56 - 8 * i)) & 255n)));
+};
+const manifest = JSON.parse(readFile(manifestFile));
+if (manifest.schema !== "agent-computer.release.v1" || manifest.signature?.algorithm !== "ed25519") fail("not a signed Localbox release manifest");
+const der = base64(readFile(keyFile).replace(/-----[^-]+-----/g, ""));
+if (der.length !== 44 || der.slice(0, 12).join() !== "48,42,48,5,6,3,43,101,112,3,33,0") fail("the pinned key is not an Ed25519 public key");
+const key = der.slice(12), signature = base64(manifest.signature.value);
+if (signature.length !== 64 || le(signature.slice(32)) >= L) fail("malformed signature");
+const message = Array.from(unescape(encodeURIComponent(JSON.stringify({ ...manifest, signature: undefined }))), (c) => c.charCodeAt(0));
+const h = mod(le(sha512([...signature.slice(0, 32), ...key, ...message])), L);
+const [x, y, z, t] = decode(key), B = point(mod(4n * inv(5n)), 0n);
+if (encode(add(times(le(signature.slice(32)), B), times(h, [mod(-x), y, z, mod(-t)]))).join() !== signature.slice(0, 32).join()) fail("release.json is not signed by the pinned Localbox key");
+if (readFile(sumsFile) !== manifest.artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}\n`).join("")) fail("SHA256SUMS does not list exactly the signed artifacts");
+print(`Localbox ${manifest.version}: release.json is signed by the pinned key`);
+EOF
+/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc verify-release.js -- release.json SHA256SUMS release-public.pem
+grep ' Localbox-macos-arm64.zip$' SHA256SUMS | shasum -a 256 -c -
 ```
 
-It installs the app and the CLI under
-`~/Library/Application Support/Localbox/releases/`, registers the host daemon,
-the relay connector and the updater with launchd, then runs agent setup:
-`localbox agents reconcile --reason install` installs this skill for every agent
-harness on the Mac and links `~/.local/bin/localbox`. Its last line is
-`Skill: <state>`; anything but `installed` means read `localbox skill status`
-and the [skill lifecycle](skill-lifecycle.md). The release carries its own Node
-runtime and pinned `skills@1.7.0` installer, so nothing here uses the host's
-Node, npm or npx. Keep the download directory until the checks below pass.
+The check prints `Localbox VERSION: release.json is signed by the pinned key`;
+anything else (an exception, or `FAILED` from `shasum`) means stop.
 
-## Check it
+## 4. Put the app in place
+
+Unpack it, then replace any installed copy, keeping the old one as a backup.
+Quitting the old copy hibernates its running sandboxes and can take a while; the
+loop waits for it. A quarantined app would be held by a Gatekeeper dialog that
+nobody can click, and every later launch would hang, so the block stops if the
+download carries quarantine. Never remove that attribute; report it.
 
 ```sh
-localbox skill status      # state: installed, managed: true, source_revision: the tag's version
-localbox cli status        # state: linked
-localbox agents setup status
-localbox host check        # hibernate: available, or the settings to change
-localbox help
+set -eu
+cd "${TMPDIR:-/tmp}/localbox-install"
+ditto -x -k Localbox-macos-arm64.zip unpacked
+if xattr -r unpacked/Localbox.app | grep -q com.apple.quarantine; then
+  echo "the downloaded app is quarantined; Localbox cannot open it without a click. Stopping." >&2
+  exit 1
+fi
+app="$HOME/Applications/Localbox.app"
+if [ ! -e "$app" ] && [ -d /Applications/Localbox.app ] && [ -w /Applications ]; then app=/Applications/Localbox.app; fi
+if [ -e "$app" ] || [ -L "$app" ]; then
+  if [ "$(osascript -e 'application id "sh.localbox.mac" is running')" = true ]; then
+    osascript -e 'quit app id "sh.localbox.mac"'
+    while [ "$(osascript -e 'application id "sh.localbox.mac" is running')" = true ]; do sleep 1; done
+  fi
+  backup=$(mktemp -d)
+  mv "$app" "$backup/"
+  echo "previous app kept at $backup/Localbox.app"
+fi
+mkdir -p "$(dirname "$app")"
+ditto unpacked/Localbox.app "$app"
 ```
 
-If `localbox` is not on this shell's PATH yet, use `~/.local/bin/localbox`; the
-installer adds a marked PATH block for future login shells when needed. Then sign
-in (`localbox login --email`) and tell the user to start a fresh agent session so
-the installed skill is loaded. Report a short checklist: release version, skill
-state, CLI link, signed in or not, and whether sandboxes can hibernate here
-(with the settings to change if not).
+Use `/Applications` only when a copy is already there and writable; anywhere
+else, `~/Applications`, which needs no administrator.
+
+## 5. Open it
+
+This works from SSH too: it opens the app in the user's session without taking
+focus.
+
+```sh
+app="$HOME/Applications/Localbox.app"
+[ -d "$app" ] || app=/Applications/Localbox.app
+/bin/launchctl asuser "$(id -u)" /usr/bin/open -g "$app"
+```
+
+## 6. Check it
+
+At its first launch the app installs this skill for every agent harness on the
+Mac, writes `~/.local/bin/localbox`, and adds `~/.local/bin` to the login
+shell's PATH. Wait for the command, then check:
+
+```sh
+for second in $(seq 60); do [ -x "$HOME/.local/bin/localbox" ] && break; sleep 1; done
+~/.local/bin/localbox app status --json    # the version, daemon and connector running, the login item
+~/.local/bin/localbox cli status           # state: installed
+~/.local/bin/localbox skill status         # state: installed, managed: true, source_revision: the version
+~/.local/bin/localbox host check           # hibernate: available, or the settings to change
+```
+
+Call the command by its full path until a new shell has it on PATH. Anything
+unexpected in `skill status` means read the [skill lifecycle](skill-lifecycle.md).
+Once these pass, remove the download: `rm -rf "${TMPDIR:-/tmp}/localbox-install"`.
+
+## 7. Tell the user
+
+Report a short checklist: the version, the skill's state, the command, signed in
+or not, and whether sandboxes can hibernate here (with the settings to change if
+not). Then:
+
+- **Localbox now opens at login.** `app status` shows `login_item`. If it is
+  `requires_approval`, ask the user to allow Localbox in System Settings >
+  General > Login Items. To turn it off: `localbox app login-item off`.
+- Sign in with `localbox login --email` when the user wants sandboxes, and
+  start a fresh agent session so the installed skill is loaded.
+
+## Removing Localbox
+
+```sh
+~/.local/bin/localbox agents setup off     # Localbox stops maintaining the skill and the command, and removes its PATH block
+~/.local/bin/localbox app login-item off
+osascript -e 'quit app id "sh.localbox.mac"'   # hibernates running sandboxes, then quits
+rm -rf "$HOME/Applications/Localbox.app"
+```
+
+Sandboxes and images stay in `~/Library/Application Support/Localbox` until the
+user deletes that folder; the skill and `~/.local/bin/localbox` stay until
+removed by hand.

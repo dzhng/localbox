@@ -1,36 +1,37 @@
 # Skill lifecycle
 
-The installed release maintains this skill and the `localbox` command itself.
-Prefer the operations below over editing skill folders by hand. Use the manual
-steps only for a project-scope install, a comparison, or when an operation
-reports a problem.
+Localbox.app maintains this skill and the `localbox` command itself. Prefer the
+operations below over editing skill folders by hand. Use the manual steps only
+for a project-scope install, a comparison, or when an operation reports a
+problem.
 
 ## Updates
 
-Releases update themselves: a background updater installs each new signed
-release after verifying it, and nothing is replaced if verification fails.
-`localbox update check` and `localbox update install` do the same on demand.
-Sandbox disks survive every update.
+The app does not update itself yet. To update, install the latest release with
+the [installation procedure](installation.md): it replaces the app in place,
+keeping the old copy as a backup, and the new app's first launch brings the
+skill and the command up to its version. Sandbox disks survive.
 
 ## Agent setup
 
 One setting, **agent setup**, is on by default. While it is on, Localbox owns
 the global `localbox` skill (in `~/.agents/skills/localbox`, linked into every
-agent harness the pinned `skills@1.7.0` installer knows) and the
-`~/.local/bin/localbox` link. It makes both match the installed release at the
-end of every install and at every start of the host daemon, which includes the
-relaunch after each update. There is no other timer.
+agent harness the pinned `skills@1.7.0` installer knows), the
+`~/.local/bin/localbox` command and the marked block that puts `~/.local/bin`
+on the login shell's PATH. The app makes them match itself every time it
+starts its host daemon: at every launch, including the first. There is no
+other timer.
 
 ```sh
 localbox agents setup status   # enabled, skill state, source_revision, command
-localbox agents setup off      # Localbox stops touching the skill and the link
-localbox agents setup on       # takes effect at the next daemon start or skill install
+localbox agents setup off      # Localbox stops touching the skill and the command, and removes its PATH block
+localbox agents setup on       # takes effect at the next launch or skill install
 ```
 
 Turn it off before customising the global skill; while it is on, a customised
-copy is replaced at the next daemon start. A copy Localbox did not write is
-backed up before it is replaced, and the result names the backup folder.
-Inspecting never changes anything.
+copy is replaced at the next launch. A copy Localbox did not write is backed up
+before it is replaced, and the result names the backup folder. Inspecting never
+changes anything.
 
 ## Operations
 
@@ -47,25 +48,27 @@ replaced (with the backup path) or left alone, and why.
 - `localbox skill install` and `localbox skill update` reinstall this release's
   skill now, whatever the setting says.
 - `localbox skill uninstall` removes the skill from every harness. With agent
-  setup on, the result says the next daemon start installs it again; turn agent
+  setup on, the result says the next launch installs it again; turn agent
   setup off first to keep it removed.
-- `localbox cli status`: whether `~/.local/bin/localbox` points at the active
-  release (`linked`, `missing`, `elsewhere`, or `not_a_link` for a file Localbox
-  did not write and leaves alone).
+- `localbox cli status`: whether `~/.local/bin/localbox` is the app's launcher
+  (`installed`, `missing`, `different` for a file Localbox did not write and
+  leaves alone, or `not_in_applications` for an app outside `~/Applications` and
+  `/Applications`, where the command looks for it), and whether the login shell
+  has it on PATH.
 
 ## Project-scope or comparison install
 
 Only when the user asks for this skill in one project, or wants to compare a
-local copy with the release's. The source is the copy bundled in the installed
-release, so it always matches the CLI. Use the release's own Node and pinned
-installer; nothing needs the host's Node:
+local copy with the app's. The source is the copy bundled in the installed app,
+so it always matches the CLI. Use the app's own Node and pinned installer;
+nothing needs the host's Node:
 
 ```sh
-lb="$HOME/Library/Application Support/Localbox/releases/active/localbox-cli"
+lb="$HOME/Applications/Localbox.app/Contents/Resources"   # or /Applications/Localbox.app/Contents/Resources
 cd /path/to/project
 test ! -e .agents/skills/localbox && test ! -L .agents/skills/localbox || exit 1
-"$lb/node" "$lb/skills-installer/bin/cli.mjs" add "$lb/skill" --skill localbox --agent codex claude-code --yes
-diff -ru "$lb/skill" .agents/skills/localbox
+"$lb/node/bin/node" "$lb/cli/skills-installer/bin/cli.mjs" add "$lb/cli/skill" --skill localbox --agent codex claude-code --yes
+diff -ru "$lb/cli/skill" .agents/skills/localbox
 ```
 
 When scope is unclear and the directory looks like a project, ask "this project
@@ -74,6 +77,6 @@ agent setup. A project copy is never maintained: it shadows the global skill and
 goes stale with the next release, so tell the user it needs this step again after
 updates.
 
-To compare without installing, run only `diff -ru "$lb/skill" <installed folder>`
+To compare without installing, run only `diff -ru "$lb/cli/skill" <installed folder>`
 and report the differences. Exit 1 means they differ; above 1 means the
 comparison failed.

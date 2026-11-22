@@ -42,18 +42,28 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
   tests compile them into small drivers; AppKit stays in the `Localbox`
   executable.
 - **The bundle layout has one definition,** `scripts/build-app.mjs`, for the
-  development build now and the release build later.
+  development build and the release (`--release`), and its signature one,
+  `scripts/sign.mjs`: inside out, the virtualization entitlement on the daemon
+  alone, and the guest agent sealed as built, never re-signed. The launch
+  lock's path comes from the launcher's source; the Info.plist key is copied
+  from it.
+- **No launchd job.** The app is installed by the agent installation procedure
+  and started with `open -g`; it is the only thing that starts the daemon and
+  the connector for this Mac's real root.
 
 ## Building and testing
 
 ```sh
 swift build --package-path apps/macos/App
-npm run test:app     # Node runners that compile Swift drivers against LocalboxAppCore
+npm run test:app     # Node runners that compile Swift drivers against LocalboxAppCore, and the assembler's checks
 npm run app:dev      # npm run build, assemble dist/app-dev/Localbox Dev.app, open it quietly
 npm run proof -- 41 --tier a   # the packaged app on the process fixture; --tier v with a real VM
+npm run proof -- 42 --tier a,v # a scratch-signed release, installed by the installation procedure's own steps
 ```
 
-A development build (bundle id `sh.localbox.mac.dev`, no update feed) uses its
+A release build (bundle id `sh.localbox.mac`, the update feed in its Info.plist)
+is what `scripts/release.sh` assembles and signs. A development build (bundle
+id `sh.localbox.mac.dev`, no update feed) uses its
 own machine root, `~/Library/Application Support/Localbox Dev`, and its own
 logs folder, so it never shares a daemon with a release install. It honours
 `LOCALBOX_APP_SCREENS=0` to behave as if the Mac had no display.

@@ -43,7 +43,7 @@ test("the daemon runs supervised with every path app paths printed, this bundle'
   assert.equal(launch.executable, join(app, "Contents/MacOS/localbox-hostd"));
   assert.deepEqual(launch.arguments, ["--supervised"]);
   assert.equal(launch.log, "/logs/hostd.log");
-  assert.deepEqual(launch.connector, ["connector", "run", "--supervised"]);
+  assert.deepEqual(launch.connector, ["connector", "run"]);
   assert.deepEqual(launch.environment, {
     LOCALBOX_SANDBOX_BACKEND: "process-fixture",
     LOCALBOX_SOCKET: "/r/agent.sock", LOCALBOX_IPC_TOKEN_PATH: "/r/ipc-token", LOCALBOX_HOSTD_LOCK: "/r/hostd.lock",

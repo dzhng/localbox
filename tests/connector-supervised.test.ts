@@ -29,12 +29,12 @@ async function until(check: () => boolean, what: string): Promise<void> {
   for (const deadline = Date.now() + 5_000; !check(); await sleep(20)) if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
 }
 
-test("supervised, the connector waits for a sign-in, waits again after a revoke, and exits 0 when stdin closes", async () => {
+test("the connector waits for a sign-in, waits again after a revoke, and exits 0 when stdin closes", async () => {
   asked.length = 0;
   const { env, signIn } = await machine();
   const input = new PassThrough();
   let code: number | undefined;
-  const running = runConnector(env, { supervised: true, input, pollMs: 50 }).then((value) => { code = value; });
+  const running = runConnector(env, { input, pollMs: 50 }).then((value) => { code = value; });
   await sleep(300);
   assert.equal(code, undefined, "signed out, it keeps running");
   assert.deepEqual(asked, []);
@@ -53,14 +53,4 @@ test("supervised, the connector waits for a sign-in, waits again after a revoke,
   input.end();
   await running;
   assert.equal(code, 0);
-});
-
-test("unsupervised (the launchd job), it exits 0 when signed out and when revoked, as before", async () => {
-  asked.length = 0;
-  const { env, signIn } = await machine();
-  assert.equal(await runConnector(env), 0);
-  assert.deepEqual(asked, []);
-  await signIn("only");
-  assert.equal(await runConnector(env), 0);
-  assert.deepEqual(asked, ["Bearer only"]);
 });

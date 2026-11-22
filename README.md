@@ -185,8 +185,9 @@ below is what your agent follows.
 ## Agent setup
 
 Your agent follows the [installation procedure](skills/localbox/references/installation.md):
-one signed release, verified, then its own installer, which sets up the CLI, the
-background services and the [Localbox skill](skills/localbox/SKILL.md). Updates
+one signed release, verified, then the Localbox menu bar app, which sets up the
+CLI and the [Localbox skill](skills/localbox/SKILL.md) and runs the background
+services. Updates
 and keeping the skill current are covered in the
 [skill lifecycle](skills/localbox/references/skill-lifecycle.md).
 

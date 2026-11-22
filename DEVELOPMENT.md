@@ -73,17 +73,22 @@ automatic placement. Failures leave the prior state intact.
 Deleting a sandbox is the one way to discard its disk; `sandbox delete` requires
 `--confirm NAME`, matching the sandbox's name. Deleting an image is the one way to
 discard an image's files; `image delete` requires the same `--confirm NAME`, and
-never touches a sandbox made from the image. Update, rollback and uninstall
-preserve every sandbox's disk. Project-local skills are never touched; a global
+never touches a sandbox made from the image. Replacing or removing the app
+preserves every sandbox's disk. Project-local skills are never touched; a global
 skill copy Localbox did not write is backed up before agent setup replaces it.
 
 ## Releases are the only install path
 
 Users install signed releases through their agent; there is no browser download.
-The updater trusts only the public key configured at install time, never key
-metadata carried inside the manifest it is verifying. The CLI archive carries its
-own Node runtime and pinned skill installer, so install and update never depend
-on the host's Node toolchain or a network package fetch.
+A release is one app, `Localbox.app`, with the CLI, its Node runtime and the
+pinned skill installer inside, so installing never depends on the host's Node
+toolchain or a network package fetch. The
+[installation procedure](skills/localbox/references/installation.md) trusts only
+the public key printed in it, never key metadata carried inside the manifest it
+is verifying, and checks the signature with what every Mac has. Once installed,
+the app is the only supervisor of the daemon and the connector; there is no
+launchd job. Until the app updates itself, a newer release is installed by the
+same procedure, which replaces the app in place.
 
 ## Documentation ownership
 
@@ -188,7 +193,7 @@ export LOCALBOX_API_ORIGIN=http://127.0.0.1:3000
 LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js login --email you@example.com
 # the code is printed in .localbox/proof/dev-local.log (localbox.dev.email_code)
 LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js login --email you@example.com --code 123456
-LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js connector run &
+tail -f /dev/null | LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js connector run &   # it stops when its stdin closes
 # repeat login and connector for machine b, then create and run across them:
 LOCALBOX_MACHINE_ROOT=$PWD/.localbox/proof/machines/a node bin/localbox.js sandbox create --placement remote
 npx tsx scripts/proof/stack.ts down
@@ -229,8 +234,8 @@ a Convex subscription for up to min(deadline, 50 s); longer requests come back
 as a continuation the client resumes. `sandbox create` resolves its image there
 before placing it; a Mac without that image answers at once in state `copying`
 and creates the sandbox once the copy lands (deleting it meanwhile stops that
-create, and the copy when no other sandbox waits on it). On each Mac, `localbox connector run` (launchd job
-`sh.localbox.connector`) is the only process that talks to Convex: it exchanges
+create, and the copy when no other sandbox waits on it). On each Mac, `localbox connector run` (a child of
+Localbox.app) is the only process that talks to Convex: it exchanges
 the machine credential for a machine token at `POST /api/relay/machine-token`,
 subscribes to `relay:pendingForMachine`, claims each row and forwards it to the
 daemon's socket. It also reports what the daemon's long work finished (the
@@ -272,8 +277,8 @@ On each Mac:
 | Setting | Purpose |
 | --- | --- |
 | `LOCALBOX_MACHINE_ROOT` | Relocates the whole machine state, everything [`machinePaths()`](packages/config/src/machine-paths.ts) names; used for simulated machines and fixture installs. |
-| `LOCALBOX_GUEST_AGENT` | The guest agent build the HostDaemon holds every guest to (set in its launchd plist by the installer). Without it the daemon pushes no agent and each sandbox keeps the one its image carries. |
-| `LOCALBOX_CLI` | The installed CLI the HostDaemon runs for agent setup (set in its launchd plist by the installer). Without it the daemon does not reconcile the skill and refuses `skill.*`. |
+| `LOCALBOX_GUEST_AGENT` | The guest agent build the HostDaemon holds every guest to (Localbox.app sets it to its bundle's). Without it the daemon pushes no agent and each sandbox keeps the one its image carries. |
+| `LOCALBOX_CLI` | The CLI the HostDaemon runs for agent setup (Localbox.app sets it to its bundle's). Without it the daemon does not reconcile the skill and refuses `skill.*`. |
 | `LOCALBOX_API_ORIGIN` | The API the CLI and connector talk to; defaults to `https://api.localbox.sh`. |
 
 Convex environment variables (`npx convex env set`):
@@ -338,31 +343,35 @@ and they share the IPSW and base cache with tier `m` ([Proofs](#proofs)).
 ## Releasing
 
 Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
-hand; no CI publishes them. `scripts/release.sh` stages the signed HostDaemon
-app bundle, compiled CLI, the built-in linux image, checksums and release
-manifest for the `version` in `package.json` (override with `VERSION`). Set
-`LOCALBOX_IMAGE` to the image directory `npm run image:build -- --out DIR`
-wrote, and `IMAGE_DIGEST` to the `digest` in `dist/vm-image/full/manifest.json`.
-The image's own agent doesn't have to match: the app ships the release's agent
-and the daemon pushes it into every guest whose agent build differs. The script
-needs `zstd` (`brew install zstd`) and the pinned Bun ([Images](#images)).
+hand; no CI publishes them. `scripts/release.sh` builds, for the `version` in
+`package.json` (override with `VERSION`), `Localbox-macos-arm64.zip` (the signed
+app with the CLI inside), the built-in linux image's parts, `release.json` (the
+signed manifest) and `SHA256SUMS`. Set `LOCALBOX_IMAGE` to the image directory
+`npm run image:build -- --out DIR` wrote, and `IMAGE_DIGEST` to the `digest` in
+`dist/vm-image/full/manifest.json`. The image's own agent doesn't have to match:
+the app ships the release's agent and the daemon pushes it into every guest whose
+agent build differs. The script needs `zstd` (`brew install zstd`) and the pinned
+Bun ([Images](#images)).
+
+The bundle's layout has one definition,
+[`build-app.mjs`](apps/macos/App/scripts/build-app.mjs) (`--release` for this
+build), and its signature one,
+[`sign.mjs`](apps/macos/App/scripts/sign.mjs): inside out, never `--deep`, the
+virtualization entitlement on the daemon alone, and the guest agent sealed as
+built so its digests stay true. Nothing is notarized; the
+[security model](SECURITY.md#releases-and-updates) says what that means.
 
 The app carries no kernel: the image boots its own through EFI. The image ships
 beside the app because GitHub caps a release asset at 2 GiB: its disk
 zstd-compressed and split into parts, with its boot store and `image.json`
 beside them (`packImage` in [`scripts/release.ts`](scripts/release.ts) names the
-assets). The signed manifest names them and the
-expanded disk's SHA-256 and size; the installer expands them into
-`releases/VERSION/images/linux/`, leaving unused blocks as holes, and keeps only
-that directory. Activation and rollback re-check it against the manifest, then
-make it this Mac's `images/linux`: an APFS clone, so it costs no space,
-assembled under a dot-prefixed name and swapped in, so the daemon never sees
-half an image. Every Mac thus runs the linux image its release shipped.
+assets). The signed manifest names them and the expanded disk's SHA-256 and
+size, so a Mac can check the image against the same signature as the app.
 
 Upload every file in the output directory to a release named after the tag:
 `gh release create vVERSION dist/release/* --title "Localbox VERSION"`. Add
-`--prerelease` for a suffixed version (`1.2.0-rc.1`); the updater only follows
-the latest full release.
+`--prerelease` for a suffixed version (`1.2.0-rc.1`); the installation procedure
+takes the latest full release.
 
 Release credentials live in the checkout's git-ignored `.release-signing/`
 (override with `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
@@ -375,27 +384,24 @@ Release credentials live in the checkout's git-ignored `.release-signing/`
 | `public.json` | `sha1`, `certificateSha256` and `releasePublicKey` of the above |
 
 The script refuses a manifest key that does not match the pinned public key
-and, where `public.json` is present, an identity that does not match it; it imports the identity into a disposable keychain for headless
-`codesign`, and deletes that keychain on exit.
-A missing credential fails rather than creating another identity: a new key is a
-different signer, and installed copies trust only the pinned one.
-`APPLE_SIGNING_IDENTITY` and `NOTARY_PROFILE` switch to a keychain identity and
-notarization; `RELEASE_PRIVATE_KEY` overrides the manifest key path.
-`ALLOW_UNSIGNED=1` is only for local packaging checks; it cannot satisfy the
-virtualization or distribution gates.
+and, where `public.json` is present, an identity that does not match it.
+`sign.mjs` imports the identity into a disposable keychain for headless
+`codesign` and deletes it afterwards. A missing credential fails rather than
+creating another identity: a new key is a different signer, and installed copies
+trust only the pinned one. `APPLE_SIGNING_IDENTITY` names a keychain identity
+instead; `RELEASE_PRIVATE_KEY` overrides the manifest key path.
+`ALLOW_UNSIGNED=1` (ad hoc code signature, unsigned manifest) is only for local
+packaging checks.
 
-### Installing, rolling back and uninstalling
+### Rehearsing a release
 
-`RELEASE_PUBLIC_KEY=/path/to/release.pub scripts/install-release.sh dist/release`
-verifies checksums and the Ed25519 manifest, keeps versioned app, CLI and
-image trees behind an atomic `releases/active` link, materializes the launchd plist, creates
-the owner-only IPC token, and loads the daemon and the GitHub release updater.
-Automatic installs leave the running updater loaded while the active release is
-switched, so the updater cannot terminate its own install.
-
-`scripts/rollback-release.sh VERSION` selects an older verified tree and
-activates it, image included, as above.
-`scripts/uninstall.sh` removes launchd jobs, the CLI link and the marked PATH
-block while preserving VM state. Set `LOCALBOX_INSTALL_ROOT` for a user-local or
-fixture install, and `LOCALBOX_RELEASE_REPOSITORY` when releases come from a
-repository other than `dzhng/localbox`.
+Never use the release credentials to test. A scratch release takes a throwaway
+identity (`LOCALBOX_SIGNING_DIR` holding its `.p12` and password), a scratch
+manifest key (`RELEASE_PRIVATE_KEY`) and that key's public half
+(`LOCALBOX_RELEASE_PUBLIC_KEY`, which the bundle then carries in place of the
+pinned one). `npm run proof -- 42 --tier a` does exactly that, then runs the
+installation procedure's own blocks against it, served over HTTP
+(`LOCALBOX_RELEASE_URL`) into a scratch `HOME`; `--tier v` boots a real VM with
+the daemon from inside the signed bundle. To rehearse by hand, serve the output
+directory (`python3 -m http.server -d dist/release`), set `LOCALBOX_RELEASE_URL`
+to it and follow the procedure with the scratch public key in step 3.

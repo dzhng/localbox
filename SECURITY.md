@@ -237,20 +237,26 @@ A release is trusted through its manifest: `release.json` lists every artifact's
 SHA-256 and carries an Ed25519 signature checked against the release public key
 pinned in the Localbox skill. The manifest never supplies its own key.
 
-- **Updates** are verified by the release already installed: its code and its
-  pinned key check the new manifest and checksums before anything from the new
-  release runs.
 - **A first install** has nothing installed to verify with. Its trust rests on
-  GitHub's TLS and on the public key printed in the installation procedure; the
-  bundled verifier then runs from the archive being installed. Anyone who can
-  change both the procedure and the release can change what is installed.
-- The app, CLI launcher and bundled Node are code-signed with a self-signed
-  Localbox identity, not an Apple Developer ID, and are not notarized. The
-  installer clears the download quarantine flag after the signature checks so
-  Gatekeeper does not refuse them; macOS itself vouches for nothing here.
+  GitHub's TLS and on the public key printed in the installation procedure. The
+  procedure checks the signature itself, with the JavaScriptCore shell every Mac
+  has, before anything from the download runs, then checks the app's zip against
+  the signed digest. Anyone who can change both the procedure and the release
+  can change what is installed.
+- **Installing a newer release** is the same procedure, so it is verified the
+  same way; the app does not yet update itself.
+- The app and everything in it that runs (the menu bar app, the daemon, the CLI
+  launcher and the bundled Node) are code-signed with a self-signed Localbox
+  identity, not an Apple Developer ID, and are not notarized; macOS itself
+  vouches for nothing here. The download is never quarantined (`curl` does not
+  mark it), and the procedure stops rather than strip a quarantine flag it
+  finds. Only the daemon holds the virtualization entitlement.
+- The guest agent binaries the app pushes into sandboxes are sealed by the app's
+  signature as they were built, never re-signed, so their digests are the ones
+  the daemon checks guests against.
 - The built-in `linux` image is outside the code signature. The manifest covers
   it instead: each compressed part's checksum and the expanded disk's SHA-256 and
-  size, checked at install, activation and rollback.
+  size.
 
 ## Non-security limits
 

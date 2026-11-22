@@ -27,9 +27,9 @@ public final class BundledCLI: Sendable {
         try await Task.detached { [self] in try execute(arguments) }.value
     }
 
-    /// The connector as the app's child: `localbox connector run --supervised`, with the app's environment.
+    /// The connector as the app's child: `localbox connector run`, with the app's environment; it stops when its stdin closes.
     public func connector(log: URL) -> ChildLaunch {
-        ChildLaunch(executable: executable, arguments: ["connector", "run", "--supervised"], environment: environment, log: log)
+        ChildLaunch(executable: executable, arguments: ["connector", "run"], environment: environment, log: log)
     }
 
     private func execute(_ arguments: [String]) throws -> Data {
