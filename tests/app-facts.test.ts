@@ -107,7 +107,7 @@ function fixture(name: string, value: AppFacts): AppFacts {
 }
 
 const copying = () => ({
-  key: "create_1", kind: "sandbox.create_after_copy", subject: "img_ubuntu", state: "running", progress: { phase: "receiving", completed: 461_708_984, total: GIB },
+  key: "create_1", kind: "sandbox.create_after_copy", subject: "image_x7k2m9", image_name: "ubuntu-dev", state: "running", progress: { phase: "receiving", completed: 461_708_984, total: GIB },
   started_at: NOW - 60_000, updated_at: NOW - 1_000, sandbox: { sandbox_id: "sandbox_3", name: "copy-crane" },
 });
 
@@ -124,7 +124,7 @@ test("idle and connected: the account, capacity, nothing listed and no warnings"
 test("this Mac's sandboxes by name, with the daemon's lifecycle, and one still copying its image with progress", async () => {
   const value = fixture("three-sandboxes", await facts({ daemon: {
     rows: [{ sandbox_id: "sandbox_1", name: "quiet-otter", lifecycle: "ready", cpus: 4 }, { sandbox_id: "sandbox_2", name: "calm-heron", lifecycle: "asleep" }],
-    operations: [copying(), { key: "copy_1", kind: "image.copy", subject: "img_ubuntu", state: "running", progress: { phase: "receiving", completed: 461_708_984, total: GIB }, started_at: NOW - 61_000, updated_at: NOW - 1_000 }],
+    operations: [copying(), { key: "copy_1", kind: "image.copy", subject: "image_x7k2m9", image_name: "ubuntu-dev", state: "running", progress: { phase: "receiving", completed: 461_708_984, total: GIB }, started_at: NOW - 61_000, updated_at: NOW - 1_000 }],
   } }));
   assert.deepEqual(value.sandboxes, [
     { sandbox_id: "sandbox_2", name: "calm-heron", os: "linux", state: "asleep" },
@@ -132,7 +132,7 @@ test("this Mac's sandboxes by name, with the daemon's lifecycle, and one still c
     { sandbox_id: "sandbox_1", name: "quiet-otter", os: "linux", state: "running" },
   ]);
   assert.equal(value.capacity?.cpus_free, 6, "a running sandbox's CPUs are not free");
-  assert.deepEqual(value.images, [{ name: "img_ubuntu", state: "copying", phase: "receiving", progress: { done_bytes: 461_708_984, total_bytes: GIB } }]);
+  assert.deepEqual(value.images, [{ name: "ubuntu-dev", state: "copying", phase: "receiving", progress: { done_bytes: 461_708_984, total_bytes: GIB } }]);
 });
 
 test("paused and asleep stay apart; a stopping or errored sandbox reads stopped or failed", async () => {
@@ -148,15 +148,15 @@ test("twelve sandboxes", async () => {
   assert.equal(value.sandboxes.at(-1)?.os, "macos");
 });
 
-test("an image building and the built-in image downloading; the sending side of a copy is left out", async () => {
+test("an image building, by its account name, and the built-in image downloading; the sending side of a copy is left out", async () => {
   const value = fixture("images-in-progress", await facts({ linux: false, images: ["img_sent"], builtin: { phase: "downloading", done_bytes: 300 * 1024 ** 2, total_bytes: 1200 * 1024 ** 2 }, daemon: { operations: [
-    { key: "build_1", kind: "macos.build", subject: "img_macos", state: "running", progress: { phase: "install" }, started_at: NOW - 600_000, updated_at: NOW - 5_000 },
+    { key: "build_1", kind: "macos.build", subject: "image_q4w8n1", image_name: "macos-base", state: "running", progress: { phase: "install" }, started_at: NOW - 600_000, updated_at: NOW - 5_000 },
     { key: "send_1", kind: "image.copy", subject: "img_sent", state: "running", progress: { phase: "sending" }, started_at: NOW - 9_000, updated_at: NOW - 1_000 },
   ] } }));
   assert.equal(value.builtin_image, "downloading");
   assert.deepEqual(value.images, [
     { name: "linux", state: "downloading", phase: "downloading", progress: { done_bytes: 300 * 1024 ** 2, total_bytes: 1200 * 1024 ** 2 } },
-    { name: "img_macos", state: "building", phase: "install" },
+    { name: "macos-base", state: "building", phase: "install" },
   ]);
   assert.deepEqual(codes(value), [], "a download in progress is not a warning");
 });
@@ -165,7 +165,7 @@ test("a failed image or copy shows for an hour, with why; a cancelled create nev
   const failed = (key: string, ageMs: number, code = "internal") => ({ key, kind: key.startsWith("create") ? "sandbox.create_after_copy" : "image.capture", subject: `img_${key}`, state: "failed",
     error: { code, message: `${key} failed` }, started_at: NOW - ageMs - 1_000, updated_at: NOW - ageMs, ...(key.startsWith("create") ? { sandbox: { sandbox_id: `sandbox_${key}`, name: key } } : {}) });
   const value = await facts({ daemon: { operations: [failed("capture_new", 60_000), failed("capture_old", FAILURE_SHOWN_MS + 1), failed("create_new", 60_000), failed("create_cancelled", 60_000, "operation_cancelled")] } });
-  assert.deepEqual(value.images, [{ name: "img_capture_new", state: "failed", error: "capture_new failed" }]);
+  assert.deepEqual(value.images, [{ name: "img_capture_new", state: "failed", error: "capture_new failed" }], "an image the mirror hasn't named yet is called by its id");
   assert.deepEqual(value.sandboxes, [{ sandbox_id: "sandbox_create_new", name: "create_new", os: "linux", state: "failed", error: "create_new failed" }]);
 });
 

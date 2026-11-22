@@ -56,7 +56,8 @@ interface Watch {
   version: number;
   capacity?: { cpus: number; total_bytes: number; room_bytes: number; free_disk_bytes?: number | null };
   sandboxes?: Array<{ sandbox_id: string; name: string; os: string; lifecycle: string; cpus: number }>;
-  operations?: Array<HostOperationRecord & { updated_at: number; sandbox?: { sandbox_id: string; name: string } }>;
+  /** `image_name` is the account's name for the record's image, once the connector's mirror has given it. */
+  operations?: Array<HostOperationRecord & { updated_at: number; image_name?: string; sandbox?: { sandbox_id: string; name: string } }>;
 }
 interface AppInfo {
   version: string; build: "release" | "dev"; in_applications: boolean; children: { daemon: AppFacts["daemon"]; connector: string }; stopping: AppFacts["stopping"];
@@ -225,11 +226,12 @@ const IMAGE_STATE: Record<string, ImageFact["state"]> = { [HOST_OPERATION_KINDS.
 
 /**
  * Image work on this Mac. An image already in the images folder is not in progress here, which also leaves out the
- * sending side of a copy. The daemon knows images by id, not by the account's names, so the id is the name.
+ * sending side of a copy. Each is called by the account's name, which the daemon has from the connector's mirror; the
+ * id stands in only until the mirror has named it (after a daemon restart, before the connector reaches the account).
  */
 function imageFacts(operations: NonNullable<Watch["operations"]>, images: string): ImageFact[] {
   return operations.filter((record) => IMAGE_STATE[record.kind] && !existsSync(join(images, record.subject))).map((record) => ({
-    name: record.subject, state: record.state === "failed" ? "failed" : IMAGE_STATE[record.kind],
+    name: record.image_name ?? record.subject, state: record.state === "failed" ? "failed" : IMAGE_STATE[record.kind],
     ...(record.progress?.phase ? { phase: record.progress.phase } : {}), ...progressOf(record),
     ...(record.state === "failed" && record.error ? { error: record.error.message } : {}),
   }));

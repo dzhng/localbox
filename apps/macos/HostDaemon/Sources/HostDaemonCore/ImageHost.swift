@@ -90,18 +90,21 @@ public actor ImageHost {
             do { return success(object, result: ["image": image, "removed": try store.removeIfPresent(image)]) }
             catch { return failure(object, code: "internal", message: "could not remove image \(image): \(explain(error))") }
         case "image.mirror":
-            guard let machineID = input["machine_id"] as? String, !machineID.isEmpty, let listed = input["images"] as? [String] else {
-                return failure(object, code: "invalid_input", message: "image.mirror takes machine_id (the signed-in connector's machine) and images (the image ids its catalog lists here)")
+            let rows = (input["images"] as? [[String: Any]])?.map { (id: $0["image_id"] as? String ?? "", name: $0["name"] as? String) }
+            guard let machineID = input["machine_id"] as? String, !machineID.isEmpty, let rows, !rows.contains(where: { $0.id.isEmpty }) else {
+                return failure(object, code: "invalid_input", message: "image.mirror takes machine_id (the signed-in connector's machine) and images (each image its catalog lists here, as image_id and name)")
             }
-            do { return success(object, result: try await mirror(machineID: machineID, listed: Set(listed))) }
+            // The names come first: a rename lists the same images, and changes only what this Mac's image work is called.
+            store.setAccountNames(Dictionary(rows.compactMap { row in row.name.map { (row.id, $0) } }, uniquingKeysWith: { _, last in last }))
+            do { return success(object, result: try await mirror(machineID: machineID, listed: Set(rows.map(\.id)))) }
             catch { return failure(object, code: "internal", message: "image mirror failed: \(explain(error))") }
         default:
             return failure(object, code: "unsupported", message: "\(operation) is not an image operation")
         }
     }
 
-    /// Follows the account catalog's list of the images this machine holds. An image it lists is marked listed by that
-    /// machine. An image it no longer lists that the same machine's catalog listed before (deleted while this Mac was
+    /// Follows the account catalog's list of the images this machine holds (the caller has already handed their names to
+    /// `ImageStore`). An image it lists is marked listed by that machine. An image it no longer lists that the same machine's catalog listed before (deleted while this Mac was
     /// offline) is removed, unless an operation on it is still running; anything else (never listed, or listed by an
     /// earlier sign-in) stays and is reported `unknown`.
     private func mirror(machineID: String, listed: Set<String>) async throws -> [String: Any] {

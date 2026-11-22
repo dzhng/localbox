@@ -99,7 +99,7 @@ public actor ImageCopy: HostOperationKind {
             guard row.state != "copied" else { return .object(["role": .string("sender")]) }
             let source: ImageCopySource
             do { source = try store.copySource(imageID) } catch {
-                throw HostOperationFailure(code: "image_not_found", message: "image \(imageID) is no longer on this Mac", nextStep: "copy it from another Mac that holds it")
+                throw HostOperationFailure(code: "image_not_found", message: "image \(store.displayName(imageID)) is no longer on this Mac", nextStep: "copy it from another Mac that holds it")
             }
             try await context.report(HostOperationProgress(phase: "sending"), checkpoint: .object(checkpoint))
             do {
@@ -114,7 +114,7 @@ public actor ImageCopy: HostOperationKind {
             return .object(checkpoint.merging(["size_bytes": .number(Double(manifest.sizeBytes))]) { $1 })
         }
         try await context.report(HostOperationProgress(phase: "checking_disk"), checkpoint: .object(checkpoint))
-        try store.requireFree(imageDiskNeedBytes(row.sizeBytes ?? 0), for: "copying image \(imageID) here", because: "the image plus a \(gibibytes(imageDiskMarginBytes)) margin", then: "copy again")
+        try store.requireFree(imageDiskNeedBytes(row.sizeBytes ?? 0), for: "copying image \(store.displayName(imageID)) here", because: "the image plus a \(gibibytes(imageDiskMarginBytes)) margin", then: "copy again")
         let temp = try store.resumableTemp(imageID, key: context.key)
         do {
             try await context.report(HostOperationProgress(phase: "receiving", completed: 0, total: row.sizeBytes.map(Int.init)), checkpoint: .object(checkpoint))
@@ -131,7 +131,7 @@ public actor ImageCopy: HostOperationKind {
             throw CancellationError()
         } catch {
             store.discardTemps(of: imageID)
-            throw error is HostOperationFailure ? error : HostOperationFailure(code: "internal", message: "could not receive image \(imageID): \(explain(error))", nextStep: "copy it again; if it fails the same way, check this Mac's logs")
+            throw error is HostOperationFailure ? error : HostOperationFailure(code: "internal", message: "could not receive image \(store.displayName(imageID)): \(explain(error))", nextStep: "copy it again; if it fails the same way, check this Mac's logs")
         }
         return .object(checkpoint.merging(["size_bytes": .number(Double(try store.manifest(imageID).sizeBytes))]) { $1 })
     }

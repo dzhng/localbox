@@ -109,26 +109,8 @@ ready. Check for Updates to install it."
   then happen only on Check for Updates), or lengthen the interval.
 - **Confidence:** medium.
 
-### N3. ⚠ Image rows in the popover show image ids, not names (stretches 3)
-
-**When:** 12 · **Owner:** `imageFacts` in `apps/cli/src/app-facts.ts`
-
-Say you run `localbox image copy my-xcode-base --machine studio`. On the
-receiving Mac the popover's "Images in progress" shows the image's opaque
-account id with "Copying 43% · receiving", not `my-xcode-base`. The daemon knows
-images only by id; the names live in the account's catalog in Convex, which
-only the connector talks to. The built-in image reads `linux`, which is also
-its id. The brief asked for "images building or copying on this Mac, with
-progress", and an id is a poor label for a person.
-
-- **Gap:** the plan assumed the facts could name images; nothing on the Mac
-  holds the names.
-- **Reach:** the popover and `localbox app status` (`images[].name`).
-- **Verdict:** needs your call. **Provisional call:** ship ids. To reverse it,
-  have the connector's `image.mirror` call (which already sends the account's
-  image ids for this Mac) carry names too, store them beside the images, and
-  have `imageFacts` use them.
-- **Confidence:** medium.
+N3 (image rows showed image ids, not names) was fixed after the closing audit
+and is now **S42**.
 
 ### N4. ⚠ `HOME` is copied into Sparkle's relaunch (stretches 2)
 
@@ -958,6 +940,35 @@ confirms first, and a "This Mac" row. A revoked Mac (account still named)
 shows as signed in, so Sign Out is what it offers; the popover carries the
 warning. Settings' only setting of its own is "Show this window when
 Localbox starts" (off), never applied on the relaunch after an update.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S42. Image work is called by the account's name (was N3)
+
+**When:** 12, fixed after the closing audit · **Owner:** `images:forMachine` in `packages/state/convex/images.ts`; the connector's `mirrorImages`; `ImageStore.accountName`; `SandboxHost.workInProgress`; `imageFacts` in `apps/cli/src/app-facts.ts`
+
+Say you run `localbox image copy my-xcode-base --to studio`. On studio the
+popover's "Images in progress" reads `my-xcode-base` with "Copying 43% ·
+receiving", and so does `localbox app status` (`images[].name`). The names
+live in the account's catalog; the daemon learns them from the mirror it
+already had: `images:forMachine` returns each image's name with its holding,
+the connector's `image.mirror` call carries it, and `ImageStore` keeps the
+latest set in memory beside its listing marks. `host.watch` gives each
+operation the account's name for its image as `image_name`, and the facts use
+it. A rename re-runs the query, so the connector re-sends and the popover
+follows within its two-second recheck (a rename does not bump the watch
+version). The same names go into the daemon's messages about a copy that
+failed (the receiving side's errors, and a create that waited for the copy),
+which the failed rows show. The built-in image stays `linux`.
+
+The holding is made in the account before the Mac is told to build or copy,
+so the mirror names the image from the start. The names are not persisted: the
+images shown by name are the ones still arriving or building, which have no
+image directory to keep a mark in, and the connector re-sends the names as
+soon as it reaches the account. After a daemon restart with the connector
+offline, an image still in progress reads by its id until then. A build's own
+operation never knew the name (the relay hands the Mac only the reserved id),
+so it is not a second source.
 
 - **Verdict:** sound. **Confidence:** medium–high.
 

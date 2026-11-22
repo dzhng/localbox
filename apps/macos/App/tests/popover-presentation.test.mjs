@@ -82,12 +82,12 @@ test("twelve sandboxes: every row is listed (the view caps the height and scroll
   for (const row of list.filter((row) => /^(Paused|Stopped|Asleep)/.test(row.detail))) assert.ok(actions(row).includes(`wake ${row.name}`), row.name);
 });
 
-test("images in progress: an image building and the built-in image downloading as linux, with phase and progress", () => {
+test("images in progress: an image building, by its name, and the built-in image downloading as linux, with phase and progress", () => {
   const images = rows["images-in-progress"].body.images;
-  assert.deepEqual(images.map((image) => [image.name, image.detail]), [["linux", "Downloading 25%"], ["img_macos", "Building · install"]]);
+  assert.deepEqual(images.map((image) => [image.name, image.detail]), [["linux", "Downloading 25%"], ["macos-base", "Building · install"]]);
   assert.equal(images[0].progress, 0.25);
   assert.equal(images[1].progress, null);
-  assert.equal(rows["three-sandboxes"].body.images[0].detail, "Copying 43% · receiving", "worded as a copying sandbox is");
+  assert.deepEqual([rows["three-sandboxes"].body.images[0].name, rows["three-sandboxes"].body.images[0].detail], ["ubuntu-dev", "Copying 43% · receiving"], "worded as a copying sandbox is");
 });
 
 test("stopping with two pending: the sleep message and their names instead of the lists; Quit disabled", () => {

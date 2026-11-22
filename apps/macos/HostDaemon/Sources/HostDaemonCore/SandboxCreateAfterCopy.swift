@@ -56,7 +56,9 @@ public actor SandboxCreateAfterCopy: HostOperationKind {
         do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch {
             throw HostOperationFailure(code: "invalid_input", message: "\(Self.kind) needs a checkpoint { sandbox_id, copy_key, create }")
         }
-        let image = context.subject, name = checkpoint.create.name, copyKey = checkpoint.copyKey
+        let name = checkpoint.create.name, copyKey = checkpoint.copyKey
+        // Messages call the image by its account name, as the mirror gave it by the time they are written.
+        let store = sandboxes.store, image = { store.displayName(context.subject) }
         let again = "delete it with localbox sandbox delete \(name) --confirm \(name), then create it again"
         // 1. Follow the copy, its progress shown as this operation's.
         var shown = context.progress
@@ -69,7 +71,7 @@ public actor SandboxCreateAfterCopy: HostOperationKind {
             }
             if copy.state == .failed {
                 let cause = copy.error ?? HostOperationFailure(code: "internal", message: "no reason given")
-                throw HostOperationFailure(code: cause.code, message: "image \(image) did not arrive, so \(name) was not created: \(cause.message)", nextStep: [cause.nextStep, again].compactMap { $0 }.joined(separator: "; then "))
+                throw HostOperationFailure(code: cause.code, message: "image \(image()) did not arrive, so \(name) was not created: \(cause.message)", nextStep: [cause.nextStep, again].compactMap { $0 }.joined(separator: "; then "))
             }
             if copy.state == .succeeded { copied = copy.result; break }
             if let progress = copy.progress, progress != shown {
@@ -83,9 +85,9 @@ public actor SandboxCreateAfterCopy: HostOperationKind {
         let report: CreateReport
         do { report = try await sandboxes.create(checkpoint.sandboxID, checkpoint.create) }
         catch let failure as HostOperationFailure {
-            throw HostOperationFailure(code: failure.code, message: "image \(image) arrived, but \(name) could not be created: \(failure.message)", nextStep: again)
+            throw HostOperationFailure(code: failure.code, message: "image \(image()) arrived, but \(name) could not be created: \(failure.message)", nextStep: again)
         } catch let refused as AdmissionRefused {
-            throw HostOperationFailure(code: "machine_full", message: "image \(image) arrived, but \(name) could not be created: \(refused.message)", nextStep: again)
+            throw HostOperationFailure(code: "machine_full", message: "image \(image()) arrived, but \(name) could not be created: \(refused.message)", nextStep: again)
         }
         var result = report.produced
         result["copy_operation_id"] = copyKey

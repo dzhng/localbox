@@ -178,8 +178,8 @@ public actor SandboxHost {
     private let agentUpdater: GuestAgentUpdater?
     /// The journal a create that waits for its image's copy begins in (`SandboxCreateAfterCopy`).
     nonisolated let operations: HostOperationStore
-    /// This Mac's images, asked only for free disk (capacity) and whether the built-in image is here yet: the host
-    /// writes no image files.
+    /// This Mac's images, asked only for free disk (capacity), whether the built-in image is here yet, and the account's
+    /// names for image work (`host.watch`): the host writes no image files.
     nonisolated let store: ImageStore
     /// Under Localbox.app, the built-in image's download a create from it waits for (`BuiltinImageWait`).
     private let builtinImage: BuiltinImageWait?
@@ -757,15 +757,17 @@ public actor SandboxHost {
     }
 
     /// This Mac's image work for `host.watch`: every running operation, and each image's latest operation when it
-    /// failed, as `image.wait` shows a record (no checkpoint). A sandbox waiting for its image's copy also names the
-    /// sandbox (`sandbox: { sandbox_id, name }`), which only its checkpoint knows. Progress does not bump the watch
-    /// version; a caller showing it polls while anything here runs.
+    /// failed, as `image.wait` shows a record (no checkpoint), with `image_name`, the account's name for the image (the
+    /// record's subject) once the connector's mirror has given it. A sandbox waiting for its image's copy also names the
+    /// sandbox (`sandbox: { sandbox_id, name }`), which only its checkpoint knows. Progress and renames do not bump the
+    /// watch version; a caller showing them polls while anything here runs.
     private func workInProgress() async -> [[String: Any]] {
         let records = await operations.current()
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         return records.compactMap { record in
             guard let data = try? encoder.encode(record), var view = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             view["checkpoint"] = nil
+            view["image_name"] = store.accountName(record.subject)
             if record.kind == SandboxCreateAfterCopy.kind, let waiting = try? record.checkpoint.decoded(as: SandboxCreateAfterCopy.Checkpoint.self) {
                 view["sandbox"] = ["sandbox_id": waiting.sandboxID, "name": waiting.create.name]
             }

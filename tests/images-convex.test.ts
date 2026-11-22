@@ -138,12 +138,13 @@ test("get resolves one image as list shows it; a failed holding carries why and 
   assert.equal((await agent.query(ref("images:get"), { image: image.image_id }) as any).holders[0].error, null);
 });
 
-test("a machine's mirror lists only the images held on it, with each holding's state", async () => {
+test("a machine's mirror lists only the images held on it, with each image's name and holding's state; a rename reaches it", async () => {
   const { agent, m1, m2 } = await setup();
   const one = await reserve(agent, { name: "rails-dev" }); const two = await reserve(agent, { name: "node-dev", machineId: "m2" });
   await m1.mutation(ref("images:setHolder"), { imageId: two.image_id, state: "copying" });
-  assert.deepEqual(await m1.query(ref("images:forMachine"), {}), [{ image_id: one.image_id, state: "building" }, { image_id: two.image_id, state: "copying" }].sort((a, b) => a.image_id.localeCompare(b.image_id)));
-  assert.deepEqual(await m2.query(ref("images:forMachine"), {}), [{ image_id: two.image_id, state: "building" }]);
+  assert.deepEqual(await m1.query(ref("images:forMachine"), {}), [{ image_id: one.image_id, name: "rails-dev", state: "building" }, { image_id: two.image_id, name: "node-dev", state: "copying" }].sort((a, b) => a.image_id.localeCompare(b.image_id)));
+  await agent.mutation(ref("images:rename"), { image: two.image_id, name: "node-22" });
+  assert.deepEqual(await m2.query(ref("images:forMachine"), {}), [{ image_id: two.image_id, name: "node-22", state: "building" }]);
   await assert.rejects(() => agent.query(ref("images:forMachine"), {}), code("unauthorized"));
 });
 

@@ -86,6 +86,9 @@ final class ImageHostTests: XCTestCase {
         XCTAssertEqual((done["result"] as? [String: Any])?["size_bytes"] as? Int, 3 * 1_048_576)
     }
 
+    /// The mirror's `images` as the connector sends them.
+    private func listing(_ ids: [String]) -> [[String: Any]] { ids.map { ["image_id": $0, "name": "name-of-\($0)"] } }
+
     func testTheCatalogMirrorRemovesOnlyImagesThatSameMachinesCatalogListedBefore() async throws {
         let rig = try await TestDaemon(root: try scratch()), host = rig.daemon
         for (id, machine) in [("image_kept", "m1"), ("image_dropped", "m1"), ("image_other_sign_in", "m0"), ("image_never_listed", nil), ("image_building", "m1")] { try rig.store.plant(id, listedBy: machine) }
@@ -94,18 +97,39 @@ final class ImageHostTests: XCTestCase {
         await rig.operations.register(kind: "build") { _ in await gate.wait(); return .null }
         _ = try await rig.operations.begin(kind: "build", key: "m-b", subject: "image_building", checkpoint: .null)
 
-        let mirrored = try await result(host, "image.mirror", ["machine_id": "m1", "images": ["image_kept", "image_new", "image_absent"]])
+        let mirrored = try await result(host, "image.mirror", ["machine_id": "m1", "images": listing(["image_kept", "image_new", "image_absent"])])
         XCTAssertEqual((mirrored["deleted"] as? [[String: String]])?.map { $0["image"] }, ["image_dropped"])
         XCTAssertEqual(mirrored["unknown"] as? [String], ["image_building", "image_never_listed", "image_other_sign_in"], "running work, never listed, or listed by another sign-in: left alone")
         XCTAssertEqual(mirrored["missing"] as? [String], ["image_absent", "image_new"])
         XCTAssertEqual(rig.store.list().map(\.imageID), ["image_building", "image_kept", "image_never_listed", "image_other_sign_in", builtInImage], "the built-in image is never the catalog's to remove")
 
         // A listed image is marked as this machine's, so a later push without it removes it.
-        _ = try await result(host, "image.mirror", ["machine_id": "m1", "images": ["image_kept", "image_never_listed"]])
+        _ = try await result(host, "image.mirror", ["machine_id": "m1", "images": listing(["image_kept", "image_never_listed"])])
         XCTAssertEqual(rig.store.held().first { $0.imageID == "image_never_listed" }?.listedBy, "m1")
         let dropped = try await result(host, "image.mirror", ["machine_id": "m1", "images": []])
         XCTAssertEqual(Set((dropped["deleted"] as? [[String: String]])?.compactMap { $0["image"] } ?? []), ["image_kept", "image_never_listed"])
         XCTAssertEqual(rig.store.held().map(\.imageID), ["image_building", "image_other_sign_in"])
+        await gate.open()
+    }
+
+    func testImageWorkInTheWatchIsCalledByTheNameTheMirrorLastGave() async throws {
+        let rig = try await TestDaemon(root: try scratch()), host = rig.daemon
+        let gate = Gate()
+        await rig.operations.register(kind: "copy") { _ in await gate.wait(); return .null }
+        for id in ["image_copying", "image_unlisted"] { _ = try await rig.operations.begin(kind: "copy", key: "m-\(id)", subject: id, checkpoint: .null) }
+        func names() async throws -> [String: String] {
+            let watch = try await result(host, "host.watch", ["since": 0, "timeout_ms": 0])
+            return Dictionary(uniqueKeysWithValues: (watch["operations"] as? [[String: Any]] ?? []).compactMap { record in (record["image_name"] as? String).map { (record["subject"] as! String, $0) } })
+        }
+        let unnamed = try await names()
+        XCTAssertEqual(unnamed, [:], "before any mirror the daemon knows only ids")
+
+        _ = try await result(host, "image.mirror", ["machine_id": "m1", "images": [["image_id": "image_copying", "name": "ubuntu-dev"]]])
+        let named = try await names()
+        XCTAssertEqual(named, ["image_copying": "ubuntu-dev"], "an image the account doesn't list here stays unnamed")
+        _ = try await result(host, "image.mirror", ["machine_id": "m1", "images": [["image_id": "image_copying", "name": "ubuntu-24"]]])
+        let renamed = try await names()
+        XCTAssertEqual(renamed, ["image_copying": "ubuntu-24"], "a rename in the account reaches the watch")
         await gate.open()
     }
 

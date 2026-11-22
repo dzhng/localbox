@@ -55,7 +55,7 @@ class FakeDaemon {
       if (!this.outbox.length) await new Promise<void>((resolve) => { this.outboxPolling = resolve; });
       return success(request, this.outbox.shift() as any);
     }
-    if (request.operation === "image.mirror") return success(request, { deleted: (request.input as { images: string[] }).images.length ? [] : [{ image: "image_old", detail: "deleted image image_old: the account catalog no longer lists it here" }] });
+    if (request.operation === "image.mirror") return success(request, { deleted: (request.input as { images: unknown[] }).images.length ? [] : [{ image: "image_old", detail: "deleted image image_old: the account catalog no longer lists it here" }] });
     if (request.operation === "host.operations") {
       if (!this.outcomes.length) await new Promise<void>((resolve) => { this.polling = resolve; });
       return success(request, { operations: this.outcomes.shift() as any });
@@ -373,14 +373,19 @@ test("a finished host operation becomes its image's holder state, reported once 
   await connector.stop();
 });
 
-test("the daemon's image files follow the catalog's list of images on this machine; a failed read pushes nothing", async () => {
+test("the daemon's image files follow the catalog's list of images on this machine, names and renames included; a failed read pushes nothing", async () => {
   const { convex, daemon, logs, connector } = harness();
-  convex.pushImages([{ image_id: "image_1", state: "ready" }, { image_id: "image_2", state: "building" }]);
+  convex.pushImages([{ image_id: "image_1", name: "xcode-base", state: "ready" }, { image_id: "image_2", name: "ubuntu-dev", state: "building" }]);
   convex.pushImages(undefined);
+  convex.pushImages([{ image_id: "image_2", name: "ubuntu-24", state: "ready" }]);
   convex.pushImages([]);
   await settle();
   const mirrors = daemon.requests.filter((request) => request.operation === "image.mirror").map((request) => request.input);
-  assert.deepEqual(mirrors, [{ machine_id: "machine_1", images: ["image_1", "image_2"] }, { machine_id: "machine_1", images: [] }]);
+  assert.deepEqual(mirrors, [
+    { machine_id: "machine_1", images: [{ image_id: "image_1", name: "xcode-base" }, { image_id: "image_2", name: "ubuntu-dev" }] },
+    { machine_id: "machine_1", images: [{ image_id: "image_2", name: "ubuntu-24" }] },
+    { machine_id: "machine_1", images: [] },
+  ]);
   assert.ok(logs.includes("deleted image image_old: the account catalog no longer lists it here"));
   await connector.stop();
 });

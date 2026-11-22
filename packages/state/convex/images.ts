@@ -185,13 +185,15 @@ export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: h
 
 /**
  * The calling machine's holdings, for its daemon's image mirror: every image the account lists on it, with the
- * holding's state so a change (building to ready) reaches the mirror too.
+ * holding's state so a change (building to ready) reaches the mirror too, and the image's name, which the daemon shows
+ * in this Mac's image work (a rename re-runs the query, so the new name reaches it).
  */
 export const forMachine = queryGeneric({ args: {}, handler: async (ctx) => {
   const { machineId } = await requireIdentity(ctx, "machine");
   // A partial list would read as deletions to the daemon's mirror, so a list too long to read whole fails instead.
   const rows = await boundedRows(ctx.db.query("imageHolders").withIndex("by_machine", (q: any) => q.eq("machineId", machineId)), "machine image holdings");
-  return rows.map((row: any) => ({ image_id: row.imageId, state: row.state })).sort((a: any, b: any) => a.image_id.localeCompare(b.image_id));
+  const named = await Promise.all(rows.map(async (row: any) => ({ image_id: row.imageId, name: (await byField(ctx, "images", "by_image", "imageId", row.imageId))?.name ?? null, state: row.state })));
+  return named.sort((a, b) => a.image_id.localeCompare(b.image_id));
 } });
 
 /** One machine stops holding an image (`image delete --machine`, or a copy that failed); the image record stays. */
