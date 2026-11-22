@@ -990,3 +990,102 @@ reference (352 pt wide, 48 pt rows); status lines' wording; the
 action kind, kept because the firewall freezes `packages/contract`; the naming
 test's allow-list shape (each entry names its file, term and line, and fails
 when it no longer matches).
+
+---
+
+## Release process
+
+Decisions made after the build closed, when `scripts/release.sh` and a
+hand-typed `gh release create` became the staged `npm run release -- <stage>`
+([runbook](../../../DEVELOPMENT.md#releasing)). Numbered R, in the same
+verdict order.
+
+### R1. Needs your call: the smoke runs the real bundle id on this account
+
+**Owner:** `scripts/release/smoke.ts`
+
+The smoke proves the artifact that ships, so it launches the signed bundle
+unchanged, as `sh.localbox.mac`, with a scratch `HOME` and machine root. A
+release ignores `LOCALBOX_APP_LOGIN_ITEM=fake`, so the smoke launches a copy
+outside every Applications folder, where a release registers no login item
+(the log line is asserted). Sparkle and the launcher use the account's real
+home, so it refuses while any `sh.localbox.mac` runs, and afterwards restores
+the `sh.localbox.mac` defaults and deletes the `~/Library` folders it created.
+Its Sparkle may reach the real feed during the run; nothing is offered,
+because the build is newer than `latest`.
+
+- **Reach:** on a release Mac that also runs Localbox day to day, the owner
+  quits it for the smoke (about a minute plus the image's expansion).
+- **Verdict:** needs your call. **Provisional call:** the real id, as above.
+  To reverse: re-sign a copy under a lab id as probe 44 does, which proves a
+  different signature from the one that ships.
+- **Confidence:** medium.
+
+### R2. Needs your call: publishing is two commands, draft then `--confirm`
+
+**Owner:** `scripts/release/publish.ts`
+
+`publish` uploads a draft at the built commit, downloads every asset back
+and compares its SHA-256, then stops; only `publish --confirm` makes it
+public, which creates the tag (so no tag exists for a draft that is thrown
+away). `all` stops at the draft. Every install and update follows `latest`
+within the hour, so the irreversible step is a separate command a person
+types. `--confirm` then waits for the feed redirect and
+`releases/latest/download/release.json` to serve the new files.
+
+- **Verdict:** needs your call. **Provisional call:** two commands. To
+  reverse: let `all` pass `--confirm` through.
+- **Confidence:** medium–high.
+
+### R3. A rehearsal is a mode of the same command, and it never publishes
+
+**Owner:** `scripts/release/config.ts`, `validate.ts`
+
+`--rehearsal` waives only the git checks (branch, clean tree, pushed), takes
+`--version` and scratch credentials through the existing
+`LOCALBOX_SIGNING_DIR` and `LOCALBOX_RELEASE_PUBLIC_KEY`, and turns `publish`
+into a dry run; a real run refuses `--version` and
+`LOCALBOX_RELEASE_PUBLIC_KEY`. `ALLOW_UNSIGNED`, `APPLE_SIGNING_IDENTITY`,
+`RELEASE_PRIVATE_KEY`, `RELEASE_KEY_ID` and `VERSION` are gone: every build is
+signed from one signing folder, scratch or real. Probe 42 drives the build
+stage this way.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### R4. Each stage judges the groups it depends on, from facts gathered apart
+
+**Owner:** `scripts/release/validate.ts`
+
+`gatherFacts` only reads (a `git fetch` aside); `judge` is pure, so every
+refusal sentence is tested against fake facts. `validate` judges everything,
+`build` the tree and the local inputs (it binds the release to a commit),
+`publish` git and GitHub, where an existing draft of the version is reused
+rather than refused. The free-disk floor is twice the image's allocated size
+plus 4 GiB.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### R5. The build's receipt binds smoke and publish to one build
+
+**Owner:** `scripts/release/build.ts`
+
+`build` writes `dist/release.build.json` beside the folder (inside it, it
+would become an asset): version, commit, rehearsal or not, and the public
+key's digest. `smoke` and `publish` refuse a folder built for another version
+or key, and `publish` refuses unless `HEAD` is the built commit.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### R6. TypeScript stages, with the shell script folded in
+
+**Owner:** `scripts/release/`
+
+The stages are TypeScript run by `tsx`, like the proof harness, so they call
+the owners directly (`release.ts` and `appcast.ts` for manifest and feed,
+`sign.mjs` for signing, `framework.mjs` for the Sparkle receipt,
+`installation.ts` and `packaged-app.ts` for the smoke) instead of shelling
+out to heredocs. `sign.mjs` and `framework.mjs` gained small `.d.mts` type
+files. The version bump is a documented `npm version X.Y.Z
+--no-git-tag-version`, not a helper.
+
+- **Verdict:** sound. **Confidence:** medium–high.
