@@ -16,7 +16,8 @@ import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 // stdin closes) and a relaunch has exactly one daemon. No launchd job is involved. Slice 09: `localbox app status`
 // reports both children through the app socket, including a killed daemon backing off and coming back; the login
 // item is the app's fake one, never this account's. Slice 12: `app status` is the app's facts; a long poll with
-// `--since` answers as soon as a sandbox goes to sleep.
+// `--since` answers as soon as a sandbox goes to sleep. Slice 13: the popover opens (through the development build's
+// `popover.*` test hooks) without the app taking focus, and its Sleep and Wake reach the daemon.
 //
 //   npm run proof -- 41 --tier a      the packaged dev app on the process-fixture backend
 //   npm run proof -- 41 --tier v      quit and relaunch with a real VM whose memory survives
@@ -129,6 +130,38 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       assert.notEqual(after.watch_version, before.watch_version);
       assert.ok(took < 20_000, `answered ${took} ms after the poll began, not at its 25 s timeout`);
       await app.ok("sandbox.start", SANDBOX);
+    }));
+
+    checks.push(await ctx.check("the popover opens (test hook) without the app ever becoming frontmost; its Sleep and Wake change the daemon's state", async () => {
+      if ((await app.ok("sandbox.status", SANDBOX)).state !== "running") await app.ok("sandbox.start", SANDBOX);
+      await runningAgain();
+      const popover = async (operation: string, params: Record<string, string> = {}): Promise<any> => await callApp(app.paths.appSocket, operation as never, params);
+      const before = app.front(), fronts = new Set<number>();
+      /** Opens the popover (a no-op once open) and waits until its row for the sandbox reads `state`. */
+      const shows = async (state: string) => {
+        let seen: any;
+        await app.until(async () => {
+          seen = await popover("popover.open");
+          const now = app.front(); if (now !== undefined) fronts.add(now);
+          return seen.shown && seen.sandboxes.includes(`${NAME} ${state} · Linux`);
+        }, `the popover showing ${NAME} ${state}`, 30_000);
+        return seen;
+      };
+      const open = await shows("Running");
+      assert.equal(open.title, "Not signed in", JSON.stringify(open));
+      assert.equal(open.status_icon, "warning", "signed out is a warning, so the status item shows its warning variant");
+      await popover("popover.perform", { action: "sleep", name: NAME });
+      // The fixture sleeps in memory, so the daemon's state is paused (a VM's is asleep); the open popover follows it.
+      await shows("Paused");
+      assert.notEqual((await app.ok("sandbox.status", SANDBOX)).state, "running");
+      await popover("popover.perform", { action: "wake", name: NAME });
+      await shows("Running");
+      await runningAgain();
+      const refused = await popover("popover.perform", { action: "wake", name: NAME }).then(() => undefined, (error) => error);
+      assert.deepEqual([refused?.code, /offers no wake/.test(String(refused?.message))], ["conflict", true], "a running sandbox's row offers no Wake");
+      assert.equal((await popover("popover.close")).shown, false);
+      const after = app.front();
+      assert.ok(!fronts.has(pid) && after !== pid, `the app was frontmost (front before ${before}, after ${after}, seen ${[...fronts]})`);
     }));
 
     checks.push(await ctx.check("a killed daemon: app status shows backing_off, then running again", async () => {

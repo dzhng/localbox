@@ -87,6 +87,8 @@ cpSync(join(cli, "node_modules/skills"), join(cli, "skills-installer"), { recurs
 writeFileSync(join(cli, "version"), `${version}\n`);
 cpSync(node, join(resources, "node/bin/node"));
 cpSync(publicKey, join(resources, "release-public.pem"));
+// The status item's art, once drawn; without it the app draws a placeholder symbol (LocalboxMenu's StatusIcon).
+for (const art of ["StatusItem.pdf", "StatusItemWarning.pdf"]) if (existsSync(join(root, "apps/macos/App/art", art))) cpSync(join(root, "apps/macos/App/art", art), join(resources, art));
 // The host's guest agent builds, sealed as resources and never re-signed, so the digests in agent-version.json stay
 // true; the daemon pushes them into every guest running another build. A development build without them keeps the
 // agent each image carries.

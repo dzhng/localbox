@@ -38,6 +38,8 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     // The app fetches the built-in image at launch; a probe never reaches GitHub. An empty folder makes that fetch fail
     // at once, and a probe that wants the download serves a scratch release in its place (probe 43).
     LOCALBOX_RELEASE_URL: pathToFileURL(join(scratch, "no-release")).href,
+    // The popover's `popover.*` operations on the app socket (a development build honours it; a release ignores it).
+    LOCALBOX_APP_TEST_HOOKS: "1",
     PATH: fixture ? `${dirname(process.execPath)}:${FINDER_PATH}` : FINDER_PATH,
     ...(fixture ? { LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: ctx.root } : {}),
   };
@@ -171,7 +173,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     if (!ctx.keep) rmSync(scratch, { recursive: true, force: true });
   };
 
-  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, until, request, ok, record, log, cleanup };
+  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, front, until, request, ok, record, log, cleanup };
 }
 
 function virtualizationServices(): number[] {

@@ -1,0 +1,184 @@
+[
+  {
+    "appearance" : "light",
+    "height" : 290,
+    "scale" : 2,
+    "state" : "all-warnings",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 311,
+    "scale" : 2,
+    "state" : "connector-down",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 272,
+    "scale" : 2,
+    "state" : "daemon-down",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 339,
+    "scale" : 2,
+    "state" : "hibernate-blocked",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 202,
+    "scale" : 2,
+    "state" : "idle",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 332,
+    "scale" : 2,
+    "state" : "images-in-progress",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 296,
+    "scale" : 2,
+    "state" : "signed-out",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 201,
+    "scale" : 2,
+    "state" : "stopping",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 394,
+    "scale" : 2,
+    "state" : "three-sandboxes",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 530,
+    "scale" : 2,
+    "state" : "twelve-sandboxes",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 422,
+    "scale" : 2,
+    "state" : "action-failed",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 178,
+    "scale" : 2,
+    "state" : "loading",
+    "width" : 352
+  },
+  {
+    "appearance" : "light",
+    "height" : 195,
+    "scale" : 2,
+    "state" : "quitting",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 290,
+    "scale" : 2,
+    "state" : "all-warnings",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 311,
+    "scale" : 2,
+    "state" : "connector-down",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 272,
+    "scale" : 2,
+    "state" : "daemon-down",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 339,
+    "scale" : 2,
+    "state" : "hibernate-blocked",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 202,
+    "scale" : 2,
+    "state" : "idle",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 332,
+    "scale" : 2,
+    "state" : "images-in-progress",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 296,
+    "scale" : 2,
+    "state" : "signed-out",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 201,
+    "scale" : 2,
+    "state" : "stopping",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 394,
+    "scale" : 2,
+    "state" : "three-sandboxes",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 530,
+    "scale" : 2,
+    "state" : "twelve-sandboxes",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 422,
+    "scale" : 2,
+    "state" : "action-failed",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 178,
+    "scale" : 2,
+    "state" : "loading",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 195,
+    "scale" : 2,
+    "state" : "quitting",
+    "width" : 352
+  }
+]

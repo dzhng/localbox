@@ -35,19 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRelease = false
     private var lifetime: Lifetime?
     private var appSocket: AppSocket?
-    /// This Mac's facts, read through the CLI; the popover and Settings (slices 13, 14) set it watching.
+    /// This Mac's facts, read through the CLI; the popover (and Settings, slice 14) set it watching.
     private var facts: FactsSource?
+    private let menuBar = MenuBar()
     private var inApplications = false
     /// A quit that arrived before supervision started: the startup finishes by answering it instead.
     private var quitBeforeStart = false
     private var startupFinished = false
     private var replyPending = false
-    private var statusItem: NSStatusItem?
-    private var headline: NSMenuItem?
-    private var quitItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let bundle = Bundle.main
+        menuBar.quit = { [weak self] in self?.quit() }
         isRelease = LaunchDecision.isRelease(bundle.infoDictionary ?? [:])
         let running = isRelease ? NSRunningApplication.runningApplications(withBundleIdentifier: bundle.bundleIdentifier ?? "")
             .filter { $0.processIdentifier != getpid() }.map(\.processIdentifier) : []
@@ -97,10 +96,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         diagnostic(loginItem.launched(isRelease: isRelease, inApplications: inApplications))
         serveAppSocket(paths: paths, control: AppControl(
             identity: .init(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", isRelease: isRelease, inApplications: inApplications),
-            children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem))
+            children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem, testHooks: testHooks()))
         lifetime.start()
-        let facts = FactsSource(cli: cli, published: { _ in }, failed: { error in diagnostic("app status failed: \(error)") })
+        let menuBar = self.menuBar
+        let facts = FactsSource(cli: cli, published: { facts in
+            RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated { menuBar.factsChanged(facts) } }
+        }, failed: { error in diagnostic("app status failed: \(error)") })
         self.facts = facts
+        menuBar.cli = cli
+        menuBar.watching = { [weak facts] open in facts?.setWatching(open) }
+        if menuBar.isShown { facts.setWatching(true) }
         facts.start()
     }
 
@@ -108,6 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// as probes do), so a run on scratch roots never touches this account's login items.
     private func makeLoginItem() -> LoginItem {
         !isRelease && environment["LOCALBOX_APP_LOGIN_ITEM"] == "fake" ? .fake() : LoginItem(defaults: .standard)
+    }
+
+    /// The popover's test hooks on the app socket: a development build launched with `LOCALBOX_APP_TEST_HOOKS=1` only.
+    private func testHooks() -> AppControl.Hook? {
+        guard !isRelease && environment["LOCALBOX_APP_TEST_HOOKS"] == "1" else { return nil }
+        let menuBar = self.menuBar
+        // The socket answers on its own queue; the popover lives on the main thread.
+        return { operation, params in
+            nonisolated(unsafe) let params = params
+            return DispatchQueue.main.sync { MainActor.assumeIsolated { menuBar.testHook(operation, params) } }
+        }
     }
 
     /// The CLI's way to the app's native powers. A socket that cannot be served (another copy answers on this root)
@@ -119,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startupFailed() {
         startupFinished = true
-        headline?.title = "Localbox could not start"
+        menuBar.couldNotStart()
         if quitBeforeStart { answerTermination() }
     }
 
@@ -130,8 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A read now could find the app socket gone and start another copy of the app.
             facts?.stop()
             diagnostic("stopping (\(reason.rawValue))\(pending.isEmpty ? "" : ": waiting for \(pending.joined(separator: ", "))")")
-            headline?.title = pending.isEmpty ? "Stopping: hibernating sandboxes…" : "Stopping: hibernating \(pending.joined(separator: ", "))…"
-            quitItem?.isEnabled = false
+            menuBar.quitting(pending)
         case .stopped:
             diagnostic("stopped")
             answerTermination()
@@ -144,38 +159,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// check that supervision does not depend on one.
     private func showStatusItemOnceAScreenExists() {
         let stubbed = !isRelease && environment["LOCALBOX_APP_SCREENS"] == "0"
-        if !stubbed && !NSScreen.screens.isEmpty { showStatusItem(); return }
+        if !stubbed && !NSScreen.screens.isEmpty { menuBar.attach(); return }
         diagnostic("no screen; the status item waits for one")
         guard !stubbed else { return }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if self?.statusItem == nil && !NSScreen.screens.isEmpty { self?.showStatusItem() } }
+            MainActor.assumeIsolated { if !NSScreen.screens.isEmpty { self?.menuBar.attach() } }
         }
     }
 
-    private func showStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // A placeholder glyph until slice 13's popover.
-        let image = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: "Localbox")
-        image?.isTemplate = true
-        item.button?.image = image
-        let menu = NSMenu()
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let headline = NSMenuItem(title: "Localbox \(version)", action: nil, keyEquivalent: "")
-        headline.isEnabled = false
-        menu.addItem(headline)
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Localbox", action: #selector(quitFromMenu), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        item.menu = menu
-        statusItem = item; self.headline = headline; quitItem = quit
-    }
-
-    @objc private func quitFromMenu() { quit() }
-
     // MARK: - Quitting
 
-    /// The Quit item and SIGTERM.
+    /// The popover's Quit and SIGTERM.
     func quit() { NSApplication.shared.terminate(nil) }
 
     /// Every quit reaches this, including logout's. The app stays (status item and all) until both children have

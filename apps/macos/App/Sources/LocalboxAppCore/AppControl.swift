@@ -1,8 +1,9 @@
 import Foundation
 
 /// The operations the app socket answers (specs/menu-bar-app, slice 09): `app.info`, `login_item.get` and
-/// `login_item.set`. `update.*` is slice 15's. Anything else is `unsupported`, so a CLI newer than the running app
-/// says so instead of guessing.
+/// `login_item.set`. `update.*` is slice 15's. A development build launched with test hooks also answers `popover.*`
+/// (probes open the popover and use its actions through them). Anything else is `unsupported`, so a CLI newer than
+/// the running app says so instead of guessing.
 public final class AppControl: Sendable {
     /// What `app.info` reports about this copy, fixed at launch.
     public struct Identity: Sendable {
@@ -14,13 +15,16 @@ public final class AppControl: Sendable {
     private let children: @Sendable () -> (daemon: ChildState, connector: ChildState)
     private let lifetime: @Sendable () -> Lifetime.State
     private let loginItem: LoginItem
+    public typealias Hook = @Sendable (_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure>
+    private let testHooks: Hook?
 
     public init(identity: Identity, children: @escaping @Sendable () -> (daemon: ChildState, connector: ChildState),
-                lifetime: @escaping @Sendable () -> Lifetime.State, loginItem: LoginItem) {
-        self.identity = identity; self.children = children; self.lifetime = lifetime; self.loginItem = loginItem
+                lifetime: @escaping @Sendable () -> Lifetime.State, loginItem: LoginItem, testHooks: Hook? = nil) {
+        self.identity = identity; self.children = children; self.lifetime = lifetime; self.loginItem = loginItem; self.testHooks = testHooks
     }
 
     public func handle(_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure> {
+        if operation.hasPrefix("popover."), let testHooks { return testHooks(operation, params) }
         switch operation {
         case "app.info": return .success(info())
         case "login_item.get": return .success(["state": loginItem.state.rawValue])
