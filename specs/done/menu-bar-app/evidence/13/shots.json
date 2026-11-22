@@ -91,6 +91,13 @@
     "width" : 352
   },
   {
+    "appearance" : "light",
+    "height" : 243,
+    "scale" : 2,
+    "state" : "quitting-quiet",
+    "width" : 352
+  },
+  {
     "appearance" : "dark",
     "height" : 290,
     "scale" : 2,
@@ -179,6 +186,13 @@
     "height" : 195,
     "scale" : 2,
     "state" : "quitting",
+    "width" : 352
+  },
+  {
+    "appearance" : "dark",
+    "height" : 243,
+    "scale" : 2,
+    "state" : "quitting-quiet",
     "width" : 352
   }
 ]
