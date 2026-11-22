@@ -38,6 +38,8 @@ type LinkState = "linked" | "missing" | "elsewhere" | "not_a_link";
 interface LinkView { path: string; state: LinkState; target: string | null; expected: string }
 /** Every launcher apps/macos/App/launcher/main.c builds carries this, so an earlier Localbox launcher is replaced and anyone else's file is not. */
 const LAUNCHER_MARK = "sh.localbox.launcher";
+/** Where the `localbox` command goes: `LOCALBOX_BIN_DIR` (fixture installs, probes) or `~/.local/bin`. */
+export const commandDirectory = (env: NodeJS.ProcessEnv = process.env): string => env.LOCALBOX_BIN_DIR ?? join(env.HOME || homedir(), ".local/bin");
 /** The folders the launcher looks in for Localbox.app. */
 const applications = (home: string) => [join(home, "Applications"), "/Applications"];
 
@@ -61,7 +63,7 @@ export class AgentSetup {
 
   get settingPath(): string { return join(machinePaths(this.env).root, "agent-setup.json"); }
   private get home(): string { return this.env.HOME || homedir(); }
-  private get commandPath(): string { return join(this.env.LOCALBOX_BIN_DIR ?? join(this.home, ".local/bin"), "localbox"); }
+  private get commandPath(): string { return join(commandDirectory(this.env), "localbox"); }
 
   async setting(): Promise<Setting> {
     try { const value = JSON.parse(await readFile(this.settingPath, "utf8")) as Partial<Setting>; return { enabled: value.enabled !== false, changed_at: value.changed_at ?? null }; }

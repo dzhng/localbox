@@ -192,11 +192,9 @@ plutil -replace StandardOutPath -string "$LOG_DIR/connector.log" "$CONNECTOR_PLI
 plutil -replace StandardErrorPath -string "$LOG_DIR/connector.error.log" "$CONNECTOR_PLIST"
 chmod 600 "$CONNECTOR_PLIST"
 
-if [ ! -s "$TOKEN_FILE" ]; then
-  umask 077
-  "$VERIFY_NODE" -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' > "$TOKEN_FILE"
-fi
-chmod 600 "$TOKEN_FILE"
+# The CLI's `app paths` is the one creator of the IPC token (and the machine directories); the root is pinned to the
+# token's directory, which is where the plist above points the daemon.
+LOCALBOX_MACHINE_ROOT=$(dirname "$TOKEN_FILE") "$ACTIVE_CLI" app paths --json >/dev/null
 localbox_add_path
 
 # Agent setup (on by default) makes the global skill and the localbox link match
