@@ -32,12 +32,13 @@ export interface AppFacts {
   images: ImageFact[];
   builtin_image: "ready" | "downloading" | "failed" | "missing";
   stopping: { reason: string; pending: string[] } | null;
-  /** Slice 15 fills this. */
-  update: null;
+  /** The app's updater (slice 15), null in a build that cannot update itself; `status` is the line Settings shows. */
+  update: UpdateFact | null;
   warnings: Warning[];
   /** A fingerprint of everything above: `--since` this value waits until any of it changes. */
   watch_version: number;
 }
+export interface UpdateFact { available: true; enabled: boolean; can_check: boolean; status?: string; version?: string }
 export interface Progress { done_bytes: number; total_bytes: number }
 export interface SandboxFact { sandbox_id: string; name: string; os: string; state: "running" | "asleep" | "paused" | "stopped" | "starting" | "copying" | "failed"; progress?: Progress; error?: string }
 export interface ImageFact { name: string; state: "building" | "copying" | "downloading" | "failed"; phase?: string; progress?: Progress; error?: string }
@@ -55,7 +56,17 @@ interface Watch {
   sandboxes?: Array<{ sandbox_id: string; name: string; os: string; lifecycle: string; cpus: number }>;
   operations?: Array<HostOperationRecord & { updated_at: number; sandbox?: { sandbox_id: string; name: string } }>;
 }
-interface AppInfo { version: string; build: "release" | "dev"; in_applications: boolean; children: { daemon: AppFacts["daemon"]; connector: string }; stopping: AppFacts["stopping"] }
+interface AppInfo {
+  version: string; build: "release" | "dev"; in_applications: boolean; children: { daemon: AppFacts["daemon"]; connector: string }; stopping: AppFacts["stopping"];
+  /** `UpdateCoordinator`'s snapshot (slice 15); null in a build without Sparkle. */
+  update: (Omit<UpdateFact, "status" | "version"> & { state: string; status: string | null; version: string | null }) | null;
+}
+
+/** The app's update snapshot as the facts carry it: its five fields, without nulls. */
+function updateFact(update: AppInfo["update"]): UpdateFact | null {
+  if (!update) return null;
+  return { available: true, enabled: update.enabled, can_check: update.can_check, ...(update.status ? { status: update.status } : {}), ...(update.version ? { version: update.version } : {}) };
+}
 
 export interface FactsDeps {
   /** Where the app socket is; a fake app in tests. */
@@ -164,7 +175,7 @@ async function compose({ deps, daemon, watch, host, setup, progressFile, images,
     sandboxes: sandboxFacts(watch, recent),
     images: [...builtinRow(builtinImage, builtin), ...imageFacts(recent, images)],
     builtin_image: builtinImage,
-    stopping: info.stopping, update: null,
+    stopping: info.stopping, update: updateFact(info.update),
     warnings: [],
   };
   facts.warnings = warnings(facts, { inApplications: info.in_applications, hostFixes: host.fixes, builtinError: builtin?.error });

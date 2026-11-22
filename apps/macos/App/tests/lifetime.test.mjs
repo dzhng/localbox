@@ -43,23 +43,34 @@ func describe(_ state: Lifetime.State) -> String {
 const WITH_IMAGE = DRIVER.replace(/@main struct Driver \{[\s\S]*$/, `
 @main struct Driver {
   static func main() {
-    let log = Log(), done = DispatchSemaphore(value: 0)
-    let lifetime = Lifetime(connector: Fake("connector", log), daemon: Fake("daemon", log), image: Fake("image", log)) { state in
-      if state == .stopped { done.signal() } }
+    let log = Log(), stopped = DispatchSemaphore(value: 0), gate = DispatchSemaphore(value: 0)
+    let lifetime = Lifetime(connector: Fake("connector", log), daemon: Fake("daemon", log, gate: gate), image: Fake("image", log)) { state in
+      log.add(describe(state)); if state == .stopped { stopped.signal() } }
     lifetime.start()
-    lifetime.ensureImage()
+    lifetime.stop(.update)
+    while !log.all.contains("stop daemon begins") { Thread.sleep(forTimeInterval: 0.01) }
+    log.add("restart while stopping: \\(lifetime.restart())")
+    gate.signal()
+    stopped.wait()
+    log.add("restart after the update's stop: \\(lifetime.restart())")
     lifetime.stop(.quit)
-    done.wait()
-    lifetime.ensureImage()
+    gate.signal()
+    stopped.wait()
+    log.add("restart after a quit: \\(lifetime.restart())")
     for line in log.all { print(line) }
   }
 }
 `);
 
-test("the built-in image's check starts with the children and can be asked for again; it stops before the daemon, and never after a stop", () => {
+test("an update's stop can be undone once it is over, starting all three again; a quit's cannot; the image stops before the daemon", () => {
   assert.deepEqual(run(compile(WITH_IMAGE)).split("\n"), [
-    "start daemon", "start connector", "start image", "start image",
-    "stop connector begins", "stop connector ends", "stop image begins", "stop image ends", "stop daemon begins", "stop daemon ends",
+    "start daemon", "start connector", "start image",
+    "stopping update []",
+    "stop connector begins", "stop connector ends", "stop image begins", "stop image ends", "stop daemon begins", "restart while stopping: false", "stop daemon ends", "stopped",
+    "running", "start daemon", "start connector", "start image", "restart after the update's stop: true",
+    "stopping quit []",
+    "stop connector begins", "stop connector ends", "stop image begins", "stop image ends", "stop daemon begins", "stop daemon ends", "stopped",
+    "restart after a quit: false",
   ]);
 });
 

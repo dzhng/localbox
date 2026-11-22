@@ -6,7 +6,7 @@ import { ensureApp, type AppLaunchOptions } from "./app-launch.js";
 import type { Layout } from "./layout.js";
 
 /** Localbox.app's operations (`AppControl` in apps/macos/App); none is a catalog operation. */
-export type AppOperation = "app.info" | "login_item.get" | "login_item.set";
+export type AppOperation = "app.info" | "login_item.get" | "login_item.set" | "update.status" | "update.check" | "update.install" | "update.set_automatic";
 
 export const NEEDS_APP = "this command needs Localbox.app";
 

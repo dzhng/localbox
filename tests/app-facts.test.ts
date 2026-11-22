@@ -20,7 +20,7 @@ after(() => { for (const directory of scratch) rmSync(directory, { recursive: tr
 // Socket paths are limited to 104 bytes, so not under the long per-user tmpdir.
 const temporary = () => { const directory = mkdtempSync("/tmp/lb-facts-"); scratch.push(directory); return directory; };
 
-interface AppState { version?: string; build?: "release" | "dev"; in_applications?: boolean; daemon?: string; connector?: string; stopping?: AppFacts["stopping"]; login?: AppFacts["open_at_login"] }
+interface AppState { version?: string; build?: "release" | "dev"; in_applications?: boolean; daemon?: string; connector?: string; stopping?: AppFacts["stopping"]; login?: AppFacts["open_at_login"]; update?: Record<string, unknown> | null }
 function fakeApp(path: string, state: AppState): Promise<Server> {
   const server = createServer((connection) => {
     let buffered = "";
@@ -30,7 +30,7 @@ function fakeApp(path: string, state: AppState): Promise<Server> {
       if (!buffered.includes("\n")) return;
       const { id, operation } = JSON.parse(buffered.split("\n")[0]);
       const result = operation === "app.info"
-        ? { version: state.version ?? "0.2.0", build: state.build ?? "release", in_applications: state.in_applications ?? true, children: { daemon: state.daemon ?? "running", connector: state.connector ?? "running" }, stopping: state.stopping ?? null }
+        ? { version: state.version ?? "0.2.0", build: state.build ?? "release", in_applications: state.in_applications ?? true, children: { daemon: state.daemon ?? "running", connector: state.connector ?? "running" }, stopping: state.stopping ?? null, update: state.update ?? null }
         : { state: state.login ?? "enabled" };
       connection.end(`${JSON.stringify({ id, ok: true, result })}\n`);
     });
@@ -238,6 +238,18 @@ test("what does not warn: a dev build outside Applications, setup turned off, a 
   assert.deepEqual(codes(await facts({ setup: async () => ({ enabled: false, command: "missing", skill: "missing" }) })), []);
   assert.deepEqual(codes(await facts({ setup: async () => ({ enabled: true, command: "not_in_applications", skill: "installed" }) })), []);
   assert.equal((await facts({ builtin: { phase: "ready" }, linux: false })).builtin_image, "missing", "ready on paper but not on disk");
+});
+
+test("the app's updater is its five fields, nulls dropped; a build without one says null; a change of status ends a wait", async () => {
+  const waiting = { available: true, enabled: true, can_check: true, state: "waiting", status: "Waiting: sandboxes would restart. Install from Settings, or unlock this Mac.", version: "0.9.0" };
+  assert.deepEqual((await facts({ app: { update: waiting } })).update, { available: true, enabled: true, can_check: true, status: waiting.status, version: "0.9.0" });
+  assert.deepEqual((await facts({ app: { update: { ...waiting, state: "idle", status: null, version: null } } })).update, { available: true, enabled: true, can_check: true });
+  assert.equal((await facts({})).update, null);
+  await withScenario({ app: { update: { ...waiting, state: "checking", status: "Checking for updates…" } } }, async (deps, _daemon, app) => {
+    const first = await appFacts({}, deps);
+    setTimeout(() => { app.update = waiting; }, 100);
+    assert.equal((await appFacts({ since: first.watch_version, timeoutMs: 10_000 }, deps)).update?.status, waiting.status);
+  });
 });
 
 test("--since answers at once when the facts differ, early when the daemon changes, and at the timeout otherwise", async () => {

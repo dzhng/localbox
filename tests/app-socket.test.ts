@@ -23,7 +23,7 @@ function fakeApp(path: string, seen: Array<{ operation: string; params: unknown 
       const { id, operation, params } = JSON.parse(buffered.split("\n")[0]);
       seen.push({ operation, params });
       const ok = (result: unknown) => connection.end(`${JSON.stringify({ id, ok: true, result })}\n`);
-      if (operation === "app.info") ok({ version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null });
+      if (operation === "app.info") ok({ version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null, update: null });
       else if (operation === "login_item.get") ok({ state: loginItem });
       else if (operation === "login_item.set") { loginItem = params.enabled ? "requires_approval" : "disabled"; ok({ state: loginItem }); }
       else connection.end(`${JSON.stringify({ id, ok: false, error: { code: "unsupported", message: `this Localbox app (0.1.0) does not answer ${operation}`, retryable: false } })}\n`);
@@ -43,7 +43,7 @@ test("login-item reads the app's login item; on and off change it", async () => 
   const server = await fakeApp(appSocket, seen);
   try {
     const deps = { layout: { app: APP }, paths: { appSocket }, launch };
-    assert.deepEqual(await askApp(deps.layout, deps.paths, "app.info", {}, launch), { version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null });
+    assert.deepEqual(await askApp(deps.layout, deps.paths, "app.info", {}, launch), { version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null, update: null });
     assert.deepEqual(await appLoginItem(undefined, deps), { state: "disabled" });
     assert.deepEqual(await appLoginItem(true, deps), { state: "requires_approval" });
     assert.deepEqual(await appLoginItem(undefined, deps), { state: "requires_approval" });
