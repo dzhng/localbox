@@ -39,7 +39,7 @@ function fakeApp(path: string, state: AppState): Promise<Server> {
 }
 
 type Row = { sandbox_id: string; name: string; os?: string; lifecycle: string; cpus?: number; memory_bytes?: number };
-interface DaemonState { down?: boolean; version: number; rows: Row[]; operations: unknown[]; relay?: { connector: string; detail: string | null; reported_at: string | null }; capacity?: Record<string, unknown> }
+interface DaemonState { down?: boolean; version: number; rows: Row[]; operations: unknown[]; relay?: { connector: string; detail: string | null; reported_at: string | null }; capacity?: Record<string, unknown>; keeping_awake?: boolean }
 
 /** A daemon that answers as SandboxHost does: `host.watch` waits for a version past `since`; `changed` bumps it. */
 function scriptedDaemon(state: DaemonState) {
@@ -62,7 +62,7 @@ function scriptedDaemon(state: DaemonState) {
         version: state.version,
         capacity: state.capacity ?? { cpus: 10, total_bytes: 32 * GIB, reserved_bytes: 0, room_bytes: 24 * GIB, running: 0, revision: 1, free_disk_bytes: 210 * 10 ** 9, macos_version: "26.1.0" },
         sandboxes: state.rows.map((row) => ({ os: "linux", cpus: 2, memory_bytes: 2 * GIB, state: "", ...row })),
-        deleted: [], operations: state.operations,
+        deleted: [], operations: state.operations, keeping_awake: state.keeping_awake ?? false,
       } as never);
     },
   };
@@ -116,13 +116,14 @@ test("idle and connected: the account, capacity, nothing listed and no warnings"
   assert.ok(Number.isSafeInteger(value.watch_version) && value.watch_version > 0);
   assert.deepEqual({ ...value, watch_version: 0 }, {
     version: "0.2.0", build: "release", account: { email: "dev@example.com", machine_name: "studio" }, daemon: "running", connector: { state: "connected" },
-    capacity: { cpus_free: 10, cpus_total: 10, memory_free_bytes: 24 * GIB, memory_total_bytes: 32 * GIB, disk_free_bytes: 210 * 10 ** 9 },
+    capacity: { cpus_free: 10, cpus_total: 10, memory_free_bytes: 24 * GIB, memory_total_bytes: 32 * GIB, disk_free_bytes: 210 * 10 ** 9 }, keeping_awake: false,
     hibernate: "available", screen_locked_now: false, open_at_login: "enabled", agent_setup: SETUP, sandboxes: [], images: [], builtin_image: "ready", stopping: null, update: null, warnings: [], watch_version: 0,
   });
 });
 
 test("this Mac's sandboxes by name, with the daemon's lifecycle, and one still copying its image with progress", async () => {
   const value = fixture("three-sandboxes", await facts({ daemon: {
+    keeping_awake: true,
     rows: [{ sandbox_id: "sandbox_1", name: "quiet-otter", lifecycle: "ready", cpus: 4 }, { sandbox_id: "sandbox_2", name: "calm-heron", lifecycle: "asleep" }],
     operations: [copying(), { key: "copy_1", kind: "image.copy", subject: "image_x7k2m9", image_name: "ubuntu-dev", state: "running", progress: { phase: "receiving", completed: 461_708_984, total: GIB }, started_at: NOW - 61_000, updated_at: NOW - 1_000 }],
   } }));
@@ -132,6 +133,7 @@ test("this Mac's sandboxes by name, with the daemon's lifecycle, and one still c
     { sandbox_id: "sandbox_1", name: "quiet-otter", os: "linux", state: "running" },
   ]);
   assert.equal(value.capacity?.cpus_free, 6, "a running sandbox's CPUs are not free");
+  assert.equal(value.keeping_awake, true, "the daemon's keeping_awake, as it answered");
   assert.deepEqual(value.images, [{ name: "ubuntu-dev", state: "copying", phase: "receiving", progress: { done_bytes: 461_708_984, total_bytes: GIB } }]);
 });
 
@@ -143,13 +145,13 @@ test("paused and asleep stay apart; a stopping or errored sandbox reads stopped 
 test("twelve sandboxes", async () => {
   const lifecycles = ["ready", "asleep", "paused", "stopped"];
   const rows = Array.from({ length: 12 }, (_, index) => ({ sandbox_id: `sandbox_${index + 1}`, name: `sandbox-${String(index + 1).padStart(2, "0")}`, lifecycle: lifecycles[index % 4], os: index === 11 ? "macos" : "linux" }));
-  const value = fixture("twelve-sandboxes", await facts({ daemon: { rows } }));
+  const value = fixture("twelve-sandboxes", await facts({ daemon: { rows, keeping_awake: true } }));
   assert.equal(value.sandboxes.length, 12);
   assert.equal(value.sandboxes.at(-1)?.os, "macos");
 });
 
 test("an image building, by its account name, and the built-in image downloading; the sending side of a copy is left out", async () => {
-  const value = fixture("images-in-progress", await facts({ linux: false, images: ["img_sent"], builtin: { phase: "downloading", done_bytes: 300 * 1024 ** 2, total_bytes: 1200 * 1024 ** 2 }, daemon: { operations: [
+  const value = fixture("images-in-progress", await facts({ linux: false, images: ["img_sent"], builtin: { phase: "downloading", done_bytes: 300 * 1024 ** 2, total_bytes: 1200 * 1024 ** 2 }, daemon: { keeping_awake: true, operations: [
     { key: "build_1", kind: "macos.build", subject: "image_q4w8n1", image_name: "macos-base", state: "running", progress: { phase: "install" }, started_at: NOW - 600_000, updated_at: NOW - 5_000 },
     { key: "send_1", kind: "image.copy", subject: "img_sent", state: "running", progress: { phase: "sending" }, started_at: NOW - 9_000, updated_at: NOW - 1_000 },
   ] } }));
@@ -215,8 +217,9 @@ test("locking or unlocking the screen ends a wait", async () => {
 });
 
 test("daemon down: it still answers from the app and the sign-in, with no capacity and empty lists", async () => {
-  const value = fixture("daemon-down", await facts({ app: { daemon: "backing_off" }, daemon: { down: true, rows: [{ sandbox_id: "s", name: "n", lifecycle: "ready" }] } }));
+  const value = fixture("daemon-down", await facts({ app: { daemon: "backing_off" }, daemon: { down: true, keeping_awake: true, rows: [{ sandbox_id: "s", name: "n", lifecycle: "ready" }] } }));
   assert.equal(value.daemon, "backing_off");
+  assert.equal(value.keeping_awake, false, "no daemon, no assertion");
   assert.equal(value.capacity, null); assert.deepEqual(value.sandboxes, []); assert.deepEqual(value.images, []);
   assert.deepEqual(value.connector, { state: "connecting", detail: "waiting for this Mac's sandbox service" });
   assert.deepEqual(codes(value), ["daemon_down"]);

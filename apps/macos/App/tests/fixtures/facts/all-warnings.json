@@ -7,6 +7,7 @@
     "state": "signed_out"
   },
   "capacity": null,
+  "keeping_awake": false,
   "hibernate": "only_while_unlocked",
   "screen_locked_now": false,
   "open_at_login": "requires_approval",
@@ -57,5 +58,5 @@
       "fix": "Quit Localbox and open it again to install it."
     }
   ],
-  "watch_version": 69281751926405
+  "watch_version": 255110430980146
 }

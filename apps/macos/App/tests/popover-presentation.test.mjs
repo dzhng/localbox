@@ -21,7 +21,7 @@ func json(_ rows: PopoverRows) -> [String: Any] {
   case .stopping(let title, let pending, let note): body = ["kind": "stopping", "title": title, "pending": pending, "note": opt(note)]
   }
   let h = rows.header
-  return ["header": ["title": h.title, "connection": h.connection, "tone": h.connectionTone.rawValue, "room": opt(h.room), "version": h.version],
+  return ["header": ["title": h.title, "connection": h.connection, "tone": h.connectionTone.rawValue, "room": opt(h.room), "keeping_awake": opt(h.keepingAwake), "version": h.version],
     "warning": rows.warning.map { ["message": $0.message, "fix": opt($0.fix), "more": opt($0.more)] } ?? NSNull(),
     "body": body, "settings": opt(rows.settings.map(item)), "quit": item(rows.quit), "status_icon": rows.statusIcon.rawValue]
 }
@@ -53,7 +53,7 @@ const actions = (row) => row.items.map((item) => item.action);
 
 test("idle and connected: the account, Connected, the room left and the version; no sandboxes is a sentence, not a blank", () => {
   const idle = rows.idle;
-  assert.deepEqual(idle.header, { title: "dev@example.com", connection: "Connected", tone: "good", room: "Free: 10 of 10 CPUs · 24 of 32 GB · 210 GB disk", version: "Version 0.2.0" });
+  assert.deepEqual(idle.header, { title: "dev@example.com", connection: "Connected", tone: "good", room: "Free: 10 of 10 CPUs · 24 of 32 GB · 210 GB disk", keeping_awake: null, version: "Version 0.2.0" });
   assert.equal(idle.warning, null);
   assert.deepEqual(idle.body, { kind: "lists", empty: "No sandboxes on this Mac yet.", sandboxes: [], images: [] }, "no images section when nothing is in progress");
   assert.equal(idle.status_icon, "normal");
@@ -74,6 +74,8 @@ test("three sandboxes: running, asleep and copying 43% with a bar; each row's me
   assert.deepEqual(asleep.items[1].argv, ["sandbox", "start", "calm-heron"]);
   for (const row of rows["three-sandboxes"].body.sandboxes) for (const item of row.items) assert.doesNotMatch(item.title, /delete|create/i, "no Delete or Create");
   assert.equal(rows["three-sandboxes"].header.room, "Free: 6 of 10 CPUs · 24 of 32 GB · 210 GB disk");
+  assert.equal(rows["three-sandboxes"].header.keeping_awake, "Keeping this Mac awake while sandboxes run", "one quiet line while a sandbox runs");
+  assert.equal(rows["three-sandboxes+quitting"].header.keeping_awake, null, "not while quitting");
 });
 
 test("twelve sandboxes: every row is listed (the view caps the height and scrolls); paused and stopped can be woken", () => {
@@ -111,7 +113,7 @@ test("warnings: the first one's message and fix in the band, a count for the res
   assert.match(all.warning.fix, /quit Localbox and open it again/);
   assert.equal(all.warning.more, "6 more warnings");
   assert.equal(all.status_icon, "warning");
-  assert.deepEqual(all.header, { title: "Not signed in", connection: "Offline", tone: "neutral", room: null, version: "Version 0.2.0" });
+  assert.deepEqual(all.header, { title: "Not signed in", connection: "Offline", tone: "neutral", room: null, keeping_awake: null, version: "Version 0.2.0" });
   assert.equal(all.body.empty, "Sandboxes show here once Localbox is running.");
   assert.equal(rows["hibernate-blocked"].warning.more, null);
   assert.match(rows["hibernate-blocked"].warning.fix, /Lock Screen/);

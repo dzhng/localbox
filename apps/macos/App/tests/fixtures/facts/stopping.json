@@ -11,6 +11,7 @@
     "detail": "waiting for this Mac's sandbox service"
   },
   "capacity": null,
+  "keeping_awake": false,
   "hibernate": "available",
   "screen_locked_now": false,
   "open_at_login": "enabled",
@@ -31,5 +32,5 @@
   },
   "update": null,
   "warnings": [],
-  "watch_version": 272736298889178
+  "watch_version": 92475314039760
 }

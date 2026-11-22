@@ -9,7 +9,8 @@ public struct HostDaemon: Sendable {
     public var operations: HostOperationStore { sandboxes.operations }
 
     /// Wires image capture, copy (over `transport`) and create-after-copy to `sandboxes`, and the macOS builds
-    /// `macBuilder` runs, and registers their kinds (with the proof's fixture kind when `dev`).
+    /// `macBuilder` runs, and registers their kinds (with the proof's fixture kind when `dev`); host work starting and
+    /// ending reaches `sandboxes`' idle-sleep prevention.
     public init(sandboxes: SandboxHost, macBuilder: MacBaseBuilder, transport: any ImageCopyTransport, copyPeerWaitMs: Int = 120_000, dev: Bool = false) async {
         let operations = sandboxes.operations, store = sandboxes.store
         let capture = ImageCapture(store: store, operations: operations, sandboxes: sandboxes)
@@ -19,6 +20,8 @@ public struct HostDaemon: Sendable {
         await operations.register(macBuilder)
         await operations.register(SandboxCreateAfterCopy(operations: operations, sandboxes: sandboxes))
         if dev { await operations.register(SleepStepsOperation()) }
+        // Long host work keeps the Mac awake like a running sandbox does.
+        await operations.onRunningChange { [weak sandboxes] in Task { await sandboxes?.hostWorkChanged() } }
         self.sandboxes = sandboxes
         images = ImageHost(operations: operations, store: store, capture: capture, copy: copy, macBuilder: macBuilder, allowsDirectOperations: dev)
     }

@@ -17,6 +17,7 @@
     "memory_total_bytes": 34359738368,
     "disk_free_bytes": 210000000000
   },
+  "keeping_awake": false,
   "hibernate": "available",
   "screen_locked_now": false,
   "open_at_login": "enabled",
@@ -37,5 +38,5 @@
       "fix": "Localbox keeps retrying; if this lasts, quit Localbox and open it again."
     }
   ],
-  "watch_version": 187398357844504
+  "watch_version": 75769396381461
 }

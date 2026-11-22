@@ -85,8 +85,12 @@ private struct HeaderView: View {
                     Text(header.version).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            if let room = header.room {
-                Text(room).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).padding(.leading, 2)
+            if header.room != nil || header.keepingAwake != nil {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach([header.room, header.keepingAwake].compactMap { $0 }, id: \.self) { line in
+                        Text(line).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).padding(.leading, 2)
+                    }
+                }
             }
         }
     }

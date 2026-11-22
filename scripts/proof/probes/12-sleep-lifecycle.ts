@@ -18,6 +18,9 @@ const GIB = 1024 ** 3;
 const kinds = (result: any): string[] => (result?.actions ?? []).map((action: any) => action.kind);
 /** `npm run proof -- 12 --tier v --real-sleep` also puts this Mac to sleep (pmset) and checks the restore; never by default. */
 const realSleep = process.argv.includes("--real-sleep");
+/** The idle-sleep assertions `pid` holds, as `pmset -g assertions` lists them (one line each). */
+const assertionsOf = (pid: number | undefined): string[] => pid === undefined ? []
+  : execFileSync("pmset", ["-g", "assertions"], { encoding: "utf8" }).split("\n").filter((line) => line.includes(`pid ${pid}(`) && line.includes("PreventUserIdleSystemSleep"));
 
 export async function run(ctx: ProofContext): Promise<Check[]> {
   if (ctx.tier === "s") {
@@ -131,9 +134,10 @@ async function localStack(ctx: ProofContext): Promise<Check[]> {
 /**
  * Machine A real (Apple backend, minimal image): a --sleep-after 5s sandbox with a background process sleeps, the
  * next exec wakes it with the process alive, and a kill -9 of the daemon makes the next result report cold_booted.
+ * While it runs the daemon holds its idle-sleep assertion, and a sleep releases it.
  */
 async function realVMs(ctx: ProofContext): Promise<Check[]> {
-  const { machine, start, stop, ok, sh, record, vmRSS, cleanup } = realDaemon(ctx, { probe: "12" });
+  const { machine, start, stop, ok, sh, record, vmRSS, pid: daemonPid, cleanup } = realDaemon(ctx, { probe: "12" });
   const locked = screenLocked();
   const evidence: Record<string, unknown> = { machine_root: machine, screen_locked: locked, real_sleep: realSleep };
   const sandboxId = "sandbox_p12_alpha", name = "alpha-otter";
@@ -197,6 +201,21 @@ async function realVMs(ctx: ProofContext): Promise<Check[]> {
       assert.equal(first.stdout.trim(), "gone", "a cold boot starts fresh processes");
       const second = await ok("shell.exec", sandboxId, { command: "true", cwd: "/" });
       assert.equal(second.actions, undefined, "reported once");
+    }));
+    checks.push(await ctx.check("while the sandbox runs, pmset -g assertions shows the daemon's PreventUserIdleSystemSleep; after sandbox.sleep it is gone", async () => {
+      assert.equal((await ok("sandbox.status", sandboxId)).state, "running");
+      const held = assertionsOf(daemonPid());
+      evidence.assertion_running = held;
+      assert.equal(held.length, 1, `one assertion while it runs: ${held.join(" | ")}`);
+      assert.match(held[0], /named: "Localbox is running sandboxes"/);
+      assert.equal((await ok("host.watch", null, { since: 0 })).keeping_awake, true);
+      const slept = await ok("sandbox.sleep", sandboxId);
+      evidence.assertion_slept_as = slept.actions;
+      let after = assertionsOf(daemonPid());
+      for (let waited = 0; waited < 5_000 && after.length; waited += 100) { await sleep(100); after = assertionsOf(daemonPid()); }
+      evidence.assertion_asleep = after;
+      assert.deepEqual(after, [], "released once nothing runs");
+      assert.equal((await ok("host.watch", null, { since: 0 })).keeping_awake, false);
     }));
     if (realSleep) {
       checks.push(await ctx.check("--real-sleep: the Mac sleeps (pmset), the sandbox sleeps with it and runs again after the wake", async () => {

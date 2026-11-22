@@ -108,6 +108,11 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       assert.equal(status.open_at_login, "disabled");
       assert.deepEqual(status.sandboxes, [{ sandbox_id: SANDBOX, name: NAME, os: "linux", state: "running" }]);
       assert.equal(typeof status.capacity?.cpus_total, "number");
+      // The daemon says a running sandbox keeps the Mac awake, but on the process fixture it holds no real assertion.
+      assert.equal(status.keeping_awake, true);
+      const daemons = app.processes().daemons.map((row) => row.pid); assert.equal(daemons.length, 1, "one daemon to look at");
+      const held = execFileSync("pmset", ["-g", "assertions"], { encoding: "utf8" }).split("\n").filter((line) => line.includes("PreventUserIdleSystemSleep") && daemons.some((pid) => line.includes(`pid ${pid}(`)));
+      assert.deepEqual(held, [], "a process-fixture daemon holds no idle-sleep assertion");
       assert.equal(status.warnings[0]?.code, "signed_out", JSON.stringify(status.warnings));
       mkdirSync(ctx.evidence, { recursive: true });
       writeFileSync(join(ctx.evidence, "41-app-status.json"), `${JSON.stringify(status, null, 2)}\n`);

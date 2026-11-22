@@ -13,6 +13,7 @@
     "memory_total_bytes": 34359738368,
     "disk_free_bytes": 210000000000
   },
+  "keeping_awake": false,
   "hibernate": "available",
   "screen_locked_now": false,
   "open_at_login": "enabled",
@@ -33,5 +34,5 @@
       "fix": "Sign in from Settings, or run localbox login --email you@example.com."
     }
   ],
-  "watch_version": 61873741002408
+  "watch_version": 11108977055684
 }

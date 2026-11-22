@@ -16,6 +16,7 @@
     "memory_total_bytes": 34359738368,
     "disk_free_bytes": 210000000000
   },
+  "keeping_awake": true,
   "hibernate": "available",
   "screen_locked_now": false,
   "open_at_login": "enabled",
@@ -103,5 +104,5 @@
   "stopping": null,
   "update": null,
   "warnings": [],
-  "watch_version": 221073862607990
+  "watch_version": 150356933521253
 }

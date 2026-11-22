@@ -54,6 +54,8 @@ public struct PopoverRows: Equatable, Sendable {
         public let connectionTone: Tone
         /// Room left on this Mac; nil when the daemon cannot say.
         public let room: String?
+        /// One quiet line while the daemon holds off this Mac's idle sleep; nil otherwise.
+        public let keepingAwake: String?
         public let version: String
     }
     public struct Warning: Equatable, Sendable {
@@ -152,13 +154,15 @@ public enum PopoverPresentation {
     /// daemon itself ends the wait, and that loses what it has not saved.
     static let quietNote = "Saving is taking longer than usual. Localbox keeps waiting; force-quitting localbox-hostd would lose the memory of sandboxes not yet saved."
 
+    static let keepingAwakeLine = "Keeping this Mac awake while sandboxes run"
+
     static func stoppingTitle(_ count: Int) -> String {
         count == 0 ? "Quitting…" : "Putting \(count) \(count == 1 ? "sandbox" : "sandboxes") to sleep…"
     }
 
     static func header(_ facts: AppFacts?, couldNotStart: Bool, quitting: Bool) -> PopoverRows.Header {
         guard let facts else {
-            return .init(title: "Localbox", connection: couldNotStart ? "Couldn't start" : "Starting…", connectionTone: couldNotStart ? .failed : .busy, room: nil, version: "")
+            return .init(title: "Localbox", connection: couldNotStart ? "Couldn't start" : "Starting…", connectionTone: couldNotStart ? .failed : .busy, room: nil, keepingAwake: nil, version: "")
         }
         let title = facts.account.map { $0.email ?? "Signed in" } ?? "Not signed in"
         // While quitting, the connector is the first thing stopped; its last state would be stale.
@@ -169,6 +173,7 @@ public enum PopoverPresentation {
              + (capacity.diskFreeBytes.map { ["\(disk($0)) disk"] } ?? [])).joined(separator: " · ")
         }
         return .init(title: title, connection: connection.0, connectionTone: connection.1, room: room,
+                     keepingAwake: facts.keepingAwake && !quitting ? keepingAwakeLine : nil,
                      version: facts.build == .dev ? "Version \(facts.version) (dev)" : "Version \(facts.version)")
     }
 
