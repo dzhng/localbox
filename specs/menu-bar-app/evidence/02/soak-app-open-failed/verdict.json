@@ -1,0 +1,1 @@
+{"slice":"98","tier":"v","ok":false,"ms":61804,"checks":[{"name":"20 cycles of SIGTERM and restart, 4 x 2 GiB, app","ok":false,"ms":60818,"detail":"Expected values to be strictly equal:\n\n1 !== 0\n"}],"evidence":"/Users/server/lb40/.localbox/proof/runs/20261122140027151-98"}

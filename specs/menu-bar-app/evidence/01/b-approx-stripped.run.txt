@@ -1,0 +1,9 @@
+leg: b-approx-stripped
+start: 2026-11-22 05:28:03
+command: env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/perl -MPOSIX -e "setsid() or die; exec @ARGV" /bin/sh -c "launchctl managername; tty; open -g ~/Applications/Spike.app; echo open_exit=\$?" </dev/null
+Aqua
+not a tty
+open_exit=0
+launcher_exit: 0
+process: 71089 /Users/server/Applications/Spike.app/Contents/MacOS/Spike
+smappservice_status_cli: enabled

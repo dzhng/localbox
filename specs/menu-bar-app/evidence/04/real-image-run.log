@@ -1,0 +1,31 @@
+image /Users/server/.t3/worktrees/agent-computer/t3-78b47b25-7fdce242d7be708a/dist/vm-image/images/linux: disk.img 8.10 GiB long, 0.84 GiB allocated; free on the scratch volume 88.59 GiB
+scratch /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-real-3OQVXw
+pack (packImage defaults: zstd -19 --long=27 -T0, plus sha256 of disk and artifacts): 69.9 s
+parts: 1, 344961508 bytes (0.32 GiB): [344961508]
+run 1: exit 2 after 0.2 s: {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"localbox-linux-0.0.4.disk.img.zst.000: connection lost at 137984603 of 344961508 (terminated)","resumable":true}
+  between runs: .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000.partial size=137984603 allocated=137986048
+run 2: exit 0 after 9.4 s
+  request: /release.json range=- -> 200 sent=1247
+  request: /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=137984603 DROPPED
+  request: /release.json range=- -> 200 sent=1247
+  request: /localbox-linux-0.0.4.disk.img.zst.000 range=bytes=137984603- -> 206 sent=206976905
+  request: /localbox-linux-0.0.4.efi-vars range=- -> 200 sent=131072
+  request: /localbox-linux-0.0.4.image.json range=- -> 200 sent=111
+run 2 phases: start-up and manifest 71 ms; downloading (loopback, resumed 206976905 bytes, includes each part's sha256) 241 ms; expanding 9023 ms; installing 89 ms
+expanding progress lines: 20; sample [0,451674112,857489408,1313882112]
+installed disk matches the signed digest (sha256 of 8.10 GiB took 4.1 s)
+  installed: linux/boot/efi-vars size=131072 allocated=131072
+  installed: linux/disk.img size=8696889344 allocated=902889472
+  installed: linux/image.json size=111 allocated=4096
+peak disk over both runs (95 samples, st_blocks): staging 1264885760 (1.18 GiB); images outside staging 903024640 (0.84 GiB); both 1264885760 (1.18 GiB); volume free space fell at most 1308180480 (1.22 GiB, whole-volume, so other processes count)
+  staging at its peak: 0.0.4/images/.linux.partial-71899/boot/efi-vars size=131072 allocated=131072
+  staging at its peak: 0.0.4/images/.linux.partial-71899/disk.img size=8696889344 allocated=919650304
+  staging at its peak: 0.0.4/images/.linux.partial-71899/image.json size=111 allocated=4096
+  staging at its peak: 0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=344961508 allocated=344965120
+  staging at its peak: 0.0.4/localbox-linux-0.0.4.efi-vars size=131072 allocated=131072
+  staging at its peak: 0.0.4/localbox-linux-0.0.4.image.json size=111 allocated=4096
+over the bound by 16899612 bytes (1.35%)
+bound: parts 344961508 + expanded 903024640 = 1247986148 (1.16 GiB)
+staging peak <= parts + expanded (+1 MiB of small files and block rounding): false
+scratch removed: /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-real-3OQVXw; free now 85.04 GiB
+exit 0

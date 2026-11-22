@@ -1,0 +1,7 @@
+leg: c2-fresh-build-quarantined
+start: 2026-11-22 05:30:53
+command: open -g ~/Applications/Spike.app
+launcher_exit: 0
+process: 75763 /private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/B16AD474-0863-4EFE-85E2-923EE204017B/d/Spike.app/Contents/MacOS/Spike
+smappservice_status_cli: 
+NO JSON WRITTEN

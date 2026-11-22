@@ -36,7 +36,10 @@ after this slice; slice 10 deletes them.
 - **`apps/cli/src/app-launch.ts`** (new): `ensureApp(layout, paths)`. When the
   local socket is missing or refuses, and `layout.app` is set, and
   `LOCALBOX_MACHINE_ROOT` is unset, run `open -g <layout.app>` (or the launch
-  command spike 01 chose) and poll the daemon socket every 250 ms for up to
+  command spike 01 chose,
+  `/bin/launchctl asuser $(id -u) /usr/bin/open -g <app>`), retrying the
+  launch once after 1 s if it fails (spike 02 saw one failure in about 70,
+  right after an exit), and poll the daemon socket every 250 ms for up to
   20 s, then dispatch the original request. A timeout returns the existing
   retryable local-transport error with "Localbox did not start within 20 s;
   open Localbox from Applications" as its message. Called from the one place

@@ -1,0 +1,25 @@
+--- ~/Applications copy --status (Gatekeeper dialog from c2 still open):
+HUNG >8s: /Users/server/Applications/Spike.app/Contents/MacOS/Spike --status
+--- /tmp build2 --status:
+enabled
+--- /tmp build2 --unregister:
+{"status_before":"enabled","status_after":"notRegistered","unregister_error":null}
+--- /tmp build2 --status after:
+notRegistered
+--- /tmp build1 --status after:
+notRegistered
+--- final teardown Sun Nov 22 05:35:17 PST 2026
+ls: /Users/server/Applications/Spike.app: No such file or directory
+~/Applications (pre-existing, kept): Blender-5.2.1.app,Claude Code URL Handler.app,Yap.app,
+spike procs: none
+status via /tmp build2: notRegistered
+--- windows left on screen:
+loginwindow 182 layer 2001 alpha 1 name - w 30000 h 30000
+loginwindow 182 layer 2000 alpha 1 name  w 1920 h 1080
+SecurityAgent 66822 layer 1000 alpha 1 name  w 434 h 182
+CoreServicesUIAgent 400 layer 8 alpha 1 name  w 260 h 268
+Diagnostics Reporter 413 layer 8 alpha 1 name  w 260 h 250
+locked: 1 onConsole: 1
+scratch keychain deleted
+keychain search list:     "/Users/server/Library/Keychains/login.keychain-db"    "/Library/Keychains/System.keychain"
+codesigning identities:   1) EBBAA42C02BEF139A053D13014CF00086DAA57CB "Agent Computer Local"      1 valid identities found 

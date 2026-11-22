@@ -1,0 +1,483 @@
+{
+  "machine_root": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-sZTaKX",
+  "host_memory_bytes": 25769803776,
+  "full_table": false,
+  "daemon_signature": "Executable=/Users/server/lb40/apps/macos/HostDaemon/.build/out/Products/Debug/localbox-hostd\nIdentifier=localbox-hostd-55554944f565df5c26a73892a94e2a8789a1b6c5\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=9680 flags=0x2(adhoc) hashes=291+7 location=embedded\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n[Dict]\n\t[Key] com.apple.security.virtualization\n\t[Value]\n\t\t[Bool] true",
+  "launch": {
+    "activation_policy": "accessory",
+    "app_pid": 87267,
+    "app_ppid": 1,
+    "bundle_id": "sh.localbox.spike.child",
+    "bundle_path": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/adhoc/LocalboxSpikeChild.app",
+    "child_pid": 87275,
+    "executable": "/Users/server/lb40/apps/macos/HostDaemon/.build/out/Products/Debug/localbox-hostd",
+    "launched_at_ms": 1795355272272,
+    "ls_ui_element": true,
+    "xpc_service_name": "application.sh.localbox.spike.child.227361097.227361107"
+  },
+  "process_tree": "87267     1 /private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/adhoc/LocalboxSpikeChild.app/Contents/MacOS/LocalboxSpikeChild\n87275 87267 /Users/server/lb40/apps/macos/HostDaemon/.build/out/Products/Debug/localbox-hostd",
+  "daemon_stdin": "localbox- 87275 server    0   PIPE 0x841778a9fb0d3274    16384      ->0x14764ef6ef358361",
+  "create": {
+    "requested": {
+      "name": "alpha-otter",
+      "memory_bytes": 2147483648,
+      "sleep_after_ms": 3600000,
+      "image": "linux",
+      "cpus": 2
+    },
+    "produced": {
+      "memory_bytes": 2147483648,
+      "cpus": 2,
+      "state": "running",
+      "disk_allocated_bytes": 0,
+      "name": "alpha-otter",
+      "sandbox_id": "sandbox_p40_alpha",
+      "disk": "cloned"
+    },
+    "actions": [
+      {
+        "kind": "created",
+        "detail": "created alpha-otter with 2 CPUs and 2 GiB; disk cloned"
+      },
+      {
+        "kind": "cold_booted",
+        "detail": "cold-booted alpha-otter"
+      }
+    ]
+  },
+  "uname": "Linux 6.8.0-151-generic aarch64",
+  "vm_services": "87317     1 /System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virt",
+  "marker": {
+    "pid": "308",
+    "counter": [
+      3,
+      9
+    ]
+  },
+  "sleep": {
+    "result": {
+      "requested": {},
+      "produced": {
+        "state": "sleeping",
+        "sandbox_id": "sandbox_p40_alpha"
+      },
+      "actions": [
+        {
+          "kind": "slept",
+          "detail": "hibernated alpha-otter: saved its state and released its 2 GiB"
+        }
+      ]
+    },
+    "status": {
+      "cpus": 2,
+      "memory_bytes": 2147483648,
+      "state": "sleeping",
+      "delete_after_ms": null,
+      "detail": "hibernated: state saved, memory released",
+      "name": "alpha-otter",
+      "sandbox_id": "sandbox_p40_alpha",
+      "channel_epoch": 2,
+      "last_boot": {
+        "detail": "cold-booted alpha-otter",
+        "kind": "cold_booted"
+      },
+      "sleep_after_ms": 3600000,
+      "lifecycle": "asleep"
+    },
+    "vm_footprint_kb_awake": 513024,
+    "vm_services_asleep": 0,
+    "saved_state_bytes": 163581952,
+    "wake": [
+      {
+        "kind": "woke",
+        "detail": "restored alpha-otter from its saved state"
+      }
+    ],
+    "counter": {
+      "before_sleep": 9,
+      "after_wake": [
+        20,
+        26
+      ]
+    }
+  },
+  "check3": {
+    "stop": {
+      "wall_ms": 485,
+      "sent": {
+        "app_pid": 87267,
+        "at_ms": 1795355281766,
+        "child_pid": 87275,
+        "event": "sigterm_sent",
+        "reason": "sigterm"
+      },
+      "exited": {
+        "app_pid": 87267,
+        "at_ms": 1795355282235,
+        "child_pid": 87275,
+        "event": "child_exited",
+        "how": "exit",
+        "reason": "sigterm",
+        "status": 0,
+        "waited_ms": 469
+      }
+    },
+    "record_after_stop": {
+      "cpus": 2,
+      "image_id": "linux",
+      "in_catalog": true,
+      "last_activity_at": "2026-11-22T13:48:01Z",
+      "lifecycle": "hibernated",
+      "mac": "42:a1:e8:9f:2d:e3",
+      "machine_identifier": "YnBsaXN0MDDRAQJUVVVJRE8QEGx7xCmqVEXvpweGl9xM4/8ICxAAAAAAAAABAQAAAAAAAAADAAAAAAAAAAAAAAAAAAAAIw==",
+      "memory_bytes": 2147483648,
+      "name": "alpha-otter",
+      "os": "linux",
+      "sandbox_id": "sandbox_p40_alpha",
+      "sleep_after_ms": 3600000
+    },
+    "saved_state_bytes": 163581952,
+    "relaunched": {
+      "activation_policy": "accessory",
+      "app_pid": 87645,
+      "app_ppid": 1,
+      "bundle_id": "sh.localbox.spike.child",
+      "bundle_path": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/adhoc/LocalboxSpikeChild.app",
+      "child_pid": 87646,
+      "executable": "/Users/server/lb40/apps/macos/HostDaemon/.build/out/Products/Debug/localbox-hostd",
+      "launched_at_ms": 1795355282454,
+      "ls_ui_element": true,
+      "xpc_service_name": "application.sh.localbox.spike.child.227361097.227361107"
+    },
+    "restore_ms": 564,
+    "status_after_relaunch": {
+      "actions": [
+        {
+          "detail": "restored alpha-otter from its saved state",
+          "kind": "woke"
+        }
+      ],
+      "name": "alpha-otter",
+      "sandbox_id": "sandbox_p40_alpha",
+      "state": "running",
+      "channel_epoch": 1,
+      "lifecycle": "ready",
+      "last_boot": {
+        "detail": "restored alpha-otter from its saved state",
+        "kind": "woke"
+      },
+      "memory_bytes": 2147483648,
+      "delete_after_ms": null,
+      "cpus": 2,
+      "sleep_after_ms": 3600000
+    },
+    "recovery_log": "localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state",
+    "counter": {
+      "before_stop": 26,
+      "after_relaunch": [
+        36,
+        42
+      ]
+    }
+  },
+  "check7": {
+    "will_sleep": {
+      "sandboxes": [
+        {
+          "detail": "hibernated alpha-otter: saved its state and released its 2 GiB",
+          "kind": "slept",
+          "sandbox_id": "sandbox_p40_alpha"
+        }
+      ],
+      "event": "will_sleep"
+    },
+    "status_asleep": {
+      "channel_epoch": 2,
+      "memory_bytes": 2147483648,
+      "last_boot": {
+        "detail": "restored alpha-otter from its saved state",
+        "kind": "woke"
+      },
+      "name": "alpha-otter",
+      "sandbox_id": "sandbox_p40_alpha",
+      "cpus": 2,
+      "sleep_after_ms": 3600000,
+      "delete_after_ms": null,
+      "detail": "hibernated: state saved, memory released",
+      "state": "sleeping",
+      "lifecycle": "asleep"
+    },
+    "record_asleep": "hibernated",
+    "vm_services_asleep": 0,
+    "saved_state_bytes": 163581952,
+    "did_wake": {
+      "sandboxes": [
+        {
+          "sandbox_id": "sandbox_p40_alpha",
+          "detail": "restored alpha-otter from its saved state",
+          "kind": "woke"
+        }
+      ],
+      "event": "did_wake"
+    },
+    "counter": {
+      "before": 42,
+      "after_wake": [
+        53,
+        59
+      ]
+    }
+  },
+  "check5": {
+    "daemon_alive_after_5s": true,
+    "daemon_ppid": 1,
+    "vm_services": 1,
+    "daemon_stdin": "localbox- 87696 server    0   PIPE 0x3aed7bad806f5b3a    16384",
+    "log_tail": [
+      "localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries",
+      "localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled",
+      "localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state"
+    ],
+    "socket_answers": "still-here",
+    "counter": {
+      "before_kill": 59,
+      "after_kill": [
+        84,
+        90
+      ]
+    },
+    "daemon_alive_after_20s": true,
+    "vm_services_after_20s": 1,
+    "observed_ms": 16541,
+    "sigterm_ms": 481,
+    "record_after_sigterm": "hibernated",
+    "vm_services_after_sigterm": 0
+  },
+  "check6": {
+    "dirtied_mib": 1280,
+    "blob": "046047d50df4fb58",
+    "killed_after_ms": 110,
+    "daemon_alive_at_kill": true,
+    "partial_save_at_kill": ".save-037B3A49-33EC-4EDB-8722-EF61F8ABA562.vzvmsave",
+    "partial_save_bytes_at_kill": 160455273,
+    "app_event": {
+      "app_pid": 88120,
+      "at_ms": 1795355313338,
+      "child_pid": 88121,
+      "event": "child_exited",
+      "how": "signal",
+      "reason": "sigterm",
+      "status": 9,
+      "waited_ms": 111
+    },
+    "record_after_kill": "running",
+    "vm_services_left": 0,
+    "after_restart": {
+      "actions": [
+        {
+          "kind": "cold_booted",
+          "detail": "cold-booted alpha-otter: the daemon exited without saving it"
+        }
+      ],
+      "stdout": "p40-disk-1795355309073\ngone"
+    },
+    "partial_save_after_restart": null,
+    "recovery_log": "localbox-hostd: sandbox_p40_alpha cold_booted: cold-booted alpha-otter: the daemon exited without saving it"
+  },
+  "check8": {
+    "identity": "Localbox Spike 02 Scratch",
+    "keychain": "scratch (not in the search list)",
+    "daemon_signature": "Executable=/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app/Contents/MacOS/localbox-hostd\nIdentifier=sh.localbox.spike.hostd\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=9648 flags=0x0(none) hashes=291+7 location=embedded\nSignature size=1661\nAuthority=Localbox Spike 02 Scratch\nSigned Time=Nov 22, 2026 at 5:48:39 AM\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements count=1 size=100\nTotal signatures=1\nChosen signature=1\n[Dict]\n\t[Key] com.apple.security.virtualization\n\t[Value]\n\t\t[Bool] true",
+    "app_signature": "Executable=/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app/Contents/MacOS/LocalboxSpikeChild\nIdentifier=sh.localbox.spike.child\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=464 flags=0x0(none) hashes=8+3 location=embedded\nSignature size=1661\nAuthority=Localbox Spike 02 Scratch\nSigned Time=Nov 22, 2026 at 5:48:39 AM\nInfo.plist entries=8\nTeamIdentifier=not set\nSealed Resources version=2 rules=13 files=1\nInternal requirements count=1 size=100\nTotal signatures=1\nChosen signature=1",
+    "launch": {
+      "activation_policy": "accessory",
+      "app_pid": 88534,
+      "app_ppid": 1,
+      "bundle_id": "sh.localbox.spike.child",
+      "bundle_path": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app",
+      "child_pid": 88536,
+      "executable": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app/Contents/MacOS/localbox-hostd",
+      "launched_at_ms": 1795355319675,
+      "ls_ui_element": true,
+      "xpc_service_name": "application.sh.localbox.spike.child.227361390.227361405"
+    },
+    "stop": {
+      "wall_ms": 488,
+      "sent": {
+        "app_pid": 88534,
+        "at_ms": 1795355324276,
+        "child_pid": 88536,
+        "event": "sigterm_sent",
+        "reason": "sigterm"
+      },
+      "exited": {
+        "app_pid": 88534,
+        "at_ms": 1795355324760,
+        "child_pid": 88536,
+        "event": "child_exited",
+        "how": "exit",
+        "reason": "sigterm",
+        "status": 0,
+        "waited_ms": 483
+      }
+    },
+    "record_after_stop": {
+      "cpus": 2,
+      "image_id": "linux",
+      "in_catalog": true,
+      "last_activity_at": "2026-11-22T13:48:44Z",
+      "lifecycle": "hibernated",
+      "mac": "32:93:1b:02:66:c3",
+      "machine_identifier": "YnBsaXN0MDDRAQJUVVVJRE8QEPWxBJMMzU0btTPvXf7h1WIICxAAAAAAAAABAQAAAAAAAAADAAAAAAAAAAAAAAAAAAAAIw==",
+      "memory_bytes": 2147483648,
+      "name": "beta-heron",
+      "os": "linux",
+      "sandbox_id": "sandbox_p40_beta",
+      "sleep_after_ms": 3600000
+    },
+    "saved_state_bytes": 171970560,
+    "relaunched": {
+      "activation_policy": "accessory",
+      "app_pid": 88635,
+      "app_ppid": 1,
+      "bundle_id": "sh.localbox.spike.child",
+      "bundle_path": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app",
+      "child_pid": 88643,
+      "executable": "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/localbox-proof-40-app-dzOjoi/signed/LocalboxSpikeChild.app/Contents/MacOS/localbox-hostd",
+      "launched_at_ms": 1795355324953,
+      "ls_ui_element": true,
+      "xpc_service_name": "application.sh.localbox.spike.child.227361390.227361405"
+    },
+    "restore_ms": 549,
+    "status_after_relaunch": {
+      "memory_bytes": 2147483648,
+      "actions": [
+        {
+          "kind": "woke",
+          "detail": "restored beta-heron from its saved state"
+        }
+      ],
+      "last_boot": {
+        "kind": "woke",
+        "detail": "restored beta-heron from its saved state"
+      },
+      "delete_after_ms": null,
+      "sleep_after_ms": 3600000,
+      "name": "beta-heron",
+      "lifecycle": "ready",
+      "state": "running",
+      "cpus": 2,
+      "sandbox_id": "sandbox_p40_beta",
+      "channel_epoch": 1
+    },
+    "recovery_log": "localbox-hostd: sandbox_p40_beta woke: restored beta-heron from its saved state",
+    "counter": {
+      "before_stop": 3,
+      "after_relaunch": [
+        14,
+        20
+      ]
+    }
+  },
+  "timing": [
+    {
+      "vms": 1,
+      "gib": 2,
+      "dirty_mib": 1280,
+      "host_before": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      },
+      "guest_meminfo": "MemTotal: 2006608 kB MemAvailable: 529192 kB Shmem: 1311160 kB",
+      "vm_footprint_mib": 1705,
+      "host_dirtied": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      },
+      "hibernate_wall_ms": 843,
+      "app_waited_ms": 833,
+      "daemon_exit": "exit 0",
+      "records": [
+        "hibernated"
+      ],
+      "saved_state_mib": 1440,
+      "restore_ms": 1370,
+      "last_boot": [
+        "woke"
+      ],
+      "host_after": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      }
+    },
+    {
+      "vms": 2,
+      "gib": 2,
+      "dirty_mib": 1280,
+      "host_before": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      },
+      "guest_meminfo": "MemTotal: 2006604 kB MemAvailable: 536608 kB Shmem: 1311084 kB",
+      "vm_footprint_mib": 3412,
+      "host_dirtied": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      },
+      "hibernate_wall_ms": 1570,
+      "app_waited_ms": 1561,
+      "daemon_exit": "exit 0",
+      "records": [
+        "hibernated",
+        "hibernated"
+      ],
+      "saved_state_mib": 2880,
+      "restore_ms": 1409,
+      "last_boot": [
+        "woke",
+        "woke"
+      ],
+      "host_after": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6538.62M  free = 1653.38M  (encrypted)"
+      }
+    },
+    {
+      "vms": 4,
+      "gib": 2,
+      "dirty_mib": 1280,
+      "host_before": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6530.62M  free = 1661.38M  (encrypted)"
+      },
+      "guest_meminfo": "MemTotal: 2006600 kB MemAvailable: 543012 kB Shmem: 1311160 kB",
+      "vm_footprint_mib": 6831,
+      "host_dirtied": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6498.62M  free = 1693.38M  (encrypted)"
+      },
+      "hibernate_wall_ms": 3095,
+      "app_waited_ms": 3072,
+      "daemon_exit": "exit 0",
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "saved_state_mib": 5760,
+      "restore_ms": 1568,
+      "last_boot": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ],
+      "host_after": {
+        "free": "System-wide memory free percentage: 87%",
+        "swap": "total = 8192.00M  used = 6498.62M  free = 1693.38M  (encrypted)"
+      }
+    }
+  ],
+  "timing_problems": []
+}

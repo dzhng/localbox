@@ -1,0 +1,1 @@
+{"slice":"98","tier":"v","ok":true,"ms":74315,"checks":[{"name":"12 cycles of SIGTERM and restart, 4 x 2 GiB, direct","ok":true,"ms":73841}],"evidence":"/Users/server/lb40/.localbox/proof/runs/20261122135012675-98"}

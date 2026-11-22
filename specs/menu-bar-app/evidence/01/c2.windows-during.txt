@@ -1,0 +1,6 @@
+loginwindow 182 layer 2001 alpha 1 name - w 30000 h 30000
+loginwindow 182 layer 2000 alpha 1 name  w 1920 h 1080
+SecurityAgent 66822 layer 1000 alpha 1 name  w 434 h 182
+CoreServicesUIAgent 400 layer 8 alpha 1 name  w 260 h 268
+Diagnostics Reporter 413 layer 8 alpha 1 name  w 260 h 250
+locked: 1 onConsole: 1

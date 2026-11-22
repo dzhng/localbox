@@ -1,0 +1,210 @@
+{
+  "mode": "direct",
+  "cycles": 12,
+  "rows": [
+    {
+      "cycle": 0,
+      "hibernate_ms": 3037,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1470,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 1,
+      "hibernate_ms": 3048,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1472,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 2,
+      "hibernate_ms": 3211,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1468,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 3,
+      "hibernate_ms": 3408,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1468,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 4,
+      "hibernate_ms": 3895,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1468,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 5,
+      "hibernate_ms": 5105,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1480,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 6,
+      "hibernate_ms": 3613,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1489,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 7,
+      "hibernate_ms": 3071,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1468,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 8,
+      "hibernate_ms": 4768,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1469,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 9,
+      "hibernate_ms": 5990,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1736,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 10,
+      "hibernate_ms": 3323,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1472,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    },
+    {
+      "cycle": 11,
+      "hibernate_ms": 4335,
+      "records": [
+        "hibernated",
+        "hibernated",
+        "hibernated",
+        "hibernated"
+      ],
+      "restore_ms": 1483,
+      "boots": [
+        "woke",
+        "woke",
+        "woke",
+        "woke"
+      ]
+    }
+  ]
+}

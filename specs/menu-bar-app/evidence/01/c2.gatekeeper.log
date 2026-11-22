@@ -1,0 +1,961 @@
+Timestamp                       Thread     Type        Activity             PID    TTL  
+2026-11-22 05:30:53.020713-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020736-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75735, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020743-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75735, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020747-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020751-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.020778-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020785-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75736, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020789-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75736, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020792-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020795-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.020814-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020821-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75737, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020824-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75737, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020827-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020829-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.020846-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020852-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75738, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020856-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75738, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020858-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020860-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.020880-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020886-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75739, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020890-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75739, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020893-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020895-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.020912-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020917-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75740, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020920-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75740, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.020923-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:53.020925-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:53.059609-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75742
+2026-11-22 05:30:53.059621-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75742, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.062519-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75743
+2026-11-22 05:30:53.062530-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75743, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.130579-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75744
+2026-11-22 05:30:53.130591-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75744, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.133448-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75745
+2026-11-22 05:30:53.133457-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75745, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.326114-0800 0x186a31   Default     0x0                  400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:db] NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+2026-11-22 05:30:53.326829-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75754
+2026-11-22 05:30:53.326838-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75754, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.327084-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75755
+2026-11-22 05:30:53.327090-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75755, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.328354-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75754
+2026-11-22 05:30:53.328360-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75754, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.330957-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75758
+2026-11-22 05:30:53.330964-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75758, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.332960-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75759
+2026-11-22 05:30:53.332969-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75759, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.334547-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75760
+2026-11-22 05:30:53.334555-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75760, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.336272-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75761
+2026-11-22 05:30:53.336279-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75761, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.338173-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75762
+2026-11-22 05:30:53.338178-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75762, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.339187-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75762
+2026-11-22 05:30:53.339199-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75762, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.340368-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75762
+2026-11-22 05:30:53.340373-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75762, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.344865-0800 0x186a31   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0140] activating connection: mach=false listener=false peer=true name=com.apple.coreservices.quarantine-resolver.peer[75762].0x78635b0140
+2026-11-22 05:30:53.344889-0800 0x186a31   Activity    0x1e34ea             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:53.344895-0800 0x186a31   Info        0x1e34ea             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 98 to be handled by class CSUINullOperationHandler, from pid 75762
+2026-11-22 05:30:53.345317-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 3 to be handled by class CSUILSOpenHandler, from pid 75762
+2026-11-22 05:30:53.345542-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: inURLs.count=0 roles=E options=LSOpen2Options(preferIdentical skipWaitForCheckin ) launcher=launcher:([pid=75762/778571 uid=501/501/501 gid=20/20 100002] - platform=1 sdkVersion=1B0000 canSetEnv canSetArgs canSetIO)
+2026-11-22 05:30:53.345542-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Setting launcherAuditToken to 75762/778571 501 100002
+2026-11-22 05:30:53.345547-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Opening <private> with 0 items on behalf of 75762 role=e flags=8000201 (null)
+2026-11-22 05:30:53.346166-0800 0x186a31   Default     0x1e6231             400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:needs-reg] bundle 0x7f40 mod date changed from Sun Nov 22 05:26:21 2026 to Sun Nov 22 05:30:18 2026
+2026-11-22 05:30:53.346167-0800 0x186a31   Default     0x1e6231             400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:needs-reg] bundle 0x7f40 node has changed
+2026-11-22 05:30:53.346228-0800 0x186a31   Default     0x1e6231             400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:needs-reg] bundle 0x7f40 mod date changed from Sun Nov 22 05:26:21 2026 to Sun Nov 22 05:30:18 2026
+2026-11-22 05:30:53.346230-0800 0x186a31   Default     0x1e6231             400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:needs-reg] bundle 0x7f40 node has changed
+2026-11-22 05:30:53.346260-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (CoreServicesInternal) [com.apple.FileURL:bookmark] ShouldForceRevocable: false, not a Mac Catalyst app
+2026-11-22 05:30:53.346807-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (NetFS) ScanAllPluginsInLibraryOverXPC: no bundles in '/Library/Filesystems/NetFSPlugins', skipping...
+2026-11-22 05:30:53.347599-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Got bastion violation 0x4 path <private> responsible path: <private>
+2026-11-22 05:30:53.347665-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e48c0] activating connection: mach=true listener=false peer=false name=com.apple.security.syspolicy.exec
+2026-11-22 05:30:53.350875-0800 0x18572f   Activity    0x1e3829             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.350952-0800 0x18572f   Activity    0x1e382a             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.352647-0800 0x18572f   Activity    0x1e382b             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.352852-0800 0x18572f   Activity    0x1e382c             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.352989-0800 0x18572f   Activity    0x1e382d             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.354733-0800 0x18572f   Activity    0x1e382e             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.355740-0800 0x18572f   Activity    0x1e382f             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.357469-0800 0x18572f   Activity    0x1e6250             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357477-0800 0x18572f   Activity    0x1e6251             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357479-0800 0x18572f   Activity    0x1e6252             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357486-0800 0x18572f   Activity    0x1e6253             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357488-0800 0x18572f   Activity    0x1e6254             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357494-0800 0x18572f   Activity    0x1e6255             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357497-0800 0x18572f   Activity    0x1e6256             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357500-0800 0x18572f   Activity    0x1e6257             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.357791-0800 0x18572f   Activity    0x1e6258             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.358217-0800 0x18681b   Default     0x0                  400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:db] NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+2026-11-22 05:30:53.359086-0800 0x186a31   Default     0x1e6231             400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:registration] LSFORBN: Caller wants reinitialization, updated store from generation 2344199 to 2344264
+2026-11-22 05:30:53.359182-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] _LSLaunchRB(sh.localbox.spike.launch <private>, event=-, args=- 0x2a000200/dontSwitch  opts=LSOpen2Options(preferIdentical skipWaitForCheckin )
+2026-11-22 05:30:53.360139-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.360333-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.360336-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.360935-0800 0x18572f   Activity    0x1e6259             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.363544-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: translocate to <private> from <private>
+2026-11-22 05:30:53.363619-0800 0x186b68   Default     0x0                  400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:db] NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+2026-11-22 05:30:53.364494-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (NetFS) ScanAllPluginsInLibraryOverXPC: no bundles in '/Library/Filesystems/NetFSPlugins', skipping...
+2026-11-22 05:30:53.366458-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: _LSLaunchThruRunningboard: sh.localbox.spike.launch / <private>
+2026-11-22 05:30:53.366840-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:cas] allocated PSN is :[ 0x0-0x554554]
+2026-11-22 05:30:53.366985-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Launching with process identity <private> uuid=(null) record=<private> lsIdentity=<private>
+2026-11-22 05:30:53.366993-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] constructEnvironmentDictionary, id=<private> version=<private> openOpts=LSOpen2Options(preferIdentical skipWaitForCheckin ) env=<private>
+2026-11-22 05:30:53.367257-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Set flag for disabling pointer auth for launching sh.localbox.spike.launch <private>
+2026-11-22 05:30:53.367273-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (RunningBoardServices) [com.apple.runningboard:general] Sending launch request: <RBSLaunchRequest| app<application.sh.localbox.spike.launch.227357890.227357895(501)>; "LS launch sh.localbox.spike.launch">
+2026-11-22 05:30:53.369092-0800 0x18572f   Activity    0x1e625a             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.379551-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK process assessment: <private> <-- (<private>, <private>)
+2026-11-22 05:30:53.379697-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Gatekeeper assessment rooted at: <private>
+2026-11-22 05:30:53.380270-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.380308-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Skipping TCC check due to process: 75763, 0, 75763
+2026-11-22 05:30:53.380322-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] queueing up scan for code: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.380351-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] starting work for scan for code: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.380355-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] allowUI is YES, creating codeEval object: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.381036-0800 0x186284   Activity    0x1e625b             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.381154-0800 0x186284   Activity    0x1e625c             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.381236-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (RunningBoardServices) [com.apple.runningboard:general] Received launch request response: <No Error>
+2026-11-22 05:30:53.381286-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Successful launched 0x0-0x554554 pid=75763 sh.localbox.spike.launch (quarantined)  '<private>'
+2026-11-22 05:30:53.381445-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:cas] notifying server side, token=auditToken{ uid=501 euid=501 gid=20 egid=20 auditSessionID=100002 pid=75763}  appInfo={ "ApplicationType"="UIElement", "CFBundleExecutablePath"="/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/B16AD474-0863-4EFE-85E2-923EE204017B/d/Spike.app/Contents/MacOS/Spike", "CFBundleExecutablePathDeviceID"=771751940, "CFBundleExecutablePathINode"=227357895, "CFBundleIdentifier"="sh.localbox.spike.launch", "CFBundleName"="Spike", "CFBundlePackageType"="APPL", "LSASN"=ASN:0x0-0x554554:, "LSApplicationLockedInStoppedStateKey"=true, "LSBundlePath"="/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/B16AD474-0863-4EFE-85E2-923EE204017B/d/Spike.app", "LSBundlePathDeviceID"=771751940, "LSBundlePathINode"=227357890, "LSDisplayName"="Spike", "LSExecutableFormat"="LSExecutableMachOFormat", "LSLaunchBeforeTranslocationExecutablePathDeviceID"=16777231, "LSLaunchBeforeTranslocationExecutablePathINode"=227357895, "LSLaunchBeforeTranslocationLaunchBundlePathDeviceIDKey"=16777231<…> launchModifiers=<decode: missing data> sessionID=<decode: missing data>
+2026-11-22 05:30:53.381966-0800 0x186284   Activity    0x1e625d             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.382075-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] Unable to get certificate organizations: <private>
+2026-11-22 05:30:53.382292-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Registered app bundle for protection: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.382302-0800 0x186284   Default     0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK performScan: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.382643-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Skipping up front XProtect scan on: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:30:53.382706-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:cas] LaunchedApplication: "/private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/B16AD474-0863-4EFE-85E2-923EE204017B/d/Spike.app/Contents/MacOS/Spike", psn=[ 0x0-0x554554]
+2026-11-22 05:30:53.382748-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 1
+2026-11-22 05:30:53.382768-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] cloudkit record fetch: <private>, <private>
+2026-11-22 05:30:53.382768-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Launched translocated app 0x0-0x554554 sh.localbox.spike.launch/<private>, so checking it in with pid 75763/Spike.
+2026-11-22 05:30:53.382784-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: 0x0-0x554554 sh.localbox.spike.launch launched with launchInQuarantine == true, so not starting the application.
+2026-11-22 05:30:53.382794-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] cloudkit request cache info: <private>, max-age=300
+2026-11-22 05:30:53.382839-0800 0x186284   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> resuming, timeouts(3.0, 604800.0) qos(0x21) voucher((null)) activity(00000000-0000-0000-0000-000000000000)
+2026-11-22 05:30:53.382978-0800 0x186a37   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Completed async hint of application sh.localbox.spike.launch to appleeventsd
+2026-11-22 05:30:53.383132-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] [C205] event: client:connection_reused @69.683s
+2026-11-22 05:30:53.383148-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_endpoint_handler_report_connection_idle [C205 IPv4#82a81812:443 ready parent-flow (satisfied (Path is satisfied), interface: en0, ipv4, dns)] Reporting connection not idle to protocols
+2026-11-22 05:30:53.383151-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_flow_notify [C205.1.1.1 IPv4#82a81812:443 ready channel-flow (satisfied (Path is satisfied), viable, interface: en0, ipv4, dns)] received notification connection_idle
+2026-11-22 05:30:53.383169-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (libquic.dylib) [com.apple.network:quic] quic_conn_keepalive_configure [C205.1.1.1:2] [-023f0ce0a7af27e260f81fd26cd39ea0325a3cf7] started keep-alive timer for application (20 seconds)
+2026-11-22 05:30:53.383237-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> now using Connection 205
+2026-11-22 05:30:53.383690-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.cfnetwork:h3stream] 0x753d24fd58 ID=12 Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> sent request, body S 77
+2026-11-22 05:30:53.384060-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] LAUNCH: Launch of <FSNode 0x7863163a00> { isDir = y, path = <private> } launched successfully, 0x0-0x554554
+2026-11-22 05:30:53.384064-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] QUARANTINE: Setting risk category to LSRiskCategoryUnsafeExecutable
+2026-11-22 05:30:53.385448-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 0
+2026-11-22 05:30:53.385496-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] activating connection: mach=true listener=false peer=false name=com.apple.bird
+2026-11-22 05:30:53.385631-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] failed to do a bootstrap look-up: xpc_error=[3: No such process]
+2026-11-22 05:30:53.385632-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] invalidated after a failed init
+2026-11-22 05:30:53.385994-0800 0x18572f   Error       0x0                  272    0    syspolicyd: (OSAnalytics) Error querying cloud docs root URL: Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory" UserInfo={NSDescription=No such file or directory}
+2026-11-22 05:30:53.386056-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] activating connection: mach=true listener=false peer=false name=com.apple.bird
+2026-11-22 05:30:53.386143-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] failed to do a bootstrap look-up: xpc_error=[3: No such process]
+2026-11-22 05:30:53.386144-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] invalidated after a failed init
+2026-11-22 05:30:53.386509-0800 0x18572f   Error       0x0                  272    0    syspolicyd: (OSAnalytics) Error querying cloud docs root URL: Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory" UserInfo={NSDescription=No such file or directory}
+2026-11-22 05:30:53.386548-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] activating connection: mach=true listener=false peer=false name=com.apple.bird
+2026-11-22 05:30:53.386909-0800 0x186b72   Info        0x1e6231             272    0    syspolicyd: pid 270 requested <private>
+2026-11-22 05:30:53.386917-0800 0x186b72   Info        0x1e6231             272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.387006-0800 0x186b72   Info        0x1e6231             272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.387265-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] QUARANTINE: Adding appPath <private>
+2026-11-22 05:30:53.387282-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:open] QUARANTINE: Resolving all quarantine items, caller=75762/open items=<private> options=LSOpen2Options(preferIdentical skipWaitForCheckin )
+2026-11-22 05:30:53.387285-0800 0x186a31   Default     0x1e6231             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0280] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.quarantine-resolver
+2026-11-22 05:30:53.387372-0800 0x186a31   Info        0x1e6231             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:csui] Returning xpc_connection_t for CSUI; result=<xpc object>
+2026-11-22 05:30:53.387440-0800 0x186a37   Default     0x1e6231             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b03c0] activating connection: mach=false listener=false peer=true name=com.apple.coreservices.quarantine-resolver.peer[400].0x78635b03c0
+2026-11-22 05:30:53.387471-0800 0x186a37   Info        0x1e6231             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 1 to be handled by class CSUIQuarantineMessageHandler, from pid 400
+2026-11-22 05:30:53.387575-0800 0x186a37   Default     0x1e6231             400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] GKQuarantineResolver initWithProperties: <private>
+2026-11-22 05:30:53.387630-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] failed to do a bootstrap look-up: xpc_error=[3: No such process]
+2026-11-22 05:30:53.387631-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] invalidated after a failed init
+2026-11-22 05:30:53.387853-0800 0x18572f   Error       0x0                  272    0    syspolicyd: (OSAnalytics) Error querying cloud docs root URL: Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory" UserInfo={NSDescription=No such file or directory}
+2026-11-22 05:30:53.387898-0800 0x18572f   Info        0x0                  272    0    syspolicyd: (CloudTelemetry) [com.apple.CloudTelemetry:LegacyClient] Legacy task count incremented, now 1.
+2026-11-22 05:30:53.387907-0800 0x18572f   Default     0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] Sent CloudTelemetry event: XPBehavioralDetection
+2026-11-22 05:30:53.388220-0800 0x186a37   Info        0x1e6231             400    0    CoreServicesUIAgent: (NetFS) ScanAllPluginsInLibraryOverXPC: no bundles in '/Library/Filesystems/NetFSPlugins', skipping...
+2026-11-22 05:30:53.388290-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CrashReporterSupport) reading _CRCopyDiagnosticMessagesHistoryValue key AutoSubmit-#62 (stat 0: 238, mode: 100664)
+2026-11-22 05:30:53.388534-0800 0x10d2     Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0640] activating connection: mach=false listener=false peer=false name=com.apple.XprotectFramework.AnalysisService
+2026-11-22 05:30:53.388547-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CrashReporterSupport) [com.apple.osanalytics.preferences:default] AutoSubmitPreference is 0
+2026-11-22 05:30:53.388564-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (CloudTelemetry) [com.apple.CloudTelemetry:LegacyClient] Legacy task count decremented, now 0.
+2026-11-22 05:30:53.388655-0800 0x10d2     Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] <private>: progressed to 0.00%
+2026-11-22 05:30:53.388659-0800 0x10d2     Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] <private>: progressed to 60.00%
+2026-11-22 05:30:53.388832-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] activating connection: mach=false listener=false peer=false name=com.apple.XProtectBridgeService
+2026-11-22 05:30:53.390035-0800 0x186b68   Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] -[GKQuarantineResolver malwareCheckEnded:result:forURL:]: XProtect finished executable analysis {
+    XProtectMalwareType = 0;
+    XProtectShouldSkipAnalysis = 1;
+}
+2026-11-22 05:30:53.390037-0800 0x186b68   Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] -[GKQuarantineResolver malwareCheckEnded:result:forURL:]: XProtect defer executable analysis: true
+2026-11-22 05:30:53.390050-0800 0x186b68   Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] dismissing <private> after minimum display time of 2.0000s, actual display time of -4.9983s
+2026-11-22 05:30:53.390053-0800 0x186b68   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0640] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.390060-0800 0x10d2     Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] <private>: progressed to 60.00%
+2026-11-22 05:30:53.390071-0800 0x186b68   Info        0x0                  400    0    CoreServicesUIAgent: (XprotectFramework) [com.apple.xprotect:xprotect] Invalidated
+2026-11-22 05:30:53.390090-0800 0x10d2     Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] -[GKQuarantineResolver malwareChecksFinished]_block_invoke: XProtect suppress first launch warning: true
+2026-11-22 05:30:53.390469-0800 0x186b68   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0140] invalidated because the client process (pid 75762) either cancelled the connection or exited
+2026-11-22 05:30:53.390477-0800 0x186b68   Activity    0x1e34eb             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:53.390479-0800 0x186b68   Default     0x1e34eb             400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] Client 75762 has gone away, remaining active handlers:0.
+2026-11-22 05:30:53.391773-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75764
+2026-11-22 05:30:53.391778-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75764, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.393722-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75765
+2026-11-22 05:30:53.393726-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75765, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.395547-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (XprotectFramework) [com.apple.xprotect:xprotect] Forwarding detection succeeded!
+2026-11-22 05:30:53.395562-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4780] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.395675-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e48c0] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.466216-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.cfnetwork:h3stream] 0x753d24fd58 ID=12 Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> received response, status 200 content K
+2026-11-22 05:30:53.466338-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> response ended
+2026-11-22 05:30:53.466362-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] [C205] event: client:connection_idle @69.766s
+2026-11-22 05:30:53.466368-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_endpoint_handler_report_connection_idle [C205 IPv4#82a81812:443 ready parent-flow (satisfied (Path is satisfied), interface: en0, ipv4, dns)] Reporting connection idle to protocols
+2026-11-22 05:30:53.466371-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_flow_notify [C205.1.1.1 IPv4#82a81812:443 ready channel-flow (satisfied (Path is satisfied), viable, interface: en0, ipv4, dns)] received notification connection_idle
+2026-11-22 05:30:53.466376-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (libquic.dylib) [com.apple.network:quic] quic_conn_keepalive_configure [C205.1.1.1:2] [-023f0ce0a7af27e260f81fd26cd39ea0325a3cf7] stopped keep-alive timer
+2026-11-22 05:30:53.466378-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> done using Connection 205
+2026-11-22 05:30:53.466428-0800 0x183873   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Summary] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> summary for task success {transaction_duration_ms=83, response_status=200, connection=205, reused=1, reused_after_ms=49174, request_start_ms=0, request_duration_ms=0, response_start_ms=83, response_duration_ms=0, request_bytes=83, request_throughput_kbps=1465, response_bytes=726, response_throughput_kbps=23708, cache_hit=false}
+2026-11-22 05:30:53.466447-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <B75C3CAE-E8EF-40D7-872C-DE7AEC695731>.<989> finished successfully
+2026-11-22 05:30:53.466455-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] CKTicketStore network reachability: 1, Sat Nov 21 12:32:47 2026
+2026-11-22 05:30:53.466468-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] ticket not available: <private>
+2026-11-22 05:30:53.466541-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.466543-0800 0x186284   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.466607-0800 0x186284   Activity    0x1e625e             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.466674-0800 0x186284   Activity    0x1e625f             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.468920-0800 0x186284   Activity    0x1e6330             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.468982-0800 0x186284   Activity    0x1e6331             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.469030-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.469070-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.469071-0800 0x186284   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.469115-0800 0x186284   Activity    0x1e6332             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.469158-0800 0x186284   Activity    0x1e6333             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.469213-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Error Domain=GatekeeperPolicyScanError Code=-67018 "Code did not match any currently allowed policy" UserInfo={NSURL=<private>, NSLocalizedDescription=Code did not match any currently allowed policy}
+2026-11-22 05:30:53.469215-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Scan match change: 9 -> 0, from: <private>
+2026-11-22 05:30:53.470220-0800 0x186284   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e48c0] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
+2026-11-22 05:30:53.470972-0800 0x186284   Info        0x0                  272    0    syspolicyd: (LaunchServices) [com.apple.launchservices:db] LaunchServices database schema version: 33554481
+2026-11-22 05:30:53.489983-0800 0x183873   Activity    0x1e6334             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.490066-0800 0x183873   Activity    0x1e6335             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.490746-0800 0x183873   Activity    0x1e6336             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.490896-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 1
+2026-11-22 05:30:53.490925-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] cloudkit record fetch: <private>, <private>
+2026-11-22 05:30:53.490954-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] cloudkit request cache info: <private>, max-age=300
+2026-11-22 05:30:53.491015-0800 0x183873   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> resuming, timeouts(3.0, 604800.0) qos(0x11) voucher((null)) activity(00000000-0000-0000-0000-000000000000)
+2026-11-22 05:30:53.491296-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] [C205] event: client:connection_reused @69.791s
+2026-11-22 05:30:53.491321-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_endpoint_handler_report_connection_idle [C205 IPv4#82a81812:443 ready parent-flow (satisfied (Path is satisfied), interface: en0, ipv4, dns)] Reporting connection not idle to protocols
+2026-11-22 05:30:53.491329-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_flow_notify [C205.1.1.1 IPv4#82a81812:443 ready channel-flow (satisfied (Path is satisfied), viable, interface: en0, ipv4, dns)] received notification connection_idle
+2026-11-22 05:30:53.491357-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (libquic.dylib) [com.apple.network:quic] quic_conn_keepalive_configure [C205.1.1.1:2] [-023f0ce0a7af27e260f81fd26cd39ea0325a3cf7] started keep-alive timer for application (20 seconds)
+2026-11-22 05:30:53.491421-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> now using Connection 205
+2026-11-22 05:30:53.491865-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.cfnetwork:h3stream] 0x753d24fd58 ID=16 Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> sent request, body S 77
+2026-11-22 05:30:53.500370-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Connection 205: encountered bidirectional stream limit updated event
+2026-11-22 05:30:53.500478-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.cfnetwork:h3stream] 0x753d24fd58 ID=16 Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> received response, status 200 content K
+2026-11-22 05:30:53.500611-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> response ended
+2026-11-22 05:30:53.500638-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] [C205] event: client:connection_idle @69.800s
+2026-11-22 05:30:53.500644-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_endpoint_handler_report_connection_idle [C205 IPv4#82a81812:443 ready parent-flow (satisfied (Path is satisfied), interface: en0, ipv4, dns)] Reporting connection idle to protocols
+2026-11-22 05:30:53.500646-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (Network) [com.apple.network:connection] nw_flow_notify [C205.1.1.1 IPv4#82a81812:443 ready channel-flow (satisfied (Path is satisfied), viable, interface: en0, ipv4, dns)] received notification connection_idle
+2026-11-22 05:30:53.500654-0800 0x186b72   Info        0x0                  272    0    syspolicyd: (libquic.dylib) [com.apple.network:quic] quic_conn_keepalive_configure [C205.1.1.1:2] [-023f0ce0a7af27e260f81fd26cd39ea0325a3cf7] stopped keep-alive timer
+2026-11-22 05:30:53.500656-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> done using Connection 205
+2026-11-22 05:30:53.500702-0800 0x18572f   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Summary] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> summary for task success {transaction_duration_ms=9, response_status=200, connection=205, reused=1, reused_after_ms=24, request_start_ms=0, request_duration_ms=0, response_start_ms=9, response_duration_ms=0, request_bytes=83, request_throughput_kbps=1492, response_bytes=778, response_throughput_kbps=21992, cache_hit=false}
+2026-11-22 05:30:53.500722-0800 0x186b72   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Task <F79364E8-BC8B-4F70-8AB0-653A0ED82044>.<990> finished successfully
+2026-11-22 05:30:53.500731-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] CKTicketStore network reachability: 1, Sat Nov 21 12:32:47 2026
+2026-11-22 05:30:53.500748-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] ticket not available: <private>
+2026-11-22 05:30:53.500830-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.500833-0800 0x183873   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.500908-0800 0x183873   Activity    0x1e6337             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:30:53.500983-0800 0x183873   Activity    0x1e6338             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:30:53.504259-0800 0x183873   Activity    0x1e6339             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.504363-0800 0x183873   Activity    0x1e633a             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.504447-0800 0x183873   Activity    0x1e633b             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.504526-0800 0x183873   Activity    0x1e633c             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.504533-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.504586-0800 0x183873   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.504588-0800 0x183873   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.504682-0800 0x183873   Activity    0x1e633d             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.504767-0800 0x183873   Activity    0x1e633e             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.528854-0800 0x183873   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:gk] rejecting due to lack of matching active rule
+2026-11-22 05:30:53.529475-0800 0x183873   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:security_exception] MacOS error: -67018
+2026-11-22 05:30:53.529881-0800 0x186284   Activity    0x1e633f             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.529927-0800 0x186284   Activity    0x1e6350             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.529969-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] looking up ticket: <private>, 2, 0
+2026-11-22 05:30:53.530013-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] completing lookup: <private>, 3
+2026-11-22 05:30:53.530014-0800 0x186284   Default     0x0                  272    0    syspolicyd: (Security) [com.apple.securityd:SecError] Error checking with notarization daemon: 3
+2026-11-22 05:30:53.530052-0800 0x186284   Activity    0x1e6351             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.530088-0800 0x186284   Activity    0x1e6352             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:30:53.530126-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Doing an XProtect scan b/c not exempt
+2026-11-22 05:30:53.530163-0800 0x186284   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4280] activating connection: mach=false listener=false peer=false name=com.apple.XprotectFramework.AnalysisService
+2026-11-22 05:30:53.530260-0800 0x186284   Info        0x0                  272    0    syspolicyd: (XprotectFramework) [com.apple.xprotect:xprotect] XProtectScan beginAnalysisWithResultsHandler continueOnError is set to 0
+2026-11-22 05:30:53.531774-0800 0x186b73   Default     0x0                  272    0    syspolicyd: (CFNetwork) [com.apple.CFNetwork:Default] Connection 205: encountered bidirectional stream limit updated event
+2026-11-22 05:30:53.532835-0800 0x186b73   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK Xprotect results: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null)), XPScan: 0,-3076900511452380203,2026-11-22 13:30:53 +0000,(null),(null),file:///Users/server/Applications/Spike.app/
+2026-11-22 05:30:53.532839-0800 0x186b73   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4280] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.532852-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK scan complete: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null)), 0, 0, 0
+2026-11-22 05:30:53.532853-0800 0x186b73   Info        0x0                  272    0    syspolicyd: (XprotectFramework) [com.apple.xprotect:xprotect] XProtectScan XPC connection invalidated
+2026-11-22 05:30:53.533008-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] scan finished, waking up any waiters: PST: (path: d5176572adcb2f8b), (team: (null)), (id: sh.localbox.spike.launch), (bundle_id: sh.localbox.spike.launch)
+2026-11-22 05:30:53.533030-0800 0x186b73   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] App gets first launch prompt because responsibility: <private>, <private>
+2026-11-22 05:30:53.533035-0800 0x186b73   Default     0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK evaluateScanResult: 0, PST: (path: d5176572adcb2f8b), (team: (null)), (id: sh.localbox.spike.launch), (bundle_id: sh.localbox.spike.launch), 1, 0, 1, 0, 0, 0, 0
+2026-11-22 05:30:53.533043-0800 0x186b73   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK eval - was allowed: 0, show prompt: 1
+2026-11-22 05:30:53.533045-0800 0x186b73   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Skipping TCC check due to process: 75763, 0, 75763
+2026-11-22 05:30:53.533101-0800 0x186b73   Default     0x0                  272    0    syspolicyd: [com.apple.syspolicy:default] Found console users: <private>
+2026-11-22 05:30:53.533566-0800 0x186b73   Default     0x0                  272    0    syspolicyd: (libxpc.dylib) [com.apple.xpc:connection] [0x753d6e4500] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.code-evaluation
+2026-11-22 05:30:53.533715-0800 0x186b73   Info        0x0                  272    0    syspolicyd: (LaunchServices) [com.apple.launchservices:code-evaluation] present prompt: uid=501, conn=yes, type=NotDeveloperID, op.ident=EAF8E921-30C1-427E-AF18-DDF6838EFD52, info.ident=F1F8D712-EC48-4FBB-A7C5-4B45415B6990, info={<private>}
+2026-11-22 05:30:53.533719-0800 0x186b73   Default     0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Prompt shown (6, 0), waiting for response: PST: (path: d5176572adcb2f8b), (team: (null)), (id: sh.localbox.spike.launch), (bundle_id: sh.localbox.spike.launch)
+2026-11-22 05:30:53.534275-0800 0x186b78   Default     0x0                  400    2    CoreServicesUIAgent: [com.apple.launchservices:code-evaluation] -[CSUICodeEvaluationController listener:shouldAcceptNewConnection:]: connection=<private>, have connection=false
+2026-11-22 05:30:53.534838-0800 0x186b78   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0140] activating connection: mach=false listener=false peer=true name=com.apple.coreservices.code-evaluation.peer[272].0x78635b0140
+2026-11-22 05:30:53.535158-0800 0x186b78   Activity    0x1e34ec             400    0    CoreServicesUIAgent: present code-evaluation prompt
+2026-11-22 05:30:53.536714-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (NetFS) ScanAllPluginsInLibraryOverXPC: no bundles in '/Library/Filesystems/NetFSPlugins', skipping...
+2026-11-22 05:30:53.552939-0800 0x10d2     Default     0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Appearance] NSApp cache appearance:
+-NSRequiresAquaSystemAppearance: 0
+-appearance: (null)
+-effectiveAppearance: <NSCompositeAppearance: 0x7863071e00
+ (
+    "<NSAquaAppearance: 0x7863071d60>",
+    "<NSSystemAppearance: 0x78630712c0>"
+)>
+2026-11-22 05:30:53.558596-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:datasep] application record search init. Node: <FSNode 0x786340f460> { isDir = ?, path = <private> } bundleID: (null) itemID: 0
+2026-11-22 05:30:53.559161-0800 0x10d2     Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b08c0] activating connection: mach=true listener=false peer=false name=com.apple.iconservices
+2026-11-22 05:30:53.561153-0800 0x10d2     Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0a00] activating connection: mach=true listener=false peer=false name=com.apple.iconservices.store
+2026-11-22 05:30:53.564748-0800 0x10d2     Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b0b40] activating connection: mach=true listener=false peer=false name=com.apple.fonts
+2026-11-22 05:30:53.578557-0800 0x10d2     Activity    0x1e34ed             400    0    CoreServicesUIAgent: (CoreFoundation) Loading Preferences From User CFPrefsD
+2026-11-22 05:30:53.578719-0800 0x10d2     Activity    0x1e34ee             400    0    CoreServicesUIAgent: (CoreFoundation) Loading Preferences From User CFPrefsD
+2026-11-22 05:30:53.596129-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup: <private> - <private>
+2026-11-22 05:30:53.597041-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup returned found - full match for <private> - <private>
+2026-11-22 05:30:53.597513-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup resulted in Full match for unitUUID <private> for <private> - <private>. Image: <private>
+2026-11-22 05:30:53.599789-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (DesignLibrary) [com.apple.DesignLibrary:defaults] liveTuning=false
+2026-11-22 05:30:53.600676-0800 0x10d2     Activity    0x1e34ef             400    0    CoreServicesUIAgent: (CoreFoundation) Loading Preferences From User CFPrefsD
+2026-11-22 05:30:53.616029-0800 0x10d2     Activity    0x1e63a0             400    0    CoreServicesUIAgent: (CoreFoundation) Updating Key-Value Observers Of Preferences
+2026-11-22 05:30:53.641013-0800 0x186b78   Info        0x1e34ec             400    0    CoreServicesUIAgent: (AttributeGraph) [com.apple.attributegraph:misc] ignoring retroactive Equatable conformance on type <private>
+2026-11-22 05:30:53.641014-0800 0x186b78   Info        0x1e34ec             400    0    CoreServicesUIAgent: (AttributeGraph) [com.apple.attributegraph:misc] ignoring retroactive Equatable conformance on type <private>
+2026-11-22 05:30:53.641015-0800 0x186b78   Info        0x1e34ec             400    0    CoreServicesUIAgent: (AttributeGraph) [com.apple.attributegraph:misc] ignoring retroactive Equatable conformance on type <private>
+2026-11-22 05:30:53.647438-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Window] (app) begin modal window ffffffff
+2026-11-22 05:30:53.647592-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (SkyLight) [com.apple.SkyLight:processes] 0[outside of RPC]: SLSSetFrontProcessWithInfo(0x0-0x2 window=0 options=0x1
+2026-11-22 05:30:53.654753-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Window] context (0 -> 43869a34) for window 114
+2026-11-22 05:30:53.655953-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:cas] Removing cached information for app [ 0x0-0x8008]  "CoreServicesUIAgent", as its seed is different from that in shared memory ( 527 vs 530)
+2026-11-22 05:30:53.657099-0800 0x18681b   Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b1e00] activating connection: mach=true listener=false peer=false name=com.apple.dock.fullscreen
+2026-11-22 05:30:53.658200-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (FocusEngine) [com.apple.UIKit:UIFocus] Failed to update focus with context <UIFocusUpdateContext: 0x78631cf8e0; previouslyFocusedItem: (nil); nextFocusedItem: (nil); focusHeading: None>. No additional info available.
+2026-11-22 05:30:53.658321-0800 0x18681b   Default     0x1e34ec             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] (com.apple.coreservices.uiagent) deleteSearchableItemsWithDomainIdentifiers, protectionClass:(null), domainIdentifiers number:1
+2026-11-22 05:30:53.658416-0800 0x18681b   Activity    0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) delete-domains
+2026-11-22 05:30:53.659676-0800 0x186b78   Default     0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Submitting donation: <private> (0 bytes with 0 enqueued)
+2026-11-22 05:30:53.659684-0800 0x186b78   Default     0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) sConnectionName: com.apple.spotlight.IndexAgent
+2026-11-22 05:30:53.659685-0800 0x186b78   Default     0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) Start mach service name com.apple.spotlight.IndexAgent
+2026-11-22 05:30:53.659694-0800 0x186b78   Default     0x1e63a3             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b1f40] activating connection: mach=true listener=false peer=false name=com.apple.spotlight.IndexAgent
+2026-11-22 05:30:53.659706-0800 0x18681b   Default     0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Performing donation: <private>
+2026-11-22 05:30:53.659840-0800 0x18681b   Default     0x1e63a3             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] activating connection: mach=false listener=false peer=false name=com.apple.SetStoreUpdateService
+2026-11-22 05:30:53.659925-0800 0x18681b   Default     0x1e63a3             400    3    CoreServicesUIAgent: (CascadeSets) [com.apple.Biome:BiomeCascade] Requesting new set donation <private>
+2026-11-22 05:30:53.662530-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (FocusEngine) [com.apple.UIKit:UIFocus] Failed to update focus with context <UIFocusUpdateContext: 0x78631ce940; previouslyFocusedItem: (nil); nextFocusedItem: (nil); focusHeading: None>. No additional info available.
+2026-11-22 05:30:53.662856-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Window] Window <_NSAlertPanel: 0x7863154f00> windowNumber=114 ordered front from a non-active application and may order beneath the active application's windows.
+2026-11-22 05:30:53.663067-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Window] order window front conditionally: 114 related: 0
+2026-11-22 05:30:53.663244-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:Intelligence] starting collection observation
+2026-11-22 05:30:53.665344-0800 0x186b68   Default     0x1e34ec             400    0    CoreServicesUIAgent: (UIIntelligenceSupport) [com.apple.UIIntelligenceSupport:xpc] establishing connection to agent
+2026-11-22 05:30:53.665358-0800 0x186b68   Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:session] [0x7863741810] Session created.
+2026-11-22 05:30:53.665358-0800 0x186b68   Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:session] [0x7863741810] Session created from connection [0x78635b2440]
+2026-11-22 05:30:53.665364-0800 0x186b68   Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2440] activating connection: mach=true listener=false peer=false name=com.apple.uiintelligencesupport.agent
+2026-11-22 05:30:53.665407-0800 0x186b68   Default     0x1e34ec             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:session] [0x7863741810] Session activated
+2026-11-22 05:30:53.666241-0800 0x186b78   Default     0x1e34ec             400    0    CoreServicesUIAgent: (UIIntelligenceSupport) [com.apple.UIIntelligenceSupport:xpc] Connection established with agent PID: 613
+2026-11-22 05:30:53.670140-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup: <private> - <private>
+2026-11-22 05:30:53.670148-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup returned found - full match for <private> - <private>
+2026-11-22 05:30:53.670482-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup resulted in Full match for unitUUID <private> for <private> - <private>. Image: <private>
+2026-11-22 05:30:53.670922-0800 0x10d2     Activity    0x1e63a5             400    0    CoreServicesUIAgent: (CoreFoundation) Loading Preferences From User CFPrefsD
+2026-11-22 05:30:53.671881-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup: <private> - <private>
+2026-11-22 05:30:53.672109-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup returned found - full match for <private> - <private>
+2026-11-22 05:30:53.672621-0800 0x10d2     Info        0x1e34ec             400    0    CoreServicesUIAgent: (IconServices) [com.apple.iconservices:default] Persistent store lookup resulted in Full match for unitUUID <private> for <private> - <private>. Image: <private>
+2026-11-22 05:30:53.681163-0800 0x186b9e   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] Re-initialization successful; calling out to event handler with XPC_ERROR_CONNECTION_INTERRUPTED
+2026-11-22 05:30:53.681169-0800 0x186b9e   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.681184-0800 0x18681b   Default     0x1e63a3             400    3    CoreServicesUIAgent: (CascadeSets) [com.apple.Biome:BiomeCascade] Service responded to request for new donation <private> with None
+2026-11-22 05:30:53.681216-0800 0x18681b   Default     0x1e63a3             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Completed donation: <private> result: Error Domain=CSIndexErrorDomain Code=-1000 "Failed to request donation" UserInfo={NSDebugDescription=Failed to request donation, NSUnderlyingError=0x78627bd140 {Error Domain=NSCocoaErrorDomain Code=4099 UserInfo={NSDebugDescription=<private>}}}
+2026-11-22 05:30:53.840394-0800 0x186a31   Info        0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:WindowTab] Indexing 1 items
+2026-11-22 05:30:53.840485-0800 0x186a31   Activity    0x1e6592             400    0    CoreServicesUIAgent: (CoreSpotlight) end-index-batch
+2026-11-22 05:30:53.840510-0800 0x186a31   Default     0x1e6592             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] *warn* MailCS ======%%% _setMailMessageAttributes skip:1
+2026-11-22 05:30:53.841938-0800 0x186a31   Default     0x1e6592             400    0    CoreServicesUIAgent: (CoreSpotlight) Start mach service name com.apple.spotlightknowledged
+2026-11-22 05:30:53.842021-0800 0x186a31   Default     0x1e6592             400    0    CoreServicesUIAgent: (SpotlightEmbeddingCore) SPEmbeddingProvider: Registered provider SPEmbeddingModel
+2026-11-22 05:30:53.842054-0800 0x186a31   Default     0x1e6592             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:default] [GMS] availability notification token 161
+2026-11-22 05:30:53.842761-0800 0x186a31   Info        0x1e6592             400    0    CoreServicesUIAgent: (GenerativeModels) [com.apple.GenerativeModels:availability] Current availability state: available, use cases: com.apple.Settings.AppleIntelligence, language: <any>, api: <private>
+2026-11-22 05:30:53.844144-0800 0x186a31   Activity    0x1e6594             400    0    CoreServicesUIAgent: (CoreSpotlight) index-items
+2026-11-22 05:30:53.844367-0800 0x18681b   Default     0x1e6594             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Submitting donation: <private> (760 bytes with 0 enqueued)
+2026-11-22 05:30:53.844383-0800 0x186a31   Default     0x1e6594             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Performing donation: <private>
+2026-11-22 05:30:53.844551-0800 0x186a31   Default     0x1e6594             400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] activating connection: mach=false listener=false peer=false name=com.apple.SetStoreUpdateService
+2026-11-22 05:30:53.844696-0800 0x186a31   Default     0x1e6594             400    3    CoreServicesUIAgent: (CascadeSets) [com.apple.Biome:BiomeCascade] Requesting new set donation <private>
+2026-11-22 05:30:53.845083-0800 0x18681b   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] Re-initialization successful; calling out to event handler with XPC_ERROR_CONNECTION_INTERRUPTED
+2026-11-22 05:30:53.845090-0800 0x18681b   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+2026-11-22 05:30:53.845135-0800 0x186a31   Default     0x1e6594             400    3    CoreServicesUIAgent: (CascadeSets) [com.apple.Biome:BiomeCascade] Service responded to request for new donation <private> with None
+2026-11-22 05:30:53.845191-0800 0x186a31   Default     0x1e6594             400    0    CoreServicesUIAgent: (CoreSpotlight) [com.apple.corespotlight:index] Completed donation: <private> result: Error Domain=CSIndexErrorDomain Code=-1000 "Failed to request donation" UserInfo={NSDebugDescription=Failed to request donation, NSUnderlyingError=0x7862d7fc60 {Error Domain=NSCocoaErrorDomain Code=4099 UserInfo={NSDebugDescription=<private>}}}
+2026-11-22 05:30:53.908665-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75768
+2026-11-22 05:30:53.908678-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75768, TA(90055a097133019c, 2)
+2026-11-22 05:30:53.915104-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75769
+2026-11-22 05:30:53.915111-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75769, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033411-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033440-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75770, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033447-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75770, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033451-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033456-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.033484-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033492-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75771, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033496-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75771, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033499-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033502-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.033572-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033582-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75772, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033586-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75772, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033589-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033592-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.033660-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033677-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75773, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033683-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75773, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033687-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033691-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.033766-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033784-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75774, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033791-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75774, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033795-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033799-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.033822-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033830-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75775, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033834-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75775, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.033837-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:54.033839-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:54.431027-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75777
+2026-11-22 05:30:54.431040-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75777, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.438234-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75778
+2026-11-22 05:30:54.438242-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75778, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.948374-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75779
+2026-11-22 05:30:54.948406-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75779, TA(90055a097133019c, 2)
+2026-11-22 05:30:54.954510-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75780
+2026-11-22 05:30:54.954517-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75780, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068697-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068717-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75781, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068724-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75781, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068728-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068732-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.068755-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068762-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75782, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068766-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75782, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068769-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068772-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.068896-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068913-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75783, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068920-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75783, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.068924-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068928-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.068985-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.068996-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75784, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069000-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75784, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069003-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.069005-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.069100-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.069117-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75785, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069124-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75785, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069128-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.069132-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.069156-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.069163-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75786, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069167-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75786, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.069170-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:55.069173-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:55.468468-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75788
+2026-11-22 05:30:55.468485-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75788, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.475000-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75789
+2026-11-22 05:30:55.475008-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75789, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.983722-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75790
+2026-11-22 05:30:55.983738-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75790, TA(90055a097133019c, 2)
+2026-11-22 05:30:55.990814-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75791
+2026-11-22 05:30:55.990822-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75791, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105762-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105788-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75792, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105795-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75792, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105799-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105811-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.105843-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105852-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75793, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105856-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75793, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105859-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105861-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.105916-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105931-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75794, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105937-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75794, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105940-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105944-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.105968-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105975-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75795, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105979-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75795, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.105982-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.105984-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.106086-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.106095-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75796, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.106099-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75796, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.106102-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.106105-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.106236-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.106245-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75797, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.106248-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75797, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.106251-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:56.106253-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:56.502322-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75799
+2026-11-22 05:30:56.502332-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75799, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.507084-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75800
+2026-11-22 05:30:56.507091-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75800, TA(90055a097133019c, 2)
+2026-11-22 05:30:56.869651-0800 0x186ba1   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] activating connection: mach=false listener=false peer=true name=com.apple.coreservices.quarantine-resolver.peer[75801].0x78635b2080
+2026-11-22 05:30:56.869679-0800 0x186ba1   Activity    0x1e65a4             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:56.869686-0800 0x186ba1   Info        0x1e65a4             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 98 to be handled by class CSUINullOperationHandler, from pid 75801
+2026-11-22 05:30:56.869757-0800 0x186ba1   Activity    0x1e65a5             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:56.869759-0800 0x186ba1   Info        0x1e65a5             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 7 to be handled by class CSUIGetDisplayNameHandler, from pid 75801
+2026-11-22 05:30:56.869838-0800 0x186ba1   Error       0x1e65a5             400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] CSUIGetDisplayName, failing with -10810 for path '<private>
+2026-11-22 05:30:56.870037-0800 0x186ba1   Activity    0x1e65a6             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:56.870039-0800 0x186ba1   Info        0x1e65a6             400    0    CoreServicesUIAgent: [com.apple.launchservices:uiagent] incoming command 7 to be handled by class CSUIGetDisplayNameHandler, from pid 75801
+2026-11-22 05:30:56.870078-0800 0x186ba1   Error       0x1e65a6             400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] CSUIGetDisplayName, failing with -10810 for path '<private>
+2026-11-22 05:30:57.015562-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75803
+2026-11-22 05:30:57.015568-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75803, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.018896-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75804
+2026-11-22 05:30:57.018900-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75804, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.135646-0800 0x186ba1   Default     0x0                  400    0    CoreServicesUIAgent: (libxpc.dylib) [com.apple.xpc:connection] [0x78635b2080] invalidated because the client process (pid 75801) either cancelled the connection or exited
+2026-11-22 05:30:57.135662-0800 0x186ba1   Activity    0x1e65a7             400    0    CoreServicesUIAgent: Handle XPC Request
+2026-11-22 05:30:57.135666-0800 0x186ba1   Default     0x1e65a7             400    2    CoreServicesUIAgent: [com.apple.launchservices:uiagent] Client 75801 has gone away, remaining active handlers:0.
+2026-11-22 05:30:57.141121-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141134-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75805, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141137-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75805, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141138-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141140-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.141174-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141181-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75806, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141183-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75806, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141185-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141186-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.141233-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141236-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75807, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141238-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75807, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141239-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141240-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.141305-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141310-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75808, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141312-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75808, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141313-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141315-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.141366-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141369-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75809, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141371-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75809, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141372-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141373-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.141424-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141427-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75810, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141428-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75810, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.141429-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:57.141430-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:57.529961-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75812
+2026-11-22 05:30:57.529986-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75812, TA(90055a097133019c, 2)
+2026-11-22 05:30:57.535894-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75813
+2026-11-22 05:30:57.535902-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75813, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.047526-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75814
+2026-11-22 05:30:58.047538-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75814, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.053494-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75815
+2026-11-22 05:30:58.053502-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75815, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173606-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173636-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75816, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173644-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75816, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173648-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173653-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.173679-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173687-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75817, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173691-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75817, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173694-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173696-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.173859-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173877-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75818, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173884-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75818, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.173888-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.173892-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.174033-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174051-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75819, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174057-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75819, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174061-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174066-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.174213-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174230-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75820, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174236-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75820, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174240-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174244-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.174340-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174350-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75821, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174354-0800 0x186284   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75821, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.174357-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:58.174360-0800 0x186284   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:58.567985-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75823
+2026-11-22 05:30:58.567999-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75823, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.574289-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75824
+2026-11-22 05:30:58.574297-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75824, TA(90055a097133019c, 2)
+2026-11-22 05:30:58.581958-0800 0x10d2     Default     0x1e34ec             400    0    CoreServicesUIAgent: (AppKit) [com.apple.AppKit:AutomaticTermination] void _updateToReflectAutomaticTerminationState(void) Setting _kLSApplicationWouldBeTerminatedByTALKey=1
+2026-11-22 05:30:59.083413-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75825
+2026-11-22 05:30:59.083427-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75825, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.089733-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75826
+2026-11-22 05:30:59.089740-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75826, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208573-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208609-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75827, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208615-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75827, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208619-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208622-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.208642-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208648-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75828, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208651-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75828, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208653-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208655-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.208742-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208749-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75829, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208751-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75829, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208753-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208755-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.208824-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208830-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75830, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208832-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75830, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208834-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208835-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.208900-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208906-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75831, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208909-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75831, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208911-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208912-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.208976-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208988-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75832, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208992-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75832, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.208995-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:30:59.208997-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:30:59.596081-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75834
+2026-11-22 05:30:59.596097-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75834, TA(90055a097133019c, 2)
+2026-11-22 05:30:59.602364-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75835
+2026-11-22 05:30:59.602372-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75835, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.116551-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75836
+2026-11-22 05:31:00.116566-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75836, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.122983-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75837
+2026-11-22 05:31:00.122991-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75837, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.239881-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.239905-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75838, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.239912-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75838, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.239916-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.239920-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.239947-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.239954-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75839, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.239958-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75839, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.239961-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.239964-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.240081-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240097-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75840, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240103-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75840, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240107-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240111-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.240134-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240142-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75841, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240146-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75841, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240149-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240152-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.240237-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240247-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75842, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240265-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75842, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240269-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240272-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.240359-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240369-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75843, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240373-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75843, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.240376-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:00.240378-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:00.638765-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75845
+2026-11-22 05:31:00.638779-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75845, TA(90055a097133019c, 2)
+2026-11-22 05:31:00.644983-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75846
+2026-11-22 05:31:00.644992-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75846, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.152028-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75847
+2026-11-22 05:31:01.152044-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75847, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.159091-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75848
+2026-11-22 05:31:01.159099-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75848, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278031-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278061-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75849, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278069-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75849, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278074-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278078-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.278104-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278112-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75850, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278117-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75850, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278120-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278123-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.278228-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278238-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75851, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278242-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75851, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278245-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278248-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.278365-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278382-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75852, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278388-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75852, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278392-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278396-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.278455-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278466-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75853, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278470-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75853, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278473-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278487-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.278513-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278520-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75854, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278524-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75854, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.278527-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:01.278529-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:01.669150-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75856
+2026-11-22 05:31:01.669162-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75856, TA(90055a097133019c, 2)
+2026-11-22 05:31:01.675296-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75857
+2026-11-22 05:31:01.675304-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75857, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.187557-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75858
+2026-11-22 05:31:02.187570-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75858, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.193679-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75859
+2026-11-22 05:31:02.193690-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75859, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315476-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315506-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75860, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315512-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75860, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315517-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315521-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.315546-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315555-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75861, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315559-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75861, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315562-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315564-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.315675-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315694-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75862, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315702-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75862, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315706-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315710-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.315735-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315743-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75863, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315747-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75863, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315749-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315752-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.315844-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315852-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75864, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315856-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75864, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315859-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315861-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.315972-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315982-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75865, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315986-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75865, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.315989-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:02.315992-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:02.707774-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75867
+2026-11-22 05:31:02.707786-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75867, TA(90055a097133019c, 2)
+2026-11-22 05:31:02.713903-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75868
+2026-11-22 05:31:02.713910-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75868, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.229133-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75869
+2026-11-22 05:31:03.229146-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75869, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.235192-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75870
+2026-11-22 05:31:03.235200-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75870, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352558-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352580-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75871, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352586-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75871, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352590-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352594-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.352678-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352695-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75872, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352701-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75872, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352705-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352708-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.352768-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352778-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75873, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352800-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75873, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352804-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352807-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.352892-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352902-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75874, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352907-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75874, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.352910-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.352912-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.353000-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.353010-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75875, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.353014-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75875, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.353016-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.353019-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.353099-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.353117-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75876, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.353123-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75876, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.353128-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:03.353132-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:03.750611-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75878
+2026-11-22 05:31:03.750624-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75878, TA(90055a097133019c, 2)
+2026-11-22 05:31:03.756734-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75879
+2026-11-22 05:31:03.756741-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75879, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.040441-0800 0x186ba0   Default     0x0                  400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:db] NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+2026-11-22 05:31:04.082302-0800 0x18572f   Default     0x0                  272    2    syspolicyd: (LaunchServices) [com.apple.launchservices:db] NotifyToken::RegisterDispatch(com.apple.LaunchServices.database) fired for session key <private>
+2026-11-22 05:31:04.272247-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75880
+2026-11-22 05:31:04.272260-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75880, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.278305-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75881
+2026-11-22 05:31:04.278313-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75881, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390134-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390164-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75882, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390172-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75882, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390176-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390180-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.390206-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390214-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75883, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390218-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75883, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390221-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390224-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.390327-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390344-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75884, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390350-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75884, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390354-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390358-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.390445-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390461-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75885, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390467-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75885, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390470-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390474-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.390609-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390625-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75886, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390631-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75886, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390635-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390639-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.390663-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390670-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75887, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390674-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75887, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.390677-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:04.390679-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:04.576682-0800 0x186ba0   Default     0x0                  400    2    CoreServicesUIAgent: (LaunchServices) [com.apple.launchservices:default] LSExceptions idle-timer fired, invalidating shared instance.
+2026-11-22 05:31:04.787155-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75889
+2026-11-22 05:31:04.787169-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75889, TA(90055a097133019c, 2)
+2026-11-22 05:31:04.794123-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75890
+2026-11-22 05:31:04.794131-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75890, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.302386-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75891
+2026-11-22 05:31:05.302401-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75891, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.308912-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75892
+2026-11-22 05:31:05.308918-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75892, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427496-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427526-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75893, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427534-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75893, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427538-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427543-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.427570-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427578-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75894, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427582-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75894, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427585-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427588-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.427674-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427692-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75895, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427699-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75895, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427703-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427706-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.427732-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427740-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75896, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427744-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75896, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427747-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427750-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.427848-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427864-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75897, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427871-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75897, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427875-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427878-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.427932-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427942-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75898, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427946-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75898, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.427948-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:05.427951-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:05.822461-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Found provenance data on process: TA(90055a097133019c, 2), 75901
+2026-11-22 05:31:05.822474-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was already in provenance sandbox, skipping: 75901, TA(90055a097133019c, 2)
+2026-11-22 05:31:05.861585-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] GK process assessment: <private> <-- (<private>, <private>)
+2026-11-22 05:31:05.861980-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Gatekeeper assessment rooted at: <private>
+2026-11-22 05:31:05.866380-0800 0x186b72   Activity    0x1e6353             272    0    syspolicyd: (Security) SecKeyVerifySignature
+2026-11-22 05:31:05.866583-0800 0x186b72   Activity    0x1e6354             272    0    syspolicyd: (Security) SecTrustEvaluateIfNecessary
+2026-11-22 05:31:05.867893-0800 0x186b72   Activity    0x1e6355             272    0    syspolicyd: (Security) SecTrustCopyAppleTrustAnchors
+2026-11-22 05:31:05.868159-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Code already evaluated, using results.
+2026-11-22 05:31:05.868211-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] scan returning quickly for code: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:31:05.868225-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] waiting on another evaluation: PST: (path: d5176572adcb2f8b), (team: (null)), (id: (null)), (bundle_id: (null))
+2026-11-22 05:31:06.464939-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.464974-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75904, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.464981-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75904, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465002-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465005-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:06.465039-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465056-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75905, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465062-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75905, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465066-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465069-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:06.465090-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465097-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75906, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465101-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75906, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465103-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465106-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:06.465210-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465218-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75907, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465222-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75907, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465224-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465227-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:06.465344-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465352-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75908, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465355-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75908, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465358-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465360-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:06.465418-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465428-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75909, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465432-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75909, TA(90055a097133019c, 2)
+2026-11-22 05:31:06.465435-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:06.465437-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501198-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501227-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75911, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501235-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75911, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501239-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501244-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501269-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501277-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75912, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501281-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75912, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501284-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501294-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501412-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501428-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75913, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501434-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75913, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501439-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501442-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501501-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501516-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75914, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501523-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75914, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501527-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501531-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501635-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501650-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75915, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501655-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75915, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501659-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501663-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:07.501739-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501749-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75916, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501753-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75916, TA(90055a097133019c, 2)
+2026-11-22 05:31:07.501756-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:07.501759-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.537882-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.537926-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75919, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.537937-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75919, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.537942-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.537946-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.537976-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.537985-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75920, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.537989-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75920, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.537992-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.537995-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.538110-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538129-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75921, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538136-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75921, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538141-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538145-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.538199-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538209-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75922, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538213-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75922, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538216-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538219-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.538324-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538346-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75923, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538353-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75923, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538358-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538362-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:08.538416-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538428-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75924, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538432-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75924, TA(90055a097133019c, 2)
+2026-11-22 05:31:08.538435-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:08.538438-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.575975-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576014-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75926, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576023-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75926, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576028-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576033-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.576064-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576073-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75927, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576078-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75927, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576081-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576084-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.576226-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576245-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75928, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576252-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75928, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576257-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576261-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.576286-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576294-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75929, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576299-0800 0x18572f   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75929, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576301-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576304-0800 0x18572f   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.576422-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576444-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75930, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576451-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75930, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576455-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576460-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459
+2026-11-22 05:31:09.576486-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576495-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Process was not already in provenance sandbox, setting: 75931, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576499-0800 0x186b72   Info        0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Tracking process with attributes: 75931, TA(90055a097133019c, 2)
+2026-11-22 05:31:09.576502-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] Unable to initialize qtn_proc: 3
+2026-11-22 05:31:09.576505-0800 0x186b72   Error       0x0                  272    0    syspolicyd: [com.apple.syspolicy.exec:default] dispatch_mig_server returned 268435459

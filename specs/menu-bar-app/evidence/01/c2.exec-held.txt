@@ -1,0 +1,3 @@
+While the Gatekeeper dialog from leg c2 was open, `~/Applications/Spike.app/Contents/MacOS/Spike --status` (an UNquarantined build 2, re-dittoed) hung. sample(1) of the hung pid 76763:
+  805 Thread: Main Thread
+    805 _dyld_start (in dyld) + 0

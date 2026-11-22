@@ -1,0 +1,6 @@
+latest release: v0.1.1 published 2026-10-19T01:21:19Z
+  Localbox-0.1.1.zip 82128950 https://github.com/dzhng/localbox/releases/download/v0.1.1/Localbox-0.1.1.zip
+  localbox-cli-0.1.1.tar.gz 54628014 https://github.com/dzhng/localbox/releases/download/v0.1.1/localbox-cli-0.1.1.tar.gz
+  localbox-template-0.1.1.img.zst.000 1111714389 https://github.com/dzhng/localbox/releases/download/v0.1.1/localbox-template-0.1.1.img.zst.000
+  release.json 1136 https://github.com/dzhng/localbox/releases/download/v0.1.1/release.json
+  SHA256SUMS 279 https://github.com/dzhng/localbox/releases/download/v0.1.1/SHA256SUMS

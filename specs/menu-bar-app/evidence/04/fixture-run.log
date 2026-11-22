@@ -1,0 +1,184 @@
+scratch /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-fixture-AXHw5s
+fixture: disk 67108864 bytes, 4 parts [2097152,2097152,2097152,2309], image artifacts 6293854 bytes, signed with a scratch key in /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-fixture-AXHw5s
+
+=== resume across a quit
+    fetcher +    69ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    79ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854}
+    fetcher +    85ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"localbox-linux-0.0.4.disk.img.zst.001: connection lost at 838860 of 2097152 (terminated)","resumable":true}
+  requests, run 1:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=838860 DROPPED
+  images directory between runs:
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.001.partial size=838860 allocated=839680
+  server cut at 838860; the partial holds 838860 (0 bytes were lost in flight to the reset)
+    fetcher +    70ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    71ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854,"note":"kept localbox-linux-0.0.4.disk.img.zst.000"}
+    fetcher +    78ms {"phase":"downloading","done_bytes":4194304,"total_bytes":6293854}
+    fetcher +    84ms {"phase":"downloading","done_bytes":6291456,"total_bytes":6293854}
+    fetcher +    90ms {"phase":"downloading","done_bytes":6293765,"total_bytes":6293854}
+    fetcher +    95ms {"phase":"downloading","done_bytes":6293779,"total_bytes":6293854}
+    fetcher +    99ms {"phase":"downloading","done_bytes":6293854,"total_bytes":6293854}
+    fetcher +    99ms {"phase":"expanding","done_bytes":0,"total_bytes":67108864}
+    fetcher +   177ms {"phase":"expanding","done_bytes":67108864,"total_bytes":67108864}
+    fetcher +   178ms {"phase":"installing","done_bytes":0,"total_bytes":67108864}
+    fetcher +   184ms {"phase":"ready","done_bytes":67108864,"total_bytes":67108864}
+  requests, run 2:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.001 range=bytes=838860- -> 206 sent=1258292
+    /localbox-linux-0.0.4.disk.img.zst.002 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.003 range=- -> 200 sent=2309
+    /localbox-linux-0.0.4.efi-vars range=- -> 200 sent=14
+    /localbox-linux-0.0.4.image.json range=- -> 200 sent=75
+  bytes served for image artifacts over both runs: 6293854; image artifacts total: 6293854
+  disk peak during run 2 (9 samples): staging 13668352, images outside staging 245760; parts 6293854 + expanded allocation 7356416
+  images directory after:
+    linux/boot/efi-vars size=14 allocated=4096
+    linux/disk.img size=67108864 allocated=7356416
+    linux/image.json size=75 allocated=4096
+  PASS resume across a quit
+
+=== resume inside one run
+  requests:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=838860 DROPPED
+    /localbox-linux-0.0.4.disk.img.zst.001 range=bytes=838860- -> 206 sent=1258292
+    /localbox-linux-0.0.4.disk.img.zst.002 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.003 range=- -> 200 sent=2309
+    /localbox-linux-0.0.4.efi-vars range=- -> 200 sent=14
+    /localbox-linux-0.0.4.image.json range=- -> 200 sent=75
+  images directory after:
+    linux/boot/efi-vars size=14 allocated=4096
+    linux/disk.img size=67108864 allocated=7356416
+    linux/image.json size=75 allocated=4096
+  PASS resume inside one run
+
+=== truncated part, no image installed
+    fetcher +    71ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    77ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854}
+    fetcher +    80ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"localbox-linux-0.0.4.disk.img.zst.001: the server has 1048576 bytes, the manifest 2097152","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=1048576
+  images directory after:
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+  PASS truncated part, no image installed
+
+=== truncated part, an older image installed
+    fetcher +    68ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    77ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854}
+    fetcher +    80ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"localbox-linux-0.0.4.disk.img.zst.001: the server has 1048576 bytes, the manifest 2097152","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=1048576
+  images directory after:
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+    linux/boot/efi-vars size=10 allocated=4096
+    linux/disk.img size=10 allocated=4096
+    linux/image.json size=14 allocated=4096
+  PASS truncated part, an older image installed
+
+=== one flipped byte, no image installed
+    fetcher +    68ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    77ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854}
+    fetcher +    84ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"checksum mismatch: localbox-linux-0.0.4.disk.img.zst.001","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=2097152
+  images directory after:
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+  PASS one flipped byte, no image installed
+
+=== one flipped byte, an older image installed
+    fetcher +    69ms {"phase":"downloading","done_bytes":0,"total_bytes":6293854}
+    fetcher +    78ms {"phase":"downloading","done_bytes":2097152,"total_bytes":6293854}
+    fetcher +    84ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"checksum mismatch: localbox-linux-0.0.4.disk.img.zst.001","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.000 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=2097152
+  images directory after:
+    .linux.fetch/0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+    linux/boot/efi-vars size=10 allocated=4096
+    linux/disk.img size=10 allocated=4096
+    linux/image.json size=14 allocated=4096
+  PASS one flipped byte, an older image installed
+
+=== manifest signed by another key, no image installed
+    fetcher +    67ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature verification failed","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+  images directory after:
+    (none)
+  PASS manifest signed by another key, no image installed
+
+=== manifest signed by another key, an older image installed
+    fetcher +    67ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature verification failed","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1967
+  images directory after:
+    linux/boot/efi-vars size=10 allocated=4096
+    linux/disk.img size=10 allocated=4096
+    linux/image.json size=14 allocated=4096
+  PASS manifest signed by another key, an older image installed
+
+=== manifest edited after signing, no image installed
+    fetcher +    68ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature verification failed","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1595
+  images directory after:
+    (none)
+  PASS manifest edited after signing, no image installed
+
+=== manifest edited after signing, an older image installed
+    fetcher +    69ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature verification failed","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1595
+  images directory after:
+    linux/boot/efi-vars size=10 allocated=4096
+    linux/disk.img size=10 allocated=4096
+    linux/image.json size=14 allocated=4096
+  PASS manifest edited after signing, an older image installed
+
+=== manifest with no signature, no image installed
+    fetcher +    66ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature is missing or unsupported","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1444
+  images directory after:
+    (none)
+  PASS manifest with no signature, no image installed
+
+=== manifest with no signature, an older image installed
+    fetcher +    68ms {"phase":"failed","done_bytes":0,"total_bytes":0,"error":"release signature is missing or unsupported","resumable":false}
+  requests:
+    /release.json range=- -> 200 sent=1444
+  images directory after:
+    linux/boot/efi-vars size=10 allocated=4096
+    linux/disk.img size=10 allocated=4096
+    linux/image.json size=14 allocated=4096
+  PASS manifest with no signature, an older image installed
+
+=== recovery after a flipped byte
+  staging after the failure:
+    0.0.4/localbox-linux-0.0.4.disk.img.zst.000 size=2097152 allocated=2097152
+  requests, clean run:
+    /release.json range=- -> 200 sent=1967
+    /localbox-linux-0.0.4.disk.img.zst.001 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.002 range=- -> 200 sent=2097152
+    /localbox-linux-0.0.4.disk.img.zst.003 range=- -> 200 sent=2309
+    /localbox-linux-0.0.4.efi-vars range=- -> 200 sent=14
+    /localbox-linux-0.0.4.image.json range=- -> 200 sent=75
+  images directory after:
+    linux/boot/efi-vars size=14 allocated=4096
+    linux/disk.img size=67108864 allocated=7372800
+    linux/image.json size=75 allocated=4096
+  PASS recovery after a flipped byte
+
+scratch removed: /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-fixture-AXHw5s
+
+RESULT: all fixture scenarios passed

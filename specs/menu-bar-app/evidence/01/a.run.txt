@@ -1,0 +1,6 @@
+leg: a
+start: 2026-11-22 05:27:15
+command: open -g ~/Applications/Spike.app
+launcher_exit: 0
+process: 69978 /Users/server/Applications/Spike.app/Contents/MacOS/Spike
+smappservice_status_cli: enabled

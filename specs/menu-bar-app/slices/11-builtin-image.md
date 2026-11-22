@@ -22,7 +22,8 @@ fails with a clear, retryable error that carries the progress.
   3. if the installed `image.json` digest already equals the manifest's, print
      `ready` and exit: an update with an unchanged image downloads nothing;
   4. download each part with `Range` resume (or spike 04's fallback) into
-     `<images>/.linux.fetch/<version>/`, check each SHA-256;
+     `<root>/downloads/linux-<version>/` (spike 04: `ImageStore`'s start-time
+     sweep deletes anything staged under `<images>`), check each SHA-256;
   5. `expandImage`, then `installLinuxImage`, then delete the staging
      directory;
   6. print JSON lines `{ phase: "downloading" | "expanding" | "installing" |
@@ -38,8 +39,12 @@ fails with a clear, retryable error that carries the progress.
   is still downloading (N of M); try again when `localbox app status` shows it
   ready". The relay's create path passes it through. This is the only daemon
   change; the daemon does not fetch.
-- **Staging and the temp sweep:** if spike 04 found `ImageStore`'s start-time
-  sweep would delete `.linux.fetch`, stage under `<root>/downloads/` instead.
+- **Install against the sweep (spike 04):** `expandImage` gains a progress
+  callback and cleans its pid-named temp on the next run; the final
+  `installLinuxImage` step must not be swept by a daemon starting mid-install
+  (`ImageStore.sweepTemps` spares temps of running subjects only), so `ensure`
+  expands in `<root>/downloads/` and the install into `<images>` is one
+  rename.
 
 ## What the human can run
 

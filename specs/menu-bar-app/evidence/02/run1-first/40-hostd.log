@@ -1,0 +1,30 @@
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: sandbox_p40_t2g1v0 woke: restored timing-2g1v-0 from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: sandbox_p40_t2g2v0 woke: restored timing-2g2v-0 from its saved state
+localbox-hostd: sandbox_p40_t2g2v1 woke: restored timing-2g2v-1 from its saved state
+localbox-hostd: guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries
+localbox-hostd: agent setup: no LOCALBOX_CLI, so the skill and CLI link are not reconciled
+localbox-hostd: sandbox_p40_alpha woke: restored alpha-otter from its saved state
+localbox-hostd: sandbox_p40_t2g4v0 woke: restored timing-2g4v-0 from its saved state
+localbox-hostd: sandbox_p40_t2g4v1 woke: restored timing-2g4v-1 from its saved state
+localbox-hostd: sandbox_p40_t2g4v2 woke: restored timing-2g4v-2 from its saved state
+localbox-hostd: sandbox_p40_t2g4v3 woke: restored timing-2g4v-3 from its saved state

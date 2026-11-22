@@ -1,0 +1,4 @@
+  PID STAT ELAPSED COMMAND
+75763 S      01:33 /private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/B16AD474-0863-4EFE-85E2-923EE204017B/d/Spike.app/Contents
+75903 S      01:21 /Users/server/Applications/Spike.app/Contents/MacOS/Spike --status
+ls: /tmp/localbox-spike-01/launch.json: No such file or directory

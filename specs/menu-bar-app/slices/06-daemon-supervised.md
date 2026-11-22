@@ -39,6 +39,11 @@ parent: spike 02, check 5 records what an orphan does.
 
 `SandboxHost.shutdown()` itself does not change (README, firewalls).
 
+- **The rare cold boot (spike 02):** one restore in about 40 fell back to
+  `cold_booted` with "guest channel is unavailable" after 125 s. Reproduce it
+  with probe 40's restore loop (at least 200 cycles), find the cause, and fix
+  it or record why it can't be fixed here.
+
 ## What the human can run
 
 Start two daemons on one scratch root: the second prints the refusal and exits

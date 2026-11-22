@@ -1,0 +1,6 @@
+leg: c
+start: 2026-11-22 05:29:36
+command: open -g ~/Applications/Spike.app
+launcher_exit: 0
+process: 73608 /private/var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/AppTranslocation/D413E0D3-07C9-4D9A-AF89-02F75526245E/d/Spike.app/Contents/MacOS/Spike
+smappservice_status_cli: enabled

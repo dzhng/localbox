@@ -1,0 +1,12 @@
+{
+  "activation_policy" : "accessory",
+  "app_pid" : 81047,
+  "app_ppid" : 1,
+  "bundle_id" : "sh.localbox.spike.child",
+  "bundle_path" : "\/private\/var\/folders\/62\/pphwbgd15b1b9q7cjgf8m9pm0000gn\/T\/localbox-proof-40-app-dV5DMl\/adhoc\/LocalboxSpikeChild.app",
+  "child_pid" : 81048,
+  "executable" : "\/Users\/server\/lb40\/apps\/macos\/HostDaemon\/.build\/out\/Products\/Debug\/localbox-hostd",
+  "launched_at_ms" : 1795354883129,
+  "ls_ui_element" : true,
+  "xpc_service_name" : "application.sh.localbox.spike.child.227357570.227357580"
+}

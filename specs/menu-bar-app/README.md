@@ -12,14 +12,14 @@ is [brief.md](brief.md). Read it before any slice.
 
 ## Next Agent Prompt
 
-**Status (2026-11-22):** planned, nothing built. The id rename
+**Status (2026-11-22):** spikes 01, 02 and 04 are done and all go; see
+[spikes.md](spikes.md). Nothing in the product is built. The id rename
 (`com.localbox.*` → `sh.localbox.*`) is already committed (a45a38f).
 
-**You are picking this up at slice 01.** Run the spikes first: 01, 02, 03 and
-04 have no dependencies and can run in parallel; 05 needs 02 and 03. Record each
-verdict in `spikes.md` in this folder (command, evidence, go or no-go) and put
-evidence files under `evidence/`. Do not start a build slice whose spike has no
-recorded go.
+**You are picking this up at slice 03,** then 05 (which needs 02 and 03).
+Slice 06 can start now. Record each verdict in `spikes.md` (command, evidence,
+go or no-go) and put evidence files under `evidence/`. Do not start a build
+slice whose spike has no recorded go.
 
 **Warnings**
 
@@ -38,6 +38,8 @@ recorded go.
   separate Sparkle key (it needs the user's sign-off first), it is backed up
   in the same vault folder, and noted in "Release signing and key backup.md"
   there, before the first publish.
+- Signing in spikes and probes uses a throwaway identity in a temporary
+  keychain. The keychain's "Agent Computer Local" identity blocks on a dialog.
 - Never `pkill` Virtualization processes (Colima is one). Manual daemon runs
   need a scratch `HOME` or `LOCALBOX_MACHINE_ROOT`.
 - Logging out or sleeping the development Mac kills your session. Those legs
@@ -47,10 +49,10 @@ recorded go.
 
 **TODO**
 
-- [ ] 01 [Spike: hands-off first launch and login item](slices/01-first-launch-spike.md)
-- [ ] 02 [Spike: VMs under an app-supervised child](slices/02-vm-child-spike.md)
+- [x] 01 [Spike: hands-off first launch and login item](slices/01-first-launch-spike.md)
+- [x] 02 [Spike: VMs under an app-supervised child](slices/02-vm-child-spike.md)
 - [ ] 03 [Spike: the whole runtime signed in one bundle](slices/03-signed-bundle-spike.md)
-- [ ] 04 [Spike: built-in image fetch](slices/04-image-fetch-spike.md)
+- [x] 04 [Spike: built-in image fetch](slices/04-image-fetch-spike.md)
 - [ ] 05 [Spike: patched Sparkle, N to N+1](slices/05-sparkle-spike.md)
 - [ ] 06 [Daemon: supervised mode, one daemon per root](slices/06-daemon-supervised.md)
 - [ ] 07 [CLI: app-managed layout, launcher, home command](slices/07-cli-app-managed.md)

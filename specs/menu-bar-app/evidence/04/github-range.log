@@ -1,0 +1,12 @@
+asset https://github.com/dzhng/localbox/releases/download/v0.1.1/localbox-template-0.1.1.img.zst.000, 1111714389 bytes; window bytes 555857194-606188841 (50331648 bytes)
+hop 1 (no follow): HTTP 302, location release-assets.githubusercontent.com/github-production-release-asset/1419996321/<id> (query of 829 chars omitted)
+run 1, cut at 40% of the window:
+  GET range=bytes=555857194-606188841 -> HTTP 206; redirected=true; final host release-assets.githubusercontent.com; content-range bytes 555857194-606188841/1111714389; content-length 50331648; accept-ranges bytes
+  CUT by the client: 20142358 bytes in 1.48 s (13.0 MiB/s)
+run 2, resumed from the byte after the last one kept:
+  GET range=bytes=575999552-606188841 -> HTTP 206; redirected=true; final host release-assets.githubusercontent.com; content-range bytes 575999552-606188841/1111714389; content-length 30189290; accept-ranges bytes
+  read to the end: 30189290 bytes in 0.85 s (33.7 MiB/s)
+stitched 50331648 bytes, sha256 3279f3675c45c4d276432eabac78b20bf6ff3f6e1df2d9c42a6466855e504387
+control, curl -L -r 555857194-606188841 in one piece: 206 redirects=1 bytes=50331648 seconds=1.208377; sha256 3279f3675c45c4d276432eabac78b20bf6ff3f6e1df2d9c42a6466855e504387
+PASS: the cut-and-resumed window is byte-identical to the one-piece window
+scratch removed: /var/folders/62/pphwbgd15b1b9q7cjgf8m9pm0000gn/T/spike04-github-J0Vfl7

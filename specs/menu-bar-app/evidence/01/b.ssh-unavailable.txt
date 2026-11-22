@@ -1,0 +1,10 @@
+$ ssh -o BatchMode=yes -o ConnectTimeout=5 localhost true
+Host key verification failed.
+exit 255
+$ same, with -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null (known_hosts untouched)
+server@localhost: Permission denied (publickey,password,keyboard-interactive).
+exit 255
+$ launchctl managername (this agent session)
+Aqua
+$ launchctl asuser 501 /usr/bin/true
+exit 0

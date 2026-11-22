@@ -1,0 +1,6 @@
+leg: b-approx-asuser
+start: 2026-11-22 05:28:17
+command: env -i HOME="$HOME" PATH=/usr/bin:/bin /bin/launchctl asuser $(id -u) /usr/bin/open -g "$HOME/Applications/Spike.app"
+launcher_exit: 0
+process: 71930 /Users/server/Applications/Spike.app/Contents/MacOS/Spike
+smappservice_status_cli: enabled

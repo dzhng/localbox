@@ -1,0 +1,2 @@
+/Users/server/Applications/Spike.app: rejected
+origin=Localbox Spike 01 Scratch
