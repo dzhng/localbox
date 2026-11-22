@@ -22,7 +22,7 @@ end of every install and at every start of the host daemon, which includes the
 relaunch after each update. There is no other timer.
 
 ```sh
-localbox agents setup status   # enabled, skill state, source_revision, cli_link
+localbox agents setup status   # enabled, skill state, source_revision, command
 localbox agents setup off      # Localbox stops touching the skill and the link
 localbox agents setup on       # takes effect at the next daemon start or skill install
 ```

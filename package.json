@@ -9,7 +9,8 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:launcher",
+    "build:launcher": "mkdir -p dist/launcher && cc -Os -Wall -Werror -o dist/launcher/localbox apps/macos/App/launcher/main.c",
     "build:workspaces": "turbo run build",
     "build:guest-agent": "tsx scripts/build-guest-agent.ts",
     "test": "tsx --test tests/**/*.test.ts",

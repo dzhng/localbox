@@ -10,6 +10,8 @@ import { FakeDispatcher } from "../../../packages/runtime/src/index.js";
 import { AgentApiTransport, AgentClient, fixtureTransport, LocalIPCTransport, TransportError, type ClientTransport } from "../../../packages/client/src/index.js";
 import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { AgentSetup, isAgentSetupOperation, REASONS, type Reason } from "./agent-setup.js";
+import { ensureApp } from "./app-launch.js";
+import { layout } from "./layout.js";
 import { checkForUpdate, installLatest } from "./updater.js";
 import { restartConnectorJob } from "./connector-job.js";
 import { render } from "./render.js";
@@ -34,7 +36,7 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["help [OPERATION]", "Show this help, or one operation's schema"],
   ["mcp install", "Print the MCP server config"],
   ["update check|install", "Check for or install the latest release"],
-  ["agents reconcile [--reason install|rollback|daemon_start|explicit]", "Match the skill and the localbox link to this release (run by the installer and the daemon)"],
+  ["agents reconcile [--reason install|rollback|daemon_start|explicit]", "Match the skill and the localbox command to this release (run by the installer and the daemon)"],
   ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
   ["connector run", "Run the relay connector (launchd job)"],
   ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
@@ -121,8 +123,17 @@ async function writeSnapshots(): Promise<void> {
   process.stdout.write("Generated contract snapshots and HostDaemon's operation list.\n");
 }
 
+/** Started at most once per command: a CLI that reaches the daemon several times waits for the app only once. */
+let appStarted: ReturnType<typeof ensureApp> | undefined;
+
+/** This Mac's daemon; a CLI inside Localbox.app first starts the app if it is not running. */
 async function localTransport(): Promise<ClientTransport> {
-  if (process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") return new LocalIPCTransport();
+  if (process.env.LOCALBOX_LOCAL_TRANSPORT !== "fixture") {
+    const started = await (appStarted ??= ensureApp(layout(), machinePaths()));
+    // The same retryable error an unreachable daemon gives, so every caller handles it as it does today.
+    if (started.state === "failed") return { kind: "local", dispatch: async (request) => failure(request, { code: "guest_unreachable", message: started.message, retryable: true }) };
+    return new LocalIPCTransport();
+  }
   const guestRoot = resolve(root, ".localbox/guest");
   await mkdir(guestRoot, { recursive: true });
   return fixtureTransport("local", new FakeDispatcher({ handlers: new GuestGateway({ root: guestRoot }).handlers() }));
@@ -313,7 +324,7 @@ async function main(): Promise<void> {
     await deleteCredentials(machinePaths().credentials);
     // The mirror holds the old account's sandboxes; an account signed in next must not find them here. `signed_out`
     // hides them and keeps their disks; only the signed-in connector's catalog push deletes a sandbox.
-    const cleared = await new LocalIPCTransport().dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { source: "signed_out", sandboxes: [] } });
+    const cleared = await (await localTransport()).dispatch({ protocol_version: PROTOCOL_VERSION, request_id: newId("cli"), operation: "sandbox.mirror", sandbox_id: null, deadline_ms: 30_000, mutation_id: null, input: { source: "signed_out", sandboxes: [] } });
     print({ signed_out: true, ...(alreadyRemoved ? { machine: "already removed from the account; deleted this Mac's credentials" } : {}), sandboxes_forgotten: cleared.ok }); return;
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }

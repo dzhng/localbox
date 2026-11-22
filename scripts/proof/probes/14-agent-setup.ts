@@ -97,7 +97,7 @@ async function releaseKit(ctx: ProofContext, work: string, hostd: string, versio
   cpSync(join(ctx.root, "skills/localbox"), join(cli, "skill"), { recursive: true });
   cpSync(join(ctx.root, "node_modules/skills"), join(cli, "skills-installer"), { recursive: true, filter: (source) => !/\/skills\/(node_modules|\.cache)(\/|$)/.test(source) });
   copyFileSync(join(ctx.root, "package.json"), join(cli, "package.json"));
-  copyFileSync(join(ctx.root, "scripts/cli-launcher.sh"), join(cli, "bin/localbox")); chmodSync(join(cli, "bin/localbox"), 0o755);
+  copyFileSync(join(ctx.root, "apps/macos/App/cli-entry.sh"), join(cli, "bin/localbox")); chmodSync(join(cli, "bin/localbox"), 0o755);
   writeFileSync(join(cli, "node"), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
   // The compiled CLI's runtime dependencies (release.sh installs them with npm).
   symlinkSync(join(ctx.root, "node_modules"), join(cli, "node_modules"));
