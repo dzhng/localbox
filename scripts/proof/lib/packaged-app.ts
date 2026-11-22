@@ -50,7 +50,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     return {
       app: of((command) => command.startsWith(join(here, "Contents/MacOS/Localbox")))[0]?.pid,
       daemons: of((command) => command.startsWith(join(here, "Contents/MacOS/localbox-hostd"))),
-      connectors: of((command) => command.includes("connector run --supervised")),
+      connectors: of((command) => command.includes("connector run")),
     };
   };
   /** The frontmost app's pid, as LaunchServices reports it (loginwindow while the screen is locked). */
@@ -61,9 +61,12 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     } catch { return undefined; }
   };
 
-  /** Assembles the development bundle into the scratch directory. */
-  const build = async () => {
-    const built = await ctx.exec("node", ["apps/macos/App/scripts/build-app.mjs", "--out", scratch]);
+  /**
+   * Assembles the development bundle into the scratch directory, or into `into` (the scratch HOME's Applications, say),
+   * replacing one there; `version` replaces package.json's.
+   */
+  const build = async (options: { into?: string; version?: string } = {}) => {
+    const built = await ctx.exec("node", ["apps/macos/App/scripts/build-app.mjs", "--out", options.into ?? scratch, ...(options.version ? ["--version", options.version] : [])]);
     assert.equal(built.code, 0, `build-app.mjs: ${built.stderr.slice(-1500)}`);
     bundle = built.stdout.trim().split("\n").at(-1)!;
     assert.ok(existsSync(executable()), `no app at ${bundle}`);

@@ -236,3 +236,69 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   about as long to start as the 1 s backoff), and checks the end state through `localbox app status`.
 - **Not run here:** the slice's manual check on the real account (the dev build in `~/Applications`, `login-item
   on`, relaunch, System Settings, then `off`). It is left for the orchestrator.
+
+## 10 · Release, agent install, and deleting the old path
+
+- **The signature check runs in JavaScriptCore.** The system `openssl` is LibreSSL 3.3.6, which cannot load an
+  Ed25519 key (`unsupported algorithm`); `Security.framework` has no Ed25519 key type; CryptoKit needs Swift, which a
+  stock Mac lacks; `ssh-keygen -Y verify` checks SSHSIG envelopes, not a raw signature over the manifest's bytes.
+  `/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc` is on every Mac and runs modern JS with
+  BigInt, so `installation.md` carries a ~70-line Ed25519 (RFC 8032) and SHA-512 verifier. It builds the payload with
+  the same `JSON.stringify({ ...manifest, signature: undefined })` as `signManifest`, so it checks exactly the signed
+  bytes (a non-ASCII version is in the test), and it also requires `SHA256SUMS` to be exactly the signed digests
+  before `shasum -c` checks the zip. Proven on this Mac (macOS 27.0.1) against scratch-key releases and six tampered
+  ones (`tests/release.test.ts`), and against a real `release.sh` output (probe 42); the `jsc` path on macOS 14 was
+  not checked here. Reverse: once a stock tool verifies Ed25519, replace step 3's script with it.
+- **The zip is `Localbox-macos-arm64.zip`**, one name for every version, so the procedure takes all three files from
+  `releases/latest/download` with no version lookup (Bento's pattern). Reverse: name it per version and read the
+  version from `release.json` first.
+- **The release Info.plist carries `SUFeedURL` now** (Sparkle itself, `SUPublicEDKey` and the framework stay slice
+  15's). The app treats a bundle with a feed as a release (`LaunchDecision.isRelease`); without it the release would
+  never register its login item, hand off to a running copy or refuse the dev-only stubs, and step 7 would be false.
+  Nothing reads the feed until Sparkle is linked. Reverse: drop the key in `build-app.mjs` and judge releases by
+  bundle id.
+- **Both builds carry `LocalboxLaunchLockRelativePath`,** copied from the launcher's `#define` in `main.c` (the one
+  source); slice 08 left it out of the dev build. The assembler test and probe 42 check the launcher binary holds the
+  same string.
+- **The disposable keychain lives in `sign.mjs` (`withIdentity`),** lifted out of `release.sh`, which still reads the
+  credentials and passes `--p12/--password-file/--sha1` (or `--identity` for `APPLE_SIGNING_IDENTITY`, `-` for
+  `ALLOW_UNSIGNED`). The keychain is never put on the search list (spike 02's scratch identity signed fine without it);
+  Bento adds it. `LOCALBOX_RELEASE_PUBLIC_KEY` (new) names the key `release.sh` checks the manifest key against and the
+  bundle carries, so a scratch release pins its scratch key; it defaults to the skill's, and the mismatch refusal
+  stays. Probes build the throwaway identity with `scripts/proof/lib/scratch-identity.ts`.
+- **No hardened runtime and no timestamp on any binary** (Bento's `signReleaseTree` uses neither); the old `release.sh`
+  hardened the daemon. Node keeps its JIT with no entitlement, and the daemon boots VMs signed this way (probe 42 v).
+  The bundle's own signature seals `Resources/guest-agent`, including the Mach-O darwin tools, without `codesign`
+  complaining. The assembler signs the bundle under its staging name, so `signApp` treats the folder it is given as
+  the outer bundle whatever it is called.
+- **A release build refuses a Node that links libraries outside `/System/Library` and `/usr/lib`** (Homebrew's), and a
+  non-arm64 one; `--node` (or `LOCALBOX_NODE_BIN` through `release.sh`) picks another.
+- **Proof helpers never ship:** tests import `scripts/proof/lib/installation.ts`, so tsc emits it under
+  `dist/scripts/proof`; the assembler skips that folder.
+- **The procedure's blocks run as written.** `scripts/proof/lib/installation.ts` cuts the `sh` block out of each
+  numbered step; the unit test and probe 42 run steps 2–4 over HTTP (`LOCALBOX_RELEASE_URL`, an override the procedure
+  documents) with the scratch key substituted in step 3, in a scratch `HOME` and `TMPDIR`. Each block stands alone
+  (state is the download folder in `$TMPDIR`), since an agent's shell rarely keeps variables between calls.
+- **Waiting for the old app** uses `osascript -e 'application id "sh.localbox.mac" is running'` before and after the
+  slice's `quit app id`, so a copy that is not running is never launched to be quit. Not exercised here: no release
+  copy runs on this account. The quarantine check is `xattr -r … | grep com.apple.quarantine` on the unpacked app.
+- **Probe 14 is tiers u, a and l.** Tier a installs the dev bundle into a scratch `HOME/Applications` and runs the old
+  checks through launches and relaunches; the home command is called with `LOCALBOX_APP` set, since the launcher looks
+  only for `Localbox.app` and a dev bundle is `Localbox Dev.app`. Tier l keeps the MCP parity check, which needs the
+  local stack (run green in a short clone of this checkout). The release itself is probe **42** (tiers a, v).
+- **The connector always waits and stops on stdin EOF.** Proof connectors (`startConnector`) get a stdin pipe held
+  (unref'd) by the probe, so they stop with it; DEVELOPMENT.md's manual example pipes `tail -f /dev/null` into it.
+  Probe 13's "B removed" check now waits for "waiting for this Mac to be signed in again" instead of exit 0. `login`
+  no longer reports a `connector` field.
+- **Left in place:** the contract's action kind `linked` (the firewall freezes the contract beyond `cli.status`
+  states; nothing produces it now); `launchctl asuser` in `app-launch.ts` and step 5, which is spike 01's launch
+  command, not a job; probe 41's `launchctl list` check that no job is added; the `launchctl` calls inside macOS
+  guests (`MacBaseBuilder`, `localbox-vmlab`). These are the slice grep's only hits outside `apps/guest-agent/darwin`
+  and the spec.
+- **Until slice 11 a fresh install has no `linux` image**, so `sandbox create` from the human check fails there;
+  `installation.md` already says the app fetches it, as the slice asks.
+- **The launcher's lock in the real account.** The packaged smoke and probe 14 run the real launcher, which creates
+  `~/Library/Caches/sh.localbox.mac/launch.lock` in this account's real home (by design, from `getpwuid`); nothing
+  else touches the real account.
+- **Not run here:** the real-account install from `ssh localhost` (the orchestrator's), and a real Gatekeeper
+  quarantine case.

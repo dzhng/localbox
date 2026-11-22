@@ -3,8 +3,7 @@ import { basename, join } from "node:path";
 
 /**
  * The marked block that puts `~/.local/bin` (where the `localbox` command lives) on a login shell's PATH. The text
- * rules are pure; `addPathBlock` and `removePathBlock` apply them to the files under a home. The same markers as
- * scripts/localbox-path.sh, which the old installer still sources until slice 10 of specs/menu-bar-app deletes it.
+ * rules are pure; `addPathBlock` and `removePathBlock` apply them to the files under a home.
  */
 export const PATH_BLOCK = '# >>> localbox >>>\nexport PATH="$HOME/.local/bin:$PATH"\n# <<< localbox <<<\n';
 

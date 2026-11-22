@@ -1,76 +1,36 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { generateKeyPairSync, type KeyObject } from "node:crypto";
-import { chmodSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
-import { makeManifest, packImage, signManifest, writeRelease } from "../../release.js";
-import { BUILT_IN_IMAGE } from "../../../packages/contract/src/index.js";
 import { asMachine } from "../lib/as-machine.js";
-import { writeImageFiles } from "../lib/images.js";
 import { fixtureHome, machineRoot, stopConnector } from "../lib/login.js";
 import { mcp, registerClient, signInAgent } from "../lib/mcp.js";
+import { packagedApp } from "../lib/packaged-app.js";
 import { signedInWithSandboxes } from "../lib/sandboxes.js";
 
+// Agent setup: the skill, the `localbox` command and its PATH block follow the app. Tier a installs the assembled
+// development app into a scratch HOME's Applications folder and drives it as a user's Mac would: its first launch
+// installs everything, a relaunch leaves it alone, a newer bundle replaces the skill, and setup off or a skill
+// uninstall are honoured. Tier l checks that MCP answers exactly what the CLI answers.
+//
+//   npm run proof -- 14 --tier u,a,l
+
 export const id = "14";
-export const tiers = ["u", "l"];
+export const tiers = ["u", "a", "l"];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const FIRST = "0.14.1", SECOND = "0.14.2";
-/** The environment of a Mac whose HOME is `home`: this shell's, minus every LOCALBOX_ override. */
-const macEnv = (home: string): NodeJS.ProcessEnv => ({ ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("LOCALBOX_"))), HOME: home });
+const FINDER_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 function capture(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((done) => {
     const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; }); child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (error) => done({ code: 127, stdout, stderr: error.message }));
     child.on("close", (code) => done({ code: code ?? 1, stdout, stderr }));
   });
-}
-
-/** One fake Mac: its own HOME, under which install-release.sh puts the install root, the skill and the CLI link. */
-class Mac {
-  daemon?: ChildProcess;
-  constructor(readonly home: string, private readonly ctx: ProofContext) { mkdirSync(home, { recursive: true }); }
-  get log(): string { return join(this.home, "hostd.log"); }
-  /** The kit is signed with the run's key; `ALLOW_UNSIGNED` only skips codesign, which the fixture app does not have. */
-  install(release: string, env: NodeJS.ProcessEnv = {}) {
-    return capture("sh", [join(this.ctx.root, "scripts/install-release.sh"), release], { ...macEnv(this.home), RELEASE_PUBLIC_KEY: join(release, "..", "release-public.pem"), ALLOW_UNSIGNED: "1", LOCALBOX_SKIP_LAUNCHD: "1", ...env });
-  }
-  /** `localbox …` through the installed link; `--json` output parsed. */
-  async cli(args: string[]): Promise<any> {
-    const result = await capture(join(this.home, ".local/bin/localbox"), [...args, "--json"], macEnv(this.home));
-    try { return JSON.parse(result.stdout); } catch { throw new Error(`localbox ${args.join(" ")} printed no JSON: ${result.stdout}${result.stderr}`); }
-  }
-  /** Starts the installed daemon exactly as its launchd plist would, with the process fixture for sandboxes. */
-  startDaemon(): void {
-    const plist = join(this.home, "Library/LaunchAgents/sh.localbox.hostd.plist");
-    const read = (key: string) => JSON.parse(execFileSync("plutil", ["-extract", key, "json", "-o", "-", plist], { encoding: "utf8" }));
-    writeFileSync(this.log, "");
-    const fd = openSync(this.log, "a");
-    this.daemon = spawn(read("ProgramArguments")[0], [], { env: { ...macEnv(this.home), ...read("EnvironmentVariables"), LOCALBOX_SANDBOX_BACKEND: "process-fixture", LOCALBOX_REPO_ROOT: this.ctx.root }, detached: true, stdio: ["ignore", fd, fd] });
-    closeSync(fd);
-  }
-  async stopDaemon(): Promise<void> {
-    const child = this.daemon; this.daemon = undefined;
-    if (!child?.pid || child.exitCode !== null) return;
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    try { process.kill(child.pid, "SIGTERM"); } catch { return; }
-    if (await Promise.race([exited.then(() => true), sleep(10_000).then(() => false)])) return;
-    try { process.kill(-child.pid, "SIGKILL"); } catch { try { process.kill(child.pid, "SIGKILL"); } catch { /* gone */ } }
-  }
-  async restartDaemon(): Promise<any> { await this.stopDaemon(); this.startDaemon(); return await reconciled(this.log); }
-}
-
-/** The daemon-start reconcile the daemon logged, parsed. */
-async function reconciled(log: string, timeoutMs = 60_000): Promise<any> {
-  const marker = "agent setup (daemon_start): ";
-  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await sleep(250)) {
-    const line = readFileSync(log, "utf8").split("\n").find((entry) => entry.includes(marker));
-    if (line) { const text = line.slice(line.indexOf(marker) + marker.length); try { return JSON.parse(text); } catch { throw new Error(`the daemon's reconcile did not report JSON: ${text}`); } }
-  }
-  throw new Error(`no daemon-start reconcile in ${log} after ${timeoutMs / 1000} s: ${readFileSync(log, "utf8").slice(-1000)}`);
 }
 
 /** Every agent harness path the pinned installer linked the skill into, under `home`. */
@@ -81,38 +41,11 @@ function harnessPaths(home: string): string[] {
     for (const name of names) {
       const path = join(dir, name);
       if (name === "localbox" && dir.endsWith("/skills")) { found.push(path); continue; }
-      if (depth < 4 && !["Library", "node_modules", ".localbox"].includes(name) && lstatSync(path).isDirectory()) walk(path, depth + 1);
+      if (depth < 4 && !["Library", "Applications", "node_modules", ".localbox"].includes(name) && lstatSync(path).isDirectory()) walk(path, depth + 1);
     }
   };
   walk(home, 0);
   return found;
-}
-
-/** A release kit for `version`, laid out and signed as scripts/release.sh does it, from this checkout's build and Node. */
-async function releaseKit(ctx: ProofContext, work: string, hostd: string, version: string, key: KeyObject): Promise<string> {
-  const stage = join(work, `stage-${version}`), out = join(work, `release-${version}`), cli = join(stage, "localbox-cli");
-  for (const dir of [join(cli, "bin"), join(cli, "scripts"), join(cli, "dist"), out]) mkdirSync(dir, { recursive: true });
-  for (const part of ["apps", "packages", "scripts"]) cpSync(join(ctx.root, "dist", part), join(cli, "dist", part), { recursive: true });
-  for (const script of ["install-release.sh", "rollback-release.sh", "localbox-path.sh"]) copyFileSync(join(ctx.root, "scripts", script), join(cli, "scripts", script));
-  cpSync(join(ctx.root, "skills/localbox"), join(cli, "skill"), { recursive: true });
-  cpSync(join(ctx.root, "node_modules/skills"), join(cli, "skills-installer"), { recursive: true, filter: (source) => !/\/skills\/(node_modules|\.cache)(\/|$)/.test(source) });
-  copyFileSync(join(ctx.root, "package.json"), join(cli, "package.json"));
-  copyFileSync(join(ctx.root, "apps/macos/App/cli-entry.sh"), join(cli, "bin/localbox")); chmodSync(join(cli, "bin/localbox"), 0o755);
-  writeFileSync(join(cli, "node"), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
-  // The compiled CLI's runtime dependencies (release.sh installs them with npm).
-  symlinkSync(join(ctx.root, "node_modules"), join(cli, "node_modules"));
-  const app = join(stage, "Localbox.app/Contents");
-  mkdirSync(join(app, "MacOS"), { recursive: true }); mkdirSync(join(app, "Resources"), { recursive: true });
-  copyFileSync(hostd, join(app, "MacOS/localbox-hostd")); chmodSync(join(app, "MacOS/localbox-hostd"), 0o755);
-  for (const plist of ["sh.localbox.hostd.plist", "sh.localbox.updater.plist", "sh.localbox.connector.plist"]) copyFileSync(join(ctx.root, "apps/macos/HostDaemon/Resources", plist), join(app, "Resources", plist));
-  // A stand-in linux image (this probe boots no VM), shipped and installed the way a real one is.
-  const image = join(stage, "image");
-  writeImageFiles(image, BUILT_IN_IMAGE, { bytes: 1024 * 1024 }, version);
-  execFileSync("ditto", ["-c", "-k", "--keepParent", join(stage, "Localbox.app"), join(out, `Localbox-${version}.zip`)]);
-  execFileSync("tar", ["-czf", join(out, `localbox-cli-${version}.tar.gz`), "-C", stage, "localbox-cli"]);
-  const shipped = await packImage(image, out, `localbox-linux-${version}`, { level: 1 });
-  await writeRelease(out, signManifest(await makeManifest(out, version, `sha256:${"0".repeat(64)}`, undefined, shipped), key, "proof-14"));
-  return out;
 }
 
 export async function run(ctx: ProofContext): Promise<Check[]> {
@@ -125,86 +58,105 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       })];
     } finally { rmSync(home, { recursive: true, force: true }); }
   }
+  return ctx.tier === "a" ? await installedApp(ctx) : await mcpParity(ctx);
+}
+
+async function installedApp(ctx: ProofContext): Promise<Check[]> {
+  const app = packagedApp(ctx, { probe: "14", backend: "process-fixture" });
+  const applications = join(app.home, "Applications"), command = join(app.home, ".local/bin/localbox");
   const checks: Check[] = [];
   const evidence = (name: string, value: unknown) => writeFileSync(join(ctx.evidence, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`);
-  // Short paths: a daemon's socket lives under its fake HOME, and socket paths are limited to 104 bytes.
-  const work = mkdtempSync("/tmp/lb14-");
-  const fresh = new Mac(join(work, "m1/home"), ctx), copied = new Mac(join(work, "m2/home"), ctx);
-  let connector: ChildProcess | undefined; let stackUp = false;
+  /** `localbox …` through the home command, as an agent runs it; the launcher finds the dev bundle through LOCALBOX_APP. */
+  const home = async (args: string[], json = true): Promise<any> => {
+    const result = await capture(command, json ? [...args, "--json"] : args, { ...app.env, PATH: FINDER_PATH, LOCALBOX_APP: app.bundle });
+    if (!json) return result;
+    try { return JSON.parse(result.stdout); } catch { throw new Error(`localbox ${args.join(" ")} printed no JSON (exit ${result.code}): ${result.stdout}${result.stderr}`); }
+  };
+  /** The daemon-start reconcile the daemon logged after `offset` bytes of its log, parsed. */
+  const reconciled = async (offset: number): Promise<any> => {
+    const marker = "agent setup (daemon_start): ";
+    let line: string | undefined;
+    await app.until(() => (line = app.log("hostd.log").slice(offset).split("\n").find((entry) => entry.includes(marker))) !== undefined, "the daemon's start reconcile");
+    const text = line!.slice(line!.indexOf(marker) + marker.length);
+    try { return JSON.parse(text); } catch { throw new Error(`the daemon's reconcile did not report JSON: ${text}`); }
+  };
+  /** Quits the app (it waits for its daemon), runs `between`, launches it again and returns that launch's reconcile. */
+  const relaunch = async (between: () => Promise<void> = async () => {}) => {
+    await app.stop(() => undefined);
+    await between();
+    const offset = app.log("hostd.log").length;
+    await app.start();
+    return await reconciled(offset);
+  };
   try {
-    const built = await ctx.exec("npm", ["run", "build"]);
-    if (built.code !== 0) throw new Error(`npm run build failed: ${built.stdout.slice(-1000)}`);
-    await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--product", "localbox-hostd"]);
-    const hostd = join((await ctx.exec("swift", ["build", "--package-path", "apps/macos/HostDaemon", "--show-bin-path"])).stdout.trim(), "localbox-hostd");
-    const keys = generateKeyPairSync("ed25519");
-    writeFileSync(join(work, "release-public.pem"), keys.publicKey.export({ type: "spki", format: "pem" }));
-    const first = await releaseKit(ctx, work, hostd, FIRST, keys.privateKey), second = await releaseKit(ctx, work, hostd, SECOND, keys.privateKey);
-
-    checks.push(await ctx.check(`fresh install of ${FIRST}: skill installed and managed from that release, at every harness path; the CLI is linked`, async () => {
-      const installed = await fresh.install(first);
-      assert.equal(installed.code, 0, installed.stderr); assert.match(installed.stdout, /\nSkill: installed\n?$/);
-      const status = (await fresh.cli(["skill", "status"])).result; evidence("fresh-skill-status", status);
-      assert.deepEqual({ state: status.state, managed: status.managed, source_revision: status.source_revision, release: status.release }, { state: "installed", managed: true, source_revision: FIRST, release: FIRST });
-      assert.ok(existsSync(status.receipt), "the ownership receipt exists");
-      const paths = harnessPaths(fresh.home); evidence("fresh-harness-paths", paths);
-      assert.ok(paths.length > 2 && paths.includes(join(fresh.home, ".agents/skills/localbox")) && paths.includes(join(fresh.home, ".claude/skills/localbox")), `harness paths: ${paths.join(", ")}`);
-      for (const path of paths) assert.equal(readFileSync(join(path, "SKILL.md"), "utf8"), readFileSync(join(ctx.root, "skills/localbox/SKILL.md"), "utf8"), path);
-      const link = (await fresh.cli(["cli", "status"])).result;
-      assert.equal(link.state, "linked"); assert.match(link.target, /releases\/active\/localbox-cli\/bin\/localbox$/);
-    }));
-    checks.push(await ctx.check("a hand-copied skill is backed up and replaced while setup is on", async () => {
-      const handCopy = join(copied.home, ".agents/skills/localbox");
+    checks.push(await ctx.check(`first launch of ${FIRST} from ~/Applications: the skill (a hand copy backed up), the home command and its PATH block`, async () => {
+      assert.equal((await ctx.exec("npm", ["run", "-s", "build"])).code, 0, "npm run build");
+      mkdirSync(applications);
+      await app.build({ into: applications, version: FIRST });
+      const handCopy = join(app.home, ".agents/skills/localbox");
       mkdirSync(handCopy, { recursive: true }); writeFileSync(join(handCopy, "SKILL.md"), "---\nname: localbox\ndescription: hand copy\n---\nhand copy\n");
-      const installed = await copied.install(first);
-      assert.equal(installed.code, 0, installed.stderr); assert.match(installed.stdout, /Skill: installed/);
-      const status = (await copied.cli(["skill", "status"])).result;
-      assert.equal(status.state, "installed"); assert.equal(status.source_revision, FIRST);
-      assert.equal(readFileSync(join(handCopy, "SKILL.md"), "utf8"), readFileSync(join(ctx.root, "skills/localbox/SKILL.md"), "utf8"));
-      const backups = readdirSync(join(copied.home, ".localbox")).map((name) => join(copied.home, ".localbox", name, "backup/.agents/skills/localbox/SKILL.md")).filter(existsSync);
-      evidence("hand-copy-backups", backups);
-      assert.equal(backups.length, 1); assert.match(readFileSync(backups[0], "utf8"), /hand copy/);
+      await app.start();
+      const report = await reconciled(0); evidence("first-launch", report);
+      assert.deepEqual(report.actions.map((action: any) => `${action.subject}:${action.kind}`), ["skill:replaced", "command:installed"]);
+      assert.match(readFileSync(join(report.actions[0].backup, ".agents/skills/localbox/SKILL.md"), "utf8"), /hand copy/);
+      const skill = (await home(["skill", "status"])).result; evidence("skill-status", skill);
+      assert.deepEqual({ state: skill.state, managed: skill.managed, source_revision: skill.source_revision, release: skill.release }, { state: "installed", managed: true, source_revision: FIRST, release: FIRST });
+      const paths = harnessPaths(app.home); evidence("harness-paths", paths);
+      assert.ok(paths.length > 2 && paths.includes(join(app.home, ".agents/skills/localbox")) && paths.includes(join(app.home, ".claude/skills/localbox")), `harness paths: ${paths.join(", ")}`);
+      for (const path of paths) assert.equal(readFileSync(join(path, "SKILL.md"), "utf8"), readFileSync(join(ctx.root, "skills/localbox/SKILL.md"), "utf8"), path);
+      const cli = (await home(["cli", "status"])).result; evidence("cli-status", cli);
+      assert.deepEqual({ state: cli.state, on_path: cli.on_path, profile: cli.profile, managed: cli.managed }, { state: "installed", on_path: true, profile: join(app.home, ".zprofile"), managed: true });
+      assert.ok(readFileSync(command).equals(readFileSync(join(app.bundle, "Contents/Resources/bin/localbox"))), "the command is the launcher's bytes");
+      const help = await home(["help"], false);
+      assert.equal(help.code, 0, help.stderr); assert.match(help.stdout, /^localbox <command> \[options\]/);
     }));
-    checks.push(await ctx.check("the daemon's start reconcile leaves a skill and link that match the release alone", async () => {
-      fresh.startDaemon();
-      const report = await reconciled(fresh.log); evidence("daemon-start-matching", report);
+    checks.push(await ctx.check("a relaunch's reconcile leaves a skill and command that match the app alone", async () => {
+      const report = await relaunch(); evidence("relaunch", report);
       assert.deepEqual(report.actions.map((action: any) => action.kind), ["left_alone", "left_alone"]);
     }));
-    checks.push(await ctx.check(`simulated update to ${SECOND}: after the daemon restarts, source_revision changes with no other action`, async () => {
-      const updated = await fresh.install(second, { LOCALBOX_SKIP_AGENT_SETUP: "1" });
-      assert.equal(updated.code, 0, updated.stderr); assert.match(updated.stdout, /Skill: skipped/);
-      assert.equal((await fresh.cli(["skill", "status"])).result.source_revision, FIRST, "nothing but the daemon touches it");
-      const report = await fresh.restartDaemon(); evidence("daemon-start-after-update", report);
+    checks.push(await ctx.check(`${SECOND}'s bundle in place of ${FIRST}'s: its first launch replaces the skill and keeps the command`, async () => {
+      const report = await relaunch(async () => { await app.build({ into: applications, version: SECOND }); }); evidence("after-update", report);
       assert.equal(report.actions[0].kind, "replaced"); assert.match(report.actions[0].detail, new RegExp(`release ${FIRST}'s skill with release ${SECOND}'s`));
-      const status = (await fresh.cli(["skill", "status"])).result;
+      assert.equal(report.actions[1].kind, "left_alone");
+      const status = (await home(["skill", "status"])).result;
       assert.deepEqual({ state: status.state, source_revision: status.source_revision, release: status.release }, { state: "installed", source_revision: SECOND, release: SECOND });
     }));
-    checks.push(await ctx.check("agent setup off, then edit the skill: a daemon restart leaves it untouched and skill.status reports unmanaged", async () => {
-      const off = (await fresh.cli(["agents", "setup", "off"])).result; evidence("setup-off", off);
-      assert.equal(off.actions[0].kind, "turned_off");
-      const skill = join(fresh.home, ".agents/skills/localbox/SKILL.md"), edited = `${readFileSync(skill, "utf8")}\nA local note.\n`;
+    checks.push(await ctx.check("agent setup off removes the PATH block; an edited skill then survives a relaunch and reads unmanaged", async () => {
+      const off = (await home(["agents", "setup", "off"])).result; evidence("setup-off", off);
+      assert.equal(off.actions[0].kind, "turned_off"); assert.match(off.actions[0].detail, /removed its PATH block/);
+      assert.ok(!readFileSync(join(app.home, ".zprofile"), "utf8").includes(".local/bin"));
+      const skill = join(app.home, ".agents/skills/localbox/SKILL.md"), edited = `${readFileSync(skill, "utf8")}\nA local note.\n`;
       writeFileSync(skill, edited);
-      const report = await fresh.restartDaemon(); evidence("daemon-start-setup-off", report);
+      const report = await relaunch(); evidence("relaunch-setup-off", report);
       assert.deepEqual(report.actions.map((action: any) => action.kind), ["left_alone", "left_alone"]); assert.match(report.actions[0].detail, /agent setup is off/);
       assert.equal(readFileSync(skill, "utf8"), edited);
-      const status = (await fresh.cli(["skill", "status"])).result;
+      const status = (await home(["skill", "status"])).result;
       assert.equal(status.state, "unmanaged"); assert.equal(status.managed, false);
     }));
-    checks.push(await ctx.check("skill.uninstall with setup on: the next reconcile reinstalls it, and both results say so", async () => {
-      await fresh.cli(["agents", "setup", "on"]);
-      const removed = (await fresh.cli(["skill", "uninstall"])).result; evidence("uninstall", removed);
+    checks.push(await ctx.check("skill.uninstall with setup on: the next launch reinstalls it, and both results say so", async () => {
+      await home(["agents", "setup", "on"]);
+      const removed = (await home(["skill", "uninstall"])).result; evidence("uninstall", removed);
       assert.equal(removed.actions[0].kind, "uninstalled"); assert.match(removed.actions[0].detail, /next reconcile .* installs it again/);
-      assert.equal(removed.produced.state, "disabled"); assert.deepEqual(harnessPaths(fresh.home), []);
-      const report = await fresh.restartDaemon(); evidence("daemon-start-after-uninstall", report);
+      assert.equal(removed.produced.state, "disabled"); assert.deepEqual(harnessPaths(app.home), []);
+      const report = await relaunch(); evidence("relaunch-after-uninstall", report);
       assert.equal(report.actions[0].kind, "reinstalled"); assert.match(report.actions[0].detail, /after skill\.uninstall removed it/);
-      assert.equal((await fresh.cli(["skill", "status"])).result.state, "installed");
+      assert.equal((await home(["skill", "status"])).result.state, "installed");
     }));
-    await fresh.stopDaemon();
+    if (app.processes().app) await app.stop(() => undefined);
+    return checks;
+  } finally { await app.cleanup(); }
+}
 
+async function mcpParity(ctx: ProofContext): Promise<Check[]> {
+  let connector: ChildProcess | undefined; let stackUp = false;
+  const evidence = (name: string, value: unknown) => writeFileSync(join(ctx.evidence, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`);
+  try {
     const up = await ctx.stack("up", ["a"]); stackUp = true;
     if (up.code !== 0) throw new Error(`blocked: local stack did not start: ${(up.stderr || up.stdout).trim()}`);
-    checks.push(await ctx.check("the same operations through MCP tools/call return what the CLI returns", async () => {
+    return [await ctx.check("the agent setup operations through MCP tools/call return what the CLI returns", async () => {
       const root = machineRoot(ctx.root, "a"), home = fixtureHome(root);
-      await reconciled(join(root, "logs/hostd.log"));
+      const log = join(root, "logs/hostd.log");
+      for (const deadline = Date.now() + 60_000; !readFileSync(log, "utf8").includes("agent setup (daemon_start): ") && Date.now() < deadline;) await sleep(250);
       const email = `proof-14-${Date.now()}@example.com`;
       connector = (await signedInWithSandboxes(ctx.root, ["a"], email, { create: false })).connectors.a;
       const { metadata, clientId } = await registerClient("Proof Agent 14");
@@ -229,12 +181,9 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       evidence("mcp-parity", pairs.map(([name, cli, viaTool]) => ({ name, cli, mcp: viaTool })));
       for (const [name, cli, viaTool] of pairs) assert.deepEqual(viaTool, cli, name);
       assert.equal((installed as any).actions[0].kind, "reinstalled");
-    }));
-    return checks;
+    })];
   } finally {
     stopConnector(connector);
-    await fresh.stopDaemon(); await copied.stopDaemon();
     if (stackUp && !ctx.keep) await ctx.stack("down");
-    if (!ctx.keep) rmSync(work, { recursive: true, force: true });
   }
 }

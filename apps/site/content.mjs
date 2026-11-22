@@ -110,7 +110,7 @@ export const capabilities = [
 
 export const humanSteps = [
   { title: "Paste the prompt into Claude Code or Codex", body: "Or use an Open button above; it fills in the prompt without sending it." },
-  { title: "Your agent installs a signed release", body: "It verifies checksums and the release signature, then installs the CLI, the Localbox skill and a small host daemon. Nothing to drag into Applications." },
+  { title: "Your agent installs a signed release", body: "It verifies checksums and the release signature, then installs the Localbox menu bar app, which sets up the CLI and the Localbox skill. Nothing to drag into Applications." },
   { title: "Ask for something that needs a sandbox", body: "The agent creates one and works in it. Updates install themselves and verify before replacing anything." },
 ];
 
@@ -125,7 +125,7 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and when a Mac is full it puts the idle sandboxes used longest ago to sleep to make room, and tells your agent which. Asleep, it saves its memory to disk and gives the RAM back; the installer checks your Mac is set up for it.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and when a Mac is full it puts the idle sandboxes used longest ago to sleep to make room, and tells your agent which. Asleep, it saves its memory to disk and gives the RAM back; installing checks your Mac is set up for it.",
   },
   {
     q: "How do I sign in?",
@@ -182,9 +182,9 @@ Requirements: ${requirements.replaceAll(" · ", ", ")}.
 
 ## Install
 
-When the user asks you to install Localbox, follow the [agent installation procedure](${links.installation}). It downloads one signed GitHub release, verifies it against the pinned release key, and runs the bundled installer. Do not build from source; there is no browser download.
+When the user asks you to install Localbox, follow the [agent installation procedure](${links.installation}). It downloads one signed GitHub release, verifies it against the pinned release key, and opens the Localbox menu bar app, with no click and no password. Do not build from source; there is no browser download.
 
-The installer sets up the \`localbox\` CLI, a small background service, and the **Localbox skill** for every agent harness it finds. The skill updates itself with every Localbox update.
+The app sets up the \`localbox\` CLI and the **Localbox skill** for every agent harness it finds, runs the background services, and keeps the skill matched to itself at every launch.
 
 ## After installing
 

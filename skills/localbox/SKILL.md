@@ -121,9 +121,10 @@ and `--machine` do), and the client signs in with the user's email code.
 
 ## Keeping Localbox current
 
-Releases update themselves, and this skill and the `localbox` link follow the
-installed release. For updates on demand, `skill status`, agent setup on or off,
-and project-scope or comparison installs, read
+Localbox.app keeps this skill and the `localbox` command matched to itself at
+every launch. To update, install the latest release again with the
+[installation](references/installation.md) procedure. For `skill status`, agent
+setup on or off, and project-scope or comparison installs, read
 [skill lifecycle](references/skill-lifecycle.md). To
 find any operation or its schema, read [capabilities](references/capabilities.md).
 

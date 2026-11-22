@@ -14,9 +14,7 @@ on:
       - apps/macos/HostDaemon/**
       - packages/vm-image/**
       - scripts/release*
-      - scripts/install-release.sh
-      - scripts/rollback-release.sh
-      - scripts/uninstall.sh
+      - apps/macos/App/**
       - skills/localbox/**
   push:
     branches: [main]
@@ -32,9 +30,7 @@ on:
       - apps/macos/HostDaemon/**
       - packages/vm-image/**
       - scripts/release*
-      - scripts/install-release.sh
-      - scripts/rollback-release.sh
-      - scripts/uninstall.sh
+      - apps/macos/App/**
       - skills/localbox/**
 
 permissions:

@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, readFile, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { AGENT_SETUP_OPERATIONS, ContractError, type ActionReport, type Json, type OperationId } from "../../../packages/contract/src/index.js";
@@ -7,15 +7,15 @@ import { layout, type Layout } from "./layout.js";
 import { addPathBlock, pathStatus, removePathBlock } from "./shell-profile.js";
 import { SkillManager, type SkillStatus } from "./skill-manager.js";
 
-/** What started a reconcile: the installer, a rollback, a daemon start (every launch, including after an update), or a request. */
-export type Reason = "install" | "rollback" | "daemon_start" | "explicit";
-export const REASONS: readonly Reason[] = ["install", "rollback", "daemon_start", "explicit"];
+/** What started a reconcile: a daemon start (every launch of the app, including after an update), or a request. */
+export type Reason = "daemon_start" | "explicit";
+export const REASONS: readonly Reason[] = ["daemon_start", "explicit"];
 
 /** The agent setup setting, `<machine root>/agent-setup.json`. Without the file it is on. */
 export interface Setting { enabled: boolean; changed_at: string | null }
 
-/** The release this CLI belongs to: its version, the app it ships in and that app's launcher, or the old install's link target. */
-export type Release = Pick<Layout, "revision" | "cli" | "app" | "launcher">;
+/** The release this CLI belongs to: its version, the app it ships in and that app's launcher. */
+export type Release = Pick<Layout, "revision" | "app" | "launcher">;
 
 export interface AgentSetupOptions {
   env?: NodeJS.ProcessEnv;
@@ -33,9 +33,6 @@ type Action = ActionReport["actions"][number];
  */
 type CommandState = "installed" | "missing" | "different" | "not_in_applications" | "not_app_managed";
 interface CommandView { path: string; state: CommandState; app: string | null; launcher: string | null; on_path: boolean; profile: string | null }
-/** The old install's symlink into `releases/active`, until slice 10 of specs/menu-bar-app deletes that install. */
-type LinkState = "linked" | "missing" | "elsewhere" | "not_a_link";
-interface LinkView { path: string; state: LinkState; target: string | null; expected: string }
 /** Every launcher apps/macos/App/launcher/main.c builds carries this, so an earlier Localbox launcher is replaced and anyone else's file is not. */
 const LAUNCHER_MARK = "sh.localbox.launcher";
 /** Where the `localbox` command goes: `LOCALBOX_BIN_DIR` (fixture installs, probes) or `~/.local/bin`. */
@@ -44,8 +41,8 @@ export const commandDirectory = (env: NodeJS.ProcessEnv = process.env): string =
 const applications = (home: string) => [join(home, "Applications"), "/Applications"];
 
 /**
- * The one owner of "the skill, the `localbox` command and its PATH block match this release". `reconcile` runs at the
- * end of install-release.sh and rollback-release.sh, at every daemon start and on an explicit skill.install/update;
+ * The one owner of "the skill, the `localbox` command and its PATH block match this release". `reconcile` runs at
+ * every daemon start (every launch of the app) and on an explicit skill.install/update;
  * the catalog's agent setup operations read and change the same state. Every result is an action report: what was
  * installed, replaced (and where the backup is), or left alone, and why.
  */
@@ -121,8 +118,7 @@ export class AgentSetup {
    * Applications folder, where the launcher looks; a file Localbox did not write is left in place.
    */
   private async reconcileCommand(): Promise<Action> {
-    if (!this.release.app && this.release.cli) return await this.reconcileLink(this.release.cli);
-    const command = await this.command() as CommandView;
+    const command = await this.command();
     if (command.state === "not_app_managed") return { kind: "left_alone", subject: "command", detail: "this CLI runs from a checkout, not Localbox.app, so there is no command to install" };
     if (command.state === "not_in_applications") return { kind: "left_alone", subject: "command", detail: `${command.app} is not in ~/Applications or /Applications, where the localbox command looks for it, so Localbox installs no command for it` };
     try {
@@ -148,19 +144,6 @@ export class AgentSetup {
     catch (error) { await rm(staging, { force: true }); throw error; }
   }
 
-  /** The old install: points the link at the active release's CLI; a file Localbox did not write is left in place. */
-  private async reconcileLink(expected: string): Promise<Action> {
-    const link = await this.link(expected);
-    if (link.state === "linked") return { kind: "left_alone", subject: "command", detail: `${link.path} already points at ${link.expected}` };
-    if (link.state === "not_a_link") return { kind: "left_alone", subject: "command", detail: `${link.path} is a file Localbox did not write; remove it to let Localbox link the command` };
-    await mkdir(dirname(link.path), { recursive: true });
-    if (link.state === "elsewhere") await rm(link.path, { force: true });
-    await symlink(link.expected, link.path);
-    return link.state === "missing"
-      ? { kind: "linked", subject: "command", detail: `linked ${link.path} to ${link.expected}` }
-      : { kind: "replaced", subject: "command", detail: `pointed ${link.path} at ${link.expected} instead of ${link.target}` };
-  }
-
   /** Removes the skill Localbox installed; with setup on, the result says the next reconcile brings it back. */
   async uninstall(requested: Json = {}): Promise<ActionReport> {
     const { enabled } = await this.setting();
@@ -180,7 +163,7 @@ export class AgentSetup {
     await mkdir(dirname(this.settingPath), { recursive: true });
     await writeFile(this.settingPath, `${JSON.stringify({ enabled, changed_at: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
     if (enabled) return this.report(requested, [{ kind: "turned_on", detail: "Localbox maintains the skill and the localbox command again from the next reconcile (the daemon's next start, or skill.install)" }]);
-    // Only the app's CLI adds the PATH block; the old installer's block is the installer's to remove.
+    // Only the app's CLI adds the PATH block, so only it removes one.
     const removed = this.release.app ? await removePathBlock(this.home) : [];
     return this.report(requested, [{ kind: "turned_off", detail: `Localbox leaves the skill and the localbox command alone until agent setup is turned on${removed.length ? `; removed its PATH block from ${removed.join(", ")}` : ""}` }]);
   }
@@ -212,9 +195,8 @@ export class AgentSetup {
     return { requested, produced: { state: skill.state, managed: skill.managed, source_revision: skill.source_revision, receipt: skill.receipt, command: command as unknown as Json }, actions };
   }
 
-  private async command(): Promise<CommandView | LinkView> {
-    const { app, launcher, cli } = this.release, path = this.commandPath;
-    if (!app && cli) return await this.link(cli);
+  private async command(): Promise<CommandView> {
+    const { app, launcher } = this.release, path = this.commandPath;
     const view = (state: CommandState, onPath = false, profile: string | null = null): CommandView => ({ path, state, app, launcher, on_path: onPath, profile });
     if (!app || !launcher) return view("not_app_managed");
     // Compared as realpaths: the layout found `app` through its realpath, while HOME may run through a link.
@@ -222,14 +204,6 @@ export class AgentSetup {
     if (!(await Promise.all(applications(this.home).map(real))).includes(await real(dirname(app)))) return view("not_in_applications");
     const [current, bundled, shell] = await Promise.all([readFile(path).catch(() => null), readFile(launcher).catch(() => null), pathStatus(this.home, this.shell)]);
     return view(!current ? "missing" : bundled && current.equals(bundled) ? "installed" : "different", shell.on_path, shell.profile);
-  }
-
-  private async link(expected: string): Promise<LinkView> {
-    const path = this.commandPath;
-    let target: string | null = null, kind: "missing" | "link" | "file" = "missing";
-    try { const info = await lstat(path); kind = info.isSymbolicLink() ? "link" : "file"; if (kind === "link") target = await readlink(path); } catch { /* missing */ }
-    const state: LinkState = kind === "missing" ? "missing" : kind === "file" ? "not_a_link" : target === expected ? "linked" : "elsewhere";
-    return { path, state, target, expected };
   }
 }
 

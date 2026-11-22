@@ -12,8 +12,6 @@ import { GuestGateway } from "../../../packages/guest-gateway/src/index.js";
 import { AgentSetup, isAgentSetupOperation, REASONS, type Reason } from "./agent-setup.js";
 import { ensureApp } from "./app-launch.js";
 import { layout } from "./layout.js";
-import { checkForUpdate, installLatest } from "./updater.js";
-import { restartConnectorJob } from "./connector-job.js";
 import { render } from "./render.js";
 import { machinePaths, PUBLIC_API_ORIGIN, PUBLIC_MCP_RESOURCE } from "../../../packages/config/src/index.js";
 import { readCredentials, writeCredentials, deleteCredentials, type Credentials } from "../../../packages/credentials/src/index.js";
@@ -35,10 +33,9 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["invoke OPERATION [--sandbox NAME] [--machine NAME] [--input-json JSON] [--mutation-id ID]", "Invoke any catalog operation"],
   ["help [OPERATION]", "Show this help, or one operation's schema"],
   ["mcp install", "Print the MCP server config"],
-  ["update check|install", "Check for or install the latest release"],
-  ["agents reconcile [--reason install|rollback|daemon_start|explicit]", "Match the skill and the localbox command to this release (run by the installer and the daemon)"],
+  ["agents reconcile [--reason daemon_start|explicit]", "Match the skill and the localbox command to this release (run by the daemon at every start)"],
   ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
-  ["connector run [--supervised]", "Run the relay connector (the launchd job; Localbox.app's child with --supervised)"],
+  ["connector run", "Run the relay connector (Localbox.app's child; it stops when its stdin closes)"],
   ["app paths", "Print this Mac's Localbox paths, creating the machine directories and IPC token (run by Localbox.app)"],
   ["app status", "Show Localbox.app: its version, the daemon and the connector it runs, and the login item"],
   ["app login-item [on|off]", "Show, or turn on or off, opening Localbox at login"],
@@ -314,12 +311,9 @@ async function main(): Promise<void> {
     const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
     const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret };
     await writeCredentials(machinePaths().credentials, credentials);
-    // Localbox.app's connector finds the new credential by itself (specs/menu-bar-app, A3); only the old install's
-    // launchd job needs restarting (deleted in slice 10).
-    const connector: { state: string; detail?: string } = layout().app ? { state: "supervised" } : await restartConnectorJob();
-    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count, connector: connector.state, ...(connector.detail ? { connector_detail: connector.detail } : {}) };
-    const connectorLine = connector.state === "started" ? " Connector started." : connector.state === "failed" ? ` The connector did not start (${connector.detail}); other machines and cloud agents cannot reach this Mac until it runs.` : "";
-    if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.${connectorLine}\n`);
+    // The running connector finds the new credential by itself (specs/menu-bar-app, A3).
+    const facts = { account_name: credentials.account_name, machine_name: credentials.machine_name, machine_count: result.machine_count };
+    if (json) print(facts); else process.stdout.write(`Signed in to ${facts.account_name} as ${facts.machine_name}. ${facts.machine_count} machine${facts.machine_count === 1 ? "" : "s"}.\n`);
     return;
   }
   if (group === "logout") {
@@ -333,7 +327,6 @@ async function main(): Promise<void> {
     print({ signed_out: true, ...(alreadyRemoved ? { machine: "already removed from the account; deleted this Mac's credentials" } : {}), sandboxes_forgotten: cleared.ok }); return;
   }
   if (group === "mcp" && subcommand === "install") { process.stdout.write(`${JSON.stringify({ mcpServers: { localbox: { url: PUBLIC_MCP_RESOURCE } }, oauth: { resource: PUBLIC_MCP_RESOURCE } }, null, 2)}\n`); return; }
-  if (group === "update" && (subcommand === "check" || subcommand === "install")) { print(await (subcommand === "check" ? checkForUpdate() : installLatest({ automatic: rest.includes("--auto") })) as unknown as Json); return; }
   if (group === "host" && subcommand === "check") { const { checkHost } = await import("./host-check.js"); print(checkHost() as unknown as Json); return; }
   if (group === "agents" && subcommand === "reconcile") {
     const reason = parse(head.slice(2)).flags.reason ?? "explicit";
@@ -353,7 +346,7 @@ async function main(): Promise<void> {
     } catch (error) { print(failure(request, error instanceof ContractError ? error : new ContractError("invalid_input", "--input-json takes JSON"))); return; }
     print(await run(request, undefined)); return;
   }
-  if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector(process.env, { supervised: rest.includes("--supervised") })); }
+  if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector(process.env)); }
   if (group === "app" && subcommand === "paths") { const { appPaths } = await import("./app.js"); print(await appPaths() as unknown as Json); return; }
   if (group === "app" && (subcommand === "status" || subcommand === "login-item")) {
     const { appStatus, appLoginItem } = await import("./app.js");

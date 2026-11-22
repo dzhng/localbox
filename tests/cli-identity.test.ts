@@ -25,7 +25,7 @@ async function identityApi(logoutStatus: number): Promise<{ origin: string; call
 
 async function signedInMac(): Promise<{ env: NodeJS.ProcessEnv; credentials: string }> {
   const home = await mkdtemp(join(tmpdir(), "localbox-cli-identity-"));
-  const env = { HOME: home, LOCALBOX_MACHINE_ROOT: join(home, "machine"), LOCALBOX_SKIP_LAUNCHD: "1" };
+  const env = { HOME: home, LOCALBOX_MACHINE_ROOT: join(home, "machine") };
   const credentials = machinePaths(env).credentials;
   await writeCredentials(credentials, { api_origin: "", convex_url: "", account_id: "account_1", account_name: "brave-walrus-482", machine_id: "machine_1", machine_name: "studio", secret: "s" });
   return { env, credentials };

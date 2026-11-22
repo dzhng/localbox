@@ -13,23 +13,16 @@ const WATCH_TIMEOUT_MS = 25_000;
 const CREDENTIALS_POLL_MS = 2_000;
 
 export interface RunConnectorOptions {
-  /**
-   * Localbox.app's child: wait for a sign-in instead of exiting when there is none, wait for the next one after a
-   * revoke, and stop when stdin closes (the app quit or died). Without it the connector is the launchd job, which
-   * exits 0 for both so KeepAlive leaves it down until `login` restarts it; slice 10 of specs/menu-bar-app deletes
-   * that job and makes this the only mode.
-   */
-  supervised?: boolean;
-  /** The supervisor's pipe; `process.stdin` by default. */
+  /** The supervisor's pipe; `process.stdin` by default. Its end is the stop. */
   input?: Readable;
-  /** How often a supervised connector looks for credentials. */
+  /** How often the connector looks for credentials while signed out. */
   pollMs?: number;
 }
 
 /**
- * Runs the connector until it is stopped (a signal, or a supervised connector's stdin closing), revoked, or fails.
- * Returns the process exit code: 0 for a clean stop (including a removed machine, so launchd's KeepAlive does not
- * restart it), 1 for a failure.
+ * Runs the connector as Localbox.app's child: it waits for a sign-in when there is none, and for the next one after a
+ * revoke, and stops on a signal or when its stdin closes (the app quit or died). Returns the process exit code: 0 for
+ * a clean stop, 1 for a failure (the app restarts it).
  */
 export async function runConnector(env: NodeJS.ProcessEnv = process.env, options: RunConnectorOptions = {}): Promise<number> {
   const log = (line: string) => process.stderr.write(`${new Date().toISOString()} connector: ${line}\n`);
@@ -38,18 +31,15 @@ export async function runConnector(env: NodeJS.ProcessEnv = process.env, options
   const stop = (why: string) => { if (stopping) return; stopping = true; log(`stopping: ${why}`); wake?.(); void current?.stop(); };
   const onSignal = () => stop("signal");
   process.once("SIGTERM", onSignal); process.once("SIGINT", onSignal);
-  if (options.supervised) {
-    const input: Readable = options.input ?? process.stdin;
-    // Bytes are dropped (the app never writes); the end of the pipe is the stop.
-    input.on("data", () => {}); input.once("end", () => stop("stdin closed")); input.once("error", () => stop("stdin closed"));
-    input.resume();
-  }
-  /** Credentials to connect with, or undefined once stopping; supervised, waits for ones whose secret was not revoked. */
+  const input: Readable = options.input ?? process.stdin;
+  // Bytes are dropped (the app never writes); the end of the pipe is the stop.
+  input.on("data", () => {}); input.once("end", () => stop("stdin closed")); input.once("error", () => stop("stdin closed"));
+  input.resume();
+  /** Credentials to connect with, or undefined once stopping; waits for ones whose secret was not revoked. */
   const signedIn = async (revoked: string | undefined): Promise<Credentials | undefined> => {
     for (let waiting = false; !stopping; waiting = true) {
       const credentials = await readCredentials(paths.credentials);
       if (credentials && credentials.secret !== revoked) return credentials;
-      if (!options.supervised) { log("not signed in; nothing to connect"); return undefined; }
       if (!waiting) log(revoked ? "waiting for this Mac to be signed in again" : "not signed in; waiting for localbox login");
       await new Promise<void>((resolve) => { const timer = setTimeout(resolve, options.pollMs ?? CREDENTIALS_POLL_MS); wake = () => { clearTimeout(timer); resolve(); }; });
     }
@@ -62,11 +52,10 @@ export async function runConnector(env: NodeJS.ProcessEnv = process.env, options
       try {
         const state = await connect(env, credentials, paths, log, (connector) => { current = connector; if (stopping) void connector.stop(); });
         log(`ended: ${state}`);
-        if (state !== "revoked" || !options.supervised) return 0;
+        if (state !== "revoked") return 0;
       } catch (error) {
         if (!(error instanceof RevokedError)) throw error;
-        log(`machine credential revoked: ${error.message}; ${options.supervised ? "waiting for a new sign-in" : "stopping"}`);
-        if (!options.supervised) return 0;
+        log(`machine credential revoked: ${error.message}; waiting for a new sign-in`);
       }
       revoked = credentials.secret; current = undefined;
     }

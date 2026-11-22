@@ -25,7 +25,6 @@
     "image:boot": "tsx packages/vm-image/scripts/build-boot-artifacts.ts",
     "image:parity": "tsx packages/vm-image/scripts/duet-parity.ts",
     "release": "sh scripts/release.sh",
-    "update": "tsx apps/cli/src/index.ts update",
     "site:build": "npm --prefix apps/site run build",
     "site:test": "npm --prefix apps/site test"
   },

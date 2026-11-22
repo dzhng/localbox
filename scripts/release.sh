@@ -1,4 +1,6 @@
 #!/bin/sh
+# Builds one release into OUT_DIR (default dist/release): Localbox-macos-arm64.zip (the signed app, the CLI inside it),
+# the built-in linux image's parts, release.json (signed) and SHA256SUMS. DEVELOPMENT.md ("Releasing") lists the inputs.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -7,8 +9,8 @@ OUT_DIR=${1:-$ROOT/dist/release}
 VERSION=${VERSION:-$(node -p "require(process.argv[1]).version" "$ROOT/package.json")}
 IMAGE_DIGEST=${IMAGE_DIGEST:-sha256:unrecorded}
 IDENTITY=${APPLE_SIGNING_IDENTITY:-}
-SIGNING_KEYCHAIN=
-SIGNING_WORK=
+# The key installers trust (pinned in the installation procedure); a scratch release names its own.
+PUBLIC_KEY=${LOCALBOX_RELEASE_PUBLIC_KEY:-$ROOT/skills/localbox/release-public.pem}
 
 case "$VERSION" in
   ''|*[!A-Za-z0-9._-]*) echo "VERSION contains invalid characters" >&2; exit 1 ;;
@@ -49,9 +51,28 @@ if [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
   # Installers trust only the pinned key, so a manifest signed by any other key
   # would publish a release nobody can install.
   if ! node -e 'const c=require("node:crypto"),f=require("node:fs");process.exit(c.createPublicKey(f.readFileSync(process.argv[1])).export({type:"spki",format:"pem"}).toString()===f.readFileSync(process.argv[2],"utf8")?0:1)' \
-    "$RELEASE_PRIVATE_KEY" "$ROOT/skills/localbox/release-public.pem"; then
-    echo "RELEASE_PRIVATE_KEY does not match skills/localbox/release-public.pem" >&2
+    "$RELEASE_PRIVATE_KEY" "$PUBLIC_KEY"; then
+    echo "RELEASE_PRIVATE_KEY does not match $PUBLIC_KEY" >&2
     exit 1
+  fi
+fi
+# Without APPLE_SIGNING_IDENTITY the release identity's PKCS#12 signs the app; sign.mjs imports it into a disposable
+# keychain. A missing identity fails: a freshly generated one would be a different signer.
+# sign.mjs's flags are kept as this script's arguments (OUT_DIR is already read), so a path or name may hold spaces.
+if [ -n "$IDENTITY" ]; then
+  set -- --identity "$IDENTITY"
+elif [ "${ALLOW_UNSIGNED:-0}" = "1" ]; then
+  set -- --identity -
+else
+  LOCAL_P12=${LOCALBOX_SIGNING_P12:-$SIGNING_DIR/release-identity.p12}
+  LOCAL_PASSWORD=${LOCALBOX_SIGNING_P12_PASSWORD_FILE:-$SIGNING_DIR/release-identity-password.txt}
+  if [ ! -f "$LOCAL_P12" ] || [ ! -f "$LOCAL_PASSWORD" ]; then
+    echo "the release signing identity is missing: expected $LOCAL_P12 and $LOCAL_PASSWORD (or set APPLE_SIGNING_IDENTITY)" >&2
+    exit 1
+  fi
+  set -- --p12 "$LOCAL_P12" --password-file "$LOCAL_PASSWORD"
+  if [ -f "$SIGNING_DIR/public.json" ]; then
+    set -- "$@" --sha1 "$(node -p 'require(process.argv[1]).sha1' "$SIGNING_DIR/public.json")"
   fi
 fi
 
@@ -63,181 +84,18 @@ if [ -n "$(ls -A "$OUT_DIR")" ]; then
   exit 1
 fi
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/localbox-release.XXXXXX")
-cleanup() {
-  if [ -n "$SIGNING_KEYCHAIN" ] && [ -n "$SIGNING_WORK" ] && [ -e "$SIGNING_KEYCHAIN" ]; then
-    security delete-keychain "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || true
-  fi
-  if [ -n "$SIGNING_WORK" ]; then
-    rm -rf "$SIGNING_WORK"
-  fi
-  python3 - "$STAGE" <<'PY'
-import shutil
-import sys
-shutil.rmtree(sys.argv[1], ignore_errors=True)
-PY
-}
-trap cleanup EXIT INT TERM
-
-# Without APPLE_SIGNING_IDENTITY, the release identity's PKCS#12 is imported into
-# a disposable keychain with a partition list for headless codesign. The key
-# never enters the login keychain and cleanup deletes the keychain. A missing
-# identity fails: a freshly generated one would be a different signer.
-if [ -z "$IDENTITY" ] && [ "${ALLOW_UNSIGNED:-0}" != "1" ]; then
-  SIGNING_WORK=$(mktemp -d "${TMPDIR:-/tmp}/localbox-signing.XXXXXX")
-  SIGNING_KEYCHAIN="$SIGNING_WORK/signing.keychain-db"
-  SIGNING_PASSWORD=$(openssl rand -hex 24)
-  LOCAL_P12=${LOCALBOX_SIGNING_P12:-$SIGNING_DIR/release-identity.p12}
-  LOCAL_PASSWORD=${LOCALBOX_SIGNING_P12_PASSWORD_FILE:-$SIGNING_DIR/release-identity-password.txt}
-  if [ ! -f "$LOCAL_P12" ] || [ ! -f "$LOCAL_PASSWORD" ]; then
-    echo "the release signing identity is missing: expected $LOCAL_P12 and $LOCAL_PASSWORD (or set APPLE_SIGNING_IDENTITY)" >&2
-    exit 1
-  fi
-  SIGNING_P12_PASSWORD=$(cat "$LOCAL_PASSWORD")
-  python3 - "$LOCAL_P12" "$SIGNING_WORK/identity.p12" <<'PY'
-import base64
-import pathlib
-import sys
-
-source, target = map(pathlib.Path, sys.argv[1:])
-value = source.read_bytes().strip()
-try:
-    value = base64.b64decode(value, validate=True)
-except Exception:
-    pass
-target.write_bytes(value)
-PY
-  SIGNING_P12="$SIGNING_WORK/identity.p12"
-  SIGNING_CERT="$SIGNING_WORK/identity.crt"
-  printf '%s\n' "$SIGNING_P12_PASSWORD" | openssl pkcs12 -in "$SIGNING_P12" \
-    -clcerts -nokeys -passin stdin -out "$SIGNING_CERT" >/dev/null 2>&1
-  IDENTITY=$(openssl x509 -in "$SIGNING_CERT" -noout -fingerprint -sha1 \
-    | sed 's/.*=//; s/://g')
-  if [ -f "$SIGNING_DIR/public.json" ]; then
-    PINNED_SHA1=$(node -p 'require(process.argv[1]).sha1' "$SIGNING_DIR/public.json")
-    if [ "$(printf '%s' "$IDENTITY" | tr 'A-F' 'a-f')" != "$PINNED_SHA1" ]; then
-      echo "the signing identity does not match $SIGNING_DIR/public.json" >&2
-      exit 1
-    fi
-  fi
-  security create-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
-  security unlock-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN"
-  security import "$SIGNING_P12" -k "$SIGNING_KEYCHAIN" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign >/dev/null
-  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" >/dev/null
-fi
+trap 'rm -rf "$STAGE"' EXIT INT TERM
 
 npm --prefix "$ROOT" run build
 npm --prefix "$ROOT" run build:guest-agent -- --release-version "$VERSION"
-swift build --package-path "$ROOT/apps/macos/HostDaemon" -c release
-
-APP="$STAGE/Localbox.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/guest-agent"
-cat > "$APP/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleExecutable</key>
-  <string>localbox-hostd</string>
-  <key>CFBundleIdentifier</key>
-  <string>sh.localbox.hostd</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>Localbox</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>$VERSION</string>
-  <key>CFBundleVersion</key>
-  <string>$VERSION</string>
-</dict>
-</plist>
-EOF
-cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd" 2>/dev/null \
-  || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd"
-cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.hostd.plist" "$APP/Contents/Resources/sh.localbox.hostd.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.updater.plist" "$APP/Contents/Resources/sh.localbox.updater.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.connector.plist" "$APP/Contents/Resources/sh.localbox.connector.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
-# The host is the authority on the guest agent; images only carry a copy. Signing the app seals these as resources
-# without rewriting their bytes, so the digests in agent-version.json stay true.
-cp "$ROOT/dist/guest-agent/localbox-agent-linux-arm64" "$ROOT/dist/guest-agent/localbox-agent-darwin-arm64" \
-  "$ROOT/dist/guest-agent/agent-version.json" "$APP/Contents/Resources/guest-agent/"
-# What a macOS image build installs besides the agent: install.sh, the launchd units, the desktop helper and forwarder.
-cp -R "$ROOT/dist/guest-agent/darwin" "$APP/Contents/Resources/guest-agent/darwin"
-
-CLI="$STAGE/localbox-cli"
-mkdir -p "$CLI/dist" "$CLI/bin"
-cp -R "$ROOT/dist/apps" "$CLI/dist/apps"
-cp -R "$ROOT/dist/packages" "$CLI/dist/packages"
-cp -R "$ROOT/dist/scripts" "$CLI/dist/scripts"
-mkdir -p "$CLI/scripts"
-cp "$ROOT/scripts/install-release.sh" "$ROOT/scripts/rollback-release.sh" "$ROOT/scripts/localbox-path.sh" "$CLI/scripts/"
-cp -R "$ROOT/skills/localbox" "$CLI/skill"
-cp "$ROOT/package.json" "$ROOT/package-lock.json" "$CLI/"
-NODE_BIN=${LOCALBOX_NODE_BIN:-}
-if [ -z "$NODE_BIN" ]; then NODE_BIN=$(command -v node || true); fi
-if [ -z "$NODE_BIN" ] || [ ! -f "$NODE_BIN" ]; then
-  echo "an ARM64 node runtime is required; set LOCALBOX_NODE_BIN" >&2
-  exit 1
-fi
-if ! file "$NODE_BIN" | grep -Eq 'arm64|aarch64'; then
-  echo "LOCALBOX_NODE_BIN must be an ARM64 executable" >&2
-  exit 1
-fi
-cp "$NODE_BIN" "$CLI/node"
-cp "$ROOT/apps/macos/App/cli-entry.sh" "$CLI/bin/localbox"
-chmod 0755 "$CLI/bin/localbox"
-npm --prefix "$CLI" install --omit=dev --ignore-scripts --no-package-lock --no-audit --no-fund >/dev/null
-if [ ! -f "$CLI/node_modules/skills/bin/cli.mjs" ]; then
-  echo "the release CLI is missing the pinned skills installer" >&2
-  exit 1
-fi
-cp -R "$CLI/node_modules/skills" "$CLI/skills-installer"
-rm -rf "$CLI/skills-installer/node_modules" "$CLI/skills-installer/.cache"
-
-sign_code() {
-  if [ -n "$SIGNING_KEYCHAIN" ]; then
-    codesign "$@" --keychain "$SIGNING_KEYCHAIN"
-  else
-    codesign "$@"
-  fi
-}
-verify_code() {
-  if [ -n "$SIGNING_KEYCHAIN" ]; then
-    codesign "$@" --keychain "$SIGNING_KEYCHAIN"
-  else
-    codesign "$@"
-  fi
-}
-
-if [ -n "$IDENTITY" ]; then
-  sign_code --force --options runtime --timestamp --entitlements "$APP/Contents/Resources/localbox-hostd.entitlements" --sign "$IDENTITY" "$APP/Contents/MacOS/localbox-hostd"
-  sign_code --force --deep --options runtime --timestamp --entitlements "$APP/Contents/Resources/localbox-hostd.entitlements" --sign "$IDENTITY" "$APP"
-  sign_code --force --options runtime --timestamp --sign "$IDENTITY" "$CLI/bin/localbox"
-  # Keep Node outside hardened runtime so V8 can reserve executable JIT memory;
-  # the HostDaemon app is hardened separately.
-  sign_code --force --timestamp --sign "$IDENTITY" "$CLI/node"
-  verify_code --verify --deep --strict --verbose=2 "$APP"
-  verify_code --verify --strict --verbose=2 "$CLI/node" "$CLI/bin/localbox"
-fi
-
-APP_ZIP="$OUT_DIR/Localbox-$VERSION.zip"
-ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
-CLI_TAR="$OUT_DIR/localbox-cli-$VERSION.tar.gz"
-tar -czf "$CLI_TAR" -C "$STAGE" localbox-cli
-
-if [ -n "${NOTARY_PROFILE:-}" ]; then
-  xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
-  xcrun stapler staple "$APP"
-  ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$APP_ZIP"
-fi
+node "$ROOT/apps/macos/App/scripts/build-app.mjs" --release --out "$STAGE" --version "$VERSION" --public-key "$PUBLIC_KEY" \
+  ${LOCALBOX_NODE_BIN:+--node "$LOCALBOX_NODE_BIN"}
+node "$ROOT/apps/macos/App/scripts/sign.mjs" "$STAGE/Localbox.app" "$@"
+ditto -c -k --keepParent --norsrc --noextattr --noqtn "$STAGE/Localbox.app" "$OUT_DIR/Localbox-macos-arm64.zip"
 
 cd "$ROOT"
 # The linux image ships beside the app (its disk as zstd parts under GitHub's 2 GiB asset cap, its boot store and
-# image.json); the installer expands them into images/linux.
+# image.json); the app fetches them into images/linux.
 RELEASE_DIR="$OUT_DIR" RELEASE_VERSION="$VERSION" RELEASE_IMAGE_DIGEST="$IMAGE_DIGEST" RELEASE_IMAGE="$LOCALBOX_IMAGE" RELEASE_PRIVATE_KEY="${RELEASE_PRIVATE_KEY:-}" RELEASE_KEY_ID="${RELEASE_KEY_ID:-}" node --input-type=module <<'NODE'
 import { readFileSync } from "node:fs";
 import { makeManifest, packImage, signManifest, writeRelease } from "./dist/scripts/release.js";
