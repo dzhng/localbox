@@ -244,8 +244,7 @@ struct Lab {
         try FileManager.default.createDirectory(at: sandboxes, withIntermediateDirectories: true)
         let operations = try HostOperationStore(operationsDirectory: base.appendingPathComponent("operations", isDirectory: true))
         let store = try ImageStore(imagesDirectory: image.deletingLastPathComponent())
-        let builds = MacBaseBuilder(store: store, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: nil)
-        let host = SandboxHost(sandboxesDirectory: sandboxes, factory: factory, operations: operations, store: store, macBuilds: builds)
+        let host = SandboxHost(sandboxesDirectory: sandboxes, factory: factory, operations: operations, store: store)
         let id = "sandbox_vmlab"
         _ = try await hostResult(host, "sandbox.create", id, ["name": "vmlab", "image": image.lastPathComponent, "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": Int(Int32.max)])
         _ = try await hostResult(host, "shell.exec", id, ["command": "while :; do date +%s%3N >> /var/tmp/ticks; sleep 0.05; done", "background": true])

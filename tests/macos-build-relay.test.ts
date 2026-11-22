@@ -85,3 +85,9 @@ test("a finished build reports the release, what the image holds and where it ru
     "start a sandbox from it: localbox sandbox create --image mac-base",
   ]);
 });
+
+test("a build that slept a macOS sandbox for its VM slot names it", async () => {
+  const { op } = await setup({ m1: building([], { state: "succeeded", phase: "finish", result: { size_bytes: 31.5 * GIB, ipsw_version: "27.2.1", min_macos: "27.0", os: "macos", made_room: ["slept quiet-fox (8 GiB) to make room"] } }) });
+  const built = await op({ macos: true, name: "mac-base" });
+  assert.ok(built.result.report.includes("made room for it: slept quiet-fox (8 GiB) to make room"), built.result.report.join("\n"));
+});

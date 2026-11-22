@@ -153,6 +153,46 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(rig.driver.calls.filter { $0 == "install" }.count, 1)
     }
 
+    /// A build started beside two running macOS sandboxes takes its macOS VM slot through admission before it boots: the
+    /// least recently used idle one sleeps for it, and the build says so.
+    func testABuildBesideTwoMacOSSandboxesSleepsAnIdleOne() async throws {
+        let rig = try await Rig(test: self, macOSSandboxes: ["a", "b"])
+        _ = try await rig.build("m-1", image: "image_mac")
+        let finished = try await rig.finished("m-1")
+        XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
+        guard case .object(let result)? = finished.result else { return XCTFail("no result") }
+        XCTAssertEqual(result["made_room"], .array([.string("slept a (8 GiB) to make room")]), "a is the least recently used")
+        let a = await rig.rig.host.runtime("sandbox_a")?.status().lifecycle, b = await rig.rig.host.runtime("sandbox_b")?.status().lifecycle
+        XCTAssertEqual(a?.sandboxState, "sleeping"); XCTAssertEqual(b, .ready)
+        XCTAssertEqual(rig.driver.calls, Self.fullBuild)
+    }
+
+    /// With both macOS sandboxes busy the build fails `machine_full` naming them, before anything boots, never with
+    /// Virtualization's raw limit error; once it is over, its slot is free for a sandbox again.
+    func testABuildBesideTwoBusyMacOSSandboxesFailsMachineFull() async throws {
+        let rig = try await Rig(test: self, macOSSandboxes: ["a", "b"])
+        rig.jobs.withLock { $0 = ["sandbox_a": 1, "sandbox_b": 2] }
+        _ = try await rig.request(["macos": true, "image": "image_mac"], key: "m-1")
+        let failed = try await rig.finished("m-1")
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.error?.code, "machine_full")
+        XCTAssertEqual(failed.error?.message, "building macOS image image_mac needs a macOS VM, and this Mac already runs 2 macOS sandboxes, the most macOS allows; none of them can sleep: a (8 GiB, 1 running job), b (8 GiB, 2 running jobs)")
+        XCTAssertTrue(rig.driver.calls.isEmpty, "nothing booted")
+        rig.jobs.withLock { $0 = [:] }
+        let third = try await result(rig.rig.daemon, "sandbox.create", #"{"name":"c","image":"macos-base","cpus":4,"memory_bytes":8589934592,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_c")
+        XCTAssertEqual((third["actions"] as? [[String: Any]])?.filter { $0["kind"] as? String == "made_room" }.count, 1, "the failed build holds no slot: c needs only one sandbox to sleep")
+    }
+
+    /// A build the last run left mid-way takes its slot again the same way when it resumes.
+    func testAResumedBuildTakesItsSlotAgain() async throws {
+        let rig = try await Rig(test: self, leftAt: .tcc, macOSSandboxes: ["a", "b"])
+        let finished = try await rig.finished("m-1")
+        XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
+        guard case .object(let result)? = finished.result else { return XCTFail("no result") }
+        XCTAssertEqual(result["made_room"], .array([.string("slept a (8 GiB) to make room")]))
+        XCTAssertEqual(rig.driver.calls, ["boot", "root tcc", "root finish", "shut down"])
+    }
+
     func testTheStartSweepKeepsARunningBuildsDirectoryAndTheIPSWCache() throws {
         let root = try scratch()
         let store = try ImageStore(imagesDirectory: root)
@@ -175,12 +215,15 @@ final class MacBaseBuilderTests: XCTestCase {
     /// A daemon with a fake build driver and guest agent build, its journal started, under one scratch root.
     private struct Rig {
         let rig: TestDaemon, driver: FakeMacDriver, http: FakeHTTP, catalog = FakeCatalog()
+        /// Running jobs by sandbox id, as the sandboxes' guests answer.
+        let jobs = Locked<[String: Int]>([:])
         var root: URL { rig.root }
         var store: ImageStore { rig.store }
         var operations: HostOperationStore { rig.operations }
 
-        /// `leftAt` restarts a build the last run left just before that phase: its journal and files exist before the store loads.
-        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64 = .max, leftAt: MacBaseBuilder.Phase? = nil) async throws {
+        /// `leftAt` restarts a build the last run left just before that phase: its journal and files exist before the store
+        /// loads. `macOSSandboxes` are running 8 GiB macOS sandboxes, created in that order before the journal starts.
+        init(test: MacBaseBuilderTests, http: FakeHTTP = FakeHTTP(), hostVersion: String = "27.0.1", freeBytes: UInt64 = .max, leftAt: MacBaseBuilder.Phase? = nil, macOSSandboxes: [String] = []) async throws {
             let root = try test.scratch()
             self.http = http
             try FileManager.default.createDirectory(at: root.appendingPathComponent("operations"), withIntermediateDirectories: true)
@@ -191,7 +234,12 @@ final class MacBaseBuilderTests: XCTestCase {
             try Data("agent".utf8).write(to: agent.appendingPathComponent("localbox-agent-darwin-arm64"))
             try Data(#"{"version":"0.1.1+abc"}"#.utf8).write(to: agent.appendingPathComponent("agent-version.json"))
             for name in ["install.sh", "localbox-desktop", "localbox-vsock", "sh.localbox.agent.plist", "sh.localbox.desktop.plist", "sh.localbox.vsock.plist"] { try Data(name.utf8).write(to: agent.appendingPathComponent("darwin/\(name)")) }
-            rig = try await TestDaemon(root: root, freeBytes: freeBytes, macDriver: driver, catalog: catalog, http: http, guestAgent: agent, hostVersion: hostVersion)
+            let jobs = self.jobs
+            rig = try await TestDaemon(root: root, factory: FakeBackendFactory(images: [builtInImage, "macos-base"], guest: answeringGuest(jobs: { jobs.value[$0] ?? 0 })), freeBytes: freeBytes, hostCPUs: 12, hostMemoryBytes: 64 * gib,
+                                       macDriver: driver, catalog: catalog, http: http, guestAgent: agent, hostVersion: hostVersion)
+            for name in macOSSandboxes {
+                _ = try await result(rig.daemon, "sandbox.create", #"{"name":"\#(name)","image":"macos-base","cpus":4,"memory_bytes":8589934592,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_\(name)")
+            }
             await rig.operations.start()
         }
 

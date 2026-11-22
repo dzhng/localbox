@@ -60,7 +60,9 @@ public protocol MacAgentGuest: MacBuildGuest {
 /// desktop, then Remote Login off, shut down, commit). The password lives only in this process's memory: a restart
 /// during `bootstrap` or `sip` resumes from `provision` on a fresh clone; `tcc` and `finish` need no password and resume
 /// where they were. The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint. From `install`
-/// on, a build runs a macOS VM, which takes one of the two this Mac may run; admission counts it (`runningVMs`).
+/// on, a build runs a macOS VM, which takes one of the two this Mac may run: before its first boot in a run (a resume
+/// after a restart included) it takes the slot through `SandboxHost`'s admission, which sleeps an idle macOS sandbox
+/// for it (kept in the checkpoint and the result as `made_room`) or fails the build `machine_full`.
 public actor MacBaseBuilder: HostOperationKind {
     public static let kind = "macos.build"
     /// The guest's disk: 50 GB, the low end of the 50–80 GB the spec delegates and the size the map's E14 measures; the
@@ -73,10 +75,13 @@ public actor MacBaseBuilder: HostOperationKind {
         case download, install, provision, bootstrap, sip, tcc, finish
     }
 
-    /// The checkpoint: the phase to run next and the release chosen at `begin`.
+    /// The checkpoint: the phase to run next, the release chosen at `begin`, and what sleeping sandboxes made room for
+    /// the build's VM.
     struct Checkpoint: Codable, Equatable {
         var phase: Phase
         let ipsw: IPSWRelease
+        var madeRoom: [String] = []
+        enum CodingKeys: String, CodingKey { case phase, ipsw, madeRoom = "made_room" }
     }
 
     private let store: ImageStore
@@ -87,20 +92,17 @@ public actor MacBaseBuilder: HostOperationKind {
     private let guestAgent: URL?
     private let hostVersion: @Sendable () -> String
     private let cache: IPSWCache
-    /// Builds whose VM may be up (every phase after `download`), by operation key.
-    private var building: Set<String> = []
+    /// The owner of this Mac's macOS VM slots, which a build's VM takes one of.
+    private let sandboxes: SandboxHost
 
     /// `guestAgent` is the host's guest agent build (`LOCALBOX_GUEST_AGENT`: the darwin binary, `agent-version.json` and
     /// `darwin/`); without it `begin` refuses. The rest default to the real Mac and Apple.
-    public init(store: ImageStore, operations: HostOperationStore, driver: any MacBuildDriver, catalog: any IPSWCatalog, http: any RangedHTTP = URLSessionRangedHTTP(), guestAgent: URL?,
+    public init(store: ImageStore, operations: HostOperationStore, sandboxes: SandboxHost, driver: any MacBuildDriver, catalog: any IPSWCatalog, http: any RangedHTTP = URLSessionRangedHTTP(), guestAgent: URL?,
                 hostVersion: (@Sendable () -> String)? = nil) {
-        self.store = store; self.operations = operations; self.driver = driver; self.catalog = catalog; self.http = http; self.guestAgent = guestAgent
+        self.store = store; self.operations = operations; self.sandboxes = sandboxes; self.driver = driver; self.catalog = catalog; self.http = http; self.guestAgent = guestAgent
         self.hostVersion = hostVersion ?? { ProcessInfo.processInfo.operatingSystemVersion.dotted }
         cache = IPSWCache(directory: store.ipswDirectory)
     }
-
-    /// The macOS VMs builds run now: each holds one of this Mac's two macOS VM slots, which admission counts.
-    func runningVMs() -> Int { building.count }
 
     /// Starts building image `imageID` under `key` (the create's mutation id), or returns the operation already under
     /// that key. A host older than macOS 27 (`image_incompatible`), a Mac without room for the IPSW and the disk
@@ -130,12 +132,16 @@ public actor MacBaseBuilder: HostOperationKind {
     }
 
     func run(_ context: HostOperationContext) async throws -> JSONValue {
+        do { let result = try await build(context); await sandboxes.releaseMacOSSlot(build: context.key); return result }
+        catch { await sandboxes.releaseMacOSSlot(build: context.key); throw error }
+    }
+
+    private func build(_ context: HostOperationContext) async throws -> JSONValue {
         var checkpoint: Checkpoint
         do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch { throw HostOperationFailure(code: "invalid_input", message: "macos.build needs a checkpoint { phase, ipsw }") }
         let imageID = context.subject
-        if let manifest = try? store.manifest(imageID) { return result(manifest, checkpoint.ipsw, chrome: nil) }
+        if let manifest = try? store.manifest(imageID) { return result(manifest, checkpoint, chrome: nil) }
         let build = try store.buildDirectory(imageID)
-        defer { building.remove(context.key) }
         var chrome: String?
         func advance(to phase: Phase) async throws {
             checkpoint.phase = phase
@@ -143,7 +149,7 @@ public actor MacBaseBuilder: HostOperationKind {
         }
         do {
             loop: while true {
-                if checkpoint.phase != .download { building.insert(context.key) }
+                if checkpoint.phase != .download { try await takeSlot(&checkpoint, context) }
                 switch checkpoint.phase {
                 case .download:
                     try await download(checkpoint, context)
@@ -186,7 +192,7 @@ public actor MacBaseBuilder: HostOperationKind {
             for file in build.privateFiles { try? FileManager.default.removeItem(at: file) }
             let manifest = try store.seal(build.root, imageID: imageID, os: .macos, hardwareModel: hardwareModel, minMacOS: Self.minMacOS(checkpoint.ipsw), agentVersion: agentVersion())
             try store.commit(build.root, as: imageID)
-            return result(manifest, checkpoint.ipsw, chrome: chrome)
+            return result(manifest, checkpoint, chrome: chrome)
         } catch is CancellationError {
             // The daemon is stopping: the build directory stays for the next start's resume.
             throw CancellationError()
@@ -196,6 +202,18 @@ public actor MacBaseBuilder: HostOperationKind {
             if let failure = error as? HostOperationFailure { throw failure }
             throw HostOperationFailure(code: "internal", message: "the macOS build stopped in \(checkpoint.phase.rawValue): \(explain(error))", nextStep: "delete the failed image and build again; the downloaded IPSW is kept")
         }
+    }
+
+    /// The build's macOS VM slot, before its first boot in this run; what slept for it is journaled with the phase it is
+    /// about to run. A Mac whose two macOS VMs can't make room fails the build `machine_full`, naming them.
+    private func takeSlot(_ checkpoint: inout Checkpoint, _ context: HostOperationContext) async throws {
+        let made: [SandboxAction]
+        do { made = try await sandboxes.takeMacOSSlot(build: context.key, image: context.subject) } catch let refused as AdmissionRefused {
+            throw HostOperationFailure(code: "machine_full", message: refused.message, nextStep: "stop or sleep a macOS sandbox on this Mac, then delete the failed image and build again; the downloaded IPSW is kept")
+        }
+        guard !made.isEmpty else { return }
+        checkpoint.madeRoom += made.compactMap { $0["detail"] }
+        try await context.report(HostOperationProgress(phase: checkpoint.phase.rawValue), checkpoint: try JSONValue(encoding: checkpoint))
     }
 
     /// The IPSW into the cache, journaling bytes held about every 2 s.
@@ -248,10 +266,12 @@ public actor MacBaseBuilder: HostOperationKind {
     }
 
     /// What the connector reports to the account (`size_bytes`, `min_macos`, `ipsw_version`) and the relay words from.
-    private func result(_ manifest: ImageManifest, _ release: IPSWRelease, chrome: String?) -> JSONValue {
+    private func result(_ manifest: ImageManifest, _ checkpoint: Checkpoint, chrome: String?) -> JSONValue {
+        let release = checkpoint.ipsw
         var result: [String: JSONValue] = ["size_bytes": .number(Double(manifest.sizeBytes)), "os": .string(manifest.os.rawValue), "ipsw_version": .string(release.version), "ipsw_build": .string(release.build), "agent_version": .string(manifest.agentVersion)]
         if let minMacOS = manifest.minMacOS { result["min_macos"] = .string(minMacOS) }
         if let chrome, !chrome.isEmpty { result["chrome_version"] = .string(chrome) }
+        if !checkpoint.madeRoom.isEmpty { result["made_room"] = .array(checkpoint.madeRoom.map(JSONValue.string)) }
         return .object(result)
     }
 

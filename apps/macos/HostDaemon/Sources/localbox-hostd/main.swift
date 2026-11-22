@@ -29,9 +29,9 @@ struct HostDaemonMain {
             let guestAgent = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: expanded($0), isDirectory: true) }
             let agentUpdater = guestAgent.map { GuestAgentUpdater(directory: $0) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
-            let macBuilder = MacBaseBuilder(store: images, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
-            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), operations: operations, store: images, macBuilds: macBuilder, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
+            let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), operations: operations, store: images, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
                                    admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater)
+            let macBuilder = MacBaseBuilder(store: images, operations: operations, sandboxes: host, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
             // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
             let daemon = await HostDaemon(sandboxes: host, macBuilder: macBuilder, transport: ImageTransferCopyTransport(), dev: isDev)
             let endpoint = LocalIPCEndpoint(socketPath: required("LOCALBOX_SOCKET"))

@@ -180,16 +180,17 @@ public actor SandboxHost {
     nonisolated let operations: HostOperationStore
     /// This Mac's images, asked only for free disk (capacity): the host does no image file I/O.
     nonisolated let store: ImageStore
-    /// The macOS image builds, whose VMs take macOS VM slots as sandboxes do.
-    private let macBuilds: MacBaseBuilder
+    /// macOS image builds holding a macOS VM slot (`takeMacOSSlot`), by operation key: with running macOS sandboxes, the
+    /// one count of this Mac's macOS VMs.
+    private var macOSBuilds: Set<String> = []
 
     private let changes: ChangeSignal
 
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
-    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, operations: HostOperationStore, store: ImageStore, macBuilds: MacBaseBuilder, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil,
+    public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, operations: HostOperationStore, store: ImageStore, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil,
                 allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
-        root = sandboxesDirectory; self.factory = factory; self.operations = operations; self.store = store; self.macBuilds = macBuilds; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater
+        root = sandboxesDirectory; self.factory = factory; self.operations = operations; self.store = store; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -611,23 +612,58 @@ public actor SandboxHost {
         return made + ((try await body(runtime)).map { [$0] } ?? [])
     }
 
-    /// Admission: a start or wake of `sandboxID` (at `memoryBytes`, else its own size) must fit in the budget.
-    /// If it does not, least-recently-used running sandboxes (and VMs asleep in memory, which keep their RAM) sleep
-    /// until it does, never one running a job or serving a request; each is reported as `made_room`. Nothing sleeps
-    /// unless the start then fits; otherwise this throws `AdmissionRefused` naming every sandbox that holds memory.
-    /// Callers hold the admission lock.
+    /// Admission for a start or wake of `sandboxID` (at `memoryBytes`, else its own size); one that already holds its
+    /// memory is admitted as it is. Callers hold the admission lock.
     func admit(start sandboxID: String, memoryBytes: UInt64? = nil, makeRoom: Bool = true) async throws -> [SandboxAction] {
         guard let runtime = runtimes[sandboxID] else { throw HostDaemonError.invalidState("no sandbox \(sandboxID) on this machine") }
         let sandbox = await runtime.snapshot()
         if memoryBytes == nil, sandbox.reservesMemory { return [] }
-        let needed = memoryBytes ?? sandbox.record.memoryBytes
-        let others = await snapshots(includingUnlisted: true).filter { $0.record.sandboxID != sandboxID }
+        let record = sandbox.record
+        return try await admit(Applicant(sandboxID: sandboxID, name: record.name, macOS: record.os == .macos, memoryBytes: memoryBytes ?? record.memoryBytes,
+                                         asMacOS: "\(record.name) is a macOS sandbox"), makeRoom: makeRoom)
+    }
+
+    /// A macOS image build's VM takes one of the two macOS VM slots through the same admission as a macOS sandbox start,
+    /// before it boots: the least recently used idle macOS sandbox sleeps for it (each reported as `made_room`), or it is
+    /// refused (`AdmissionRefused`) naming what holds the slots. The slot is held under `key` (the build's operation)
+    /// until `releaseMacOSSlot`; taking it again under the same key takes nothing. A build's VM is not counted against
+    /// the memory budget.
+    func takeMacOSSlot(build key: String, image: String) async throws -> [SandboxAction] {
+        await lockAdmission(); defer { unlockAdmission() }
+        if macOSBuilds.contains(key) { return [] }
+        let made = try await admit(Applicant(sandboxID: nil, name: "building \(image)", macOS: true, memoryBytes: nil, asMacOS: "building macOS image \(image) needs a macOS VM"), makeRoom: true)
+        macOSBuilds.insert(key)
+        return made
+    }
+
+    /// The build under `key` no longer runs a VM, so its macOS VM slot is free.
+    func releaseMacOSSlot(build key: String) { macOSBuilds.remove(key) }
+
+    /// What asks admission for room: a sandbox (by id) with the memory it reserves, or a macOS image build (no sandbox, no
+    /// memory counted). `asMacOS` opens the refusal when the macOS limit is what stops it.
+    struct Applicant {
+        let sandboxID: String?
+        let name: String
+        let macOS: Bool
+        let memoryBytes: UInt64?
+        let asMacOS: String
+    }
+
+    /// Admission: `applicant` must fit in the memory budget, and a macOS VM in the two macOS VM slots.
+    /// If it does not, least-recently-used running sandboxes (and VMs asleep in memory, which keep their RAM) sleep
+    /// until it does, never one running a job or serving a request; each is reported as `made_room`. Nothing sleeps
+    /// unless the start then fits; otherwise this throws `AdmissionRefused` naming every sandbox that holds memory (or,
+    /// for the macOS limit, every macOS VM). Callers hold the admission lock.
+    private func admit(_ applicant: Applicant, makeRoom: Bool) async throws -> [SandboxAction] {
+        let needed = applicant.memoryBytes ?? 0
+        let others = await snapshots(includingUnlisted: true).filter { $0.record.sandboxID != applicant.sandboxID }
         let holding = others.filter { $0.reservesMemory || admitted.contains($0.record.sandboxID) }
         var reserved = holding.map(\.record.memoryBytes).reduce(0, +)
-        let macOSHolding = sandbox.record.os == .macos ? holding.filter { $0.record.os == .macos } : []
-        let macOSBuilds = sandbox.record.os == .macos ? await macBuilds.runningVMs() : 0
-        var macOSRunning = macOSHolding.count + macOSBuilds
-        guard reserved + needed > budgetBytes || macOSRunning >= Self.macOSRunningLimit else { return [] }
+        func overBudget() -> Bool { applicant.memoryBytes != nil && reserved + needed > budgetBytes }
+        let macOSHolding = applicant.macOS ? holding.filter { $0.record.os == .macos } : []
+        let builds = applicant.macOS ? macOSBuilds.count : 0
+        var macOSRunning = macOSHolding.count + builds
+        guard overBudget() || macOSRunning >= Self.macOSRunningLimit else { return [] }
         let candidates = holding.filter { [.ready, .paused].contains($0.status.lifecycle) && !admitted.contains($0.record.sandboxID) }
             .sorted { ($0.record.lastActivityAt ?? .distantPast, $0.record.sandboxID) < ($1.record.lastActivityAt ?? .distantPast, $1.record.sandboxID) }
         var jobs: [String: Int?] = [:]
@@ -643,9 +679,9 @@ public actor SandboxHost {
             let doing = held.status.lifecycle == .paused ? "asleep in memory" : held.status.lifecycle == .freezing ? "frozen for a disk clone" : held.status.lifecycle != .ready || admitted.contains(held.record.sandboxID) ? "starting" : jobs.map { $0 == 1 ? "1 running job" : "\($0) running jobs" } ?? "busy, or did not say whether it runs jobs"
             return "\(held.record.name) (\(gibibytes(held.record.memoryBytes)), \(doing))"
         }
-        // macOS runs at most two macOS guests per Mac (its licence, enforced by Virtualization), and a running macOS image
-        // build is one; a third start sleeps the least recently used idle macOS sandbox, or is refused with the reason,
-        // never with Virtualization's raw error. At daemon start (no making room) nothing is chosen to sleep.
+        // macOS runs at most two macOS guests per Mac (its licence, enforced by Virtualization), sandboxes and image builds
+        // together; a third sleeps the least recently used idle macOS sandbox, or is refused with the reason, never with
+        // Virtualization's raw error. At daemon start (no making room) nothing is chosen to sleep.
         if makeRoom {
             for candidate in candidates where candidate.record.os == .macos && macOSRunning >= Self.macOSRunningLimit && (jobs[candidate.record.sandboxID] ?? nil) == 0 {
                 choose(candidate); macOSRunning -= 1
@@ -653,17 +689,17 @@ public actor SandboxHost {
         }
         if macOSRunning >= Self.macOSRunningLimit {
             let holders = macOSHolding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
-            let running = macOSBuilds == 0 ? "\(Self.macOSRunningLimit) macOS sandboxes" : "\(Self.macOSRunningLimit) macOS VMs"
-            let held = macOSHolding.map(describe) + (macOSBuilds == 0 ? [] : [macOSBuilds == 1 ? "a macOS image build (it can't sleep)" : "\(macOSBuilds) macOS image builds (they can't sleep)"])
-            throw AdmissionRefused(message: "\(sandbox.record.name) is a macOS sandbox, and this Mac already runs \(running), the most macOS allows; \(makeRoom ? "none of them can sleep" : "none is slept at daemon start"): \(held.joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: holding.map(\.record.memoryBytes).reduce(0, +), holders: holders)
+            let running = builds == 0 ? "\(Self.macOSRunningLimit) macOS sandboxes" : "\(Self.macOSRunningLimit) macOS VMs"
+            let held = macOSHolding.map(describe) + (builds == 0 ? [] : [builds == 1 ? "a macOS image build (it can't sleep)" : "\(builds) macOS image builds (they can't sleep)"])
+            throw AdmissionRefused(message: "\(applicant.asMacOS), and this Mac already runs \(running), the most macOS allows; \(makeRoom ? "none of them can sleep" : "none is slept at daemon start"): \(held.joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: holding.map(\.record.memoryBytes).reduce(0, +), holders: holders)
         }
         if makeRoom {
-            for candidate in candidates where reserved + needed > budgetBytes && !chosen.contains(candidate.record.sandboxID) && (jobs[candidate.record.sandboxID] ?? nil) == 0 { choose(candidate) }
+            for candidate in candidates where overBudget() && !chosen.contains(candidate.record.sandboxID) && (jobs[candidate.record.sandboxID] ?? nil) == 0 { choose(candidate) }
         }
-        guard reserved + needed <= budgetBytes else {
+        guard !overBudget() else {
             let holders = holding.map { AdmissionRefused.Holder(sandboxID: $0.record.sandboxID, name: $0.record.name, memoryBytes: $0.record.memoryBytes, runningJobs: jobs[$0.record.sandboxID] ?? nil) }
             let total = holding.map(\.record.memoryBytes).reduce(0, +)
-            throw AdmissionRefused(message: "\(sandbox.record.name) needs \(gibibytes(needed)), but sandboxes reserve \(gibibytes(total)) of this machine's \(gibibytes(budgetBytes)) and \(makeRoom ? "not enough of them can sleep" : "none is slept at daemon start"): \(holding.isEmpty ? "none running" : holding.map(describe).joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: total, holders: holders)
+            throw AdmissionRefused(message: "\(applicant.name) needs \(gibibytes(needed)), but sandboxes reserve \(gibibytes(total)) of this machine's \(gibibytes(budgetBytes)) and \(makeRoom ? "not enough of them can sleep" : "none is slept at daemon start"): \(holding.isEmpty ? "none running" : holding.map(describe).joined(separator: ", "))", neededBytes: needed, budgetBytes: budgetBytes, reservedBytes: total, holders: holders)
         }
         var actions: [SandboxAction] = []
         for victim in victims { actions.append(["kind": "made_room", "detail": try await victim.sleepForRoom()]) }

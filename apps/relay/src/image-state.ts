@@ -27,8 +27,8 @@ interface CopyResult { size_bytes?: number; bytes?: number; duration_ms?: number
 interface AfterCopyResult { name: string; cpus: number; memory_bytes: number; state: string; copy_operation_id?: string; copy: CopyResult | null }
 /** What a finished `image.capture` reports: the image's size, and how the source got through it. */
 interface CaptureResult { size_bytes: number; stall_ms: number | null; woke?: string; made_room?: string[] }
-/** What a finished `macos.build` reports: the release it installed, what it holds, and the oldest macOS that runs it. */
-interface BuildResult { size_bytes: number; ipsw_version: string; ipsw_build?: string; min_macos?: string; chrome_version?: string }
+/** What a finished `macos.build` reports: the release it installed, what it holds, the oldest macOS that runs it, and the sandboxes slept to free a macOS VM slot for it. */
+interface BuildResult { size_bytes: number; ipsw_version: string; ipsw_build?: string; min_macos?: string; chrome_version?: string; made_room?: string[] }
 
 /** A record's progress as the contract shows it: bytes when the kind counts them, else 0 of 0. */
 export const progressOf = (record: HostOperationRecord): ImageOperationState["progress"] =>
@@ -144,11 +144,12 @@ function captureReport(image: ImageRow, result: CaptureResult, holder: Holder | 
   ];
 }
 
-/** A built macOS base, line by line: where it came from, what is in it, where it lives, and the next command. */
+/** A built macOS base, line by line: where it came from, what is in it, anything slept to make room for it, where it lives, and the next command. */
 function buildReport(image: ImageRow, result: BuildResult, holder: Holder | undefined): string[] {
   return [
     `image ${image.name} built from the macOS ${result.ipsw_version}${result.ipsw_build ? ` (${result.ipsw_build})` : ""} IPSW (${image.os}, ${sizeText(result.size_bytes)})`,
     `SIP is disabled, Google Chrome${result.chrome_version ? ` ${result.chrome_version}` : ""} is installed, Remote Login is off, and there is no Xcode`,
+    ...(result.made_room ?? []).map((detail) => `made room for it: ${detail}`),
     `on machine ${holder?.machine_name ?? holder?.machine_id ?? "the Mac that built it"}; runs on Macs with macOS ${result.min_macos ?? image.min_macos ?? MACOS_IMAGE_MINIMUM} or later`,
     `start a sandbox from it: localbox sandbox create --image ${image.name}`,
   ];

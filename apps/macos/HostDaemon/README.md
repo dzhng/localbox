@@ -90,9 +90,12 @@ cache), install, a provisioning boot with a random password and Remote Login,
 the darwin agent and Chrome over SSH, `csrutil disable` in Recovery, then TCC
 grants, notification banners off and Remote Login off through the agent's own
 shell (the darwin agent seeds Chrome's profile with sign-in and site
-notifications off, and starts it with no window). A build's VM holds one of the two macOS VM slots, and admission
-counts it as it counts macOS sandboxes, so a third macOS VM is refused with the
-reason, never Virtualization's raw error. The password lives
+notifications off, and starts it with no window). A build's VM holds one of the two macOS VM slots, and
+`SandboxHost`'s admission is the one owner of that count in both directions:
+before its first boot (a resume included) a build takes its slot there, sleeping
+an idle macOS sandbox (`made_room`) or failing `machine_full`, and a macOS
+sandbox start counts running builds. A third macOS VM is never left to
+Virtualization's raw error. The password lives
 only in the builder's memory, so a restart before SIP is off begins again from
 a fresh clone of the installed disk. The provisioning steps (`MacProvisioning`) are the ones `localbox-vmlab`'s macOS
 labs call. Typing
