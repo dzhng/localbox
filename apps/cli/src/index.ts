@@ -38,7 +38,8 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["update check|install", "Check for or install the latest release"],
   ["agents reconcile [--reason install|rollback|daemon_start|explicit]", "Match the skill and the localbox command to this release (run by the installer and the daemon)"],
   ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
-  ["connector run", "Run the relay connector (launchd job)"],
+  ["connector run [--supervised]", "Run the relay connector (the launchd job; Localbox.app's child with --supervised)"],
+  ["app paths", "Print this Mac's Localbox paths, creating the machine directories and IPC token (run by Localbox.app)"],
   ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
 ];
@@ -348,7 +349,8 @@ async function main(): Promise<void> {
     } catch (error) { print(failure(request, error instanceof ContractError ? error : new ContractError("invalid_input", "--input-json takes JSON"))); return; }
     print(await run(request, undefined)); return;
   }
-  if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector()); }
+  if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector(process.env, { supervised: rest.includes("--supervised") })); }
+  if (group === "app" && subcommand === "paths") { const { appPaths } = await import("./app.js"); print(await appPaths() as unknown as Json); return; }
   if (group === "status") {
     const { flags } = parse(head.slice(1));
     try {

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appBundle } from "../../../packages/config/src/app-bundle.js";
 
 /**
  * This CLI's own files. A compiled CLI runs from `<cli>/dist/apps/cli/src` with its skill and the pinned skills
@@ -19,8 +20,6 @@ export interface Layout {
   app: string | null; launcher: string | null;
 }
 
-const BUNDLED = /^(.*\.app)\/Contents\/Resources\/cli\//;
-
 export function layout(): Layout {
   const here = realpathSync(dirname(fileURLToPath(import.meta.url)));
   const compiled = basename(resolve(here, "../../..")) === "dist";
@@ -28,7 +27,7 @@ export function layout(): Layout {
   const installer = join(root, "scripts/install-release.sh");
   if (!compiled) return { skill: join(root, "skills/localbox"), skillsInstaller: join(root, "node_modules/skills/bin/cli.mjs"), installer, revision: version(join(root, "package.json")), cli: null, app: null, launcher: null };
   const shipped = { skill: join(root, "skill"), skillsInstaller: join(root, "skills-installer/bin/cli.mjs"), installer };
-  const app = BUNDLED.exec(`${here}/`)?.[1] ?? null;
+  const app = appBundle(fileURLToPath(import.meta.url))?.path ?? null;
   if (app) return { ...shipped, revision: text(join(root, "version")), cli: null, app, launcher: join(app, "Contents/Resources/bin/localbox") };
   const releases = dirname(dirname(root)), manifest = join(dirname(root), "release.json");
   return {

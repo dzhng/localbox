@@ -110,6 +110,8 @@ npm run build        # full TypeScript graph
 npm test             # host test suite
 npm run build:workspaces && npm run test:workspaces   # Turbo per-workspace tasks
 swift test --package-path apps/macos/HostDaemon       # host daemon package
+swift build --package-path apps/macos/App && npm run test:app   # Localbox.app package
+npm run app:dev      # build and open the development Localbox.app (its own machine root)
 ```
 
 `node bin/localbox.js contract probe`, `status --json` and `shell exec -- …`
@@ -129,6 +131,7 @@ A probe implements the tiers its claims need:
 | u | `node:test` and `convex-test`, in process | < 30 s |
 | s | `swift test --package-path apps/macos/HostDaemon` | < 60 s |
 | l | local Convex, `dev:local` and fixture machines | < 2 min |
+| a | the development Localbox.app in a scratch root, launched with `open -g` and never focused ([`packaged-app.ts`](scripts/proof/lib/packaged-app.ts)) | < 2 min |
 | v | real Apple Virtualization on this Mac | < 6 min |
 | m | real macOS guests | < 10 min with the base cached; the first build up to 45 min |
 | x | Resend, the deployed stack and a real second Mac | manual |

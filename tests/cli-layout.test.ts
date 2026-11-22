@@ -5,10 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Layout } from "../apps/cli/src/layout.js";
 
-/** `apps/cli/src/layout.ts` placed at `dir` inside a fake tree, as that tree's CLI would load it; `via` is the path it is loaded through. */
+/**
+ * `apps/cli/src/layout.ts` placed at `dir` inside a fake tree, as that tree's CLI would load it (with the bundle
+ * detection it imports at the same relative place); `via` is the path it is loaded through.
+ */
 async function layoutAt(dir: string, via = dir): Promise<Layout> {
-  await mkdir(dir, { recursive: true });
+  const config = join(dir, "../../../packages/config/src");
+  await mkdir(dir, { recursive: true }); await mkdir(config, { recursive: true });
   await copyFile(join(process.cwd(), "apps/cli/src/layout.ts"), join(dir, "layout.ts"));
+  await copyFile(join(process.cwd(), "packages/config/src/app-bundle.ts"), join(config, "app-bundle.ts"));
   return (await import(join(via, "layout.ts")) as { layout(): Layout }).layout();
 }
 
