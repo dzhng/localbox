@@ -12,10 +12,10 @@ is [brief.md](brief.md). Read it before any slice.
 
 ## Next Agent Prompt
 
-**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI) and 08 (app shell) are
+**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell) and 09 (app control) are
 done and merged; see [spikes.md](spikes.md) and [choices.md](choices.md).
 
-**You are picking this up at slice 09** (app control), then 10. There are no
+**You are picking this up at slices 10** (release cutover) **and 12** (app facts), which are independent. There are no
 slices 03 or 05: signing a bundle with a CLI inside and the patched Sparkle
 update are already proven by Bento and Yap, so they are ported directly, and
 only what is new to Localbox is checked, in slices 10 and 15 (see "Ported
@@ -54,7 +54,7 @@ from Bento, not re-proven").
 - [x] 06 [Daemon: supervised mode, one daemon per root](slices/06-daemon-supervised.md)
 - [x] 07 [CLI: app-managed layout, launcher, home command](slices/07-cli-app-managed.md)
 - [x] 08 [App shell: lifetime and supervision](slices/08-app-shell.md)
-- [ ] 09 [App control: socket, login item, `localbox app`](slices/09-app-control.md)
+- [x] 09 [App control: socket, login item, `localbox app`](slices/09-app-control.md)
 - [ ] 10 [Release, agent install, and deleting the old path](slices/10-release-cutover.md)
 - [ ] 11 [Built-in image on first launch](slices/11-builtin-image.md)
 - [ ] 12 [App facts: the one state shape](slices/12-app-facts.md)
