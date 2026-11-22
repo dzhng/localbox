@@ -189,7 +189,7 @@ export async function defaultImage({ principal, request, deps }: Call): Promise<
  * removes the files when its connector next mirrors the catalog. Sandboxes made from the image keep their own disks.
  */
 export async function deleteImage({ principal, request, machine, deps }: Call): Promise<OpsResponse> {
-  const asked = request.input as { image: string; confirm?: string };
+  const asked = request.input as { image: string; confirm: string };
   let image: ImageRow;
   try { image = await imageRow(principal, asked.image, deps); }
   catch (error) {
@@ -197,7 +197,7 @@ export async function deleteImage({ principal, request, machine, deps }: Call): 
     if (contractError(error).code !== "image_not_found") throw error;
     return answer(success(request, alreadyDeleted("image", request.input, asked.image)));
   }
-  if (asked.confirm !== undefined && asked.confirm !== image.name) throw new ContractError("invalid_input", `confirm must be the image's name, ${image.name}`);
+  if (asked.confirm !== image.name) throw new ContractError("invalid_input", `confirm must be the image's name, ${image.name}`);
   const named = machine ? await findMachine(principal, machine, deps) : undefined;
   let holders: string[]; let defaultReset = false;
   if (named) {
@@ -208,7 +208,7 @@ export async function deleteImage({ principal, request, machine, deps }: Call): 
     holders = removed.holders; defaultReset = removed.default_reset_to !== null;
   }
   const nameOf = (machineId: string) => named?.machineId === machineId ? named.name : image.holders.find((holder) => holder.machine_id === machineId)?.machine_name ?? machineId;
-  const told = await Promise.all(holders.map(async (machineId, index) => [machineId, responseOf(await relay(principal, machineId, { ...request, request_id: `${request.request_id}-${index}`, input: { image: image.image_id } }, deps))] as const));
+  const told = await Promise.all(holders.map(async (machineId, index) => [machineId, responseOf(await relay(principal, machineId, { ...request, request_id: `${request.request_id}-${index}`, input: { image: image.image_id, confirm: image.name } }, deps))] as const));
   const removed = named ? [] : ["account catalog entry"]; const later: string[] = [];
   for (const [machineId, response] of told) {
     if (response?.ok) removed.push(`files on ${nameOf(machineId)}`);

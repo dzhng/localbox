@@ -61,6 +61,27 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
         XCTAssertNil(journaled)
     }
 
+    func testDeletingTheWaitingSandboxStopsItsCreateSoTheLandedCopyLaysNothingDown() async throws {
+        let daemon = try await Daemon(root: try scratch())
+        try await daemon.startCopy("copy-5")
+        _ = try await daemon.create("create-5", after: "copy-5")
+        let deleted = try await daemon.request("sandbox.delete", input: ["confirm": "one"], sandboxID: "sandbox_1")
+        let produced = try XCTUnwrap((deleted["result"] as? [String: Any])?["produced"] as? [String: Any], "\(deleted)")
+        XCTAssertEqual(produced["removed"] as? [String], ["the create waiting for its image"])
+        let stopped = await daemon.operations.state("create-5")
+        XCTAssertEqual(stopped?.state, .failed, "stopped before the delete answered")
+        XCTAssertEqual(stopped?.error?.code, "operation_cancelled")
+
+        daemon.copy.finish(nil)
+        let copied = try await daemon.until("copy-5") { $0.state != .running }
+        XCTAssertEqual(copied.state, .succeeded, "a copy another sandbox may wait on goes on")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let runtime = await daemon.host.runtime("sandbox_1")
+        XCTAssertNil(runtime, "the deleted sandbox is never created")
+        let again = try await daemon.request("sandbox.delete", input: ["confirm": "one"], sandboxID: "sandbox_1")
+        XCTAssertEqual((again["error"] as? [String: Any])?["code"] as? String, "sandbox_not_found", "nothing waits any more")
+    }
+
     func testARestartMidCopyResumesTheCreateWhichCreatesOnceTheCopyLands() async throws {
         let daemon = try await Daemon(root: try scratch())
         try await daemon.startCopy("copy-4")

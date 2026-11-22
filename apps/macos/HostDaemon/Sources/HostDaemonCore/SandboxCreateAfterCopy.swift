@@ -39,6 +39,18 @@ public actor SandboxCreateAfterCopy: HostOperationKind {
         return try await operations.begin(kind: kind, key: key, subject: create.image, checkpoint: checkpoint)
     }
 
+    /// Stops the create waiting to make sandbox `sandboxID`, whose sandbox was deleted while it waited, and returns the
+    /// sandbox's name once it has stopped; nil when none waits. A create that finished first keeps its sandbox, which
+    /// the delete then removes as any other.
+    static func cancel(on operations: HostOperationStore, sandboxID: String) async -> String? {
+        for record in await operations.running(kind: kind) {
+            guard let checkpoint = try? record.checkpoint.decoded(as: Checkpoint.self), checkpoint.sandboxID == sandboxID else { continue }
+            _ = await operations.cancel(record.key, because: HostOperationFailure(code: "operation_cancelled", message: "\(checkpoint.create.name) was deleted while it waited for image \(record.subject)"))
+            return checkpoint.create.name
+        }
+        return nil
+    }
+
     func run(_ context: HostOperationContext) async throws -> JSONValue {
         let checkpoint: Checkpoint
         do { checkpoint = try context.checkpoint.decoded(as: Checkpoint.self) } catch {

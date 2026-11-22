@@ -14,14 +14,15 @@ const capacity = { cpus: 8, total_bytes: 16 * GIB, reserved_bytes: 0, room_bytes
  */
 function mac() {
   const seen: RequestEnvelope[] = [];
-  const state: { journal?: Record<string, Json>; online: boolean } = { online: true };
+  const state: { journal?: Record<string, Json>; online: boolean; waiting?: boolean } = { online: true };
   const answer = async (request: RequestEnvelope): Promise<ResponseEnvelope | undefined> => {
     seen.push(request);
     const input = request.input as Record<string, Json>;
     if (request.operation === "image.copy") return hostRecord(request, { kind: HOST_OPERATION_KINDS.copy, state: "running", progress: { phase: "waiting_for_peer" } });
     if (request.operation === "image.wait") return state.journal ? success(request, state.journal) : failure(request, { code: "image_not_found", message: "no operation", retryable: false });
     if (request.operation === "sandbox.create") return success(request, { requested: input, produced: { sandbox_id: request.sandbox_id, name: input.name, state: input.after_copy ? "copying" : "running" }, actions: input.after_copy ? [] : [{ kind: "created", detail: `created ${input.name}` }] });
-    if (request.operation === "sandbox.delete") return failure(request, { code: "sandbox_not_found", message: `no sandbox ${request.sandbox_id} on this machine`, retryable: false });
+    // A sandbox waiting for its image is a journaled create here, which the delete stops; any other isn't on this Mac.
+    if (request.operation === "sandbox.delete") return state.waiting ? success(request, { requested: input, produced: { sandbox_id: request.sandbox_id, removed: ["the create waiting for its image"] }, actions: [] }) : failure(request, { code: "sandbox_not_found", message: `no sandbox ${request.sandbox_id} on this machine`, retryable: false });
     return success(request, { ran: request.operation });
   };
   return { seen, state, answer, ops: (operation: string) => seen.filter((request) => request.operation === operation) };
@@ -71,7 +72,7 @@ test("on a Mac without the image the create starts a copy, reserves the sandbox 
   assert.equal(macs.m2.ops("sandbox.create").length, 1, "the relay's dedupe answered the chained create again");
 });
 
-test("while copying, every operation on the sandbox is sandbox_not_ready with the copy's progress, answered without reaching it; sandbox status shows it", async () => {
+test("while copying, every operation on the sandbox but delete is sandbox_not_ready with the copy's progress, answered without reaching it; sandbox status shows it", async () => {
   const { op, macs, connectors, sandbox } = await setup();
   await createOnAttic(op, "rails-box", "cli-create-2");
   macs.m2.state.journal = { key: "cli-create-2", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: "image_x", state: "running", progress: { phase: "receiving", completed: 12 * MIB, total: 64 * MIB }, started_at: 2, updated_at: 3 };
@@ -81,13 +82,12 @@ test("while copying, every operation on the sandbox is sandbox_not_ready with th
   assert.deepEqual([exec.error.code, exec.error.retryable], ["sandbox_not_ready", true]);
   assert.equal(exec.error.message, "rails-box on attic is waiting for image rails-dev to copy (12 MiB of 64 MiB); follow it with: localbox image wait rails-dev");
   assert.deepEqual(exec.error.details.progress, { phase: "receiving", done_bytes: 12 * MIB, total_bytes: 64 * MIB });
-  for (const operation of ["sandbox.delete", "sandbox.rename", "sandbox.start"] as const) {
+  for (const operation of ["sandbox.rename", "sandbox.start"] as const) {
     const refused = await op(operation, { sandbox: "rails-box", input: operation === "sandbox.rename" ? { name: "other" } : {} });
     assert.equal(refused.error?.code, "sandbox_not_ready", `${operation}: ${JSON.stringify(refused)}`);
   }
   assert.deepEqual(macs.m2.seen.map((request) => request.operation).filter((name) => !["image.copy", "sandbox.create", "image.wait"].includes(name)), [], "nothing but progress reads reached attic");
   assert.ok(macs.m2.ops("image.wait").every((request) => (request.input as any).timeout_ms === 1), "progress is read without waiting");
-  assert.ok(await sandbox("rails-box"), "a refused delete leaves the sandbox");
 
   const status = await op("sandbox.status", { sandbox: "rails-box" });
   assert.equal(status.ok, true, JSON.stringify(status));
@@ -151,6 +151,41 @@ test("a failed copy leaves the sandbox failed with the reason and next step unti
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   assert.equal(await sandbox("rails-box"), undefined);
   assert.equal(macs.m2.ops("sandbox.delete").length, 1, "its Mac was told and had nothing to remove");
+});
+
+test("deleting a sandbox that waits for its image stops its create on the Mac and cancels the copy it started; a copy another sandbox waits on goes on", async () => {
+  const { op, macs, sandbox, copies, attic } = await setup();
+  await createOnAttic(op, "rails-box", "cli-create-8");
+  await createOnAttic(op, "rails-two", "cli-create-9");
+  assert.equal((await sandbox("rails-two")).copy_operation_id, "cli-create-8-copy", "the second create joined the first one's copy");
+  macs.m2.state.waiting = true;
+
+  const unconfirmed = await op("sandbox.delete", { sandbox: "rails-box", input: {} });
+  assert.equal(unconfirmed.error?.code, "invalid_input", "the delete needs --confirm");
+  const first = await op("sandbox.delete", { sandbox: "rails-box", input: { confirm: "rails-box" } });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(first.result.actions[0].detail, "deleted rails-box: removed account catalog entry, the create waiting for its image on attic", "rails-two still waits, so the copy goes on");
+  assert.equal(macs.m2.ops("sandbox.delete").length, 1, "attic was told, to stop the waiting create");
+  assert.equal((await copies())[0].state, "waiting");
+
+  const second = await op("sandbox.delete", { sandbox: "rails-two", input: { confirm: "rails-two" } });
+  assert.equal(second.result.actions[0].detail, "deleted rails-two: removed account catalog entry, the create waiting for its image on attic; stopped copying image rails-dev to attic, which nothing else waited for");
+  const [copy] = await copies();
+  assert.deepEqual([copy.state, copy.error?.code], ["failed", "operation_cancelled"], "both Macs see the copy failed and stop their sides");
+  assert.deepEqual((await attic.query(ref("images:get"), { image: "rails-dev" }) as any).holders.map((holder: any) => holder.machine_name), ["studio"], "attic no longer reads as copying");
+  await attic.mutation(ref("images:endCopy"), { operationId: "cli-create-8-copy", state: "failed", error: { code: "operation_cancelled", message: "the copy failed elsewhere: the sandbox waiting for it was deleted", nextStep: "copy it again" } });
+  assert.deepEqual((await attic.query(ref("images:get"), { image: "rails-dev" }) as any).holders.map((holder: any) => holder.machine_name), ["studio"], "and its side's failure doesn't bring the holding back");
+});
+
+test("deleting a sandbox that joined an image copy someone started with image copy leaves that copy running", async () => {
+  const { op, macs, copies } = await setup();
+  const copied = await op("image.copy", { mutation_id: "cli-copy-1", input: { image: "rails-dev", to: "attic" } });
+  assert.equal(copied.ok, true, JSON.stringify(copied));
+  await createOnAttic(op, "rails-box", "cli-create-10");
+  macs.m2.state.waiting = true;
+  const deleted = await op("sandbox.delete", { sandbox: "rails-box", input: { confirm: "rails-box" } });
+  assert.equal(deleted.ok, true, JSON.stringify(deleted));
+  assert.equal((await copies()).find((copy: any) => copy.createMutationId === "cli-copy-1")?.state, "waiting");
 });
 
 test("no flag puts the sandbox on the caller's own Mac, copying there; a second create there follows the same copy", async () => {

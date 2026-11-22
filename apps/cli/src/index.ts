@@ -236,7 +236,8 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
     input[key] = milliseconds(value, flag);
   }
   let sandbox = typeof flags.sandbox === "string" ? flags.sandbox : undefined;
-  const required = (schema.required ?? []).filter((key) => !(key in input));
+  // `--confirm NAME` is only ever a flag, so a delete's name is never read as its own confirmation.
+  const required = (schema.required ?? []).filter((key) => !(key in input) && key !== "confirm");
   // `sandbox rename OLD NEW`, `sandbox delete NAME`: a leading extra word names the sandbox.
   if (entry.sandbox_scoped && entry.id.startsWith("sandbox.") && !sandbox && positional.length > required.length) sandbox = positional.shift();
   if (entry.id === "shell.exec") {

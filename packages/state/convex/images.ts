@@ -247,7 +247,7 @@ async function setTargetHolder(ctx: any, copy: any, fields: { state: "copying" |
  * fresh key, and the target's holder row `copying` under the copy's mutation id. A start carrying a mutation id this
  * account already started a copy with returns that copy. A target that holds the image, or is building or copying it
  * under another operation, is refused; with `join` (a sandbox create that needs the image there), a copy already
- * running to it is returned instead, so the create follows that one.
+ * running to it is returned instead, so the create follows that one, and a new copy is marked as the sandbox's.
  */
 export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachineId: v.string(), toMachineId: v.string(), createMutationId: v.string(), join: v.optional(v.boolean()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
@@ -269,7 +269,7 @@ export const startCopy = mutationGeneric({ args: { image: v.string(), fromMachin
     if (running && live(running) && (running.state === "waiting" || running.state === "copying")) return args.join ? copyView(running, machines) : refuse("conflict", `${row.name} is already being copied to ${toName}; follow it with: localbox image wait ${row.name}`, { operation_id: target.operationId });
   }
   const now = Date.now();
-  const copy = { copyId: id("copy"), accountId, imageId: row.imageId, fromMachineId: args.fromMachineId, toMachineId: args.toMachineId, key: transferKey(), candidates: {}, state: "waiting" as const, createdAt: now, expiresAt: now + COPY_TTL_MS, createMutationId: args.createMutationId };
+  const copy = { copyId: id("copy"), accountId, imageId: row.imageId, fromMachineId: args.fromMachineId, toMachineId: args.toMachineId, key: transferKey(), candidates: {}, state: "waiting" as const, createdAt: now, expiresAt: now + COPY_TTL_MS, createMutationId: args.createMutationId, ...(args.join ? { forSandbox: true } : {}) };
   await ctx.db.insert("copies", copy);
   await setTargetHolder(ctx, copy, { state: "copying" });
   return copyView(copy, machines);
@@ -355,24 +355,42 @@ export const endCopy = mutationGeneric({ args: { operationId: v.string(), state:
   }
   // The first failure names the copy's cause (a sender that gave up, say); the receiver's holding carries its own.
   if (copy.state !== "failed") await ctx.db.patch(copy._id, { state: "failed", error: args.error });
-  if (ownsHolding) await setTargetHolder(ctx, copy, { state: "failed", error: args.error });
+  // A cancelled copy's holding is already gone, and stays gone.
+  if (holder?.operationId === copy.createMutationId) await setTargetHolder(ctx, copy, { state: "failed", error: args.error });
   return { operation_id: args.operationId, reported: true, state: "failed" };
 } });
 
 /**
- * A copy that never started on its two Macs (one didn't take the request): the copy fails with why, and the target's
- * holding, which nothing was written to, goes.
+ * Cancels a copy: it fails with why, which both Macs' sides see on the row and stop at, and the target's holding goes
+ * (a receiver discards what it wrote).
  */
+async function failCopy(ctx: any, copy: any, error: any) {
+  await ctx.db.patch(copy._id, { state: "failed", error });
+  const target = await holderRow(ctx, copy.imageId, copy.toMachineId);
+  if (target?.state === "copying" && target.operationId === copy.createMutationId) await ctx.db.delete(target._id);
+}
+
+/** A copy that never started on its two Macs (one didn't take the request), cancelled with why. */
 export const cancelCopy = mutationGeneric({ args: { copyId: v.string(), error: holderFailure }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const copy = await byField(ctx, "copies", "by_copy", "copyId", args.copyId);
   if (!copy || copy.accountId !== accountId) return refuse("image_not_found", `no copy ${args.copyId} on this account`);
   if (copy.state === "copied") return { copy_id: copy.copyId, cancelled: false };
-  await ctx.db.patch(copy._id, { state: "failed", error: args.error });
-  const target = await holderRow(ctx, copy.imageId, copy.toMachineId);
-  if (target?.state === "copying" && target.operationId === copy.createMutationId) await ctx.db.delete(target._id);
+  await failCopy(ctx, copy, args.error);
   return { copy_id: copy.copyId, cancelled: true };
 } });
+
+/**
+ * The last sandbox waiting on copy `operationId` was deleted (`sandboxes:remove` knows no other waits): a copy a
+ * sandbox create started is cancelled, while one `image copy` started goes on. Returns the cancelled copy's image and
+ * target, or null.
+ */
+export async function abandonSandboxCopy(ctx: any, accountId: string, operationId: string): Promise<{ image_id: string; to_machine_id: string } | null> {
+  const copy = await copyByMutation(ctx, accountId, operationId);
+  if (!copy || !live(copy) || !copy.forSandbox || (copy.state !== "waiting" && copy.state !== "copying")) return null;
+  await failCopy(ctx, copy, { code: "operation_cancelled", message: "the sandbox waiting for it was deleted", nextStep: "copy the image again, or create a sandbox from it on that Mac" });
+  return { image_id: copy.imageId, to_machine_id: copy.toMachineId };
+}
 
 /**
  * Copies past their day: each row and its key go, and a target still copying then has failed. The daily cleanup

@@ -63,13 +63,14 @@ test("image delete drops the catalog row first, tells every holder, and says the
   const id = await image("rails-dev");
   await op("image.default", { image: "rails-dev" });
   assert.equal((await op("image.delete", { image: "rails-dev", confirm: "rails-app" })).error.code, "invalid_input", "confirm must be its name");
-  assert.equal((await op("image.delete", { image: "linux" })).error.code, "invalid_input");
+  assert.equal((await op("image.delete", { image: "rails-dev" })).error.code, "invalid_input", "confirm is required");
+  assert.equal((await op("image.delete", { image: "linux", confirm: "linux" })).error.code, "invalid_input");
   const deleted = await op("image.delete", { image: "rails-dev", confirm: "rails-dev" });
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   assert.deepEqual(deleted.result.produced, { image_id: id, name: "rails-dev", removed: ["account catalog entry", "files on studio", "files on attic"], default_reset_to: "linux" });
   assert.match(deleted.result.actions[0].detail, /the default is now linux/);
   assert.match(deleted.result.actions[0].detail, /sandboxes made from rails-dev are unaffected/);
-  assert.deepEqual(told.map((request) => [request.operation, request.input]), [["image.delete", { image: id }], ["image.delete", { image: id }]]);
+  assert.deepEqual(told.map((request) => [request.operation, request.input]), [["image.delete", { image: id, confirm: "rails-dev" }], ["image.delete", { image: id, confirm: "rails-dev" }]]);
   assert.deepEqual(await t.run(async (ctx) => [await ctx.db.query("images").collect(), await ctx.db.query("imageHolders").collect()]), [[], []]);
   assert.equal((await op("image.list", {})).result.images[0].default, true);
   const replay = await op("image.delete", { image: "rails-dev", confirm: "rails-dev" });
@@ -80,15 +81,15 @@ test("an offline holder deletes later; --machine drops only that Mac's holding a
   const told: RequestEnvelope[] = [];
   const { op, image } = await setup({ m1: holder(told) });
   await image("rails-dev");
-  const deleted = await op("image.delete", { image: "rails-dev" });
+  const deleted = await op("image.delete", { image: "rails-dev", confirm: "rails-dev" });
   assert.deepEqual(deleted.result.produced.removed, ["account catalog entry", "files on studio"]);
   assert.match(deleted.result.actions[0].detail, /attic did not answer and removes its files when it reconnects/);
 
   const id = await image("node-dev"); told.length = 0;
-  const fromOne = await op("image.delete", { image: "node-dev" }, { machine: "studio" });
+  const fromOne = await op("image.delete", { image: "node-dev", confirm: "node-dev" }, { machine: "studio" });
   assert.equal(fromOne.ok, true, JSON.stringify(fromOne));
   assert.deepEqual([fromOne.result.produced.machine, fromOne.result.produced.removed, fromOne.result.produced.default_reset_to], ["studio", ["files on studio"], null]);
   assert.match(fromOne.result.actions[0].detail, /the image stays on the account, on attic/);
-  assert.deepEqual(told.map((request) => request.input), [{ image: id }]);
+  assert.deepEqual(told.map((request) => request.input), [{ image: id, confirm: "node-dev" }]);
   assert.deepEqual((await op("image.list", {})).result.images.find((row: any) => row.name === "node-dev").on, ["attic"]);
 });

@@ -117,10 +117,12 @@ export function sampleInput(operation: OperationId): Json {
   if (operation === "machine.rename") return { machine_id: "machine_fixture", name: "machine-name" };
   if (operation === "machine.remove") return { machine_id: "machine_fixture" };
   if (operation === "sandbox.rename") return { name: "sandbox-name" };
+  if (operation === "sandbox.delete") return { confirm: "sandbox-name" };
   if (operation === "image.create") return { from: FIXTURE_SANDBOX_ID };
   if (operation === "image.rename") return { image: "image-fixture", name: "image-name" };
   if (operation === "image.copy") return { image: "image-fixture", to: "machine_fixture" };
-  if (["image.default", "image.delete", "image.wait"].includes(operation)) return { image: "image-fixture" };
+  if (operation === "image.delete") return { image: "image-fixture", confirm: "image-fixture" };
+  if (["image.default", "image.wait"].includes(operation)) return { image: "image-fixture" };
   if (["shell.exec"].includes(operation)) return { command: "true" };
   if (["job.status", "job.wait", "job.cancel", "job.output"].includes(operation)) return { job_id: "job_fixture" };
   if (["fs.list", "fs.stat", "fs.read"].includes(operation)) return { path: "/tmp/fixture" };

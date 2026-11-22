@@ -62,8 +62,10 @@ localbox image wait IMAGE                        # follow a build or copy; call 
 ```
 
 A sandbox created on a Mac without its image answers at once in state `copying`;
-every other command on it returns `sandbox_not_ready` (retryable) with the copy's
-progress until `localbox image wait IMAGE` reports it created.
+until `localbox image wait IMAGE` reports it created, `sandbox status` shows the
+copy's progress and every other command but `sandbox delete` returns
+`sandbox_not_ready` (retryable) with it. Deleting it stops the wait, and the copy
+too when no other sandbox waits on it.
 
 ## Running things
 

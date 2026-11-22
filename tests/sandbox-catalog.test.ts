@@ -213,7 +213,7 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   assert.equal(b.seen.at(-1)!.operation, "sandbox.rename", "the machine's mirror is told");
   const refused = await ops(deps, { operation: "sandbox.delete", sandbox: "calm-heron", input: { confirm: "quiet-otter" } });
   assert.equal(!refused.ok && refused.error.code, "invalid_input");
-  const deleted = await ops(deps, { operation: "sandbox.delete", sandbox: "calm-heron", input: {} });
+  const deleted = await ops(deps, { operation: "sandbox.delete", sandbox: "calm-heron", input: { confirm: "calm-heron" } });
   assert.deepEqual((deleted as any).result.produced.removed, ["account catalog entry", "sandbox identity on attic"]);
   assert.deepEqual((deleted as any).result.actions.map((action: any) => action.kind), ["deleted"]);
   assert.deepEqual(sandboxes.map((row) => row.name), ["quiet-otter"]);
@@ -244,7 +244,7 @@ test("a create's mutation id finds its reservation, with the input it relayed", 
 
 test("an operation that requires a mutation id is refused without one, before anything is reserved or relayed", async () => {
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
-  for (const body of [{ operation: "sandbox.create", machine: "attic", input: { cpus: 2, memory_bytes: 2 * GIB } }, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} }, { operation: "shell.exec", sandbox: "quiet-otter", input: { command: "true" } }]) {
+  for (const body of [{ operation: "sandbox.create", machine: "attic", input: { cpus: 2, memory_bytes: 2 * GIB } }, { operation: "sandbox.delete", sandbox: "quiet-otter", input: { confirm: "quiet-otter" } }, { operation: "shell.exec", sandbox: "quiet-otter", input: { command: "true" } }]) {
     const refused = await ops(deps, { ...body, mutation_id: null });
     assert.deepEqual(!refused.ok && [refused.error.code, refused.error.message], ["invalid_input", `${body.operation} requires mutation_id`]);
   }
@@ -282,7 +282,7 @@ test("a sandbox whose machine is gone from the account is renamed and deleted in
   const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "orphan", input: { name: "stray" } });
   assert.equal(renamed.ok, true, JSON.stringify(renamed));
   assert.match((renamed as any).result.actions[0].detail, /garage is gone from the account, so only the catalog changed/);
-  const deleted = await ops(deps, { operation: "sandbox.delete", sandbox: "stray", input: {} });
+  const deleted = await ops(deps, { operation: "sandbox.delete", sandbox: "stray", input: { confirm: "stray" } });
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   assert.match((deleted as any).result.actions[0].detail, /removed account catalog entry; garage is gone from the account/);
   assert.deepEqual(sandboxes, []); assert.equal(relayed.size, 0, "nothing was queued for the gone machine");
@@ -296,8 +296,8 @@ test("deleting a sandbox that is already gone succeeds; another account's sandbo
   assert.deepEqual(await m1.mutation(ref("sandboxes:remove"), { sandboxId: box.sandbox_id }), { sandbox_id: box.sandbox_id, removed: false, already_deleted: true });
 
   const b = machine(); const { deps } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
-  assert.equal((await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} })).ok, true);
-  const again = await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: {} });
+  assert.equal((await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: { confirm: "quiet-otter" } })).ok, true);
+  const again = await ops(deps, { operation: "sandbox.delete", sandbox: "quiet-otter", input: { confirm: "quiet-otter" } });
   assert.equal(again.ok, true, JSON.stringify(again));
   assert.deepEqual((again as any).result.actions, [{ kind: "left_alone", detail: "quiet-otter is already deleted: this account has no sandbox by that name or id" }]);
   assert.equal(b.seen.length, 1, "nothing is relayed for a sandbox that is gone");

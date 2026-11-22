@@ -70,9 +70,9 @@ automatic placement. Failures leave the prior state intact.
 
 ## Destructive actions are explicit
 
-Deleting a sandbox is the one way to discard its disk; `sandbox delete` takes an
-optional `--confirm NAME` that must match. Deleting an image is the one way to
-discard an image's files; `image delete` takes the same `--confirm NAME`, and
+Deleting a sandbox is the one way to discard its disk; `sandbox delete` requires
+`--confirm NAME`, matching the sandbox's name. Deleting an image is the one way to
+discard an image's files; `image delete` requires the same `--confirm NAME`, and
 never touches a sandbox made from the image. Update, rollback and uninstall
 preserve every sandbox's disk. Project-local skills are never touched; a global
 skill copy Localbox did not write is backed up before agent setup replaces it.
@@ -225,7 +225,8 @@ machine's part as a row in Convex's `relay` module for that machine, waiting on
 a Convex subscription for up to min(deadline, 50 s); longer requests come back
 as a continuation the client resumes. `sandbox create` resolves its image there
 before placing it; a Mac without that image answers at once in state `copying`
-and creates the sandbox once the copy lands. On each Mac, `localbox connector run` (launchd job
+and creates the sandbox once the copy lands (deleting it meanwhile stops that
+create, and the copy when no other sandbox waits on it). On each Mac, `localbox connector run` (launchd job
 `com.localbox.connector`) is the only process that talks to Convex: it exchanges
 the machine credential for a machine token at `POST /api/relay/machine-token`,
 subscribes to `relay:pendingForMachine`, claims each row and forwards it to the

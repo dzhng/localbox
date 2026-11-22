@@ -230,18 +230,20 @@ export async function renameSandbox({ principal, request, target, deps }: Call &
 
 /**
  * The machine drops the sandbox first (and reports what it removed), then the catalog row goes. An offline machine
- * deletes it when its catalog mirror next arrives without it; a machine gone from the account leaves only the row.
+ * deletes it when its catalog mirror next arrives without it; a machine gone from the account leaves only the row. A
+ * sandbox still waiting for its image is a create journaled on its machine, which the machine stops; the row's removal
+ * cancels the image's copy when the sandbox started it and nothing else waits on it.
  */
 export async function deleteSandbox({ principal, request, target, deps }: Call & { target: SandboxRow }): Promise<OpsResponse> {
-  const confirm = (request.input as { confirm?: string }).confirm;
-  if (confirm !== undefined && confirm !== target.name) throw new ContractError("invalid_input", `confirm must be the sandbox's name, ${target.name}`);
+  if ((request.input as { confirm: string }).confirm !== target.name) throw new ContractError("invalid_input", `confirm must be the sandbox's name, ${target.name}`);
   const told = responseOf(await relay(principal, target.machine_id, request, deps));
   if (told && !told.ok && !["machine_offline", "sandbox_not_found", "machine_not_found"].includes(told.error.code)) return answer(told);
-  await release(principal, target, deps);
+  const released = await release(principal, target, deps) as { copy_cancelled?: boolean };
   const machine = target.machine_name ?? target.machine_id;
   const fromMachine = told?.ok ? ((told.result as unknown as ActionReport).produced as { removed?: Json[] }).removed ?? [] : [];
   const removed = ["account catalog entry", ...fromMachine.map((item) => `${item} on ${machine}`)];
-  const detail = `deleted ${target.name}: removed ${removed.join(", ")}${told?.ok ? "" : told?.error.code === "machine_not_found" ? `; ${machine} is gone from the account, so there is nothing to remove on it` : `; ${machine} did not answer and deletes it when it reconnects`}`;
+  const copy = released.copy_cancelled ? `; stopped copying image ${await imageName(principal, target.image_id, deps)} to ${machine}, which nothing else waited for` : "";
+  const detail = `deleted ${target.name}: removed ${removed.join(", ")}${told?.ok ? "" : told?.error.code === "machine_not_found" ? `; ${machine} is gone from the account, so there is nothing to remove on it` : `; ${machine} did not answer and deletes it when it reconnects`}${copy}`;
   const report: ActionReport = { requested: request.input, produced: { sandbox_id: target.sandbox_id, name: target.name, machine, removed }, actions: [{ kind: "deleted", detail }] };
   return answer(success(request, report as unknown as Json));
 }

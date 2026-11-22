@@ -260,7 +260,7 @@
   },
   {
     "id": "sandbox.delete",
-    "description": "Delete a sandbox; `confirm`, when given, must be its name.",
+    "description": "Delete a sandbox; `confirm` must be its name. One still waiting for its image stops waiting, and the image's copy stops unless something else waits on it.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -269,7 +269,9 @@
           "minLength": 1
         }
       },
-      "required": [],
+      "required": [
+        "confirm"
+      ],
       "additionalProperties": false
     },
     "retryable": false,
@@ -458,7 +460,7 @@
   },
   {
     "id": "image.delete",
-    "description": "Delete an image from every machine holding it, or only from the request's machine when it names one. Sandboxes made from it are unaffected. `confirm`, when given, must be its name. `linux` can't be deleted; deleting the default resets it to `linux`.",
+    "description": "Delete an image from every machine holding it, or only from the request's machine when it names one. Sandboxes made from it are unaffected. `confirm` must be its name. `linux` can't be deleted; deleting the default resets it to `linux`.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -472,7 +474,8 @@
         }
       },
       "required": [
-        "image"
+        "image",
+        "confirm"
       ],
       "additionalProperties": false
     },

@@ -383,7 +383,14 @@ public actor SandboxHost {
         if let host, host.isAgentSetup { return await runAgentSetup(object, operation: operation, input: input) }
         guard let sandboxID = object["sandbox_id"] as? String, !sandboxID.isEmpty else { return Reply.failure(object, code: "invalid_input", message: "\(operation) needs a sandbox_id") }
         if host == .sandboxCreate { return await createRequest(object, sandboxID: sandboxID, input: input) }
-        guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else { return Reply.failure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine") }
+        // A sandbox still waiting for its image is only a journaled create here; deleting it stops that create first.
+        let stoppedCreating = host == .sandboxDelete ? await SandboxCreateAfterCopy.cancel(on: operations, sandboxID: sandboxID) : nil
+        guard let runtime = runtimes[sandboxID], await runtime.record.inCatalog else {
+            if let name = stoppedCreating {
+                return Reply.success(object, report(input, produced: ["sandbox_id": sandboxID, "name": name, "removed": ["the create waiting for its image"]], actions: [["kind": "deleted", "detail": "stopped creating \(name), which was waiting for its image"]]))
+            }
+            return Reply.failure(object, code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine")
+        }
         let response: Data
         var woke: [SandboxAction] = []
         if let host {

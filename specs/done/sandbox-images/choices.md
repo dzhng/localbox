@@ -174,25 +174,20 @@ reboots on a Mac that isn't enrolled in device management.
   guard. Every fresh sandbox's first screenshot then needs a person to click Allow.
 - **Confidence:** medium.
 
-### N6. ⚠ `image delete` doesn't require `--confirm` (Q10 writes it as part of the command)
+### N6. Both deletes require `--confirm NAME` (decided by you after the build)
 
-**When:** 21 · **Owner:** `packages/contract` (`image.delete` input `{ image, confirm? }`), `apps/relay/src/image-ops.ts`
+**When:** 21, then after close · **Owner:** `packages/contract` (`sandbox.delete` and `image.delete` require `confirm`), `apps/relay/src/sandbox-ops.ts`, `apps/relay/src/image-ops.ts`
 
-Q10 gives the command as `image delete NAME --confirm NAME`. In the shipped
-contract `confirm` is optional, exactly as `sandbox delete`'s already was. If it
-is given, it must equal the image's name (otherwise `invalid_input`). If it is
-left out, the delete goes ahead. The skill and every next step printed by the
-product always write `--confirm NAME`, so agents following the docs confirm. A
-caller that leaves it out isn't stopped.
+Q10 gave the command as `image delete NAME --confirm NAME`. The build first
+shipped `confirm` as optional on both deletes, matching what `sandbox delete` had
+before. You chose to require it: the contract refuses a delete without `confirm`
+(`invalid_input`), and the relay refuses one whose `confirm` isn't the name. The
+CLI never reads a positional word as the confirmation, so `sandbox delete NAME`
+alone is refused rather than confirming itself. The relay passes the confirmed
+name on to each Mac holding an image it deletes.
 
-- **Gap:** E13 said to add `--confirm` checks in the relay. It didn't say whether
-  the flag is mandatory.
-- **Reach:** every destructive image command. The same pattern covers sandboxes.
-- **Verdict:** needs your call. This **contradicts the wording of Q10**. **Provisional
-  call:** keep it optional, consistent with `sandbox delete`. To reverse it, make
-  `confirm` required in the `image.delete` schema (and `sandbox.delete`'s, for
-  consistency), then regenerate snapshots.
-- **Confidence:** medium.
+- **Verdict:** decided by you. The provisional call (optional) was reversed.
+- **Confidence:** high.
 
 ### N7. Convex's operators could read a copy's key while the copy runs
 
@@ -218,28 +213,34 @@ through Convex, Vercel or any cloud storage (Q4).
   sees public halves.
 - **Confidence:** medium.
 
-### N8. ⚠ While its image copies, a sandbox answers `status` normally, and refuses every other operation, `delete` included (L3 said every operation refuses)
+### N8. While its image copies, a sandbox answers `status`, can be deleted, and refuses everything else (decided by you after the build)
 
-**When:** 39 · **Owner:** `apps/relay/src/sandbox-ops.ts`
+**When:** 39, then after close · **Owner:** `apps/relay/src/ops.ts`, `apps/relay/src/sandbox-ops.ts`, `packages/state/convex/sandboxes.ts` (`remove`), `packages/state/convex/images.ts` (`abandonSandboxCopy`), `SandboxCreateAfterCopy.cancel`, `HostOperationStore.cancel`
 
 Say you run `sandbox create --image rails --machine attic` and attic doesn't have
-`rails` yet. The create answers at once with the sandbox `copying`. L3 said that
-operations on such a sandbox return `sandbox_not_ready` with the copy's progress.
-Shipped: `sandbox status` answers successfully, with state `copying`, the progress
-and `next_step: localbox image wait rails`, because status is a read and its job
-is to show progress. Every other operation, including `delete` and `rename`,
-answers `sandbox_not_ready` (retryable) with the progress. So you can't cancel a
-slow copy by deleting the sandbox. The copy always ends, though: a side waits
-120 s for a silent peer, a stalled receiver gives up, and copy rows expire after a day.
+`rails` yet. The create answers at once with the sandbox `copying`. L3 said every
+operation on it returns `sandbox_not_ready`. `sandbox status` answers instead,
+showing the copy's progress. The build first refused `delete` too, so a slow copy
+couldn't be cancelled. You chose to let delete through:
 
-- **Gap:** L3 named the error but didn't say whether status counts, or how to
-  cancel.
-- **Reach:** there is no way to cancel a copy. A large image over a slow internet
-  path holds the sandbox for as long as the copy takes.
-- **Verdict:** needs your call. **Provisional call:** keep it. To reverse it, let
-  `delete` cancel the chained create and its copy (`images:cancelCopy` plus a
-  daemon cancel path, which doesn't exist yet).
-- **Confidence:** medium.
+- attic stops the create journaled there (`operation_cancelled`) before it
+  answers. If the create finished first, the new sandbox is deleted like any
+  other.
+- the catalog row goes. If this sandbox's create started the copy (`forSandbox`)
+  and no other sandbox still waits on it, the copy fails `operation_cancelled`
+  in the same mutation. Both Macs see that on the row and stop. The receiver
+  throws away what it wrote, and attic's holding goes and stays gone.
+- a copy started by `image copy`, or one another waiting sandbox shares, keeps
+  running.
+
+Every other operation still answers `sandbox_not_ready` (retryable) with the
+progress.
+
+- **Edge left open:** if attic is offline when you delete, and another sandbox
+  shares the copy, attic's waiting create finishes once the copy lands. That
+  leaves a sandbox the catalog doesn't list, which the daemon keeps as a stray.
+- **Verdict:** decided by you. The provisional call (refuse delete) was reversed.
+- **Confidence:** high.
 
 ### N9. ⚠ When no Mac has room, automatic placement makes room on a Mac that holds the image instead of copying it elsewhere (extends Q6)
 

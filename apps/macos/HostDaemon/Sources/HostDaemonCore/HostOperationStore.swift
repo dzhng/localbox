@@ -137,6 +137,8 @@ public actor HostOperationStore {
     private var records: [String: HostOperationRecord] = [:]
     private var resumers: [String: HostOperationWork] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
+    /// Why each work `cancel` is stopping will fail, by key.
+    private var cancellations: [String: HostOperationFailure] = [:]
     /// Callers of `wait`, by key; `phase` is set (to the phase it started in) when a phase change should wake it.
     private let waiters = WaitList<(key: String, phase: String??)>()
     /// Callers of `unreported`, woken when an operation finishes.
@@ -210,6 +212,9 @@ public actor HostOperationStore {
         records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
     }
 
+    /// Every running operation of `kind`.
+    public func running(kind: String) -> [HostOperationRecord] { records.values.filter { $0.kind == kind && $0.state == .running } }
+
     /// Whether any operation on `subject` is still running.
     public func isRunning(subject: String) -> Bool { records.values.contains { $0.subject == subject && $0.state == .running } }
 
@@ -251,6 +256,18 @@ public actor HostOperationStore {
     /// A caller's timeout, held to `0...maxWaitMs`.
     private static func waitSeconds(_ timeoutMs: Int) -> TimeInterval { TimeInterval(min(max(timeoutMs, 0), maxWaitMs)) / 1000 }
 
+    /// Stops the running work under `key` (what it was for went away) and fails its record with `failure`; returns the
+    /// record once the work has ended. Work that succeeded before it noticed keeps its result. Nil for an unknown key.
+    public func cancel(_ key: String, because failure: HostOperationFailure) async -> HostOperationRecord? {
+        guard records[key]?.state == .running else { return records[key] }
+        // A record not yet resumed (before `start()`) has no work to stop.
+        guard let task = tasks[key] else { finish(key, .failure(failure)); return records[key] }
+        cancellations[key] = failure
+        task.cancel()
+        await task.value
+        return records[key]
+    }
+
     /// Cancels running work without touching its records, as a daemon exit would: they stay `running` for the next
     /// start to resume.
     public func stop() async {
@@ -275,9 +292,12 @@ public actor HostOperationStore {
         }
     }
 
-    /// A cancelled work (the store stopping) leaves its record for the next start; anything else finishes it.
+    /// A work the store stopping cancelled leaves its record for the next start; one `cancel` stopped fails with its
+    /// reason unless it succeeded first; anything else finishes it.
     private func settle(_ key: String, _ outcome: Result<JSONValue, HostOperationFailure>?) {
         tasks[key] = nil
+        var outcome = outcome
+        if let cancelled = cancellations.removeValue(forKey: key), (try? outcome?.get()) == nil { outcome = .failure(cancelled) }
         guard let outcome, !stopped else { return }
         finish(key, outcome)
     }

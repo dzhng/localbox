@@ -2,6 +2,7 @@ import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { requireAccount, requireIdentity } from "./lib/identity.js";
 import { boundedRows, byField, id, liveMachines, refuse } from "./lib/relay.js";
+import { abandonSandboxCopy } from "./images.js";
 import { holderFailure } from "./schema.js";
 import { sandboxName, validateLabel } from "../../names/src/index.js";
 import { BUILT_IN_IMAGE } from "../../contract/src/index.js";
@@ -83,14 +84,20 @@ export const rename = mutationGeneric({ args: { sandboxId: v.string(), name: v.s
   return { sandbox_id: row.sandboxId, name, previous_name: row.name, machine_id: row.machineId };
 } });
 
-/** Deletes the sandbox's row; one already gone is already deleted, while another account's stays not found. */
+/**
+ * Deletes the sandbox's row; one already gone is already deleted, while another account's stays not found. A sandbox
+ * still waiting for its image's copy takes the copy with it when no other sandbox waits on it (`copy_cancelled`).
+ */
 export const remove = mutationGeneric({ args: { sandboxId: v.string() }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const row = await byField(ctx, "sandboxes", "by_sandbox", "sandboxId", args.sandboxId);
   if (!row) return { sandbox_id: args.sandboxId, removed: false, already_deleted: true };
   if (row.accountId !== accountId) refuse("sandbox_not_found", `no sandbox ${args.sandboxId} on this account`);
   await ctx.db.delete(row._id);
-  return { sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, removed: true };
+  const operationId = row.pending === "copying" ? row.copyOperationId : undefined;
+  const othersWait = operationId !== undefined && (await accountRows(ctx, accountId)).some((other: any) => other.pending === "copying" && other.copyOperationId === operationId);
+  const cancelled = operationId !== undefined && !othersWait ? await abandonSandboxCopy(ctx, accountId, operationId) : null;
+  return { sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, removed: true, copy_cancelled: cancelled !== null };
 } });
 
 /** The calling machine's sandboxes, for its daemon's identity mirror. */

@@ -100,8 +100,9 @@ async function handleOps(principal: Principal, input: Record<string, unknown>, d
     if (!target) return answer(success(request, alreadyDeleted("sandbox", payload, sandbox!)));
     await requireSameMachine(principal, target, call.machine, deps);
     const scoped = { ...call, request: { ...request, sandbox_id: target.sandbox_id }, target };
-    // A sandbox still waiting for its image exists only in the catalog: the relay answers for it (a failed one can go).
-    if (target.state === "copying" || (target.state === "failed" && target.error && entry.id !== "sandbox.delete")) return await notCreatedYet(principal, scoped.request, target, deps);
+    // A sandbox still waiting for its image, or failed waiting, exists only in the catalog: the relay answers for it,
+    // except a delete, which its Mac takes too (stopping the create that waits there).
+    if (entry.id !== "sandbox.delete" && (target.state === "copying" || (target.state === "failed" && target.error))) return await notCreatedYet(principal, scoped.request, target, deps);
     return await handler(scoped);
   } catch (error) {
     if (callerRefused(error)) throw error;

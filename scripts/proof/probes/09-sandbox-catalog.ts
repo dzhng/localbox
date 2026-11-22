@@ -109,7 +109,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.deepEqual(sandboxRecords(ctx.root, "a").map((row) => row.name).sort(), [...names].sort(), "A's sandbox records follow the catalog");
     }));
     checks.push(await ctx.check("delete reports exactly what was removed, from the account and from A", async () => {
-      const deleted = await as("a", ["sandbox", "delete", names[0], "--json"]);
+      const deleted = await as("a", ["sandbox", "delete", names[0], "--confirm", names[0], "--json"]);
       assert.equal(deleted.envelope.ok, true, deleted.stdout + deleted.stderr);
       assert.deepEqual(deleted.envelope.result.produced.removed, ["account catalog entry", `sandbox identity on ${machineA}`, `guest root on ${machineA}`]);
       assert.deepEqual(deleted.envelope.result.actions.map((action: any) => action.kind), ["deleted"]);
