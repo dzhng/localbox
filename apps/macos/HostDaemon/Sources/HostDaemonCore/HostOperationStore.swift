@@ -212,6 +212,13 @@ public actor HostOperationStore {
         records.values.filter { $0.subject == subject }.max { $0.startedAt < $1.startedAt }
     }
 
+    /// What is under way or went wrong on this Mac: every running operation, plus each subject's latest operation
+    /// when it failed, oldest first.
+    public func current() -> [HostOperationRecord] {
+        let latest = Dictionary(grouping: records.values, by: \.subject).compactMapValues { $0.max { $0.startedAt < $1.startedAt } }
+        return records.values.filter { $0.state == .running || ($0.state == .failed && latest[$0.subject]?.key == $0.key) }.sorted { $0.startedAt < $1.startedAt }
+    }
+
     /// Every running operation of `kind`.
     public func running(kind: String) -> [HostOperationRecord] { records.values.filter { $0.kind == kind && $0.state == .running } }
 

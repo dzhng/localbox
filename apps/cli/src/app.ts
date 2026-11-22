@@ -39,18 +39,8 @@ async function ensureToken(path: string): Promise<void> {
   await rename(staging, path);
 }
 
-/** Where `localbox app status` and `login-item` find the app; the defaults are this CLI's own. */
+/** Where `localbox app status` (`app-facts.ts`) and `login-item` find the app; the defaults are this CLI's own. */
 export interface AppDeps { layout?: Pick<Layout, "app">; paths?: Pick<MachinePaths, "appSocket">; launch?: AppLaunchOptions }
-
-/**
- * `localbox app status`: the app's `app.info` (its version and build, whether it sits in an Applications folder, its
- * children, a stop in progress) plus the login item's state. Slice 12 of specs/menu-bar-app grows it into the facts
- * the popover reads.
- */
-export async function appStatus(deps: AppDeps = {}): Promise<Json> {
-  const info = await ask(deps, "app.info") as Record<string, Json>;
-  return { ...info, login_item: await ask(deps, "login_item.get") };
-}
 
 /** `localbox app login-item [on|off]`: the login item's state, after turning it on or off when asked. */
 export async function appLoginItem(enabled: boolean | undefined, deps: AppDeps = {}): Promise<Json> {

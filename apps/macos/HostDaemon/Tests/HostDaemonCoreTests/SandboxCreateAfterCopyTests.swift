@@ -21,6 +21,11 @@ final class SandboxCreateAfterCopyTests: XCTestCase {
         XCTAssertEqual(following.subject, Self.image, "its subject is the image, so image.wait follows it")
         let waited = try await daemon.request("image.wait", input: ["image": Self.image, "timeout_ms": 0])
         XCTAssertEqual((waited["result"] as? [String: Any])?["key"] as? String, "create-1", "image.wait on this Mac follows the create, the image's most recent operation")
+        let watched = try await daemon.request("host.watch", input: ["since": 0])
+        let work = try XCTUnwrap((watched["result"] as? [String: Any])?["operations"] as? [[String: Any]])
+        XCTAssertEqual(work.map { $0["key"] as? String }, ["copy-1", "create-1"], "host.watch lists the running work")
+        XCTAssertEqual(work[1]["sandbox"] as? [String: String], ["sandbox_id": "sandbox_1", "name": "one"], "the waiting sandbox is named, for app status")
+        XCTAssertNil(work[1]["checkpoint"])
 
         daemon.copy.finish(nil)
         let done = try await daemon.until("create-1") { $0.state != .running }

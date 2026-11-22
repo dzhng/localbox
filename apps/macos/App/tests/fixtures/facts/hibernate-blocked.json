@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": {
+    "email": "dev@example.com",
+    "machine_name": "studio"
+  },
+  "daemon": "running",
+  "connector": {
+    "state": "connected"
+  },
+  "capacity": {
+    "cpus_free": 10,
+    "cpus_total": 10,
+    "memory_free_bytes": 25769803776,
+    "memory_total_bytes": 34359738368,
+    "disk_free_bytes": 210000000000
+  },
+  "hibernate": "only_while_unlocked",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": null,
+  "update": null,
+  "warnings": [
+    {
+      "code": "hibernate_blocked",
+      "message": "While this Mac is locked, idle sandboxes can't free their memory, because the lock screen asks for a password.",
+      "fix": "System Settings > Lock Screen: set \"Require password after screen saver begins or display is turned off\" to Never; then System Settings > Users & Groups: turn on automatic login"
+    }
+  ],
+  "watch_version": 248218240259444
+}

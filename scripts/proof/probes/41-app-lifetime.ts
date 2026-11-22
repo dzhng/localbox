@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { callApp } from "../../../apps/cli/src/app-socket.js";
@@ -14,7 +14,8 @@ import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 // daemon to save every sandbox and only then exits; killing the app outright still stops the daemon cleanly (its
 // stdin closes) and a relaunch has exactly one daemon. No launchd job is involved. Slice 09: `localbox app status`
 // reports both children through the app socket, including a killed daemon backing off and coming back; the login
-// item is the app's fake one, never this account's.
+// item is the app's fake one, never this account's. Slice 12: `app status` is the app's facts; a long poll with
+// `--since` answers as soon as a sandbox goes to sleep.
 //
 //   npm run proof -- 41 --tier a      the packaged dev app on the process-fixture backend
 //   npm run proof -- 41 --tier v      quit and relaunch with a real VM whose memory survives
@@ -95,15 +96,36 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       assert.match(status.last_boot?.detail ?? "", /fixture/);
     }));
 
-    checks.push(await ctx.check("localbox app status: both children running, the login item untouched (a dev build registers none)", async () => {
+    checks.push(await ctx.check("localbox app status: the daemon running, this Mac's sandbox by name, the login item untouched (a dev build registers none)", async () => {
       const status = await app.cli(["app", "status"]);
-      assert.deepEqual(status.children, { daemon: "running", connector: "running" }, JSON.stringify(status));
-      assert.equal(status.build, "dev"); assert.equal(status.in_applications, false); assert.equal(status.stopping, null);
-      assert.deepEqual(status.login_item, { state: "disabled" });
+      assert.equal(status.daemon, "running", JSON.stringify(status));
+      assert.deepEqual(status.connector, { state: "signed_out" }, "a scratch HOME is signed out");
+      assert.equal(status.build, "dev"); assert.equal(status.stopping, null); assert.equal(status.update, null);
+      assert.equal(status.open_at_login, "disabled");
+      assert.deepEqual(status.sandboxes, [{ sandbox_id: SANDBOX, name: NAME, os: "linux", state: "running" }]);
+      assert.equal(typeof status.capacity?.cpus_total, "number");
+      assert.equal(status.warnings[0]?.code, "signed_out", JSON.stringify(status.warnings));
+      mkdirSync(ctx.evidence, { recursive: true });
+      writeFileSync(join(ctx.evidence, "41-app-status.json"), `${JSON.stringify(status, null, 2)}\n`);
       assert.deepEqual(await app.cli(["app", "login-item", "on"]), { state: "enabled" }, "the fake login item, never this account's");
       assert.deepEqual(await app.cli(["app", "login-item", "off"]), { state: "disabled" });
       const unknown = await callApp(app.paths.appSocket, "update.status" as never).then(() => undefined, (error) => error);
       assert.equal(unknown?.code, "unsupported", String(unknown));
+    }));
+
+    checks.push(await ctx.check("app status --since: a sandbox put to sleep shows its sleep within one long poll (paused on the fixture)", async () => {
+      const before = await app.cli(["app", "status"]);
+      const started = Date.now();
+      const waiting = app.cli(["app", "status", "--since", String(before.watch_version)]);
+      await sleep(1_000);  // the poll is waiting on the daemon by now
+      await app.ok("sandbox.sleep", SANDBOX);
+      const after = await waiting;
+      const took = Date.now() - started;
+      // The process fixture cannot save its state, so it sleeps in memory (`paused`); a VM's sleep reads `asleep` (tier v).
+      assert.deepEqual(after.sandboxes.map((row: any) => row.state), ["paused"], JSON.stringify(after.sandboxes));
+      assert.notEqual(after.watch_version, before.watch_version);
+      assert.ok(took < 20_000, `answered ${took} ms after the poll began, not at its 25 s timeout`);
+      await app.ok("sandbox.start", SANDBOX);
     }));
 
     checks.push(await ctx.check("a killed daemon: app status shows backing_off, then running again", async () => {
@@ -117,7 +139,7 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
         return daemon === "running" && seen.includes("backing_off");
       }, "the daemon to back off and come back", 20_000);
       assert.deepEqual(seen.slice(seen.indexOf("backing_off")), ["backing_off", "running"], `daemon states seen: ${seen}`);
-      assert.deepEqual((await app.cli(["app", "status"])).children, { daemon: "running", connector: "running" });
+      assert.equal((await app.cli(["app", "status"])).daemon, "running");
       assert.equal(app.processes().daemons.length, 1);
       await runningAgain();
     }));

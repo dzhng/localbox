@@ -40,7 +40,7 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["agents op OPERATION [--input-json JSON]", "Run one agent setup operation here (HostDaemon's relay for remote callers)"],
   ["connector run [--supervised]", "Run the relay connector (the launchd job; Localbox.app's child with --supervised)"],
   ["app paths", "Print this Mac's Localbox paths, creating the machine directories and IPC token (run by Localbox.app)"],
-  ["app status", "Show Localbox.app: its version, the daemon and the connector it runs, and the login item"],
+  ["app status [--since N] [--timeout-ms M]", "Show everything Localbox.app shows: this Mac's sandboxes and images, its account and connection, and warnings; --since waits for a change"],
   ["app login-item [on|off]", "Show, or turn on or off, opening Localbox at login"],
   ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
@@ -312,7 +312,7 @@ async function main(): Promise<void> {
     if (current) throw new Error(`this Mac is already signed in to ${current.account_name}; run localbox logout first`);
     if (!code) { await apiCall("/api/auth/email/start", { email }); process.stdout.write(`Code sent to ${email}. Ask the user for the 6-digit code, then run: localbox login --email ${email} --code NNNNNN\n`); return; }
     const result = await apiCall("/api/auth/email/verify", { email, code, machine_name: machineName(hostname()) });
-    const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret };
+    const credentials: Credentials = { api_origin: result.api_origin ?? PUBLIC_API_ORIGIN, convex_url: result.convex_url, account_id: result.account_id, account_name: result.account_name, machine_id: result.machine_id, machine_name: result.machine_name, secret: result.secret, email };
     await writeCredentials(machinePaths().credentials, credentials);
     // Localbox.app's connector finds the new credential by itself (specs/menu-bar-app, A3); only the old install's
     // launchd job needs restarting (deleted in slice 10).
@@ -356,12 +356,13 @@ async function main(): Promise<void> {
   if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector(process.env, { supervised: rest.includes("--supervised") })); }
   if (group === "app" && subcommand === "paths") { const { appPaths } = await import("./app.js"); print(await appPaths() as unknown as Json); return; }
   if (group === "app" && (subcommand === "status" || subcommand === "login-item")) {
-    const { appStatus, appLoginItem } = await import("./app.js");
+    const { appLoginItem } = await import("./app.js");
     const request = requestFromInvocation({ operation: `app.${subcommand.replace("-", "_")}`, input: {} });
     try {
       const [choice] = rest;
       if (subcommand === "login-item" && choice !== undefined && choice !== "on" && choice !== "off") throw new ContractError("invalid_input", `localbox app login-item takes on or off, not ${choice}`);
-      print(subcommand === "status" ? await appStatus() : await appLoginItem(choice === undefined ? undefined : choice === "on"));
+      if (subcommand === "status") { const { appFactsCommand } = await import("./app-facts.js"); print(await appFactsCommand(rest) as unknown as Json); return; }
+      print(await appLoginItem(choice === undefined ? undefined : choice === "on"));
     } catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(request, error)); }
     return;
   }

@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 export interface Credentials {
   api_origin: string; convex_url: string; account_id: string; account_name: string;
   machine_id: string; machine_name: string; secret: string;
+  /** The address `localbox login` was given; the account itself knows only its generated name. */
+  email?: string;
 }
 export async function readCredentials(path: string): Promise<Credentials | undefined> {
   try {

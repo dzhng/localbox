@@ -89,6 +89,8 @@ final class HostDaemonCoreTests: XCTestCase {
         do { _ = try await host.request(envelope("shell.exec", #"{"command":"true"}"#, mutation: "e2")); XCTFail("a stopped sandbox refuses guest work") } catch {}
         let watched = try await result(host, "host.watch", #"{"since":0}"#)
         XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.map { $0["state"] as? String }, ["stopped", "running"])
+        XCTAssertEqual((watched["sandboxes"] as? [[String: Any]])?.map { "\($0["name"] ?? "") \($0["os"] ?? "") \($0["lifecycle"] ?? "")" }, ["quiet-otter linux stopped", "brave-fox linux ready"], "app status reads names and lifecycles from here")
+        XCTAssertEqual((watched["operations"] as? [Any])?.count, 0, "no image work")
         XCTAssertEqual((watched["capacity"] as? [String: Any])?["reserved_bytes"] as? Int, 2 * 1024 * 1024 * 1024, "only running sandboxes reserve memory")
 
         let renamed = try await result(host, "sandbox.rename", #"{"name":"calm-heron"}"#, sandboxID: "sandbox_1")

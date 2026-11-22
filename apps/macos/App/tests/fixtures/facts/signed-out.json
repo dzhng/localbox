@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": null,
+  "daemon": "running",
+  "connector": {
+    "state": "signed_out"
+  },
+  "capacity": {
+    "cpus_free": 10,
+    "cpus_total": 10,
+    "memory_free_bytes": 25769803776,
+    "memory_total_bytes": 34359738368,
+    "disk_free_bytes": 210000000000
+  },
+  "hibernate": "available",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": null,
+  "update": null,
+  "warnings": [
+    {
+      "code": "signed_out",
+      "message": "This Mac isn't signed in, so other computers and cloud agents can't reach its sandboxes.",
+      "fix": "Sign in from Settings, or run localbox login --email you@example.com."
+    }
+  ],
+  "watch_version": 65777207592962
+}

@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "build": "release",
+  "account": {
+    "email": "dev@example.com",
+    "machine_name": "studio"
+  },
+  "daemon": "running",
+  "connector": {
+    "state": "down",
+    "detail": "it stopped and Localbox is restarting it"
+  },
+  "capacity": {
+    "cpus_free": 10,
+    "cpus_total": 10,
+    "memory_free_bytes": 25769803776,
+    "memory_total_bytes": 34359738368,
+    "disk_free_bytes": 210000000000
+  },
+  "hibernate": "available",
+  "open_at_login": "enabled",
+  "agent_setup": {
+    "enabled": true,
+    "command": "installed",
+    "skill": "installed"
+  },
+  "sandboxes": [],
+  "images": [],
+  "builtin_image": "ready",
+  "stopping": null,
+  "update": null,
+  "warnings": [
+    {
+      "code": "connector_down",
+      "message": "This Mac can't reach your Localbox account, so other computers can't reach its sandboxes.",
+      "fix": "Localbox keeps retrying; if this lasts, quit Localbox and open it again."
+    }
+  ],
+  "watch_version": 155528405246303
+}

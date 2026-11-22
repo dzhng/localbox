@@ -5,7 +5,7 @@ import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { ContractError } from "../packages/contract/src/index.js";
 import { askApp, NEEDS_APP } from "../apps/cli/src/app-socket.js";
-import { appLoginItem, appStatus } from "../apps/cli/src/app.js";
+import { appLoginItem } from "../apps/cli/src/app.js";
 
 const APP = "/Users/someone/Applications/Localbox.app";
 // Socket paths are limited to 104 bytes, so not under the long per-user tmpdir.
@@ -38,15 +38,13 @@ const refusal = async (promise: Promise<unknown>) => {
 };
 const launch = { env: {}, intervalMs: 20, retryDelayMs: 10, timeoutMs: 300, launch: async () => {} };
 
-test("app status is the app's app.info plus the login item; login-item on and off change it", async () => {
+test("login-item reads the app's login item; on and off change it", async () => {
   const appSocket = socketPath(), seen: Array<{ operation: string; params: unknown }> = [];
   const server = await fakeApp(appSocket, seen);
   try {
     const deps = { layout: { app: APP }, paths: { appSocket }, launch };
-    assert.deepEqual(await appStatus(deps), {
-      version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null,
-      login_item: { state: "disabled" },
-    });
+    assert.deepEqual(await askApp(deps.layout, deps.paths, "app.info", {}, launch), { version: "0.1.0", build: "dev", in_applications: false, children: { daemon: "running", connector: "backing_off" }, stopping: null });
+    assert.deepEqual(await appLoginItem(undefined, deps), { state: "disabled" });
     assert.deepEqual(await appLoginItem(true, deps), { state: "requires_approval" });
     assert.deepEqual(await appLoginItem(undefined, deps), { state: "requires_approval" });
     assert.deepEqual(await appLoginItem(false, deps), { state: "disabled" });
@@ -65,19 +63,19 @@ test("an operation the running app does not know comes back as its unsupported r
 
 test("an app that never answers its socket after the launch is a retryable refusal naming the wait", async () => {
   let launched = 0;
-  const result = await refusal(appStatus({ layout: { app: APP }, paths: { appSocket: socketPath() }, launch: { ...launch, timeoutMs: 1_000, launch: async () => { launched++; } } }));
+  const result = await refusal(appLoginItem(undefined, { layout: { app: APP }, paths: { appSocket: socketPath() }, launch: { ...launch, timeoutMs: 1_000, launch: async () => { launched++; } } }));
   assert.equal(launched, 1, "ensureApp launched the app once");
   assert.deepEqual(result, { code: "guest_unreachable", message: "Localbox did not start within 1 s; open Localbox from Applications", retryable: true });
 });
 
 test("on a relocated root (no launch), a missing app socket is a retryable refusal, not a hang", async () => {
-  const result = await refusal(appStatus({ layout: { app: APP }, paths: { appSocket: socketPath() }, launch: { ...launch, env: { LOCALBOX_MACHINE_ROOT: "/tmp/somewhere" } } }));
+  const result = await refusal(appLoginItem(undefined, { layout: { app: APP }, paths: { appSocket: socketPath() }, launch: { ...launch, env: { LOCALBOX_MACHINE_ROOT: "/tmp/somewhere" } } }));
   assert.equal(result.code, "guest_unreachable"); assert.equal(result.retryable, true);
   assert.match(result.message, /^Localbox is not running \(ENOENT\)/);
 });
 
 test("a CLI outside Localbox.app refuses with unsupported before trying anything", async () => {
   const launchOptions = { ...launch, launch: async () => { throw new Error("must not launch"); } };
-  for (const call of [appStatus({ layout: { app: null }, paths: { appSocket: socketPath() }, launch: launchOptions }), appLoginItem(true, { layout: { app: null }, paths: { appSocket: socketPath() }, launch: launchOptions })])
+  for (const call of [appLoginItem(undefined, { layout: { app: null }, paths: { appSocket: socketPath() }, launch: launchOptions }), appLoginItem(true, { layout: { app: null }, paths: { appSocket: socketPath() }, launch: launchOptions })])
     assert.deepEqual(await refusal(call), { code: "unsupported", message: NEEDS_APP, retryable: false });
 });
