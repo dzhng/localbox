@@ -1,0 +1,98 @@
+[
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "enabled",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "disabled",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "checking",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "up-to-date",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "waiting",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "light",
+    "failure" : null,
+    "height" : 780,
+    "state" : "failed",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "enabled",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "disabled",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "checking",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "up-to-date",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "waiting",
+    "width" : 560
+  },
+  {
+    "account" : "signedIn(email: Optional(\"dev@example.com\"), machineName: \"studio\")",
+    "appearance" : "dark",
+    "failure" : null,
+    "height" : 780,
+    "state" : "failed",
+    "width" : 560
+  }
+]

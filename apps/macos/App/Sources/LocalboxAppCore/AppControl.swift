@@ -1,9 +1,10 @@
 import Foundation
 
-/// The operations the app socket answers (specs/menu-bar-app, slice 09): `app.info`, `login_item.get` and
-/// `login_item.set`. `update.*` is slice 15's. A development build launched with test hooks also answers `popover.*`
-/// and `settings.*` (probes open the popover and Settings and use their controls through them). Anything else is `unsupported`, so a CLI newer than
-/// the running app says so instead of guessing.
+/// The operations the app socket answers (specs/menu-bar-app, slices 09 and 15): `app.info`, `login_item.get`,
+/// `login_item.set`, and `update.check|install|status|set_automatic` (`UpdateCoordinator`'s, in a build with Sparkle;
+/// a build without it refuses them). A development build launched with test hooks also answers `popover.*` and
+/// `settings.*` (probes open the popover and Settings and use their controls through them). Anything else is
+/// `unsupported`, so a CLI newer than the running app says so instead of guessing.
 public final class AppControl: Sendable {
     /// What `app.info` reports about this copy, fixed at launch.
     public struct Identity: Sendable {
@@ -17,14 +18,26 @@ public final class AppControl: Sendable {
     private let loginItem: LoginItem
     public typealias Hook = @Sendable (_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure>
     private let testHooks: Hook?
+    /// `update.*`; nil in a build that cannot update itself.
+    private let updates: Hook?
+    /// `app.info`'s `update`: the coordinator's snapshot, nil without one.
+    private let update: @Sendable () -> [String: Any]?
 
     public init(identity: Identity, children: @escaping @Sendable () -> (daemon: ChildState, connector: ChildState),
-                lifetime: @escaping @Sendable () -> Lifetime.State, loginItem: LoginItem, testHooks: Hook? = nil) {
+                lifetime: @escaping @Sendable () -> Lifetime.State, loginItem: LoginItem, testHooks: Hook? = nil,
+                updates: Hook? = nil, update: @escaping @Sendable () -> [String: Any]? = { nil }) {
         self.identity = identity; self.children = children; self.lifetime = lifetime; self.loginItem = loginItem; self.testHooks = testHooks
+        self.updates = updates; self.update = update
     }
 
     public func handle(_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure> {
         if operation.hasPrefix("popover.") || operation.hasPrefix("settings."), let testHooks { return testHooks(operation, params) }
+        if operation.hasPrefix("update.") {
+            guard let updates else {
+                return .failure(AppSocketFailure(code: "unsupported", message: "this Localbox (\(identity.version), \(identity.isRelease ? "release" : "dev")) does not update itself; install a new release to update it"))
+            }
+            return updates(operation, params)
+        }
         switch operation {
         case "app.info": return .success(info())
         case "login_item.get": return .success(["state": loginItem.state.rawValue])
@@ -44,6 +57,7 @@ public final class AppControl: Sendable {
         return [
             "version": identity.version, "build": identity.isRelease ? "release" : "dev", "in_applications": identity.inApplications,
             "children": ["daemon": daemon.rawValue, "connector": connector.rawValue], "stopping": stopping,
+            "update": update() ?? NSNull(),
         ]
     }
 }

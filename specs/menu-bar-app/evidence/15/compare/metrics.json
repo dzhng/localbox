@@ -1,0 +1,789 @@
+{
+  "kind": "screenshot-parity-diff",
+  "generatedAt": "2026-11-22T19:02:16.639Z",
+  "note": "Lower parityDistance means the candidate is closer to the reference for this fixed pair. This is a distance metric, not an acceptance gate.",
+  "pairCount": 12,
+  "worstPair": "dark-failed",
+  "results": [
+    {
+      "id": "dark-failed",
+      "current": "reference/dark-failed.png",
+      "candidate": "candidate/dark-failed.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.14082,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.47313,
+          "edgeDensity": 0.12001,
+          "dominantColorShare": 0.66637,
+          "transparentShare": 0,
+          "luminanceMean": 42.5369,
+          "luminanceP5": 30,
+          "luminanceP95": 94,
+          "luminanceContrast": 64
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.39204,
+          "edgeDensity": 0.11703,
+          "dominantColorShare": 0.71046,
+          "transparentShare": 0,
+          "luminanceMean": 42.67664,
+          "luminanceP5": 30,
+          "luminanceP95": 87,
+          "luminanceContrast": 57
+        }
+      },
+      "grayscale": {
+        "mae": 13.41473,
+        "rmse": 40.81943,
+        "diffRatio16": 0.13867,
+        "diffRatio32": 0.10366,
+        "diffRatio64": 0.08535,
+        "pixelmatchRatio": 0.11795
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.05407,
+        "terrainLikeRatioCandidate": 0.05897,
+        "avgLuminanceCurrent": 42.39437,
+        "avgLuminanceCandidate": 43.17364,
+        "avgLuminanceDelta": 0.77926,
+        "edgeEnergyCurrent": 0.10062,
+        "edgeEnergyCandidate": 0.10953,
+        "edgeEnergyRatio": 1.08857,
+        "edgeDiffRatio32": 0.22675
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-failed-side-by-side.png",
+        "currentGray": "cmp15/dark-failed-current-gray.png",
+        "candidateGray": "cmp15/dark-failed-candidate-gray.png",
+        "absDiff": "cmp15/dark-failed-absdiff.png",
+        "pixelmatch": "cmp15/dark-failed-pixelmatch.png",
+        "currentEdges": "cmp15/dark-failed-current-edges.png",
+        "candidateEdges": "cmp15/dark-failed-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-failed-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-failed",
+      "current": "reference/light-failed.png",
+      "candidate": "candidate/light-failed.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.13106,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.71503,
+          "edgeDensity": 0.10984,
+          "dominantColorShare": 0.90767,
+          "transparentShare": 0,
+          "luminanceMean": 243.25748,
+          "luminanceP5": 214,
+          "luminanceP95": 255,
+          "luminanceContrast": 41
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.7333,
+          "edgeDensity": 0.10707,
+          "dominantColorShare": 0.90098,
+          "transparentShare": 0,
+          "luminanceMean": 243.30274,
+          "luminanceP5": 223,
+          "luminanceP95": 255,
+          "luminanceContrast": 32
+        }
+      },
+      "grayscale": {
+        "mae": 10.69681,
+        "rmse": 35.21985,
+        "diffRatio16": 0.11746,
+        "diffRatio32": 0.08971,
+        "diffRatio64": 0.06261,
+        "pixelmatchRatio": 0.09932
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.99246,
+        "terrainLikeRatioCandidate": 0.99231,
+        "avgLuminanceCurrent": 243.44979,
+        "avgLuminanceCandidate": 242.70732,
+        "avgLuminanceDelta": -0.74247,
+        "edgeEnergyCurrent": 0.09687,
+        "edgeEnergyCandidate": 0.10539,
+        "edgeEnergyRatio": 1.08794,
+        "edgeDiffRatio32": 0.22639
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-failed-side-by-side.png",
+        "currentGray": "cmp15/light-failed-current-gray.png",
+        "candidateGray": "cmp15/light-failed-candidate-gray.png",
+        "absDiff": "cmp15/light-failed-absdiff.png",
+        "pixelmatch": "cmp15/light-failed-pixelmatch.png",
+        "currentEdges": "cmp15/light-failed-current-edges.png",
+        "candidateEdges": "cmp15/light-failed-candidate-edges.png",
+        "edgeDiff": "cmp15/light-failed-edge-diff.png"
+      }
+    },
+    {
+      "id": "dark-enabled",
+      "current": "reference/dark-enabled.png",
+      "candidate": "candidate/dark-enabled.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.07712,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.45799,
+          "edgeDensity": 0.08926,
+          "dominantColorShare": 0.59301,
+          "transparentShare": 0,
+          "luminanceMean": 40.37146,
+          "luminanceP5": 30,
+          "luminanceP95": 58,
+          "luminanceContrast": 28
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.52255,
+          "edgeDensity": 0.10841,
+          "dominantColorShare": 0.58509,
+          "transparentShare": 0,
+          "luminanceMean": 41.2629,
+          "luminanceP5": 30,
+          "luminanceP95": 69,
+          "luminanceContrast": 39
+        }
+      },
+      "grayscale": {
+        "mae": 2.92381,
+        "rmse": 16.2648,
+        "diffRatio16": 0.0374,
+        "diffRatio32": 0.0307,
+        "diffRatio64": 0.02081,
+        "pixelmatchRatio": 0.03512
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.0438,
+        "terrainLikeRatioCandidate": 0.05337,
+        "avgLuminanceCurrent": 40.70738,
+        "avgLuminanceCandidate": 41.65764,
+        "avgLuminanceDelta": 0.95027,
+        "edgeEnergyCurrent": 0.08106,
+        "edgeEnergyCandidate": 0.09973,
+        "edgeEnergyRatio": 1.23031,
+        "edgeDiffRatio32": 0.05098
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-enabled-side-by-side.png",
+        "currentGray": "cmp15/dark-enabled-current-gray.png",
+        "candidateGray": "cmp15/dark-enabled-candidate-gray.png",
+        "absDiff": "cmp15/dark-enabled-absdiff.png",
+        "pixelmatch": "cmp15/dark-enabled-pixelmatch.png",
+        "currentEdges": "cmp15/dark-enabled-current-edges.png",
+        "candidateEdges": "cmp15/dark-enabled-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-enabled-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-enabled",
+      "current": "reference/light-enabled.png",
+      "candidate": "candidate/light-enabled.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.07482,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.62883,
+          "edgeDensity": 0.08118,
+          "dominantColorShare": 0.91544,
+          "transparentShare": 0,
+          "luminanceMean": 245.47761,
+          "luminanceP5": 228,
+          "luminanceP95": 255,
+          "luminanceContrast": 27
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.69349,
+          "edgeDensity": 0.09859,
+          "dominantColorShare": 0.90655,
+          "transparentShare": 0,
+          "luminanceMean": 244.74531,
+          "luminanceP5": 228,
+          "luminanceP95": 255,
+          "luminanceContrast": 27
+        }
+      },
+      "grayscale": {
+        "mae": 2.65875,
+        "rmse": 15.34858,
+        "diffRatio16": 0.03436,
+        "diffRatio32": 0.02831,
+        "diffRatio64": 0.01819,
+        "pixelmatchRatio": 0.03226
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.99246,
+        "terrainLikeRatioCandidate": 0.99228,
+        "avgLuminanceCurrent": 245.06747,
+        "avgLuminanceCandidate": 244.30063,
+        "avgLuminanceDelta": -0.76685,
+        "edgeEnergyCurrent": 0.07835,
+        "edgeEnergyCandidate": 0.09574,
+        "edgeEnergyRatio": 1.22195,
+        "edgeDiffRatio32": 0.0539
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-enabled-side-by-side.png",
+        "currentGray": "cmp15/light-enabled-current-gray.png",
+        "candidateGray": "cmp15/light-enabled-candidate-gray.png",
+        "absDiff": "cmp15/light-enabled-absdiff.png",
+        "pixelmatch": "cmp15/light-enabled-pixelmatch.png",
+        "currentEdges": "cmp15/light-enabled-current-edges.png",
+        "candidateEdges": "cmp15/light-enabled-candidate-edges.png",
+        "edgeDiff": "cmp15/light-enabled-edge-diff.png"
+      }
+    },
+    {
+      "id": "dark-disabled",
+      "current": "reference/dark-disabled.png",
+      "candidate": "candidate/dark-disabled.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.07094,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.46416,
+          "edgeDensity": 0.091,
+          "dominantColorShare": 0.5935,
+          "transparentShare": 0,
+          "luminanceMean": 40.5108,
+          "luminanceP5": 30,
+          "luminanceP95": 58,
+          "luminanceContrast": 28
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.52503,
+          "edgeDensity": 0.1096,
+          "dominantColorShare": 0.58602,
+          "transparentShare": 0,
+          "luminanceMean": 41.34624,
+          "luminanceP5": 30,
+          "luminanceP95": 72,
+          "luminanceContrast": 42
+        }
+      },
+      "grayscale": {
+        "mae": 2.50179,
+        "rmse": 15.15475,
+        "diffRatio16": 0.03146,
+        "diffRatio32": 0.02585,
+        "diffRatio64": 0.01778,
+        "pixelmatchRatio": 0.02952
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.0449,
+        "terrainLikeRatioCandidate": 0.05426,
+        "avgLuminanceCurrent": 40.80205,
+        "avgLuminanceCandidate": 41.73643,
+        "avgLuminanceDelta": 0.93438,
+        "edgeEnergyCurrent": 0.08335,
+        "edgeEnergyCandidate": 0.10184,
+        "edgeEnergyRatio": 1.22192,
+        "edgeDiffRatio32": 0.04457
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-disabled-side-by-side.png",
+        "currentGray": "cmp15/dark-disabled-current-gray.png",
+        "candidateGray": "cmp15/dark-disabled-candidate-gray.png",
+        "absDiff": "cmp15/dark-disabled-absdiff.png",
+        "pixelmatch": "cmp15/dark-disabled-pixelmatch.png",
+        "currentEdges": "cmp15/dark-disabled-current-edges.png",
+        "candidateEdges": "cmp15/dark-disabled-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-disabled-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-disabled",
+      "current": "reference/light-disabled.png",
+      "candidate": "candidate/light-disabled.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.06874,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.64009,
+          "edgeDensity": 0.08302,
+          "dominantColorShare": 0.91413,
+          "transparentShare": 0,
+          "luminanceMean": 245.35029,
+          "luminanceP5": 228,
+          "luminanceP95": 255,
+          "luminanceContrast": 27
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.69976,
+          "edgeDensity": 0.10002,
+          "dominantColorShare": 0.90582,
+          "transparentShare": 0,
+          "luminanceMean": 244.67165,
+          "luminanceP5": 228,
+          "luminanceP95": 255,
+          "luminanceContrast": 27
+        }
+      },
+      "grayscale": {
+        "mae": 2.26537,
+        "rmse": 14.27375,
+        "diffRatio16": 0.02866,
+        "diffRatio32": 0.02375,
+        "diffRatio64": 0.01543,
+        "pixelmatchRatio": 0.02708
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.99246,
+        "terrainLikeRatioCandidate": 0.99228,
+        "avgLuminanceCurrent": 244.99017,
+        "avgLuminanceCandidate": 244.23633,
+        "avgLuminanceDelta": -0.75385,
+        "edgeEnergyCurrent": 0.08044,
+        "edgeEnergyCandidate": 0.09765,
+        "edgeEnergyRatio": 1.21394,
+        "edgeDiffRatio32": 0.0468
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-disabled-side-by-side.png",
+        "currentGray": "cmp15/light-disabled-current-gray.png",
+        "candidateGray": "cmp15/light-disabled-candidate-gray.png",
+        "absDiff": "cmp15/light-disabled-absdiff.png",
+        "pixelmatch": "cmp15/light-disabled-pixelmatch.png",
+        "currentEdges": "cmp15/light-disabled-current-edges.png",
+        "candidateEdges": "cmp15/light-disabled-candidate-edges.png",
+        "edgeDiff": "cmp15/light-disabled-edge-diff.png"
+      }
+    },
+    {
+      "id": "dark-waiting",
+      "current": "reference/dark-waiting.png",
+      "candidate": "candidate/dark-waiting.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.05242,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.37535,
+          "edgeDensity": 0.10796,
+          "dominantColorShare": 0.68348,
+          "transparentShare": 0,
+          "luminanceMean": 41.84868,
+          "luminanceP5": 30,
+          "luminanceP95": 79,
+          "luminanceContrast": 49
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.47507,
+          "edgeDensity": 0.11981,
+          "dominantColorShare": 0.66686,
+          "transparentShare": 0,
+          "luminanceMean": 42.71901,
+          "luminanceP5": 30,
+          "luminanceP95": 99,
+          "luminanceContrast": 69
+        }
+      },
+      "grayscale": {
+        "mae": 3.43511,
+        "rmse": 17.40157,
+        "diffRatio16": 0.04375,
+        "diffRatio32": 0.03537,
+        "diffRatio64": 0.0241,
+        "pixelmatchRatio": 0.04054
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.05073,
+        "terrainLikeRatioCandidate": 0.05415,
+        "avgLuminanceCurrent": 41.74652,
+        "avgLuminanceCandidate": 42.42405,
+        "avgLuminanceDelta": 0.67754,
+        "edgeEnergyCurrent": 0.09314,
+        "edgeEnergyCandidate": 0.10046,
+        "edgeEnergyRatio": 1.07854,
+        "edgeDiffRatio32": 0.05417
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-waiting-side-by-side.png",
+        "currentGray": "cmp15/dark-waiting-current-gray.png",
+        "candidateGray": "cmp15/dark-waiting-candidate-gray.png",
+        "absDiff": "cmp15/dark-waiting-absdiff.png",
+        "pixelmatch": "cmp15/dark-waiting-pixelmatch.png",
+        "currentEdges": "cmp15/dark-waiting-current-edges.png",
+        "candidateEdges": "cmp15/dark-waiting-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-waiting-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-waiting",
+      "current": "reference/light-waiting.png",
+      "candidate": "candidate/light-waiting.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.0514,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.6942,
+          "edgeDensity": 0.09998,
+          "dominantColorShare": 0.91012,
+          "transparentShare": 0,
+          "luminanceMean": 243.86129,
+          "luminanceP5": 223,
+          "luminanceP95": 255,
+          "luminanceContrast": 32
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.7273,
+          "edgeDensity": 0.11178,
+          "dominantColorShare": 0.90621,
+          "transparentShare": 0,
+          "luminanceMean": 243.11667,
+          "luminanceP5": 213,
+          "luminanceP95": 255,
+          "luminanceContrast": 42
+        }
+      },
+      "grayscale": {
+        "mae": 3.18423,
+        "rmse": 16.70604,
+        "diffRatio16": 0.04026,
+        "diffRatio32": 0.03351,
+        "diffRatio64": 0.02144,
+        "pixelmatchRatio": 0.03798
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.9935,
+        "terrainLikeRatioCandidate": 0.99228,
+        "avgLuminanceCurrent": 244.03747,
+        "avgLuminanceCandidate": 243.42538,
+        "avgLuminanceDelta": -0.61209,
+        "edgeEnergyCurrent": 0.08991,
+        "edgeEnergyCandidate": 0.09675,
+        "edgeEnergyRatio": 1.07601,
+        "edgeDiffRatio32": 0.05731
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-waiting-side-by-side.png",
+        "currentGray": "cmp15/light-waiting-current-gray.png",
+        "candidateGray": "cmp15/light-waiting-candidate-gray.png",
+        "absDiff": "cmp15/light-waiting-absdiff.png",
+        "pixelmatch": "cmp15/light-waiting-pixelmatch.png",
+        "currentEdges": "cmp15/light-waiting-current-edges.png",
+        "candidateEdges": "cmp15/light-waiting-candidate-edges.png",
+        "edgeDiff": "cmp15/light-waiting-edge-diff.png"
+      }
+    },
+    {
+      "id": "dark-checking",
+      "current": "reference/dark-checking.png",
+      "candidate": "candidate/dark-checking.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.02313,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.34542,
+          "edgeDensity": 0.10002,
+          "dominantColorShare": 0.68954,
+          "transparentShare": 0,
+          "luminanceMean": 41.54198,
+          "luminanceP5": 30,
+          "luminanceP95": 69,
+          "luminanceContrast": 39
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.35119,
+          "edgeDensity": 0.10141,
+          "dominantColorShare": 0.68886,
+          "transparentShare": 0,
+          "luminanceMean": 41.72405,
+          "luminanceP5": 30,
+          "luminanceP95": 78,
+          "luminanceContrast": 48
+        }
+      },
+      "grayscale": {
+        "mae": 1.70484,
+        "rmse": 12.56552,
+        "diffRatio16": 0.02283,
+        "diffRatio32": 0.01788,
+        "diffRatio64": 0.01199,
+        "pixelmatchRatio": 0.02093
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.0464,
+        "terrainLikeRatioCandidate": 0.04744,
+        "avgLuminanceCurrent": 41.3222,
+        "avgLuminanceCandidate": 41.44794,
+        "avgLuminanceDelta": 0.12575,
+        "edgeEnergyCurrent": 0.08559,
+        "edgeEnergyCandidate": 0.08769,
+        "edgeEnergyRatio": 1.02447,
+        "edgeDiffRatio32": 0.02562
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-checking-side-by-side.png",
+        "currentGray": "cmp15/dark-checking-current-gray.png",
+        "candidateGray": "cmp15/dark-checking-candidate-gray.png",
+        "absDiff": "cmp15/dark-checking-absdiff.png",
+        "pixelmatch": "cmp15/dark-checking-pixelmatch.png",
+        "currentEdges": "cmp15/dark-checking-current-edges.png",
+        "candidateEdges": "cmp15/dark-checking-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-checking-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-checking",
+      "current": "reference/light-checking.png",
+      "candidate": "candidate/light-checking.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.02312,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.67213,
+          "edgeDensity": 0.09363,
+          "dominantColorShare": 0.91344,
+          "transparentShare": 0,
+          "luminanceMean": 244.10723,
+          "luminanceP5": 227,
+          "luminanceP95": 255,
+          "luminanceContrast": 28
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.67969,
+          "edgeDensity": 0.09512,
+          "dominantColorShare": 0.91251,
+          "transparentShare": 0,
+          "luminanceMean": 243.99677,
+          "luminanceP5": 225,
+          "luminanceP95": 255,
+          "luminanceContrast": 30
+        }
+      },
+      "grayscale": {
+        "mae": 1.58937,
+        "rmse": 12.16846,
+        "diffRatio16": 0.02107,
+        "diffRatio32": 0.0171,
+        "diffRatio64": 0.01063,
+        "pixelmatchRatio": 0.01985
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.9935,
+        "terrainLikeRatioCandidate": 0.99332,
+        "avgLuminanceCurrent": 244.39958,
+        "avgLuminanceCandidate": 244.29205,
+        "avgLuminanceDelta": -0.10753,
+        "edgeEnergyCurrent": 0.08268,
+        "edgeEnergyCandidate": 0.08465,
+        "edgeEnergyRatio": 1.02384,
+        "edgeDiffRatio32": 0.02828
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-checking-side-by-side.png",
+        "currentGray": "cmp15/light-checking-current-gray.png",
+        "candidateGray": "cmp15/light-checking-candidate-gray.png",
+        "absDiff": "cmp15/light-checking-absdiff.png",
+        "pixelmatch": "cmp15/light-checking-pixelmatch.png",
+        "currentEdges": "cmp15/light-checking-current-edges.png",
+        "candidateEdges": "cmp15/light-checking-candidate-edges.png",
+        "edgeDiff": "cmp15/light-checking-edge-diff.png"
+      }
+    },
+    {
+      "id": "dark-up-to-date",
+      "current": "reference/dark-up-to-date.png",
+      "candidate": "candidate/dark-up-to-date.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.02229,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.4123,
+          "edgeDensity": 0.10474,
+          "dominantColorShare": 0.67722,
+          "transparentShare": 0,
+          "luminanceMean": 41.97048,
+          "luminanceP5": 30,
+          "luminanceP95": 69,
+          "luminanceContrast": 39
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 1.42069,
+          "edgeDensity": 0.10612,
+          "dominantColorShare": 0.67654,
+          "transparentShare": 0,
+          "luminanceMean": 42.16065,
+          "luminanceP5": 30,
+          "luminanceP95": 78,
+          "luminanceContrast": 48
+        }
+      },
+      "grayscale": {
+        "mae": 1.64579,
+        "rmse": 12.39028,
+        "diffRatio16": 0.02192,
+        "diffRatio32": 0.0171,
+        "diffRatio64": 0.01152,
+        "pixelmatchRatio": 0.02009
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.0465,
+        "terrainLikeRatioCandidate": 0.04755,
+        "avgLuminanceCurrent": 41.66037,
+        "avgLuminanceCandidate": 41.78612,
+        "avgLuminanceDelta": 0.12575,
+        "edgeEnergyCurrent": 0.08692,
+        "edgeEnergyCandidate": 0.08902,
+        "edgeEnergyRatio": 1.02409,
+        "edgeDiffRatio32": 0.02453
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/dark-up-to-date-side-by-side.png",
+        "currentGray": "cmp15/dark-up-to-date-current-gray.png",
+        "candidateGray": "cmp15/dark-up-to-date-candidate-gray.png",
+        "absDiff": "cmp15/dark-up-to-date-absdiff.png",
+        "pixelmatch": "cmp15/dark-up-to-date-pixelmatch.png",
+        "currentEdges": "cmp15/dark-up-to-date-current-edges.png",
+        "candidateEdges": "cmp15/dark-up-to-date-candidate-edges.png",
+        "edgeDiff": "cmp15/dark-up-to-date-edge-diff.png"
+      }
+    },
+    {
+      "id": "light-up-to-date",
+      "current": "reference/light-up-to-date.png",
+      "candidate": "candidate/light-up-to-date.png",
+      "dimensions": {
+        "width": 560,
+        "height": 330
+      },
+      "parityDistance": 0.02229,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.66738,
+          "edgeDensity": 0.09735,
+          "dominantColorShare": 0.91496,
+          "transparentShare": 0,
+          "luminanceMean": 243.67317,
+          "luminanceP5": 228,
+          "luminanceP95": 255,
+          "luminanceContrast": 27
+        },
+        "candidate": {
+          "colorBuckets": 14,
+          "colorEntropyBits": 0.67755,
+          "edgeDensity": 0.09933,
+          "dominantColorShare": 0.91369,
+          "transparentShare": 0,
+          "luminanceMean": 243.55821,
+          "luminanceP5": 225,
+          "luminanceP95": 255,
+          "luminanceContrast": 30
+        }
+      },
+      "grayscale": {
+        "mae": 1.53302,
+        "rmse": 11.98765,
+        "diffRatio16": 0.02031,
+        "diffRatio32": 0.01641,
+        "diffRatio64": 0.0102,
+        "pixelmatchRatio": 0.01909
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.99246,
+        "terrainLikeRatioCandidate": 0.99228,
+        "avgLuminanceCurrent": 244.07323,
+        "avgLuminanceCandidate": 243.96569,
+        "avgLuminanceDelta": -0.10753,
+        "edgeEnergyCurrent": 0.08382,
+        "edgeEnergyCandidate": 0.08579,
+        "edgeEnergyRatio": 1.02352,
+        "edgeDiffRatio32": 0.027
+      },
+      "artifacts": {
+        "sideBySide": "cmp15/light-up-to-date-side-by-side.png",
+        "currentGray": "cmp15/light-up-to-date-current-gray.png",
+        "candidateGray": "cmp15/light-up-to-date-candidate-gray.png",
+        "absDiff": "cmp15/light-up-to-date-absdiff.png",
+        "pixelmatch": "cmp15/light-up-to-date-pixelmatch.png",
+        "currentEdges": "cmp15/light-up-to-date-current-edges.png",
+        "candidateEdges": "cmp15/light-up-to-date-candidate-edges.png",
+        "edgeDiff": "cmp15/light-up-to-date-edge-diff.png"
+      }
+    }
+  ]
+}

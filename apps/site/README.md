@@ -39,4 +39,7 @@ robots use `SITE_URL`, else Vercel's production domain, else a local origin.
 Configure the project with Root Directory `apps/site` and enable "Include files
 outside the root directory", because the build reads the README and artwork.
 [vercel.json](vercel.json) supplies the build, the `www` redirect, security
-headers and the `llms.txt` content type. Set `SITE_URL` to the production origin.
+headers and the `llms.txt` content type, and the update feed's permanent
+address: `/mac/appcast.xml` redirects (302) to the latest GitHub release's
+`appcast.xml`, which every installed app reads, so that path never changes.
+Set `SITE_URL` to the production origin.

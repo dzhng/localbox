@@ -45,6 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitBeforeStart = false
     private var startupFinished = false
     private var replyPending = false
+    /// Updates: nil in a build without Sparkle, or a bundle with no feed (a development build).
+    private var updates: UpdateCoordinator?
+    #if LOCALBOX_SPARKLE
+    private var sparkle: SparkleDriver?
+    #endif
+    /// An update's stop in progress waits here for `Lifetime` to report the children gone.
+    private var updateStopped: CheckedContinuation<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let bundle = Bundle.main
@@ -96,17 +103,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.lifetime = lifetime
         let loginItem = makeLoginItem()
         diagnostic(loginItem.launched(isRelease: isRelease, inApplications: inApplications))
+        if CommandLine.arguments.contains(LaunchDecision.updateRelaunchArgument) {
+            // Lifetime.start() below runs the built-in image's check, as every launch does, so the new release's image arrives.
+            diagnostic("relaunched by an update into \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown")")
+        }
+        startUpdates(cli: cli, lifetime: lifetime)
         serveAppSocket(paths: paths, control: AppControl(
             identity: .init(version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", isRelease: isRelease, inApplications: inApplications),
-            children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem, testHooks: testHooks()))
+            children: { (daemon.state, connector.state) }, lifetime: { lifetime.state }, loginItem: loginItem, testHooks: testHooks(),
+            updates: updateHook(), update: updateSnapshot()))
         lifetime.start()
         let menuBar = self.menuBar
         let settings = SettingsWindow(cli: cli, quiet: testHooksEnabled)
         self.settings = settings
-        let facts = FactsSource(cli: cli, published: { facts in
+        let facts = FactsSource(cli: cli, published: { [weak self] facts in
             RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated {
                 menuBar.factsChanged(facts)
                 settings.model.factsChanged(facts)
+                self?.updates?.factsChanged()
             } }
         }, failed: { error in diagnostic("app status failed: \(error)") })
         self.facts = facts
@@ -190,7 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func lifetimeChanged(_ state: Lifetime.State) {
         switch state {
-        case .running: break
+        case .running:
+            // An update stopped the children and did not install: back to normal.
+            diagnostic("running again")
+            menuBar.quitting(nil)
+            facts?.start()
         case .stopping(let reason, let pending):
             // A read now could find the app socket gone and start another copy of the app.
             facts?.stop()
@@ -198,8 +216,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuBar.quitting(pending)
         case .stopped:
             diagnostic("stopped")
+            updateStopped?.resume(); updateStopped = nil
             answerTermination()
         }
+    }
+
+    // MARK: - Updates
+
+    /// The coordinator and Sparkle, in a build that links Sparkle and a bundle with a feed; otherwise `update` stays null.
+    private func startUpdates(cli: BundledCLI, lifetime: Lifetime) {
+        #if LOCALBOX_SPARKLE
+        let info = Bundle.main.infoDictionary ?? [:]
+        guard LaunchDecision.isRelease(info) else { return }
+        let lock = LaunchLock(info: info)
+        let coordinator = UpdateCoordinator(steps: UpdateSteps(
+            facts: { try AppFacts.decode(try await cli.run(["app", "status"])) },
+            stopChildren: { [weak self] hibernating in
+                await withCheckedContinuation { (stopped: CheckedContinuation<Void, Never>) in
+                    RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated {
+                        guard let self, lifetime.state == .running else { stopped.resume(); return }
+                        self.updateStopped = stopped
+                        lifetime.stop(.update, running: hibernating)
+                    } }
+                }
+            },
+            restartChildren: { [weak self] in
+                RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated {
+                    // A quit that arrived meanwhile ends the app instead.
+                    guard let self, !self.replyPending else { return }
+                    if !lifetime.restart() { diagnostic("the update did not install, and the children could not be restarted (\(lifetime.state))") }
+                } }
+            },
+            waitForCommands: { waiting in
+                guard let lock else { throw LaunchLockError("this bundle names no launch lock") }
+                let called = CancelFlag()
+                try await withTaskCancellationHandler {
+                    try await Task.detached { try lock.waitUntilFree(cancelled: { called.isSet }, waiting: waiting) }.value
+                } onCancel: { called.set() }
+            },
+            exit: { [weak self] in
+                MainActor.assumeIsolated {
+                    diagnostic("exiting for the update")
+                    self?.appSocket?.stop(); self?.appSocket = nil
+                    NSApplication.shared.terminate(nil)
+                }
+            }))
+        var said = ""
+        coordinator.changed = { [weak coordinator] in
+            guard let coordinator else { return }
+            let line = "update \(coordinator.phase.rawValue)\(coordinator.message.map { ": \($0)" } ?? "")"
+            if line != said { said = line; diagnostic(line) }
+        }
+        sparkle = SparkleDriver(owner: coordinator, lock: lock, failed: { diagnostic($0) })
+        if sparkle != nil { updates = coordinator; diagnostic("updates from \(info["SUFeedURL"] as? String ?? "")") }
+        #endif
+    }
+
+    /// The app socket's `update.*` (answered on the main thread, where the coordinator lives); nil without updates.
+    private func updateHook() -> AppControl.Hook? {
+        guard updates != nil else { return nil }
+        return { [weak self] operation, params in
+            nonisolated(unsafe) let params = params
+            return DispatchQueue.main.sync { MainActor.assumeIsolated {
+                self?.updateOperation(operation, params) ?? .failure(AppSocketFailure(code: "unsupported", message: "the app is going away"))
+            } }
+        }
+    }
+
+    /// `app.info`'s `update`.
+    private func updateSnapshot() -> @Sendable () -> [String: Any]? {
+        guard updates != nil else { return { nil } }
+        return { [weak self] in
+            let snapshot: [String: Any]? = DispatchQueue.main.sync { MainActor.assumeIsolated { self?.updates?.snapshot } }
+            return snapshot
+        }
+    }
+
+    /// `update.status`, `update.check`, `update.install`, `update.set_automatic {enabled}`; each answers the snapshot.
+    private func updateOperation(_ operation: String, _ params: [String: Any]) -> Result<[String: Any], AppSocketFailure> {
+        guard let updates else { return .failure(AppSocketFailure(code: "unsupported", message: "this Localbox does not update itself")) }
+        switch operation {
+        case "update.status": break
+        case "update.check": updates.check()
+        case "update.install": updates.install()
+        case "update.set_automatic":
+            guard let enabled = params["enabled"] as? Bool else {
+                return .failure(AppSocketFailure(code: "invalid_input", message: "update.set_automatic takes {\"enabled\": true|false}"))
+            }
+            updates.setAutomatic(enabled)
+        default:
+            return .failure(AppSocketFailure(code: "unsupported", message: "this Localbox app does not answer \(operation)"))
+        }
+        return .success(updates.snapshot)
     }
 
     // MARK: - Status item
@@ -253,6 +361,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// Lets the daemon's line handler reach the `Lifetime` built after it.
 private final class LifetimeBox: @unchecked Sendable { var value: Lifetime? }
+
+/// Set when an update is called off while it waits for commands; the waiting thread polls it.
+private final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock(); private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
+}
 
 // Writing to a pipe whose reader died (a CLI child, a closed stderr) must be an error, not the app's death.
 signal(SIGPIPE, SIG_IGN)

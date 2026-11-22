@@ -40,6 +40,8 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["app status [--since N] [--timeout-ms M]", "Show everything Localbox.app shows: this Mac's sandboxes and images, its account and connection, and warnings; --since waits for a change"],
   ["app login-item [on|off]", "Show, or turn on or off, opening Localbox at login"],
   ["app image ensure", "Download, verify and install this release's built-in Linux image unless it is already here (run by Localbox.app at launch)"],
+  ["update check|install|status", "Check for a new Localbox, install it now (sandboxes sleep and wake in the new version), or show the updater's state"],
+  ["update automatic on|off", "Turn automatic updates on or off (on by default)"],
   ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
 ];
@@ -359,6 +361,12 @@ async function main(): Promise<void> {
       if (subcommand === "status") { const { appFactsCommand } = await import("./app-facts.js"); print(await appFactsCommand(rest) as unknown as Json); return; }
       print(await appLoginItem(choice === undefined ? undefined : choice === "on"));
     } catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(request, error)); }
+    return;
+  }
+  if (group === "update" && subcommand) {
+    const { updateCommand } = await import("./update.js");
+    try { print(await updateCommand([subcommand, ...rest])); }
+    catch (error) { if (!(error instanceof ContractError)) throw error; print(failure(requestFromInvocation({ operation: `update.${subcommand}`, input: {} }), error)); }
     return;
   }
   if (group === "status") {

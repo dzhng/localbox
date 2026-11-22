@@ -243,8 +243,15 @@ pinned in the Localbox skill. The manifest never supplies its own key.
   has, before anything from the download runs, then checks the app's zip against
   the signed digest. Anyone who can change both the procedure and the release
   can change what is installed.
-- **Installing a newer release** is the same procedure, so it is verified the
-  same way; the app does not yet update itself.
+- **Updates** come through Sparkle, patched and built from pinned source. The app
+  reads a feed that must be signed (`SURequireSignedFeed`) and installs only an
+  archive whose signature verifies before it is unpacked, both with the release
+  key's public half sealed in the installed bundle as `SUPublicEDKey`. The
+  feed's address is
+  `localbox.sh/mac/appcast.xml`, redirected to the latest GitHub release; whoever
+  controls that redirect or the release can withhold updates but cannot make the
+  app accept one not signed with the release key. Reinstalling with the
+  procedure is verified as a first install is.
 - The app and everything in it that runs (the menu bar app, the daemon, the CLI
   launcher and the bundled Node) are code-signed with a self-signed Localbox
   identity, not an Apple Developer ID, and are not notarized; macOS itself

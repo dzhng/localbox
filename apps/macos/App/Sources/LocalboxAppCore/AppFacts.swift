@@ -3,7 +3,7 @@ import Foundation
 /// What `localbox app status --json` prints (`apps/cli/src/app-facts.ts`): everything the popover and Settings show,
 /// warnings included (specs/menu-bar-app, invariant 10: the CLI decides them, views only render them). The shared
 /// fixtures under `apps/macos/App/tests/fixtures/facts/` are written by the CLI's tests and decoded by this type's, so
-/// the two sides cannot drift. Keys are the CLI's snake_case; `update` is null until slice 15.
+/// the two sides cannot drift. Keys are the CLI's snake_case; `update` is null in a build that cannot update itself.
 public struct AppFacts: Codable, Equatable, Sendable {
     public enum Build: String, Codable, Sendable { case release, dev }
     public enum Daemon: String, Codable, Sendable { case running, starting, stopped, backingOff = "backing_off" }
@@ -44,7 +44,7 @@ public struct AppFacts: Codable, Equatable, Sendable {
         public let error: String?
     }
     public struct Stopping: Codable, Equatable, Sendable { public let reason: String; public let pending: [String] }
-    /// The update controls (slice 15 fills them; until then the CLI says null and Settings shows the manual-updates
+    /// The update controls (null in a build without Sparkle, where Settings shows the manual-updates
     /// line). `available` is whether this build updates itself at all.
     public struct Update: Codable, Equatable, Sendable {
         public let available: Bool

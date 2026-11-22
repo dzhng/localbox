@@ -42,6 +42,26 @@ test("the guest agent is sealed as built: its digests are agent-version.json's",
   for (const file of readdirSync(join(root, "dist/guest-agent/darwin"))) assert.equal(digest(contents(`Resources/guest-agent/darwin/${file}`)), digest(join(root, "dist/guest-agent/darwin", file)), file);
 });
 
+test("without LOCALBOX_SPARKLE_FRAMEWORK the app neither links nor carries Sparkle", () => {
+  assert.ok(!existsSync(contents("Frameworks")));
+  assert.doesNotMatch(execFileSync("otool", ["-L", contents("MacOS/Localbox")], { encoding: "utf8" }), /Sparkle/);
+});
+
+const framework = join(root, "dist/sparkle/Sparkle.framework");
+test("with the patched framework the app links it from Contents/Frameworks, signed inside out; a dev build still has no feed", { skip: existsSync(framework) ? false : "npm run sparkle:build has not run" }, () => {
+  const out = temporary("lb-build-app-sparkle-");
+  const built = execFileSync("node", [join(root, "apps/macos/App/scripts/build-app.mjs"), "--out", out], { cwd: root, encoding: "utf8", env: { ...process.env, LOCALBOX_SPARKLE_FRAMEWORK: framework }, stdio: ["ignore", "pipe", "inherit"] }).trim().split("\n").at(-1);
+  const inside = (path) => join(built, "Contents", path);
+  assert.match(execFileSync("otool", ["-L", inside("MacOS/Localbox")], { encoding: "utf8" }), /@rpath\/Sparkle\.framework\/Versions\/B\/Sparkle/);
+  for (const nested of ["Frameworks/Sparkle.framework", "Frameworks/Sparkle.framework/Versions/B/Updater.app", "Frameworks/Sparkle.framework/Versions/B/Autoupdate"])
+    execFileSync("codesign", ["--verify", "--strict", inside(nested)]);
+  execFileSync("codesign", ["--verify", "--deep", "--strict", built]);
+  assert.equal(spawnSync("plutil", ["-extract", "SUFeedURL", "raw", "-o", "-", inside("Info.plist")], { encoding: "utf8" }).stdout.trim(), "");
+  // The patch under Localbox's names: the Info.plist key the helper reads and the relaunch argument.
+  assert.ok(readFileSync(inside("Frameworks/Sparkle.framework/Versions/B/Autoupdate")).includes(Buffer.from("LocalboxLaunchLockRelativePath")));
+  assert.ok(readFileSync(inside("Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater")).includes(Buffer.from("--localbox-update-relaunch")));
+});
+
 test("signed inside out: the CLI's identifier on the launcher and Node, the entitlement on the daemon alone", () => {
   execFileSync("codesign", ["--verify", "--deep", "--strict", app]);
   for (const file of ["Resources/bin/localbox", "Resources/node/bin/node"]) assert.match(signature(contents(file)), /^Identifier=sh\.localbox\.cli$/m, file);

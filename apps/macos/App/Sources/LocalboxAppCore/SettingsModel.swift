@@ -16,9 +16,9 @@ public protocol SettingsActions: Sendable {
     func setAgentSetup(_ enabled: Bool) async throws
     /// `localbox app login-item on|off`.
     func setOpenAtLogin(_ enabled: Bool) async throws
-    /// `localbox update automatic on|off` (slice 15's command; the row shows only once `AppFacts.update` says so).
+    /// `localbox update automatic on|off` (the row shows only once `AppFacts.update` says so).
     func setAutomaticUpdates(_ enabled: Bool) async throws
-    /// `localbox update check` (slice 15's command).
+    /// `localbox update check`: installs an update that waits, else checks now.
     func checkForUpdates() async throws
 }
 

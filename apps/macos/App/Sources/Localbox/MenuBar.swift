@@ -58,7 +58,8 @@ final class MenuBar: NSObject, NSPopoverDelegate {
         render()
     }
 
-    func quitting(_ pending: [String]) { local.quitting = pending; render() }
+    /// What a stop still waits for; nil once the children run again (an update that did not install).
+    func quitting(_ pending: [String]?) { local.quitting = pending; render() }
 
     func couldNotStart() { local.couldNotStart = true; render() }
 

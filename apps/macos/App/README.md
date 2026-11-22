@@ -1,8 +1,8 @@
 # Localbox.app
 
 The menu bar app: it supervises the VM daemon and the connector, draws this
-Mac's state in a popover from its status item and, in later slices, installs
-updates. The plan and its
+Mac's state in a popover from its status item and installs its own updates
+with Sparkle. The plan and its
 rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
 
 ## Ownership rules
@@ -26,7 +26,7 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
   bookkeeping.
 - **The CLI reaches the app's native powers through one door,** `AppSocket` at
   `<root>/app.sock`, answered by `AppControl`. Anything only the app can do
-  (its children's state, the login item, later updates) is an operation there
+  (its children's state, the login item, updates) is an operation there
   that `localbox app` calls, never a second path from the CLI to the app. It
   answers while the daemon is down.
 - **`LoginItem` is the only code that registers the app at login,** through a
@@ -54,6 +54,19 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
   `LocalboxAppCore`) holds the facts and the form, and each control is one `localbox` command through
   `SettingsActions`, followed by a fresh `app status`. Its one setting of its own is "Show this window when
   Localbox starts". The window, `SettingsWindow`, tells the facts to long-poll while it is open, as the popover does.
+- **Sparkle is the only updater, and `UpdateCoordinator` the only gate.**
+  Sparkle (patched, built from source in [`sparkle/`](sparkle/), linked only
+  when `LOCALBOX_SPARKLE_FRAMEWORK` names it) owns the feed, the schedule, the
+  verified download and the replacement; `SparkleDriver` shows no Sparkle UI.
+  The coordinator lets an update in only after the slow part is over: no
+  blocker, the connector and then the daemon stopped through `Lifetime` (the
+  daemon hibernates however long it takes), and no `localbox` command holding
+  the launch lock (`LaunchLock`). Only then does it grant Sparkle's permit, and
+  it exits as soon as Sparkle authorizes the replacement, well inside the
+  helper's 20 s. Anything that fails before the permit restarts the children.
+  Automatic installs wait while sandboxes run and this Mac cannot hibernate
+  them; a person's install does not. `localbox update` and Settings reach it
+  through the app socket's `update.*`.
 - **Status item art** is a placeholder symbol until `apps/macos/App/art/`
   holds `StatusItem.pdf` and `StatusItemWarning.pdf` (template PDFs); the
   assembler copies them into the bundle and the app prefers them.
@@ -73,14 +86,17 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
 swift build --package-path apps/macos/App
 npm run test:app     # Node runners that compile Swift drivers against LocalboxAppCore, and the assembler's checks
 npm run app:dev      # npm run build, assemble dist/app-dev/Localbox Dev.app, open it quietly
-npm run app:shots    # the popover (evidence/13) and Settings (evidence/14) offscreen, light and dark, under specs/menu-bar-app
+npm run app:shots    # the popover (evidence/13), Settings (evidence/14) and its update rows (evidence/15), offscreen, light and dark
+npm run sparkle:build          # the patched Sparkle.framework into dist/sparkle (full Xcode, network)
 npm run proof -- 41 --tier a   # the packaged app on the process fixture; --tier v with a real VM
 npm run proof -- 42 --tier a,v # a scratch-signed release, installed by the installation procedure's own steps
+npm run proof -- 44 --tier a,v # N to N+1 through Sparkle, scratch-signed, from a local feed
 ```
 
-A release build (bundle id `sh.localbox.mac`, the update feed in its Info.plist)
-is what `scripts/release.sh` assembles and signs. A development build (bundle
-id `sh.localbox.mac.dev`, no update feed) uses its
+A release build (bundle id `sh.localbox.mac`, Sparkle and its feed keys in its
+Info.plist) is what `scripts/release.sh` assembles and signs. A development
+build (bundle id `sh.localbox.mac.dev`, no update feed, Sparkle only when
+`LOCALBOX_SPARKLE_FRAMEWORK` is set) uses its
 own machine root, `~/Library/Application Support/Localbox Dev`, and its own
 logs folder, so it never shares a daemon with a release install. It honours
 `LOCALBOX_APP_SCREENS=0` to behave as if the Mac had no display, and

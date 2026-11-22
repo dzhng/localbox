@@ -60,7 +60,7 @@ const call = async (path, operation, params = {}, id = `t-${operation}`) => {
   return JSON.parse(reply);
 };
 
-test("one JSON line in, one out, on a 0600 socket: app.info, login_item.*, and unsupported for anything else", async () => {
+test("one JSON line in, one out, on a 0600 socket: app.info, login_item.*, update.* refused without an updater, and unsupported for anything else", async () => {
   const path = join(temporary(), "app.sock");
   const app = await serve(path);
   assert.equal(app.line, "listening");
@@ -70,14 +70,16 @@ test("one JSON line in, one out, on a 0600 socket: app.info, login_item.*, and u
   // The daemon is down (backing off) and the app is stopping; the app answers regardless.
   assert.deepEqual(await call(path, "app.info", {}, "req-1"), {
     id: "req-1", ok: true,
-    result: { version: "9.8.7", build: "dev", in_applications: false, children: { daemon: "backing_off", connector: "running" }, stopping: { reason: "quit", pending: ["alpha-otter"] } },
+    result: { version: "9.8.7", build: "dev", in_applications: false, children: { daemon: "backing_off", connector: "running" }, stopping: { reason: "quit", pending: ["alpha-otter"] }, update: null },
   });
   assert.deepEqual((await call(path, "login_item.get")).result, { state: "disabled" });
   assert.deepEqual((await call(path, "login_item.set", { enabled: true })).result, { state: "enabled" });
   assert.deepEqual((await call(path, "login_item.get")).result, { state: "enabled" });
   assert.deepEqual((await call(path, "login_item.set", { enabled: false })).result, { state: "disabled" });
   assert.deepEqual(await call(path, "login_item.set", {}, "req-2"), { id: "req-2", ok: false, error: { code: "invalid_input", message: 'login_item.set takes {"enabled": true|false}', retryable: false } });
-  assert.deepEqual(await call(path, "update.status", {}, "req-3"), { id: "req-3", ok: false, error: { code: "unsupported", message: "this Localbox app (9.8.7) does not answer update.status", retryable: false } });
+  // A build without Sparkle has no updater: `update` is null and `update.*` is refused.
+  assert.deepEqual(await call(path, "update.status", {}, "req-3"), { id: "req-3", ok: false, error: { code: "unsupported", message: "this Localbox (9.8.7, dev) does not update itself; install a new release to update it", retryable: false } });
+  assert.equal((await call(path, "popover.open")).error.code, "unsupported");
 
   // A garbled request is answered, not left hanging; the second line of a request is never read.
   const garbled = JSON.parse(await exchange(path, "not json\n"));
