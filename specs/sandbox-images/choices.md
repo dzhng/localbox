@@ -28,10 +28,11 @@ end). Slice files and the README cite choices as "choice NN", which means the
 entries whose **When** includes slice NN. ⚠ marks a choice that stretches or contradicts
 a decision in the map.
 
-**Review these first:** N1 (the macOS disk may be too small for Xcode), U1 (a
-macOS build ignores the two-VM limit, against E11), N2 (macOS notifications are
-switched off in every guest), N3 (the copy-speed gate was restated) and N4 (the
-VNC server listens on every interface during the build).
+**Review these first:** N1 (the macOS disk may be too small for Xcode), N2 (macOS
+notifications are switched off in every guest), N3 (the copy-speed gate was
+restated) and N4 (the VNC server listens on every interface during the build).
+Nothing is unsound any more: the two unsound choices were redone and are now S59
+(a macOS build takes its VM slot through admission) and S60 (one copy-fits rule).
 
 ---
 
@@ -265,45 +266,9 @@ sleeping sandboxes there is worse than sleeping sandboxes on A.
 
 ## Unsound
 
-### U1. ⚠ A macOS image build that starts beside two running macOS sandboxes fails with a raw Virtualization error (contradicts E11)
-
-**When:** review · **Owner:** `MacBaseBuilder` (`runningVMs`), `SandboxHost` admission (`macOSRunningLimit = 2`)
-
-Apple lets one Mac run at most two macOS VMs at once. E11 says a third gets
-"sleep-for-room or `machine_full` with the reason, never a raw Virtualization
-error". In one direction this holds. While a build runs, it counts as one of the
-two slots, so a third macOS *sandbox* start sleeps an idle one or is refused with
-"…a macOS image build (it can't sleep)". In the other direction it doesn't. Say two
-macOS sandboxes are running and you run `image create --macos`. The build doesn't
-ask admission for a slot, so its install step fails with Virtualization's own
-`virtualMachineLimitExceeded`.
-
-- **Gap:** the review added builds to admission's count, but only in one direction.
-- **Reach:** anyone with two macOS sandboxes up who builds a new base.
-- **Verdict:** unsound. It breaks a given (E11). **Corrected decision:** a
-  build takes its macOS VM slot through the same admission as a sandbox start,
-  before its first boot. That means sleeping an idle macOS sandbox, or refusing
-  with `machine_full` naming what holds the slots.
-- **Confidence:** low (that the user would accept the current behaviour).
-
-### U2. Placement and the receiving Mac disagree about whether a copy fits
-
-**When:** 36, 38 · **Owner:** `packages/placement` (`hasDisk`), `ImageCopy.marginBytes`
-
-When placement plans a copy to Mac B, it checks that B's reported free disk is at
-least the image's size. When the copy starts on B, B checks for the size *plus a
-1 GiB margin* (the same margin an image capture uses). Example: a 4 GiB image and
-B with 4.5 GiB free. Placement picks B and the sandbox is reserved as `copying`.
-Then B refuses with `disk_full`, and the sandbox is listed as failed with a next
-step. Nothing is lost, but the user gets a failed sandbox that placement could
-have avoided. Placement also sees B's free disk only as of its last capacity report.
-
-- **Gap:** two slices each wrote their own "does it fit" rule.
-- **Reach:** every placement that plans a copy.
-- **Verdict:** unsound (two owners of one rule). **Corrected decision:** a single
-  copy-fits rule, size plus margin, defined once in `packages/placement` (or the
-  contract) and used by both placement and the receiver.
-- **Confidence:** medium.
+None remain. The final review found two, and both were redone from their
+corrected decisions: a macOS build that ignored the two-VM limit in one direction
+(now S59) and two owners of the copy-fits rule (now S60).
 
 ---
 
@@ -1205,8 +1170,76 @@ the usual memory admission on what is left. Linux sandboxes never count, because
 sleeping one frees memory but not a macOS slot. A refusal names only the macOS
 holders, says the limit is macOS's, and counts a running macOS build as one slot
 ("a macOS image build (it can't sleep)"). The other direction, a build starting
-beside two sandboxes, is U1.
+beside two sandboxes, goes through the same admission (S59).
 
+- **Verdict:** sound. **Confidence:** high.
+
+#### S59. A macOS image build takes its VM slot through the same admission as a sandbox start
+
+**When:** review (redoes the unsound U1, which contradicted E11) · **Owner:** `SandboxHost.takeMacOSSlot` / `releaseMacOSSlot` (the one count, with `macOSRunningLimit = 2`), `MacBaseBuilder.takeSlot`
+
+Apple lets one Mac run at most two macOS VMs at once, and E11 says a third gets
+"sleep-for-room or `machine_full` with the reason, never a raw Virtualization
+error". Say two macOS sandboxes, `a` and `b`, are running and you run
+`image create --macos`. The build downloads the IPSW (Apple's macOS installer
+file) first, which needs no VM. Just before its first boot (the install step),
+it asks `SandboxHost`'s admission for a macOS slot, the same code a third macOS
+sandbox start goes through:
+
+```
+take slot for build:
+  if a and b both run nothing  -> sleep the least recently used one (say a), build proceeds,
+                                  and its result says "made room for it: slept a (8 GiB) to make room"
+  if both run jobs              -> the build fails machine_full:
+                                  "building macOS image image_mac needs a macOS VM, and this Mac already
+                                   runs 2 macOS sandboxes, the most macOS allows; none of them can sleep:
+                                   a (8 GiB, 1 running job), b (8 GiB, 2 running jobs)"
+```
+
+The build holds the slot until it ends (finished, failed or stopped by a daemon
+shutdown), and while it holds it a third macOS sandbox start counts it ("a macOS
+image build (it can't sleep)"). `SandboxHost` keeps the only count: a set of the
+builds holding a slot, next to the running macOS sandboxes. The builder keeps no
+count of its own. A build that resumes after a daemon restart takes its slot again
+the same way, after the sandboxes the last run left have come back. What slept for
+it is kept in the build's checkpoint, so a resumed build still reports it.
+
+- **Gap:** the review counted builds in a sandbox's admission, but a build never
+  asked admission for its own slot.
+- **Reach:** a failed `machine_full` build is final, like any failed build: you
+  delete the failed image and build again, and the downloaded IPSW is kept. A
+  build's VM takes a macOS slot but is not counted against the memory budget,
+  as before.
+- **Verdict:** sound (implements E11 in both directions). **Confidence:** high.
+
+#### S60. One rule decides whether an image copy fits, and placement and the receiving Mac both use it
+
+**When:** review (redoes the unsound U2, two owners of one rule) · **Owner:** `packages/contract` (`IMAGE_DISK_MARGIN_BYTES`, `imageDiskNeedBytes`), generated into `GeneratedOperations.swift`; used by `place()`, `ImageCopy` and `ImageCapture`
+
+Say you create a sandbox from a 4 GiB image, and the only Mac with room for it,
+B, has 4.5 GiB of free disk. A copy to B needs the image plus a 1 GiB margin,
+5 GiB, so that a copy never fills the Mac. Placement checks exactly that, so it
+doesn't plan the copy: it answers `disk_full` with the numbers ("B has 4.5 GiB
+of free disk, and copying the image there needs 5 GiB"), or, for automatic
+placement, puts the sandbox on a Mac that holds the image and lets that Mac make
+room. With 5 GiB free, the copy is planned. Before this was redone, placement
+checked only "free disk ≥ image size", planned the copy, and B then refused it,
+leaving a failed sandbox.
+
+The rule is written once, in the contract: `imageDiskNeedBytes(bytes)` is
+`bytes + IMAGE_DISK_MARGIN_BYTES` (1 GiB). The daemon is Swift, so
+`npm run generate:snapshots` writes the same constant and function into
+`GeneratedOperations.swift`, next to the operation list it already generates.
+The receiving daemon's check before a copy, and an image capture's check (the
+source disk's allocated bytes plus the same margin), call the generated
+function. Placement still sees a Mac's free disk only as of its last capacity
+report, which moves only once it is a gibibyte off, so a Mac filling up between
+reports can still refuse a planned copy. That refusal is the backstop, not the
+rule.
+
+- **Gap:** two slices each wrote their own "does it fit" rule.
+- **Reach:** changing the margin is one edit in the contract plus a snapshot
+  regeneration; the snapshot check fails if the Swift copy is stale.
 - **Verdict:** sound. **Confidence:** high.
 
 ### Host operations (the journal of long work)
@@ -1626,7 +1659,7 @@ answers `ready` ("already on M; nothing to copy") without making a copy row. If 
 side never took the request, the copy is cancelled and the target's holding
 dropped. An uncertain answer keeps both and names the mutation id to replay.
 `linux` is never copied (P1). Before receiving, a Mac checks it has the image's
-size plus a 1 GiB margin free (see U2).
+size plus a 1 GiB margin free, by the same rule placement plans with (S60).
 
 - **Verdict:** sound. **Confidence:** high.
 
@@ -1655,7 +1688,8 @@ the copy's outcome reaching Convex first. (Which operations refuse is N8.)
 
 **When:** 34 · **Owner:** `MacBaseBuilder` (`checkpoint`, `MacBuildDirectory`)
 
-The build's checkpoint is `{ phase, ipsw: { url, version, build, size_bytes } }`.
+The build's checkpoint is `{ phase, ipsw: { url, version, build, size_bytes }, made_room }`
+(`made_room`: the sandboxes slept for its VM slot, S59).
 It works in a fixed folder, `images/.<id>.build/`, which holds the pristine
 installed disk and auxiliary storage next to the working copies, laid out like an
 image so that committing is a single rename once the private files are gone. A
