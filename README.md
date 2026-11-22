@@ -139,7 +139,7 @@ built to be thrown away. A Localbox sandbox keeps its files, installed packages,
 browser profile and desktop across sessions, sleep and reconnects. Set it up once
 and it's still set up next week.
 
-Durable doesn't mean always running. A sandbox nobody has used for 30 minutes
+Durable doesn't mean always running. A sandbox nobody has used for 5 minutes
 goes to sleep, and the next request wakes it with every process exactly where it
 was, down to the dev server it left running. When a sandbox should be disposable,
 give it an idle timeout and it deletes itself once nobody's using it. Nothing to

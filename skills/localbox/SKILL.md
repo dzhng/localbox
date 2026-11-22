@@ -40,7 +40,7 @@ is the usual error envelope (`invalid_input`, `conflict`).
   default image (initially the built-in `linux`); `--image NAME` picks another,
   and `--image macos` the account's macOS base ([images](references/images.md)).
   Override with `--name`, `--cpus`,
-  `--memory 4G`, `--sleep-after 10m` (default 30 min idle), `--delete-after 2h`
+  `--memory 4G`, `--sleep-after 10m` (default 5 min idle), `--delete-after 2h`
   (only when it should be disposable).
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
   user's machines (`localbox machine list`); `--placement auto` takes the online

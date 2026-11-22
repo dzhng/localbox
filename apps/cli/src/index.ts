@@ -87,7 +87,7 @@ function commandLine(entry: OperationCatalogEntry): string {
   const verb = entry.id.split(".").slice(1).join(" ").replaceAll("_", "-");
   if (entry.id === "agents.setup.set") return "setup on|off";
   const properties = entry.input_schema.properties ?? {}; const required = entry.input_schema.required ?? [];
-  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "sleep_after_ms" ? "[--sleep-after 30m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
+  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "sleep_after_ms" ? "[--sleep-after 5m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
   if (entry.id === "shell.exec") return `${verb} [--background] -- COMMAND [ARGS...]`;
   return [verb, ...(entry.sandbox_scoped && entry.id.startsWith("sandbox.") ? ["[SANDBOX]"] : []), ...required.map((key) => key.toUpperCase()), ...Object.keys(properties).filter((key) => !required.includes(key)).map(flag)].join(" ");
 }

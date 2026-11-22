@@ -435,7 +435,7 @@ final class HostDaemonCoreTests: XCTestCase {
         _ = try await result(host, "sandbox.create", #"{"name":"two","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_2")
         clock.now += 6
         let slept = await host.idleTick()
-        XCTAssertEqual(slept.keys.sorted(), ["sandbox_1"], "two keeps the 30 min default")
+        XCTAssertEqual(slept.keys.sorted(), ["sandbox_1"], "two keeps its 30 min policy")
         clock.now += 5
         let deleted = await host.idleTick()
         XCTAssertEqual(deleted["sandbox_1"], ["kind": "deleted", "detail": "deleted one: idle for 11 s, past its delete-after of 10 s"], "time asleep counts")

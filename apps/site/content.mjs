@@ -125,7 +125,7 @@ export const faq = [
   },
   {
     q: "Doesn't a VM eat my RAM?",
-    a: "A running sandbox reserves memory like any VM. A sandbox idle for 30 minutes goes to sleep and wakes on the next request with every process where it was, and when a Mac is full it puts the idle sandboxes used longest ago to sleep to make room, and tells your agent which. Asleep, it saves its memory to disk and gives the RAM back; installing checks your Mac is set up for it.",
+    a: "A running sandbox reserves memory like any VM. A sandbox idle for 5 minutes goes to sleep and wakes on the next request with every process where it was, and when a Mac is full it puts the idle sandboxes used longest ago to sleep to make room, and tells your agent which. Asleep, it saves its memory to disk and gives the RAM back; installing checks your Mac is set up for it.",
   },
   {
     q: "How do I sign in?",
