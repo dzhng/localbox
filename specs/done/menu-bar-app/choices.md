@@ -770,10 +770,10 @@ started directly (probes) still answers `image_not_found`.
 
 #### S28. Sparkle's feed and archive are signed with the existing release key
 
-**When:** 15 (A9) · **Owner:** `scripts/appcast.ts`; `release.sh`
+**When:** 15 (A9) · **Owner:** `scripts/appcast.ts`; `scripts/release/build.ts`
 
-Sparkle's EdDSA is plain Ed25519, so `release.sh` signs `appcast.xml` and the
-zip with `RELEASE_PRIVATE_KEY`, the same key that signs `release.json`, and
+Sparkle's EdDSA is plain Ed25519, so the build stage signs `appcast.xml` and the
+zip with `release-private.pem`, the same key that signs `release.json`, and
 `SUPublicEDKey` is its public half. The output is byte-identical to Sparkle's
 own `sign_update` for the same seed. There is one trust root and one secret:
 losing that key strands every install's updates and installs alike.
@@ -887,7 +887,7 @@ signing and deleted.
 
 The bundled Node must be arm64 and link only libraries under `/System/Library`
 and `/usr/lib`; Homebrew's Node links its own and is refused. `--node` (or
-`LOCALBOX_NODE_BIN` through `release.sh`) picks another.
+`LOCALBOX_NODE_BIN` through the build stage) picks another.
 
 - **Verdict:** sound. **Confidence:** high.
 
