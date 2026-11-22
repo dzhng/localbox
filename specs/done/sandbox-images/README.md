@@ -24,7 +24,7 @@ them."
   snapshots ([placeholder](../../sandbox-snapshots/README.md)) and shared
   folders ([placeholder](../../shared-folders/README.md)).
 
-Everything is merged and proven at the tiers the work named. One verification
+Everything is built and proven at the tiers the work named. One verification
 is still open: the [two-Mac run on different networks](#open-verification).
 
 ## Why it works this way
@@ -36,7 +36,7 @@ image at all: Xcode needs an Apple ID and can't be redistributed (L5), so the
 agent installs it in a macOS sandbox with the user's Apple ID or a `.xip` they
 share, then saves that sandbox. An image is the disk plus its boot store, never
 memory (Q7), so every sandbox from it cold boots and gets a fresh identity.
-Saving freezes the guest's filesystem for well under a second and APFS-clones
+Saving freezes a Linux guest's filesystem (a macOS guest only syncs) for well under a second and APFS-clones
 the disk, so the source sandbox keeps running (Q8).
 
 **An image is files, the same for both OSes.** Before this work every Mac had one
@@ -60,18 +60,19 @@ no-human-step setup is a chain of public API plus one private screen:
 
 1. `VZMacGuestProvisioningOptions` (macOS 27 host and guest, L2) creates the
    user, turns on auto-login and Remote Login, and skips Setup Assistant.
-2. The build reaches the guest over SSH with a random per-build password that
-   lives only in the builder's memory (P3). It installs the agent, the vsock
+2. The build reaches the guest over SSH with a random password made for each
+   provisioning run that lives only in the builder's memory (P3). It installs the agent, the vsock
    forwarder, the desktop helper and Chrome. No vsock agent exists yet at that
    point, and SSH is the one channel the public API offers.
 3. It restarts into Recovery and types `csrutil disable` through
    Virtualization's private VNC server. `RecoveryVNC.swift` is the only file
    that touches private Apple API, so a macOS update that breaks it breaks one
    file.
-4. With SIP off it writes the agent's TCC rows (screen capture, accessibility,
-   event posting) straight into the system and user databases, switches off
-   notification banners, waits for macOS to record the screen-capture approval,
-   then turns Remote Login off and forgets the password.
+4. The password is gone once SIP is off. Through the agent's root shell the build
+   switches off notification banners, writes the agent's TCC rows (screen
+   capture, accessibility, event posting) into the system and user databases,
+   waits for macOS to record the screen-capture approval, then turns Remote Login
+   off.
 
 SIP off inside the guest is the price of an agent that can see and drive the
 desktop without a person clicking a permission dialog. The guest is already one
@@ -82,11 +83,12 @@ never implies offering macOS sandboxes to other people (E12). macOS allows two
 running macOS VMs per Mac, and a build's VM counts against that limit too
 (choice S59).
 
-**Long work is a durable host operation.** A macOS build, a copy, an image save
-and a create that waits on a copy all outlast a request's 120 s ceiling and must
+**Long work is a durable host operation.** A macOS build, a copy and a create that
+waits on a copy outlast a request's 120 s ceiling (an image save can), and all must
 survive a daemon or connector restart. Each is a journaled host operation keyed by
 its mutation id (L3): a replay returns the same record, an unfinished one resumes
-from its last checkpoint, and callers poll with `image wait`, shaped like `job
+from its checkpoint (a capture retakes its clone; a macOS build interrupted in `bootstrap`
+or `sip` (before SIP is off) restarts from `provision`), and callers poll with `image wait`, shaped like `job
 wait` (at most 120 s per call). A pending state is an answer, not a timeout.
 
 **Freeze runs on its own lane.** The request lane serializes requests with no
@@ -121,7 +123,8 @@ trade-off (choice N7).
 **Placement prefers Macs that hold the image.** Automatic placement picks among
 holders with room, and copies only when none fits (Q6). A named `--machine`, or
 no flag at all (the caller's own Mac, P7), always gets a copy when it lacks the
-image. A macOS image never lands on a Mac older than its guest.
+image. A macOS image only lands on a Mac running at least its guest's major macOS release
+(`min_macos`).
 
 **The positioning changed because the product did.** Saved setups, macOS
 sandboxes and durability are what rented cloud sandboxes lack: those are
@@ -140,7 +143,7 @@ choice inside one of them.
 | # | Decision | Why |
 | --- | --- | --- |
 | P1 | The built-in `linux` image is not a Convex row. `images:list` synthesizes it with every live machine as a holder. It is never copied; each Mac uses the build its release shipped. | `linux` is on every Mac by definition; holder rows for it would only drift. |
-| P2 | Saving an image from a sleeping sandbox wakes it through admission first, then freezes. A stopped sandbox is cloned without a freeze. | A sleeping sandbox's unwritten data is in its save file, not on disk. |
+| P2 | Saving an image from a sleeping sandbox wakes it through admission first, then freezes. A stopped sandbox is cloned without a freeze. | A sleeping sandbox's unwritten data is in memory or its save file, not on disk. |
 | P3 | The macOS build installs its agent over SSH, with Remote Login on and a random per-build password, then turns Remote Login off and discards the password before saving. | No vsock agent exists at that point, and SSH is the one channel the public provisioning API offers. |
 | P4 | The darwin agent is one binary in two roles: a root LaunchDaemon (shell, files, jobs, control lane) and a LaunchAgent in the auto-login session (`--desktop`) for desktop and browser operations, linked by a root-owned local socket. | ScreenCaptureKit and CGEvent posting need a process in the GUI session. |
 | P5 | An agent update waits while any job runs and is retried on the next connect or idle tick. | The job table lives in the agent's memory; deferring is simpler than persisting it. |
@@ -148,7 +151,7 @@ choice inside one of them.
 | P7 | A create with no placement flag (the caller's own Mac) copies the image there when missing, like a named `--machine`. | The local default is an implicit named machine. |
 | P8 | Proof tier `m` runs real macOS guests, with the IPSW and installed base cached. | A macOS install breaks tier `v`'s budget. |
 | P9 | darwin gets a native forwarder, `localbox-vsock`, mirroring socat on Linux. | Node can't open `AF_VSOCK`; the agent stays one portable program. |
-| P10 | The control lane (vsock 1025) carries only `freeze`, `thaw` and `agent.update`; 1024 stays the request lane. | The request lane serializes with no timeout and journals mutations to disk (E2). |
+| P10 | The control lane (vsock 1025) carries only `freeze`, `thaw` and `agent.update` (and its chunks); 1024 stays the request lane. | The request lane serializes with no timeout and journals mutations to disk (E2). |
 | P11 | The macOS risk was proven in two parts: install, identity and suspend; then provisioning and `csrutil`. | The two risks had different owners and different fallbacks. |
 | P12 | The macOS base downloads Chrome from Google's official installer during the build. | Localbox redistributes nothing macOS-side. |
 | P13 | A failed hole punch alone is acceptable; failed resume or throughput would reopen the transport choice. | Separates "some networks can't connect" from "the transfer is broken". |
@@ -202,8 +205,9 @@ The invariants this work added, which would break silently if violated:
 - **A third macOS VM is never Virtualization's raw error.** Admission sleeps the
   least recently used idle macOS sandbox (`made_room`), or answers
   `machine_full` with the reason.
-- **Nothing on the control lane writes to the guest's disk**, and thaw, resume
-  and unlock run on every path of `freezeAndClone`.
+- **Nothing on the freeze path writes to the guest's disk**: freeze and thaw only
+  `sync` and `fsfreeze`, and an `agent.update` is refused while the guest is
+  frozen. Thaw, resume and unlock run on every path of `freezeAndClone`.
 - **An agent swap is never a lost guest.** An `updated` answer marks the next
   request-lane close as expected. An unexpected close still stops the sandbox.
 - **Each macOS sandbox gets a new `VZMacMachineIdentifier`** and its own copy of
@@ -258,8 +262,9 @@ The invariants this work added, which would break silently if violated:
   have no probe of their own; their unit tests above prove them. The tiers are
   in [DEVELOPMENT.md](../../../DEVELOPMENT.md#proofs).
 
-The ledger's **When** fields, the probe names and the evidence files all use the
-build step numbers:
+The ledger's **When** fields (a build step number, or `review` for choices made in
+the closing review), the probe names and the evidence files use the build step
+numbers:
 
 | # | Built | # | Built |
 | --- | --- | --- | --- |
@@ -357,20 +362,24 @@ What the build found that the plan didn't predict, so nobody walks it again.
   lost its processes. Opening a guest lane now dials again when it closes before
   the ready frame, within the same 120 s
   (`testGuestLaneDialsAgainWhenTheGuestClosesBeforeReady`).
+- Spike 19's first run deadlocked in the test harness, not the vsock forwarder:
+  the host wrote a whole 8 MiB frame before reading its echo.
 - `nohup` exits at once under the darwin agent, which has no console session.
   `(cmd &)` starts a process that survives.
 - The first-boot wait stayed one 120 s for both OSes (choice S2). The plan
-  expected macOS to need longer, but measured macOS sandboxes answer in 17–28 s.
+  expected macOS to need longer, but measured macOS sandboxes answer 19–22 s after create
+  (`35-macos-sandboxes.json`).
 
 **Transfer**
 
 - The throughput gate was restated (choice N3). On one Mac the LAN address
   routes through loopback, so `iperf3` measured the kernel, not a network, and
-  the transfer reached only 40–61% of it. Network.framework delivers each
-  datagram through a callback and tops out near 280k datagrams per second here,
+  the transfer reached only 40–61% of it in the run that restated the gate (about
+  54–67%, 65% median, in the recorded run). Network.framework delivers each datagram through a
+  callback and tops out near 270k datagrams per second here,
   below the kernel socket path `iperf3` uses. The gate now compares the transfer
   with bare Network.framework datagrams on the same path, and requires at least
-  70% of that and at least 1 Gbps. It reached 95% (2.37 of 2.50 Gbps), faster
+  70% of that and at least 1 Gbps. It reached 93% (2.73 of 2.93 Gbps) in the recorded run, faster
   than gigabit Ethernet or Wi-Fi, so on a real link the link sets the speed. BSD
   sockets (about 1.35× faster) and QUIC with a pre-shared key were the
   alternatives weighed; only 10 GbE would expose the difference.
@@ -387,8 +396,6 @@ What the build found that the plan didn't predict, so nobody walks it again.
   address waits forever on `EADDRINUSE`, swallowing every HELLO. 4 of 6 resumes
   failed that way. `UDPSocket` now sends on the accepted flow (choice S12, gated
   by probe 38).
-- The spike's first run deadlocked in the test harness, not the forwarder: the
-  host wrote a whole 8 MiB frame before reading its echo.
 
 **Docs and positioning**
 
@@ -405,8 +412,8 @@ What the build found that the plan didn't predict, so nobody walks it again.
 yet run. It is step 8 of the
 [two-Mac runbook](../../durable-sandboxes/two-mac-runbook.md#8-copy-an-image-across-networks):
 copy an image between two Macs on different networks, resume it mid-copy, and
-report the NAT each side's STUN answers suggest if the punch fails. It confirms
-the restated throughput gate on a real link (choice N3) and settles the copy
+report the NAT each side's STUN answers suggest if the punch fails. Its timed copy
+shows the real link's speed against the restated gate (choice N3) and settles the copy
 transport's tuning (choice V1). Probe 20 and probe 38 at tier `x` exit 2
 (blocked) until it runs. A failed punch alone is accepted (P13): the copy fails
 with why and what to try.
@@ -415,15 +422,16 @@ with why and what to try.
 
 The images in [`evidence/`](evidence/) are what each visual claim was held to.
 The JSON beside them is each probe's verdict and measurements from its recorded
-run. The macOS shots are real 1440×900 captures taken inside guests on this
-build's Mac (through VNC in the spikes, by the agent's own `desktop.screenshot`
-later). The standard was the map's: an agent sees the real desktop, with no
+run (18's and 20's JSON are later reruns than the shots and numbers first quoted
+for them). The macOS shots are real 1440×900 captures taken inside guests on this
+build's Mac (17 over the VNC screen; 18 by spike 18's in-guest probe through
+ScreenCaptureKit; 33–35 by the agent's own `desktop.screenshot`). The standard was the map's: an agent sees the real desktop, with no
 dialog, banner or Setup Assistant between it and the work.
 
 | Image | What it is | Standard it was held to |
 | --- | --- | --- |
 | `17-desktop.png` | The provisioning boot of a fresh clone, captured over VNC before Recovery: the auto-logged-in desktop. | No Setup Assistant and no human step (L2). The `csrutil` result is in `17-macos-provision.json`. |
-| `18-menu-opened.png` | A click posted by the desktop role, read back by the host: the Apple menu open. The window-picker prompt and the legacy Screen Recording alert are both visible. | Grants written to TCC take effect with no click. This shot is where the window-picker prompt was first seen. |
+| `18-menu-opened.png` | A click posted by spike 18's stand-in for the desktop role (`localbox-tccprobe`), captured in the guest by the probe's ScreenCaptureKit capture with the menu open: the Apple menu open (the host watched over VNC but missed the menu that run, so the probe retried). The window-picker prompt and the legacy Screen Recording alert are both visible. | Grants written to TCC take effect with no click. This shot is where the window-picker prompt was first seen. |
 | `33-menu-open.jpg` | The real darwin agent's one-frame `SCStream` capture, taken with a menu open. The prompt is still up. | A capture works while a menu is open. The prompt was left to the base build. |
 | `34-prompt-after-reboot.jpg` | The managed preference's failure: after the build rebooted the guest, the window-picker prompt was back. | Dead-end record for `forceBypassScreenCaptureAlert`. |
 | `34-prompt-before-guard.jpg` | The prompt cross-fading over the Screen Recording alert, before the guard pressed Allow. | Dead-end record: what a screenshot showed with nothing answering the prompt. |
@@ -438,5 +446,6 @@ were pixel-identical. Dropped at close, as intermediate: `40-site/pre-critique/`
 (the first rewrite the critique started from), `40-site/crops/` (the zooms the
 critique read), the two compare-metrics JSON files (numbers for pairs whose
 middle side is gone; the verdicts are above), and `17-csrutil.png` (an all-black
-frame of Recovery's last screen after halt). The slice files that were the
+frame of Recovery's screen, saved after `csrutil disable` reported and before
+`halt`). The slice files that were the
 build plan are gone too; what they found is folded into this record.
