@@ -36,7 +36,14 @@ export async function relayOverConvex(options: { machines: Array<{ machineId: st
   let calls = 0;
   const op = async (operation: OperationId, body: Record<string, unknown> = {}, principal: Principal = STUDIO): Promise<any> => {
     const required = catalogById.get(operation)?.idempotency === "required";
-    const result = await runOps(principal, { operation, request_id: `req-${++calls}`, input: {}, ...(required ? { mutation_id: `mut-${calls}` } : {}), ...body }, deps);
+    let result = await runOps(principal, { operation, request_id: `req-${++calls}`, input: {}, ...(required ? { mutation_id: `mut-${calls}` } : {}), ...body }, deps);
+    // As the client does: an answer not ready within one call's wait comes back pending and is followed by continuation
+    // (under load even a short deadline can end the inline wait first).
+    type Pending = { status?: string; request_id: string; deadline_at: number };
+    while ((result.body as Pending).status === "pending") {
+      const pending = result.body as Pending;
+      result = await runOps(principal, { continue: pending.request_id, deadline_at: pending.deadline_at }, deps);
+    }
     return (result.body as { response: ResponseEnvelope }).response;
   };
   /** An image saved on `holders[0]` and ready on every Mac in `holders`. */
