@@ -28,7 +28,7 @@
     "version": "27.2.1"
   },
   "first_build": {
-    "seconds": 432,
+    "seconds": 289,
     "phases": [
       {
         "phase": "download",
@@ -42,50 +42,50 @@
       },
       {
         "phase": "provision",
-        "at_s": 201
+        "at_s": 157
       },
       {
         "phase": "bootstrap",
-        "at_s": 251
+        "at_s": 174
       },
       {
         "phase": "sip",
-        "at_s": 303
+        "at_s": 214
       },
       {
         "phase": "tcc",
-        "at_s": 397
+        "at_s": 261
       },
       {
         "phase": "finish",
-        "at_s": 424
+        "at_s": 280
       }
     ],
     "result": {
       "ipsw_build": "26B131",
       "chrome_version": "158.0.8127.37",
       "os": "macos",
-      "size_bytes": 30830485504,
-      "agent_version": "0.1.1+a6b394b443d9",
+      "size_bytes": 29719707648,
+      "agent_version": "0.1.1+6ba01ac94915",
       "ipsw_version": "27.2.1",
       "min_macos": "27.0"
     },
     "error": null
   },
   "manifest": {
-    "agent_version": "0.1.1+a6b394b443d9",
+    "agent_version": "0.1.1+6ba01ac94915",
     "hardware_model": "(set)",
-    "image_id": "image_p34amwquau7f",
+    "image_id": "image_p34amwr2ktpj",
     "min_macos": "27.0",
     "os": "macos",
-    "size_bytes": 30830485504
+    "size_bytes": 29719707648
   },
   "image_check": {
-    "agent_ready_ms": 19421,
+    "agent_ready_ms": 17612,
     "browser": {
       "focused": true,
       "generation": 1,
-      "tab_id": "AFBEA9ADEFE0F13B8C9137AEE78316CF",
+      "tab_id": "E7BAFEDB3443E0F18ADCE09772F228F2",
       "title": "",
       "url": "https://example.com/"
     },
@@ -101,9 +101,7 @@
     },
     "chrome_version": "158.0.8127.37",
     "csrutil_status": "System Integrity Protection status: disabled.",
-    "guard_log": [
-      "[localbox-guest] desktop: allowed the window-picker bypass prompt shown by UserNotificationCenter"
-    ],
+    "guard_log": [],
     "ok": true,
     "picker_prompt_seen": [],
     "screenshots": 8,
@@ -111,7 +109,7 @@
     "xcode": ""
   },
   "cached_rebuild": {
-    "seconds": 366,
+    "seconds": 300,
     "phases": [
       {
         "phase": "download",
@@ -125,31 +123,31 @@
       },
       {
         "phase": "provision",
-        "at_s": 189
+        "at_s": 156
       },
       {
         "phase": "bootstrap",
-        "at_s": 218
+        "at_s": 173
       },
       {
         "phase": "sip",
-        "at_s": 266
+        "at_s": 210
       },
       {
         "phase": "tcc",
-        "at_s": 315
+        "at_s": 269
       },
       {
         "phase": "finish",
-        "at_s": 338
+        "at_s": 292
       }
     ],
     "result": {
       "ipsw_build": "26B131",
       "chrome_version": "158.0.8127.37",
       "os": "macos",
-      "size_bytes": 29963976704,
-      "agent_version": "0.1.1+a6b394b443d9",
+      "size_bytes": 29767348224,
+      "agent_version": "0.1.1+6ba01ac94915",
       "ipsw_version": "27.2.1",
       "min_macos": "27.0"
     },
