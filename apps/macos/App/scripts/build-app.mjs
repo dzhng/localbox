@@ -131,7 +131,7 @@ function productionModules() {
 }
 
 /**
- * Sparkle's keys (Bento's `configureReleasePlist`): the feed and the key it must be signed with, a signed feed and a
+ * Sparkle's keys: the feed and the key it must be signed with, a signed feed and a
  * verified archive required, hourly checks on by default, and Sparkle's own automatic installs off, since
  * `UpdateCoordinator` decides when to install.
  */

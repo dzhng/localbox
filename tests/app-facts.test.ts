@@ -241,7 +241,7 @@ test("what does not warn: a dev build outside Applications, setup turned off, a 
 });
 
 test("the app's updater is its five fields, nulls dropped; a build without one says null; a change of status ends a wait", async () => {
-  const waiting = { available: true, enabled: true, can_check: true, state: "waiting", status: "Waiting: sandboxes would restart. Install from Settings, or unlock this Mac.", version: "0.9.0" };
+  const waiting = { available: true, enabled: true, can_check: true, state: "waiting", status: "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway.", version: "0.9.0" };
   assert.deepEqual((await facts({ app: { update: waiting } })).update, { available: true, enabled: true, can_check: true, status: waiting.status, version: "0.9.0" });
   assert.deepEqual((await facts({ app: { update: { ...waiting, state: "idle", status: null, version: null } } })).update, { available: true, enabled: true, can_check: true });
   assert.equal((await facts({})).update, null);

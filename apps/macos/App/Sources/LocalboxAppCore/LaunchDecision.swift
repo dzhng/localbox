@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Whether this launch runs. One ordered rule decided from values only (ported from Bento's `LaunchDecision`); the
+/// Whether this launch runs. One ordered rule decided from values only; the
 /// caller gathers the inputs and carries out the result. There is no move-to-Applications prompt
 /// (specs/menu-bar-app, A10): a copy elsewhere runs, and `isInApplicationsFolder` feeds the warning that says so.
 public enum LaunchDecision: Equatable, Sendable {

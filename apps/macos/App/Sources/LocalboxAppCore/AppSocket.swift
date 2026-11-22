@@ -26,7 +26,7 @@ public enum AppSocketError: Error, Equatable, CustomStringConvertible {
 
 /// The app's own listener, `<root>/app.sock` (specs/menu-bar-app, slice 09), for what only the app can do: report
 /// its children, change its login item and drive its updates. It answers whatever the daemon is doing, since it
-/// is how the CLI learns the daemon is down. Ported from Bento's `AppSocket`: mode 0600, one JSON request line in
+/// is how the CLI learns the daemon is down. Mode 0600, one JSON request line in
 /// (`{"id","operation","params"}`), one response line out in the CLI's envelope (`{"id","ok":true,"result"}` or
 /// `{"id","ok":false,"error":{code,message,retryable}}`), then the connection closes.
 public final class AppSocket: @unchecked Sendable {

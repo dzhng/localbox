@@ -3,8 +3,8 @@ import LocalboxAppCore
 import LocalboxMenu
 import SwiftUI
 
-/// Draws the production SettingsView as Bento's `settings-view-shots.mjs` draws its own: a borderless 560 × 780
-/// window far off screen, ordered behind everything, never activated, captured with `cacheDisplay`. The facts are the
+/// Draws the production SettingsView as the reference shots in specs/menu-bar-app/assets were drawn: a borderless
+/// 560 × 780 window far off screen, ordered behind everything, never activated, captured with `cacheDisplay`. The facts are the
 /// shared fixtures, adjusted per state; form state (a code sent, a refusal) is reached through the model's own
 /// intents over fake actions, so each shot is a state a person can get to.
 enum SettingsShots {
@@ -50,7 +50,7 @@ enum SettingsShots {
         State(name: "agent-setup-attention", fixture: "idle", change: { facts in
             facts["agent_setup"] = ["enabled": true, "command": "missing", "skill": "installed"]
         }),
-        // The same switches as Bento's `manual` reference shot (its window shown at launch, no login item), so the
+        // The same switches as the `manual` reference shot (its window shown at launch, no login item), so the
         // compare's only variable is the product's name.
         State(name: "manual-updates", fixture: "idle", showAtLaunch: true, change: { facts in
             facts["open_at_login"] = "disabled"
@@ -61,9 +61,9 @@ enum SettingsShots {
         }),
     ]
 
-    /// Slice 15's update rows, named and switched as Bento's `settings-view-shots.mjs` states are (Bento's `failure` is
+    /// Slice 15's update rows, named and switched as the reference states are (the reference's `failure` is
     /// `failed` here), with the same window-at-launch and login-item switches as `manual-updates`, so a compare against
-    /// Bento's same-named shot changes only the product's name, the first footer sentence and Localbox's own status
+    /// the same-named reference shot changes only the product's name, the first footer sentence and Localbox's own status
     /// lines. "Waiting" is the A12 blocker, where Check for Updates installs anyway (so it stays enabled).
     static let updateStates: [State] = [
         update("enabled", ["enabled": true, "can_check": true]),

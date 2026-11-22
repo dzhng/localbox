@@ -221,7 +221,7 @@ The agent never has to guess or ask a follow-up question.
 - Sign-in is "your email and a 6-digit code emailed to you". Never mention
   passwords, keys or pairing.
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
-  give their memory back and resume exactly where they were. The installer
+  give their memory back and resume exactly where they were. Installing
   checks the Mac is set up for it; don't promise it beyond that.
 - Snapshots and rollback stay out of the message until they exist.
 - Marketing (the README, the site and the pitch in `llms.txt`) describes the

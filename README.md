@@ -179,17 +179,22 @@ Open Claude Code or Codex and say:
 
 > Install Localbox for me by following https://localbox.sh/llms.txt
 
-Then ask for something that needs a sandbox. The [agent setup](#agent-setup)
+Your agent installs Localbox, a menu bar app, with no click and no password,
+then asks you for the 6-digit code it emails you to sign this Mac in. Then ask
+for something that needs a sandbox. Click the menu bar icon to see this Mac's
+sandboxes, images and connection at a glance. The [agent setup](#agent-setup)
 below is what your agent follows.
 
 ## Agent setup
 
 Your agent follows the [installation procedure](skills/localbox/references/installation.md):
 one signed release, verified, then the Localbox menu bar app, which sets up the
-CLI and the [Localbox skill](skills/localbox/SKILL.md) and runs the background
-services. Updates
-and keeping the skill current are covered in the
-[skill lifecycle](skills/localbox/references/skill-lifecycle.md).
+CLI and the [Localbox skill](skills/localbox/SKILL.md), runs the background
+services and opens at login. Quitting it takes the Mac offline; any `localbox`
+command opens it again. It updates itself; the
+[skill lifecycle](skills/localbox/references/skill-lifecycle.md) covers updates
+and keeping the skill current, and the installation procedure ends with how to
+remove Localbox.
 
 ## Contributing
 

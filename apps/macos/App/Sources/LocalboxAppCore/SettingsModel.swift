@@ -42,7 +42,7 @@ public struct CLISettingsActions: SettingsActions {
 }
 
 /// The Settings window's state: the facts the CLI reports plus what is being typed or asked for, and the intents
-/// its controls call. Ported from Bento's `SettingsModel`: it reads when the window opens and again after every
+/// its controls call. It reads when the window opens and again after every
 /// change, and a change that fails shows the CLI's message without losing what was typed. The one setting that is
 /// not CLI state is the app's own "Show this window when Localbox starts" (default off).
 @MainActor
@@ -207,7 +207,7 @@ public final class SettingsModel: ObservableObject {
 
     // MARK: - Words
 
-    /// The "Set up my agents" row's line, from the command's and the skill's states (Bento's `summary()`).
+    /// The "Set up my agents" row's line, from the command's and the skill's states.
     public static func agentSummary(_ setup: AppFacts.AgentSetup) -> String {
         if setup.command == "installed" && setup.skill == "installed" { return "localbox command + skill, kept current. All good ✓" }
         let command: String
@@ -229,7 +229,7 @@ public final class SettingsModel: ObservableObject {
         return "\(command); \(skill)."
     }
 
-    /// The "Open at login" row's line (Bento's `loginItemDescription`).
+    /// The "Open at login" row's line.
     public static func loginItemDescription(_ state: AppFacts.OpenAtLogin) -> String {
         switch state {
         case .enabled: return "Localbox opens when you log in."

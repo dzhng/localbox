@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { DEV_BUNDLE_ID, thisAppBundle, type AppBundle } from "./app-bundle.js";
+import { DEV_BUNDLE_ID, RELEASE_BUNDLE_ID, thisAppBundle, type AppBundle } from "./app-bundle.js";
 
 export interface MachinePaths {
   root: string;
@@ -29,19 +29,29 @@ export interface MachinePaths {
 }
 
 /**
- * This Mac's Localbox state. `LOCALBOX_MACHINE_ROOT` relocates all of it (simulated machines, probes). Otherwise a
- * development build of the app (`app`, the bundle this CLI runs in) gets its own root, logs and credential beside
- * the release's, so a dev app and a release app never share a daemon, sandboxes or a machine identity.
+ * The folder name of a bundle's own root and logs. Only the release (or a CLI outside any app) owns `Localbox`; the
+ * development build is `Localbox Dev`, and any other bundle id (a rehearsal or lab build) is named after its id, so
+ * no build but the release can ever share a real install's daemon, sandboxes or machine identity.
+ */
+function stateName(app: AppBundle | null): string | null {
+  if (!app?.id || app.id === RELEASE_BUNDLE_ID) return null;
+  return app.id === DEV_BUNDLE_ID ? "Localbox Dev" : `Localbox (${app.id})`;
+}
+
+/**
+ * This Mac's Localbox state. `LOCALBOX_MACHINE_ROOT` relocates all of it (simulated machines, probes). Otherwise every
+ * build of the app other than the release (`app`, the bundle this CLI runs in) gets its own root, logs and credential
+ * beside the release's.
  */
 export function machinePaths(env: NodeJS.ProcessEnv = process.env, app: AppBundle | null = thisAppBundle()): MachinePaths {
   const relocated = env.LOCALBOX_MACHINE_ROOT;
   const home = env.HOME || homedir();
-  const dev = app?.id === DEV_BUNDLE_ID;
-  const name = dev ? "Localbox Dev" : "Localbox";
+  const own = stateName(app);
+  const name = own ?? "Localbox";
   const root = relocated ?? join(home, "Library", "Application Support", name);
   return {
     root,
-    credentials: relocated || dev ? join(root, "credentials.json") : join(home, ".config", "localbox", "credentials.json"),
+    credentials: relocated || own ? join(root, "credentials.json") : join(home, ".config", "localbox", "credentials.json"),
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
     hostdLock: join(root, "hostd.lock"),

@@ -87,12 +87,12 @@ final class DaemonLifetimeTests: XCTestCase {
         let first = try startDaemon(machine)
         try await untilSocket(machine)
         let twin = try startDaemon(machine)
-        twin.process.waitUntilExit()
+        try await exited(twin.process)
         XCTAssertEqual(twin.process.terminationStatus, 75)
         XCTAssertTrue(twin.stderr().contains("holds \(machine.appendingPathComponent("hostd.lock").path)"), twin.stderr())
         XCTAssertTrue(FileManager.default.fileExists(atPath: machine.appendingPathComponent("agent.sock").path), "the twin did not unlink the socket")
         XCTAssertTrue(first.process.isRunning)
-        first.process.terminate(); first.process.waitUntilExit()
+        first.process.terminate(); try await exited(first.process)
         XCTAssertEqual(first.process.terminationStatus, 0)
     }
 
@@ -102,7 +102,7 @@ final class DaemonLifetimeTests: XCTestCase {
         try await untilSocket(machine)
         XCTAssertThrowsError(try MachineLock(path: lock))
         XCTAssertFalse(FileManager.default.fileExists(atPath: machine.appendingPathComponent("hostd.lock").path))
-        daemon.process.terminate(); daemon.process.waitUntilExit()
+        daemon.process.terminate(); try await exited(daemon.process)
     }
 
     func testASupervisedDaemonStopsWhenItsStdinCloses() async throws {
@@ -110,7 +110,7 @@ final class DaemonLifetimeTests: XCTestCase {
         let daemon = try startDaemon(machine, arguments: ["--supervised"], stdin: stdin)
         try await untilSocket(machine)
         try stdin.fileHandleForWriting.close()
-        daemon.process.waitUntilExit()
+        try await exited(daemon.process)
         XCTAssertEqual(daemon.process.terminationStatus, 0)
         XCTAssertTrue(daemon.stderr().contains("stopping (stdin closed)"), daemon.stderr())
         XCTAssertFalse(FileManager.default.fileExists(atPath: machine.appendingPathComponent("agent.sock").path), "the socket is removed")
@@ -124,7 +124,7 @@ final class DaemonLifetimeTests: XCTestCase {
         try stdin.fileHandleForWriting.close()
         try await Task.sleep(nanoseconds: 1_000_000_000)
         XCTAssertTrue(daemon.process.isRunning, daemon.stderr())
-        daemon.process.terminate(); daemon.process.waitUntilExit()
+        daemon.process.terminate(); try await exited(daemon.process)
         XCTAssertEqual(daemon.process.terminationStatus, 0)
     }
 
@@ -154,10 +154,20 @@ final class DaemonLifetimeTests: XCTestCase {
         process.standardInput = stdin ?? FileHandle.nullDevice
         let errors = Pipe(), log = Locked(Data())
         process.standardError = errors
-        errors.fileHandleForReading.readabilityHandler = { handle in let chunk = handle.availableData; log.withLock { $0.append(chunk) } }
+        // At EOF the handler would be called again and again with no data: it stops itself there.
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { log.withLock { $0.append(chunk) } }
+        }
         try process.run()
         addTeardownBlock { if process.isRunning { kill(process.processIdentifier, SIGKILL); process.waitUntilExit() } }
         return Daemon(process: process, errors: errors, log: log)
+    }
+
+    /// Waits for `process` to end by polling, not `waitUntilExit()`, which can miss the exit when called on a
+    /// concurrency thread and then never returns.
+    private func exited(_ process: Process) async throws {
+        try await until { !process.isRunning }
     }
 
     private func untilSocket(_ machine: URL) async throws {

@@ -99,7 +99,7 @@ final class Box: @unchecked Sendable { var facts: AppFacts; init(_ facts: AppFac
 let out;
 before(() => { out = JSON.parse(run(compile(DRIVER), [FIXTURES])); });
 
-test("the Set up my agents line: Bento's all-good sentence, else the command's state and the skill's", () => {
+test("the Set up my agents line: the all-good sentence, else the command's state and the skill's", () => {
   const s = out.summaries;
   assert.equal(s["installed/installed"], "localbox command + skill, kept current. All good ✓");
   assert.equal(s["missing/installed"], "Command not installed; skill installed.");
@@ -111,7 +111,7 @@ test("the Set up my agents line: Bento's all-good sentence, else the command's s
   for (const line of Object.values(s)) assert.doesNotMatch(line, /_/, "no raw state word");
 });
 
-test("Open at login: Bento's four lines with Localbox's name; on while awaiting approval; the pane only when macOS needs it", () => {
+test("Open at login: four lines; on while awaiting approval; the pane only when macOS needs it", () => {
   assert.deepEqual(out.login_items, {
     enabled: { description: "Localbox opens when you log in.", on: true, pane: false },
     disabled: { description: "Localbox does not open when you log in.", on: false, pane: false },

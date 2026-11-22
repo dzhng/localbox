@@ -24,9 +24,9 @@ public struct UpdateSteps: Sendable {
 }
 
 /// The only owner of update gating (specs/menu-bar-app, slice 15). Sparkle (`SparkleDriver`) owns the feed, the
-/// schedule, the signed download and the replacement; this decides when the app lets it install. A port of Bento's
-/// `UpdateCoordinator`, reordered so that everything slow happens before Sparkle's permit: Sparkle's helper takes the
-/// launch lock when it is granted and cancels unless the app exits within 20 s, so hibernation must already be over.
+/// schedule, the signed download and the replacement; this decides when the app lets it install. Everything slow
+/// happens before Sparkle's permit: Sparkle's helper takes the launch lock when it is granted and cancels unless the
+/// app exits within 20 s, so hibernation must already be over.
 ///
 /// `install(automatic:)` runs, in order:
 /// 1. blockers: the built-in image being swapped in; for an automatic install only, sandboxes running while this Mac
@@ -39,7 +39,7 @@ public struct UpdateSteps: Sendable {
 public final class UpdateCoordinator {
     public enum Phase: String, Sendable { case unavailable, idle, disabled, checking, downloading, waiting, installing, failed }
 
-    public static let hibernationBlocked = "Waiting: sandboxes would restart. Install from Settings, or unlock this Mac."
+    public static let hibernationBlocked = "Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."
     public static let commandsRunning = "Waiting for localbox commands to finish."
     public static let imageInstalling = "Waiting for the built-in Linux image to finish installing."
     public static let upToDate = "You’re up to date."
@@ -95,7 +95,7 @@ public final class UpdateCoordinator {
     public func check() {
         if pending != nil { requested = true; progress(); return }
         guard canCheck else { return }
-        startCheck()
+        beginCheck()
     }
 
     /// `update.install`: installs the update that waits, else looks for one and installs what it finds.
@@ -103,6 +103,13 @@ public final class UpdateCoordinator {
         requested = true
         if pending != nil { progress(); return }
         guard canCheck else { return }
+        beginCheck()
+    }
+
+    /// Reports the check as started before Sparkle, which answers asynchronously, has said so: whoever asked reads
+    /// `checking` at once, never the last cycle's answer. Sparkle ends every check it starts with a result.
+    private func beginCheck() {
+        checking()
         startCheck()
     }
 

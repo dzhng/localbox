@@ -1,11 +1,11 @@
-// Offscreen shots of the popover and the Settings window (Bento's settings-view-shots pattern): LocalboxAppCore and
+// Offscreen shots of the popover and the Settings window: LocalboxAppCore and
 // LocalboxMenu are compiled as the modules they are, Shots.swift renders the real PopoverView in an NSHostingView from
 // each shared facts fixture, and SettingsShots.swift the real SettingsView, light and dark, with no activation.
 //
 //   node apps/macos/App/tests/view-shots/view-shots.mjs [popover directory] [scale] [settings directory] [updates directory]
 //
 // The defaults are specs/menu-bar-app/evidence/13 at 2x for the popover, evidence/14 for Settings and evidence/15 for
-// Settings' update states (at the window's own scale, 1x, as Bento's reference shots are).
+// Settings' update states (at the window's own scale, 1x, as the reference shots in specs/menu-bar-app/assets are).
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";

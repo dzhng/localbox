@@ -11,7 +11,7 @@ public struct CLIFailure: Error, Equatable, CustomStringConvertible, Sendable {
 }
 
 /// Runs the CLI inside this bundle, `Contents/Resources/cli/localbox`, the app's only way to read or change Localbox
-/// state (specs/menu-bar-app, invariant 5). Ported from Bento's `BundledCLI`.
+/// state (specs/menu-bar-app, invariant 5).
 public final class BundledCLI: Sendable {
     public let executable: URL
     private let environment: [String: String]

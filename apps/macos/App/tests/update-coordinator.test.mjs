@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import { compile, run, swiftString } from "./driver.mjs";
 
-// A port of Bento's tests/update-coordinator.test.mjs to Localbox's gate (specs/menu-bar-app, slice 15): the real
+// Localbox's update gate (specs/menu-bar-app, slice 15): the real
 // UpdateCoordinator with fake steps, driven as Sparkle drives it. Each scenario prints what happened, in order.
 const facts = new URL("./fixtures/facts/three-sandboxes.json", import.meta.url).pathname;
 const DRIVER = `
@@ -94,6 +94,11 @@ final class Box: @unchecked Sendable {
     case "facts-unreadable":
       box.facts = { throw CLIFailure(code: "guest_unreachable", message: "Localbox is not running") }
       offer()
+    case "check-answers-at-once":
+      coordinator.cycleFinished(error: nil, upToDate: true); status()   // the last cycle found nothing newer
+      coordinator.startCheck = { log.add("sparkle asked") }
+      coordinator.check()
+      log.add("answer: \\(coordinator.phase.rawValue), \\(coordinator.message ?? "-")")
     case "manual-only":
       offer(); await settle()
       log.add("can check: \\(coordinator.canCheck)")
@@ -121,7 +126,7 @@ test("gate order: blockers, connector and daemon stopped (hibernating), no comma
 test("automatic installs wait while sandboxes run and this Mac cannot hibernate them; Check for Updates installs anyway, saying they restart", () => {
   const lines = scenario("locked");
   const asked = lines.indexOf("can check: true");
-  assert.ok(lines.slice(0, asked).includes("status: Waiting: sandboxes would restart. Install from Settings, or unlock this Mac."), lines.join("\n"));
+  assert.ok(lines.slice(0, asked).includes("status: Waiting: installing now would restart sandboxes. Unlock this Mac, or use Check for Updates in Settings to install anyway."), lines.join("\n"));
   assert.ok(!lines.slice(0, asked).some((line) => line.startsWith("stop children")), "nothing stopped while blocked");
   const after = lines.slice(asked);
   assert.deepEqual(withoutStatus(after), ["can check: true", "facts", "stop children [quiet-otter]", "children stopped", "no commands", "grant", "authorize", "exit at once", "phase installing"]);
@@ -184,4 +189,11 @@ test("with automatic installs off a downloaded update waits for a person; instal
   assert.ok(lines.includes("status: Localbox 0.9.0 is ready. Check for Updates to install it."), lines.join("\n"));
   assert.ok(lines.indexOf("can check: true") < lines.indexOf("facts"), "nothing ran before the person asked");
   assert.deepEqual(withoutStatus(lines.slice(lines.indexOf("facts"))), ["facts", "stop children [quiet-otter]", "children stopped", "no commands", "grant", "authorize", "exit at once", "phase installing"]);
+});
+
+test("a check reads as checking the moment it is asked for, never as the last cycle's answer", () => {
+  const lines = scenario("check-answers-at-once");
+  assert.ok(lines.includes("status: You’re up to date."), lines.join("\n"));
+  const asked = lines.indexOf("sparkle asked");
+  assert.deepEqual(lines.slice(asked, asked + 2), ["sparkle asked", "answer: checking, Checking for updates…"], lines.join("\n"));
 });

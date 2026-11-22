@@ -646,3 +646,46 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
 - **Critique (`evidence/15/critique.md`).** Declined as Bento's own traits: grey "on" toggles in the offscreen capture,
   an undecorated failure line, no spinner while checking, the layout. Open: "Install from Settings" names no control
   that says Install (Check for Updates does it); the sentence is the slice's, so it stays for the user to decide.
+
+## 16 · Closeout
+
+- **Only the release bundle id owns the real machine root.** `machinePaths()` gives every id other than
+  `sh.localbox.mac` (and `sh.localbox.mac.dev`, still `Localbox Dev`) its own root, logs and credential, named
+  `Localbox (<id>)`. Why: the real-account proof had to install a release-shaped bundle on this account without any
+  chance of sharing a future real install's daemon, sandboxes or identity, and before this any unknown id fell back to
+  the real root. Named after the id, not the bundle's folder, so renaming the release changes nothing. Reverse: the
+  `stateName` rule in `packages/config/src/machine-paths.ts`.
+- **The locked-Mac update sentence** is "Waiting: installing now would restart sandboxes. Unlock this Mac, or use
+  Check for Updates in Settings to install anyway." (was "… Install from Settings, …", which named no control). The
+  button keeps its label; the sentence names it. Reverse: `UpdateCoordinator.hibernationBlocked`.
+- **`update check` answers `checking` at once.** Found by the real-account proof: `UpdateCoordinator.check()` and
+  `install()` now call `checking()` before asking Sparkle, so the CLI's wait sees a busy state instead of returning the
+  last cycle's "You're up to date." while an update installs. Safe because Sparkle ends every check it starts with a
+  result (`cycleFinished`, `ready`, or a failure). Reverse: `beginCheck()`.
+- **Lineage comments were removed, not allow-listed.** Every comment crediting Bento as a file's source is gone
+  (the facts they carried, such as layout numbers, stay); `apps/macos/App/sparkle/` needed no Bento name. The naming
+  test scans tracked files under `apps`, `packages`, `scripts`, `skills`, `bin`, `api` and the root docs; `tests/` and
+  `specs/` are not shipped and are not scanned. Each allow-list entry names its file, term and the line shape it may
+  appear on, and the test fails on an entry that no longer matches anything. Reverse: `tests/naming.test.ts`.
+- **The real-account proof kept agent setup on.** The slice's fallback (agent setup off) applied only if the home
+  command and skill could not be isolated. They could: the rehearsal bundle's `LSEnvironment` set `LOCALBOX_BIN_DIR`
+  and `LOCALBOX_SKILL_HOME` to a scratch home, which every LaunchServices launch (step 5's `open`, the login item,
+  Sparkle's relaunch) applies, and the daemon's agent setup wrote only there. No PATH block was written (the command's
+  directory counted as on PATH in that environment). Sign-in used the local dev stack, never a real account or email.
+  The pre-launch path check refused the first bundle (assembled from a stale `dist/`) before it ran.
+- **Removal, as written now:** optional `logout`, then `agents setup off`, `skill uninstall`, `app login-item off`,
+  quit, delete the app and the command, and, to leave nothing, the logs, caches, HTTP storage and defaults. Proven
+  in the real-account proof. Not proven: whether System Settings keeps a disabled login item record (listing BTM
+  needs an administrator).
+- **Docs.** The App README holds all ten invariants as principles (five were missing: agent setup, app-managed,
+  the bundle's two writers, `images/linux`'s writer, computed warnings), plus "quitting takes the Mac offline". The
+  skill says the app must be running and the CLI starts it; `skill-lifecycle.md` describes Sparkle updates (it still
+  said the app did not update itself). SECURITY.md gained "What runs on the Mac". The README, the site and `llms.txt`
+  each gained one sentence on the popover and that the app opens at login and updates itself; nothing else changed.
+- **The runbook** is `manual-runbook.md`, with results recorded under `evidence/manual/`; it adds a true-SSH install
+  and a cold-boot evidence leg to the README's three.
+- **A hang in `DaemonLifetimeTests`, fixed in the test.** `testASupervisedDaemonStopsWhenItsStdinCloses` hung twice
+  in the sweep (9 and 5 minutes): the daemon had exited, but `Process.waitUntilExit()` on a concurrency thread never
+  returned, while the stderr `readabilityHandler` spun at EOF (most of a `sample`). Neither the test nor the daemon
+  changed in this slice. The handler now stops itself at EOF and the async tests wait by polling `isRunning`; three
+  filtered runs and the full suite then passed. Reverse: `exited(_:)` in that file.

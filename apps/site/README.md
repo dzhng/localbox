@@ -12,7 +12,7 @@ for humans, and the same instructions as plain text at `/llms.txt` for agents.
   differs from the prompt quoted in the repository README. Change both together.
 - **Sell and install, don't teach.** `llms.txt` pitches Localbox to agents and
   points them at the install procedure in the consumer skill's references. How
-  to use Localbox lives in the skill, which the installer installs; `llms.txt`
+  to use Localbox lives in the skill, which the app installs; `llms.txt`
   never carries usage rules or commands.
 - **Artwork has one home.** Illustrations live in `.github/readme` and are copied
   to `/art` at build time; the build reads their PNG size so images reserve

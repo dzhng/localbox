@@ -7,10 +7,24 @@ problem.
 
 ## Updates
 
-The app does not update itself yet. To update, install the latest release with
-the [installation procedure](installation.md): it replaces the app in place,
-keeping the old copy as a backup, and the new app's first launch brings the
-skill and the command up to its version. Sandbox disks survive.
+Localbox.app updates itself. It checks for a new release every hour, verifies
+it against the release key, and installs it once nothing is in the way:
+running sandboxes are put to sleep first and wake in the new version, and a
+`localbox` command still running is waited for. The new version's first launch
+brings the skill and the command up to it. Sandbox disks survive.
+
+```sh
+localbox update status            # the updater's state and any waiting version
+localbox update check             # check now; installs under the automatic rules
+localbox update install           # install a waiting update now
+localbox update automatic off     # updates download and wait for update install (on to undo)
+```
+
+While this Mac cannot hibernate (its screen is locked with a password), an
+automatic update waits rather than restart running sandboxes; `update install`
+goes ahead and they restart. Installing the latest release again with the
+[installation procedure](installation.md) also works: it replaces the app in
+place and keeps the old copy as a backup.
 
 ## Agent setup
 

@@ -231,6 +231,18 @@ The key lives in the Convex row, so whoever can read the Convex deployment (see
 [relay trust](#relay-trust)) could read it while the copy runs. Copy rows expire
 after 24 hours.
 
+## What runs on the Mac
+
+Localbox is one menu bar app, `Localbox.app`, running as the logged-in user. It
+starts the host daemon (the only process holding the virtualization
+entitlement) and the connector as its own children; nothing runs as root, and
+there is no launchd job or background helper outside the app. The installation
+procedure opens it, and it then opens at login (a login item the user can turn
+off in System Settings or with `localbox app login-item off`). Quitting it takes
+this Mac offline: its sandboxes hibernate, the relay can no longer reach it,
+and nothing serves them until the app opens again, which any `localbox` command
+does by itself.
+
 ## Releases and updates
 
 A release is trusted through its manifest: `release.json` lists every artifact's

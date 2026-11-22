@@ -15,6 +15,13 @@ from the Dock may not read the shell profile that puts it on PATH). If neither
 exists and the user asked for setup, follow [installation](references/installation.md).
 Never build from source, run `npx skills add`, or copy this skill yourself.
 
+Localbox is a menu bar app, `Localbox.app`, with this CLI inside it. The app
+must be running for anything on this Mac to work, and the CLI starts it by
+itself, quietly, whenever it is not; never open it yourself. Quitting it takes
+this Mac offline until it opens again. `localbox app status` shows what the
+app shows: version, daemon and connection, sandboxes, and any warning with its
+fix.
+
 Creating sandboxes needs a signed-in Mac:
 
 ```sh
@@ -121,12 +128,13 @@ and `--machine` do), and the client signs in with the user's email code.
 
 ## Keeping Localbox current
 
-Localbox.app keeps this skill and the `localbox` command matched to itself at
-every launch. To update, install the latest release again with the
-[installation](references/installation.md) procedure. For `skill status`, agent
-setup on or off, and project-scope or comparison installs, read
-[skill lifecycle](references/skill-lifecycle.md). To
-find any operation or its schema, read [capabilities](references/capabilities.md).
+Localbox.app updates itself and keeps this skill and the `localbox` command
+matched to itself at every launch. `localbox update status` shows the
+updater; `localbox update install` installs a waiting update now. For updates,
+`skill status`, agent setup on or off, and project-scope or comparison
+installs, read [skill lifecycle](references/skill-lifecycle.md). To remove
+Localbox, follow [installation](references/installation.md#removing-localbox).
+To find any operation or its schema, read [capabilities](references/capabilities.md).
 
 If the current project has its own copy of this skill (`.claude/skills/localbox`,
 `.agents/skills/localbox` or `.codex/skills/localbox` under the project root), it

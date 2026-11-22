@@ -18,8 +18,7 @@ import { linuxImage } from "../lib/linux-image.js";
 import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 import { scratchIdentity } from "../lib/scratch-identity.js";
 
-// Menu bar app, slice 15: an installed Localbox updates itself with Sparkle, a port of Bento's installed-update lab
-// (apps/macos/scripts/installed-update-lab.mjs). Two signed bundles, N and N+1, built from this checkout with the
+// Menu bar app, slice 15: an installed Localbox updates itself with Sparkle. Two signed bundles, N and N+1, built from this checkout with the
 // patched Sparkle linked; a scratch signing identity in a temporary keychain, a scratch feed key (the release key's
 // format, PKCS#8 Ed25519), a signed feed served on 127.0.0.1, a scratch HOME and machine root.
 //

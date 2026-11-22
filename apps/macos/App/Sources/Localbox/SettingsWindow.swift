@@ -4,9 +4,8 @@ import LocalboxMenu
 import ServiceManagement
 import SwiftUI
 
-/// The Settings window: an ordinary window hosting `SettingsView`, built as Bento's `makeWindow` builds its own
-/// (560 pt wide, as tall as the screen allows up to 780, its frame restored only if still on a screen). Opening it
-/// reads the facts and tells the app it is open, so they are long-polled while it shows.
+/// The Settings window: an ordinary window hosting `SettingsView` (560 pt wide, as tall as the screen allows up to
+/// 780, its frame restored only if still on a screen). Opening it reads the facts and tells the app it is open, so they are long-polled while it shows.
 @MainActor
 final class SettingsWindow: NSObject, NSWindowDelegate {
     static let title = "Localbox Settings"
@@ -80,7 +79,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     }
 }
 
-/// Key equivalents for the app's one ordinary window (Bento's `WindowMenu`, plus Edit so the email and code fields
+/// Key equivalents for the app's one ordinary window (the window commands, plus Edit so the email and code fields
 /// take ⌘V). A menu bar app shows no menu bar, but its key equivalents still route through the main menu.
 @MainActor
 enum WindowMenu {

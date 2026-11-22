@@ -2,7 +2,9 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The development build's bundle id (its own TCC grants, no update feed, its own machine root); a release is `sh.localbox.mac`. */
+/** The release's bundle id: the only build whose state is this Mac's real install. */
+export const RELEASE_BUNDLE_ID = "sh.localbox.mac";
+/** The development build's bundle id (its own TCC grants, no update feed, its own machine root). */
 export const DEV_BUNDLE_ID = "sh.localbox.mac.dev";
 
 /** The Localbox.app this code runs inside: the bundle's path and its `CFBundleIdentifier`. */
