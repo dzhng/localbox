@@ -110,8 +110,8 @@ export const capabilities = [
 
 export const humanSteps = [
   { title: "Paste the prompt into Claude Code or Codex", body: "Or use an Open button above; it fills in the prompt without sending it." },
-  { title: "Your agent installs a signed release", body: "It verifies checksums and the release signature, then installs the Localbox menu bar app, which sets up the CLI and the Localbox skill. Nothing to drag into Applications." },
-  { title: "Ask for something that needs a sandbox", body: "The agent creates one and works in it. Updates install themselves and verify before replacing anything." },
+  { title: "Your agent installs a signed release", body: "It verifies checksums and the release signature, then installs the Localbox menu bar app, which sets up the CLI and the Localbox skill and opens at login. Nothing to drag into Applications." },
+  { title: "Ask for something that needs a sandbox", body: "The agent creates one and works in it. Click the menu bar icon to see this Mac's sandboxes, images and connection. Updates install themselves and verify before replacing anything." },
 ];
 
 export const faq = [
@@ -184,7 +184,7 @@ Requirements: ${requirements.replaceAll(" · ", ", ")}.
 
 When the user asks you to install Localbox, follow the [agent installation procedure](${links.installation}). It downloads one signed GitHub release, verifies it against the pinned release key, and opens the Localbox menu bar app, with no click and no password. Do not build from source; there is no browser download.
 
-The app sets up the \`localbox\` CLI and the **Localbox skill** for every agent harness it finds, runs the background services, and keeps the skill matched to itself at every launch.
+The app sets up the \`localbox\` CLI and the **Localbox skill** for every agent harness it finds, runs the background services, opens at login, updates itself, and keeps the skill matched to itself at every launch. Its menu bar popover shows the user this Mac's sandboxes, images and connection.
 
 ## After installing
 

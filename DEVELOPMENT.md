@@ -96,7 +96,7 @@ over an existing copy.
 The README is the product pitch and the agent install path, and it may describe
 the launch product ahead of the code. `llms.txt` sells Localbox to agents and
 tells them how to install it, nothing more. The consumer skill is the only usage
-reference; it ships in every release, the installer installs it and every update
+reference; it ships in every release, the app installs it and every update
 refreshes it. The skill and every install step (`llms.txt`, the README's Agent
 setup) describe only what the shipped CLI does.
 The positioning doc owns the message and use cases. This file owns contributor
@@ -441,6 +441,12 @@ installation procedure's own blocks against it, served over HTTP
 the daemon from inside the signed bundle. To rehearse by hand, serve the output
 directory (`python3 -m http.server -d dist/release`), set `LOCALBOX_RELEASE_URL`
 to it and follow the procedure with the scratch public key in step 3.
+
+Only the release's bundle id, `sh.localbox.mac`, owns the real machine root;
+any other id keeps its root, logs and credential under `Localbox (<id>)`
+(`machinePaths()`), and its launch lock, login item and defaults follow the id
+too. So a rehearsal installed on a real account under its own id never shares
+a real install's state.
 
 `npm run proof -- 44 --tier a` (and `--tier v`, with one real VM) rehearses an
 update: two scratch-signed bundles, a scratch feed key, a local feed and a

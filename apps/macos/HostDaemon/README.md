@@ -178,6 +178,6 @@ stdin is a stop request too; every stop runs `DaemonShutdown`, which prints
 `hibernated NAME` or `stopped NAME: reason` on stderr as each sandbox is done
 and exits 0 when all are. Its environment is built in one place, the app's
 `DaemonLaunch`, from the paths `localbox app paths` prints (which also creates
-the owner-only token file); the [app's README](../App/README.md) covers the
-supervision and the [development guide](../../../DEVELOPMENT.md#releasing) the
+the owner-only token file); the [app's README](../App/README.md) holds the
+supervision's principles (one supervisor, one root, hibernation the daemon's own) and the [development guide](../../../DEVELOPMENT.md#releasing) the
 signed bundle it ships in. Probes still start it directly on scratch roots.

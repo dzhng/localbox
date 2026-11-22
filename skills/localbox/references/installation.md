@@ -1,11 +1,11 @@
 # Install Localbox
 
-Use this when `localbox` is missing and the user asked for it, or to update an
-installed Localbox to the latest release. Localbox is a menu bar app,
-`Localbox.app`, with the `localbox` CLI inside it. You install one signed
-GitHub release into `~/Applications` and open it; the app sets up everything
-else, including this skill and the `~/.local/bin/localbox` command, and keeps
-both matched to itself at every launch. Do not build from source, do not run
+Use this when `localbox` is missing and the user asked for it, or to reinstall
+over a copy that is broken. Localbox is a menu bar app, `Localbox.app`, with
+the `localbox` CLI inside it. You install one signed GitHub release into
+`~/Applications` and open it; the app sets up everything else, including this
+skill and the `~/.local/bin/localbox` command, keeps both matched to itself at
+every launch, and updates itself. Do not build from source, do not run
 `npx skills add`, and do not copy the skill or the CLI anywhere yourself.
 
 Nothing here needs a click, a password or the host's Node. Each block stands
@@ -226,21 +226,39 @@ Report a short checklist: the version, the skill's state, the command, signed in
 or not, and whether sandboxes can hibernate here (with the settings to change if
 not). Then:
 
-- **Localbox now opens at login.** `app status` shows `login_item`. If it is
-  `requires_approval`, ask the user to allow Localbox in System Settings >
-  General > Login Items. To turn it off: `localbox app login-item off`.
+- **Localbox runs in the menu bar and opens at login.** Its popover shows this
+  Mac's sandboxes and images, the connection and any warning; Settings has
+  sign-in, agent setup, open at login and updates. `app status` shows
+  `login_item`; if it is `requires_approval`, ask the user to allow Localbox in
+  System Settings > General > Login Items. To turn it off:
+  `localbox app login-item off`.
+- **Quitting Localbox takes this Mac offline** until it opens again; any
+  `localbox` command opens it again by itself.
+- **It updates itself** from signed releases; `localbox update status` shows
+  the updater ([skill lifecycle](skill-lifecycle.md#updates)).
 - Sign in with `localbox login --email` when the user wants sandboxes, and
   start a fresh agent session so the installed skill is loaded.
 
 ## Removing Localbox
 
+Only when the user asks. `logout` removes this Mac from their account; skip it
+to keep the account's record of this Mac.
+
 ```sh
+~/.local/bin/localbox logout               # optional: this Mac leaves the account
 ~/.local/bin/localbox agents setup off     # Localbox stops maintaining the skill and the command, and removes its PATH block
+~/.local/bin/localbox skill uninstall      # removes the skill from every agent harness
 ~/.local/bin/localbox app login-item off
 osascript -e 'quit app id "sh.localbox.mac"'   # hibernates running sandboxes, then quits
-rm -rf "$HOME/Applications/Localbox.app"
+rm -rf "$HOME/Applications/Localbox.app" ~/.local/bin/localbox
 ```
 
-Sandboxes and images stay in `~/Library/Application Support/Localbox` until the
-user deletes that folder; the skill and `~/.local/bin/localbox` stay until
-removed by hand.
+Run the `localbox` commands before quitting: each would open the app again.
+Sandboxes and images stay in `~/Library/Application Support/Localbox` until
+the user deletes that folder. To leave nothing behind, also remove the logs,
+caches and settings:
+
+```sh
+rm -rf ~/Library/Logs/Localbox ~/Library/Caches/sh.localbox.mac ~/Library/HTTPStorages/sh.localbox.mac
+defaults delete sh.localbox.mac
+```
