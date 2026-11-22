@@ -96,13 +96,14 @@ final class DaemonLifetimeTests: XCTestCase {
         XCTAssertEqual(first.process.terminationStatus, 0)
     }
 
-    func testLocalboxHostdLockOverridesTheSocketsDirectory() async throws {
-        let machine = try machineRoot(), lock = try scratch().appendingPathComponent("elsewhere.lock").path
-        let daemon = try startDaemon(machine, environment: ["LOCALBOX_HOSTD_LOCK": lock])
-        try await untilSocket(machine)
-        XCTAssertThrowsError(try MachineLock(path: lock))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: machine.appendingPathComponent("hostd.lock").path))
-        daemon.process.terminate(); try await exited(daemon.process)
+    /// The lock's path is the launcher's to give (`machinePaths().hostdLock`); the daemon never derives one.
+    func testADaemonWithoutALockPathRefusesToStart() async throws {
+        let machine = try machineRoot()
+        let daemon = try startDaemon(machine, environment: ["LOCALBOX_HOSTD_LOCK": ""])
+        try await exited(daemon.process)
+        XCTAssertEqual(daemon.process.terminationStatus, 78)
+        XCTAssertTrue(daemon.stderr().contains("missing LOCALBOX_HOSTD_LOCK"), daemon.stderr())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: machine.appendingPathComponent("agent.sock").path))
     }
 
     func testASupervisedDaemonStopsWhenItsStdinCloses() async throws {
@@ -116,7 +117,7 @@ final class DaemonLifetimeTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: machine.appendingPathComponent("agent.sock").path), "the socket is removed")
     }
 
-    /// Without `--supervised` stdin means nothing (launchd and the probes give it /dev/null).
+    /// Without `--supervised` stdin means nothing (the probes give it /dev/null).
     func testAnUnsupervisedDaemonIgnoresItsStdin() async throws {
         let machine = try machineRoot(), stdin = Pipe()
         let daemon = try startDaemon(machine, stdin: stdin)
@@ -150,7 +151,8 @@ final class DaemonLifetimeTests: XCTestCase {
         let process = Process(); process.executableURL = executable; process.arguments = arguments
         process.environment = ["HOME": machine.path, "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin", "LOCALBOX_DEV": "1", "LOCALBOX_SANDBOX_BACKEND": "process-fixture", "LOCALBOX_REPO_ROOT": Self.repoRoot.path,
                                "LOCALBOX_SANDBOXES": machine.appendingPathComponent("sandboxes").path, "LOCALBOX_OPERATIONS": machine.appendingPathComponent("operations").path, "LOCALBOX_IMAGES": machine.appendingPathComponent("images").path,
-                               "LOCALBOX_SOCKET": machine.appendingPathComponent("agent.sock").path, "LOCALBOX_IPC_TOKEN_PATH": token.path].merging(environment) { $1 }
+                               "LOCALBOX_SOCKET": machine.appendingPathComponent("agent.sock").path, "LOCALBOX_HOSTD_LOCK": machine.appendingPathComponent("hostd.lock").path,
+                               "LOCALBOX_IPC_TOKEN_PATH": token.path].merging(environment) { $1 }
         process.standardInput = stdin ?? FileHandle.nullDevice
         let errors = Pipe(), log = Locked(Data())
         process.standardError = errors

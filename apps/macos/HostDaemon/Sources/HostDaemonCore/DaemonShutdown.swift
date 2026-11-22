@@ -6,7 +6,7 @@ import Darwin
 import Glibc
 #endif
 
-/// The daemon's one way down. SIGTERM and SIGINT (launchd, an update, a terminal) and, for a supervised daemon, the end
+/// The daemon's one way down. SIGTERM and SIGINT (a quiet supervisor's escalation, a probe, a terminal) and, for a supervised daemon, the end
 /// of its stdin (the parent closed the pipe, or died and the kernel closed it) all run the same steps, once: stop taking
 /// requests, hibernate every running sandbox, exit 0. A supervisor learns about each sandbox from one stderr line as it is
 /// done, `hibernated NAME` or `stopped NAME: reason`, so it can show progress from real events, and it only ever waits
