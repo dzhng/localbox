@@ -684,3 +684,8 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   each gained one sentence on the popover and that the app opens at login and updates itself; nothing else changed.
 - **The runbook** is `manual-runbook.md`, with results recorded under `evidence/manual/`; it adds a true-SSH install
   and a cold-boot evidence leg to the README's three.
+- **A hang in `DaemonLifetimeTests`, fixed in the test.** `testASupervisedDaemonStopsWhenItsStdinCloses` hung twice
+  in the sweep (9 and 5 minutes): the daemon had exited, but `Process.waitUntilExit()` on a concurrency thread never
+  returned, while the stderr `readabilityHandler` spun at EOF (most of a `sample`). Neither the test nor the daemon
+  changed in this slice. The handler now stops itself at EOF and the async tests wait by polling `isRunning`; three
+  filtered runs and the full suite then passed. Reverse: `exited(_:)` in that file.
