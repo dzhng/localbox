@@ -147,6 +147,9 @@ second one behind it). Deny it unless that session's signing should proceed.
 
 ## Files
 
+The spike's source was removed when the spec closed; it is in git at
+`d0f7bb3`, under `specs/menu-bar-app/spikes/02/`.
+
 - `spikes/02/main.swift`, `Info.plist`, `build.sh`: the supervisor app.
 - `spikes/02/scratch-identity.sh`: the throwaway identity for check 8.
 - `spikes/02/restore-soak.ts`: the soak (ran as a temporary probe 98; not registered).

@@ -3,7 +3,7 @@ import LocalboxAppCore
 import LocalboxMenu
 import SwiftUI
 
-/// Draws the production SettingsView as the reference shots in specs/menu-bar-app/assets were drawn: a borderless
+/// Draws the production SettingsView as the reference shots in specs/done/menu-bar-app/assets were drawn: a borderless
 /// 560 × 780 window far off screen, ordered behind everything, never activated, captured with `cacheDisplay`. The facts are the
 /// shared fixtures, adjusted per state; form state (a code sent, a refusal) is reached through the model's own
 /// intents over fake actions, so each shot is a state a person can get to.

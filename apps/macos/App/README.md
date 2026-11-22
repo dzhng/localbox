@@ -3,7 +3,7 @@
 The menu bar app: it supervises the VM daemon and the connector, draws this
 Mac's state in a popover from its status item and installs its own updates
 with Sparkle. The `localbox` CLI ships inside it. The rationale is in
-[specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
+[specs/done/menu-bar-app](../../../specs/done/menu-bar-app/README.md).
 
 ## Principles
 
@@ -64,7 +64,7 @@ instead.
   form, both pure and in `LocalboxAppCore`; the SwiftUI views in
   `LocalboxMenu` lay them out and hand clicks back, and spawn nothing. The
   popover opens without activating any app. Settings' layout follows the
-  reference shots in `specs/menu-bar-app/assets/`; its one setting of its own
+  reference shots in `specs/done/menu-bar-app/assets/`; its one setting of its own
   is "Show this window when Localbox starts".
 - **`LoginItem` is the only code that registers the app at login,** through a
   `LoginItemDriver`. Only a release build in an Applications folder registers
@@ -101,7 +101,7 @@ instead.
 swift build --package-path apps/macos/App
 npm run test:app     # Node runners that compile Swift drivers against LocalboxAppCore, and the assembler's checks
 npm run app:dev      # npm run build, assemble dist/app-dev/Localbox Dev.app, open it quietly
-npm run app:shots    # the popover, Settings and its update rows, offscreen, light and dark, into specs/menu-bar-app/evidence
+npm run app:shots    # the popover, Settings and its update rows, offscreen, light and dark, into specs/done/menu-bar-app/evidence
 npm run sparkle:build          # the patched Sparkle.framework into dist/sparkle (full Xcode, network)
 npm run proof -- 41 --tier a   # the packaged app on the process fixture; --tier v with a real VM
 npm run proof -- 42 --tier a,v # a scratch-signed release, installed by the installation procedure's own steps

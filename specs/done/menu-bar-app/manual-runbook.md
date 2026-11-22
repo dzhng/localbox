@@ -3,14 +3,16 @@
 The legs of [Open verification](README.md#open-verification) that no agent
 session can run: each logs out, restarts or needs a second machine. Run them on
 a Mac with a published release installed through the
-[installation procedure](../../skills/localbox/references/installation.md)
+[installation procedure](../../../skills/localbox/references/installation.md)
 unless a leg says otherwise. Record every answer in a copy of this file under
 `evidence/manual/`, with the date, the Mac (model, RAM, macOS version) and the
 Localbox version (`localbox app status --json | grep '"version"'`).
 
-A failure reopens the slice that owns it, rather than being patched here:
-slice 08 for logout and shutdown, slice 09 for the headless login item, slice
-10 for the install, slice 06 for the cold boot.
+A failure is fixed where its owner lives, not patched here: `Lifetime` and
+`ChildProcess` for logout and shutdown, `LoginItem` for the headless login
+item, `installation.md` for the install, the daemon's restore path for the
+cold boot. The [choices ledger](choices.md) names what each leg settles (V1,
+V2, V4).
 
 ## Before every leg
 
@@ -132,7 +134,7 @@ says, a sandbox running a command.
 
 ## 4. A true SSH install from another machine
 
-Spike 01 and slice 16 ran the install from a detached, stripped-environment
+Spike 01 and the real-account proof ran the install from a detached, stripped-environment
 shell on the same Mac; SSH key login to localhost was not set up. This leg is
 the real thing.
 
@@ -158,8 +160,8 @@ login item registered, no dialog on the target's screen.
 ## 5. The rare cold boot after a restore
 
 Spike 02 saw one restore in about 40 come back `cold_booted` with "guest
-channel is unavailable" after 125 s; slice 06's 520 restores never did. What
-is known is in [choices.md](choices.md) (§06). This leg keeps the evidence if
+channel is unavailable" after 125 s; a later soak's 520 restores never did. What
+is known is in [choices.md](choices.md) (V1). This leg keeps the evidence if
 it happens on a real install.
 
 1. Whenever any sandbox reports `cold_booted` with "guest channel is
@@ -183,4 +185,4 @@ it happens on a real install.
    `start-limit-hit`; in `hostd.log`, the lane attempts around the restore.
 
 **Pass:** none needed; this leg collects evidence. Attach the folder to the
-issue that reopens slice 06.
+issue that reopens V1.
