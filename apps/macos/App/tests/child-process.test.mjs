@@ -7,14 +7,14 @@ import { compile, run, swiftString, temporary } from "./driver.mjs";
 // One peer plays every child: `crashy` exits at once four times, then stays up past the reset window, then waits for
 // its stdin to close; `stubborn` ignores both stdin and SIGTERM and leaves a descendant in its process group;
 // `saving` writes a progress line every 200 ms for 2 s after its stdin closes; `wedged` writes nothing after its
-// stdin closes. Every peer records what happened to it in the events file, one line each.
+// stdin closes and exits 1.5 s later. Every peer records what happened to it in the events file, one line each.
 const PEER = `
 import { appendFileSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 const [mode, events] = process.argv.slice(2);
 const note = (line) => appendFileSync(events, line + "\\n");
 const count = () => { try { return readFileSync(events, "utf8").split("\\n").filter((line) => line.startsWith("start ")).length; } catch { return 0; } };
-process.on("SIGTERM", () => { note("term " + process.pid); if (mode === "wedged") setTimeout(() => { note("exit"); process.exit(0); }, 500); });
+process.on("SIGTERM", () => { note("term " + process.pid); });
 const run = count() + 1;
 note("start " + run + " " + Date.now() + " " + process.pid);
 const end = (code) => { note("exit " + run + " " + Date.now()); process.exit(code); };
@@ -37,7 +37,7 @@ if (mode === "saving") {
   });
   console.log("ready");
 }
-if (mode === "wedged") { process.stdin.on("data", () => {}); setInterval(() => {}, 1000); console.log("ready"); }
+if (mode === "wedged") { process.stdin.on("data", () => {}); process.stdin.on("end", () => setTimeout(() => { note("exit"); process.exit(0); }, 1500)); setInterval(() => {}, 1000); console.log("ready"); }
 if (mode === "oneshot") end(run === 3 || run === 4 ? 0 : 1);
 `;
 
@@ -70,7 +70,7 @@ import Foundation
   static func main() {
     let a = CommandLine.arguments
     let (mode, events, log, node, peer) = (a[1], a[2], a[3], a[4], a[5])
-    let policy: StopPolicy = mode == "saving" ? .patient(quiet: 0.6) : mode == "wedged" ? .patient(quiet: 0.5) : .bounded(eof: 0.3, signal: 0.3)
+    let policy: StopPolicy = mode == "saving" || mode == "wedged" ? .patient : .bounded(eof: 0.3, signal: 0.3)
     let lines = Counter()
     let child = ChildProcess(name: mode, launch: ChildLaunch(executable: URL(fileURLWithPath: node), arguments: [peer, mode, events], environment: ProcessInfo.processInfo.environment, log: URL(fileURLWithPath: log)),
                              policy: policy, backoff: Backoff(initial: 0.2, maximum: 0.8, resetAfter: 1.0),
@@ -143,13 +143,13 @@ test("a patient child that keeps writing progress after its stdin closes is wait
   const { events, took, heard } = supervise("saving");
   assert.ok(!events.some((line) => line.startsWith("term")), `no SIGTERM: ${events}`);
   assert.ok(events.includes("exit"), "it exited on its own, unkilled");
-  assert.ok(took >= 1.9, `stop waited for all 2 s of progress (${took} s), longer than the 0.6 s quiet window`);
+  assert.ok(took >= 1.9, `stop waited for all 2 s of progress (${took} s)`);
   assert.equal(heard, 10, "every progress line reached onLine");
 });
 
-test("a patient child silent after its stdin closes gets one SIGTERM, then is waited for until it exits", () => {
+test("a patient child silent after its stdin closes is waited for until it exits, with no signal", () => {
   const { events, took } = supervise("wedged");
-  assert.equal(events.filter((line) => line.startsWith("term")).length, 1, `one SIGTERM: ${events}`);
-  assert.ok(events.includes("exit"), "it exited on its own after the SIGTERM, not by SIGKILL");
-  assert.ok(took >= 1.0, `quiet 0.5 s, then SIGTERM, then its own 0.5 s: ${took} s`);
+  assert.ok(!events.some((line) => line.startsWith("term")), `no SIGTERM: ${events}`);
+  assert.ok(events.includes("exit"), "it exited on its own");
+  assert.ok(took >= 1.4, `waited out its 1.5 s of silence: ${took} s`);
 });

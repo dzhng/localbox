@@ -214,13 +214,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .running:
             // An update stopped the children and did not install: back to normal.
             diagnostic("running again")
-            menuBar.quitting(nil)
+            menuBar.quitting(nil, quiet: false)
             facts?.start()
-        case .stopping(let reason, let pending):
+        case .stopping(let reason, let pending, let quiet):
             // A read now could find the app socket gone and start another copy of the app.
             facts?.stop()
-            diagnostic("stopping (\(reason.rawValue))\(pending.isEmpty ? "" : ": waiting for \(pending.joined(separator: ", "))")")
-            menuBar.quitting(pending)
+            diagnostic("stopping (\(reason.rawValue))\(pending.isEmpty ? "" : ": waiting for \(pending.joined(separator: ", "))")"
+                       + (quiet ? "; the daemon has written nothing for \(Int(Lifetime.quietAfter)) s, still waiting" : ""))
+            menuBar.quitting(pending, quiet: quiet)
         case .stopped:
             diagnostic("stopped")
             updateStopped?.resume(); updateStopped = nil

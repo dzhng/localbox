@@ -18,7 +18,7 @@ import Foundation
     let flag = Flag()
     let loginItem = LoginItem(driver: FakeLoginItem(approval: args.count > 2 && args[2] == "approval"), remembered: { flag.value }, remember: { flag.value = true })
     let control = AppControl(identity: .init(version: "9.8.7", isRelease: false, inApplications: false),
-                             children: { (.backingOff, .running) }, lifetime: { .stopping(reason: .quit, pending: ["alpha-otter"]) }, loginItem: loginItem)
+                             children: { (.backingOff, .running) }, lifetime: { .stopping(reason: .quit, pending: ["alpha-otter"], quiet: false) }, loginItem: loginItem)
     let socket = AppSocket(path: args[1]) { operation, params in control.handle(operation, params) }
     do { try socket.start() } catch { print("refused \\(error)"); fflush(stdout); exit(3) }
     print("listening"); fflush(stdout)

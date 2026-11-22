@@ -53,7 +53,7 @@ public final class AppControl: Sendable {
     private func info() -> [String: Any] {
         let (daemon, connector) = children()
         var stopping: Any = NSNull()
-        if case .stopping(let reason, let pending) = lifetime() { stopping = ["reason": reason.rawValue, "pending": pending] }
+        if case .stopping(let reason, let pending, _) = lifetime() { stopping = ["reason": reason.rawValue, "pending": pending] }
         return [
             "version": identity.version, "build": identity.isRelease ? "release" : "dev", "in_applications": identity.inApplications,
             "children": ["daemon": daemon.rawValue, "connector": connector.rawValue], "stopping": stopping,

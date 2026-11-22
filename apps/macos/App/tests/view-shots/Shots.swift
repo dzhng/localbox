@@ -24,6 +24,7 @@ import SwiftUI
             .init(failures: ["quiet-otter": "This sandbox is busy finishing a command. Try again in a moment."]))))
         states.append(("loading", PopoverPresentation.rows(nil)))
         states.append(("quitting", PopoverPresentation.rows(try facts("three-sandboxes"), .init(quitting: ["quiet-otter"]))))
+        states.append(("quitting-quiet", PopoverPresentation.rows(try facts("three-sandboxes"), .init(quitting: ["quiet-otter"], quietWhileQuitting: true))))
 
         var heights: [String: CGFloat] = [:]
         var report: [[String: Any]] = []

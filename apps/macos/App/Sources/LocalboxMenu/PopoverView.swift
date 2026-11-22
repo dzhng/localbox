@@ -39,8 +39,8 @@ public struct PopoverView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
                 }
-            case .stopping(let title, let pending):
-                StoppingView(title: title, pending: pending).padding(.horizontal, 16)
+            case .stopping(let title, let pending, let note):
+                StoppingView(title: title, pending: pending, note: note).padding(.horizontal, 16)
             }
             FooterView(settings: rows.settings, quit: rows.quit, perform: perform)
         }
@@ -243,6 +243,7 @@ private struct ImageRowView: View {
 private struct StoppingView: View {
     let title: String
     let pending: [String]
+    let note: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).font(.system(size: 12, weight: .medium)).padding(.leading, 2).padding(.top, 16).padding(.bottom, 4)
@@ -253,6 +254,11 @@ private struct StoppingView: View {
                 }
                 .padding(.leading, 6)
                 .frame(height: 30)
+            }
+            if let note {
+                Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 2).padding(.top, 6)
             }
         }
     }
