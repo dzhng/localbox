@@ -4,21 +4,20 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { callApp } from "../../../apps/cli/src/app-socket.js";
-import { installLinuxImage } from "../../release.js";
 import { writeImageFiles } from "../lib/images.js";
-import { linuxImage } from "../lib/linux-image.js";
+import { installLinuxImage, linuxImage } from "../lib/linux-image.js";
 import { packagedApp } from "../lib/packaged-app.js";
 import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 
-// Menu bar app, slice 08: Localbox.app supervises the daemon and the connector. Launched quietly it starts both as
-// its children (with no screen too); a crashed connector comes back; quitting stops the connector, waits for the
-// daemon to save every sandbox and only then exits; killing the app outright still stops the daemon cleanly (its
-// stdin closes) and a relaunch has exactly one daemon. No launchd job is involved. Slice 09: `localbox app status`
-// reports both children through the app socket, including a killed daemon backing off and coming back; the login
-// item is the app's fake one, never this account's. Slice 12: `app status` is the app's facts; a long poll with
-// `--since` answers as soon as a sandbox goes to sleep. Slice 13: the popover opens (through the development build's
-// `popover.*` test hooks) without the app taking focus, and its Sleep and Wake reach the daemon. Slice 14: Settings
-// opens the same way (`settings.*`) and its Open at login switch reaches the app's fake login item through the CLI.
+// Localbox.app supervises the daemon and the connector. Launched quietly it starts both as its children (with no
+// screen too); a crashed connector comes back; quitting stops the connector, waits for the daemon to save every
+// sandbox and only then exits; killing the app outright still stops the daemon cleanly (its stdin closes) and a
+// relaunch has exactly one daemon. No launchd job is involved. `localbox app status` reports both children through
+// the app socket, including a killed daemon backing off and coming back; the login item is the app's fake one, never
+// this account's. A long poll with `--since` answers as soon as a sandbox goes to sleep. The popover opens (through
+// the development build's `popover.*` test hooks) without the app taking focus, and its Sleep and Wake reach the
+// daemon. Settings opens the same way (`settings.*`) and its Open at login switch reaches the app's fake login item
+// through the CLI.
 //
 //   npm run proof -- 41 --tier a      the packaged dev app on the process-fixture backend
 //   npm run proof -- 41 --tier v      quit and relaunch with a real VM whose memory survives
@@ -264,7 +263,7 @@ async function realVM(ctx: ProofContext): Promise<Check[]> {
       await buildRealVMs(ctx);
       await app.build();
       // This machine gets `images/linux` as an install does: an APFS clone of the dev image.
-      await installLinuxImage(dirname(dirname(await linuxImage(ctx))), app.paths.images);
+      await installLinuxImage(await linuxImage(ctx), app.paths.images);
     }));
     if (screenLocked()) {
       checks.push({ name: "an unlocked session", ok: false, ms: 0, detail: "blocked: the screen is locked with a password, and hibernation needs an unlocked session; unlock and run again" });

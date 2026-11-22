@@ -145,24 +145,6 @@ export function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
 }
 /**
- * Make the image expanded under `releaseDir` (at `IMAGE_PATH`) this Mac's `images/linux`: an APFS clone (sharing every
- * block, so it costs no space) assembled under a dot-prefixed name, which `ImageStore` sweeps if a crash leaves it,
- * then swapped in.
- */
-export async function installLinuxImage(releaseDir: string, imagesDir: string): Promise<void> {
-  const source = join(releaseDir, IMAGE_PATH);
-  const temporary = join(imagesDir, `.${BUILT_IN_IMAGE}.installing-${process.pid}`);
-  await rm(temporary, { recursive: true, force: true });
-  await mkdir(join(temporary, dirname(IMAGE_FILES.bootStore)), { recursive: true });
-  // `cp -c` is clonefile(2); Node's COPYFILE_FICLONE has no clone on macOS and its fallback writes out every hole. A
-  // plain `cp` covers images on another volume than the release, where nothing can be cloned.
-  for (const file of Object.values(IMAGE_FILES)) {
-    const [from, to] = [join(source, file), join(temporary, file)];
-    await execFileAsync("cp", ["-c", from, to]).catch(() => execFileAsync("cp", [from, to]));
-  }
-  await replaceLinuxImage(temporary, imagesDir);
-}
-/**
  * Swap the complete image directory `prepared` in as `imagesDir/linux` (on the same volume). The new image arrives in
  * one rename, so it never sits in the images directory under a name `ImageStore`'s start-time sweep would delete; only
  * the old image, set aside first, does, and deleting it is what comes next anyway.

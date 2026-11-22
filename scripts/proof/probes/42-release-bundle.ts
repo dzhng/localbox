@@ -11,7 +11,7 @@ import { installationSteps, runSteps, serveRelease, trusting } from "../lib/inst
 import { buildRealVMs, realDaemon } from "../lib/real-daemon.js";
 import { scratchIdentity } from "../lib/scratch-identity.js";
 
-// Menu bar app, slice 10: the release. Tier a runs scripts/release.sh as a release is cut, with a scratch identity
+// The release. Tier a runs scripts/release.sh as a release is cut, with a scratch identity
 // and a scratch manifest key (never the release credentials), then installs its output with the installation
 // procedure's own blocks into a scratch HOME and checks what is new to Localbox in a signed bundle: the sealed guest
 // agent, Node's JIT, the CLI identifiers and the daemon's entitlement. Tier v boots a real VM with the daemon from

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { buildRealVMs, realDaemon, screenLocked } from "../lib/real-daemon.js";
 
-// Menu bar app, slice 06: the host daemon as an app's child. Started `--supervised` with stdin a pipe, it treats the
+// The host daemon as an app's child. Started `--supervised` with stdin a pipe, it treats the
 // pipe closing (the app quitting or dying) exactly as SIGTERM: a real VM hibernates and the next start wakes it with
 // its memory. And a second daemon on the same machine root is refused before it touches the root.
 //

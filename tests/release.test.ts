@@ -8,7 +8,8 @@ import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes, type KeyObject } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { zstdCompressSync } from "node:zlib";
-import { expandImage, installLinuxImage, makeManifest, packImage, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, IMAGE_PATH } from "../scripts/release.js";
+import { installLinuxImage } from "../scripts/proof/lib/linux-image.js";
+import { expandImage, makeManifest, packImage, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, IMAGE_PATH } from "../scripts/release.js";
 import { installationSteps, pinnedKey, runSteps, serveRelease, trusting } from "../scripts/proof/lib/installation.js";
 
 test("release manifest and checksums verify artifacts", async () => {
@@ -93,14 +94,14 @@ test("packing an image directory with the zstd CLI splits the disk into parts th
   await assert.rejects(() => packImage(join(root, "image"), join(root, "out"), "again"), /is not the linux image/);
 });
 
-test("installing a release's image replaces this Mac's images/linux and leaves no temporary", async () => {
+test("seeding an image replaces a machine's images/linux and leaves no temporary", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-computer-release-install-image-"));
   const images = join(root, "images");
   for (const version of ["0.1.0", "0.2.0"]) await fixtureImage(join(root, "releases", version, IMAGE_PATH), version);
-  await installLinuxImage(join(root, "releases", "0.2.0"), images);
+  await installLinuxImage(join(root, "releases", "0.2.0", IMAGE_PATH), images);
   assert.equal(JSON.parse(await readFile(join(images, "linux/image.json"), "utf8")).agent_version, "0.2.0");
   // An older image replaces a newer one just the same.
-  await installLinuxImage(join(root, "releases", "0.1.0"), images);
+  await installLinuxImage(join(root, "releases", "0.1.0", IMAGE_PATH), images);
   assert.equal(JSON.parse(await readFile(join(images, "linux/image.json"), "utf8")).agent_version, "0.1.0");
   assert.deepEqual(await readdir(images), ["linux"]);
   assert.ok((await stat(join(images, "linux/disk.img"))).blocks * 512 < 1024 * 1024, "the installed disk is a clone that keeps the holes");

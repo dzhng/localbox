@@ -16,7 +16,7 @@ const FINDER_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 export interface Processes { app: number | undefined; daemons: Array<{ pid: number; ppid: number }>; connectors: Array<{ pid: number; ppid: number }>; imageEnsures: Array<{ pid: number; ppid: number }> }
 
 /**
- * Proof tier `a` (specs/menu-bar-app, A13): the development Localbox.app assembled by apps/macos/App/scripts/build-app.mjs
+ * Proof tier `a`: the development Localbox.app assembled by apps/macos/App/scripts/build-app.mjs
  * into a scratch directory, launched with `open -g` as an agent or Finder would, with a scratch HOME and machine root
  * so nothing touches this account's Localbox, skill or `localbox` command. The app must never take focus: `start`
  * watches the frontmost app while it launches. Only processes running from this run's bundle are ever signalled.
@@ -60,13 +60,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
       imageEnsures: of((command) => command.includes("app image ensure")),
     };
   };
-  /** The frontmost app's pid, as LaunchServices reports it (loginwindow while the screen is locked). */
-  const front = (): number | undefined => {
-    try {
-      const asn = execFileSync("lsappinfo", ["front"], { encoding: "utf8" }).trim();
-      return Number(/pid\s*=\s*(\d+)/.exec(execFileSync("lsappinfo", ["info", "-only", "pid", asn], { encoding: "utf8" }))?.[1]) || undefined;
-    } catch { return undefined; }
-  };
+  const front = frontmostPid;
 
   /**
    * Assembles the development bundle into the scratch directory, or into `into` (the scratch HOME's Applications, say),
@@ -167,8 +161,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
       const running = processes();
       const guests = running.daemons.flatMap(({ pid }) => { try { return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).trim().split(/\s+/).map(Number).filter(Boolean); } catch { return []; } });
       for (const pid of [running.app, ...running.daemons.map((row) => row.pid), ...running.connectors.map((row) => row.pid), ...running.imageEnsures.map((row) => row.pid), ...guests]) if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
-      // A real VM's service process belongs to launchd, not the daemon; it is this run's when it holds a file under this root.
-      for (const pid of virtualizationServices()) if (holds(pid, root)) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+      killVirtualMachinesUnder(root);
     }
     if (!ctx.keep) rmSync(scratch, { recursive: true, force: true });
   };
@@ -176,9 +169,21 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
   return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, front, until, request, ok, record, log, cleanup };
 }
 
-function virtualizationServices(): number[] {
-  return execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").filter((line) => line.includes("Virtualization.VirtualMachine")).map((line) => Number(line.trim().split(/\s+/)[0]));
+/** The frontmost app's pid, as LaunchServices reports it (loginwindow while the screen is locked). */
+export function frontmostPid(): number | undefined {
+  try {
+    const asn = execFileSync("lsappinfo", ["front"], { encoding: "utf8" }).trim();
+    return Number(/pid\s*=\s*(\d+)/.exec(execFileSync("lsappinfo", ["info", "-only", "pid", asn], { encoding: "utf8" }))?.[1]) || undefined;
+  } catch { return undefined; }
 }
-function holds(pid: number, path: string): boolean {
-  try { return execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(path); } catch { return false; }
+
+/**
+ * SIGKILLs the VM service processes that hold a file under `root`. A real VM's service process belongs to launchd, not
+ * the daemon, so it is a run's only when it holds that run's disk clone; every other one (Colima's) is left alone.
+ */
+export function killVirtualMachinesUnder(root: string): void {
+  const services = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").filter((line) => line.includes("Virtualization.VirtualMachine")).map((line) => Number(line.trim().split(/\s+/)[0]));
+  for (const pid of services) {
+    try { if (execFileSync("lsof", ["-Fn", "-p", String(pid)], { encoding: "utf8" }).includes(root)) process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+  }
 }

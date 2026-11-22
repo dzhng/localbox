@@ -7,7 +7,7 @@ import { sha256 } from "../../release.js";
 import { imageRelease, startFaultServer, type FaultServer } from "../lib/image-release.js";
 import { packagedApp } from "../lib/packaged-app.js";
 
-// Menu bar app, slice 11: a Mac with no `images/linux` gets the built-in image by itself. The dev app is launched
+// A Mac with no `images/linux` gets the built-in image by itself. The dev app is launched
 // against a local release folder (a scratch-key-signed image, served with a fault server, never GitHub) with no image:
 // `app status` shows the download, a create meanwhile is told to wait with its progress, a quit mid-download and a
 // relaunch resume it from the bytes on disk, and once it is ready a create works on the fixture backend.
