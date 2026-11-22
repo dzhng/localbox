@@ -178,8 +178,11 @@ public actor SandboxHost {
     private let agentUpdater: GuestAgentUpdater?
     /// The journal a create that waits for its image's copy begins in (`SandboxCreateAfterCopy`).
     nonisolated let operations: HostOperationStore
-    /// This Mac's images, asked only for free disk (capacity): the host does no image file I/O.
+    /// This Mac's images, asked only for free disk (capacity) and whether the built-in image is here yet: the host
+    /// writes no image files.
     nonisolated let store: ImageStore
+    /// Under Localbox.app, the built-in image's download a create from it waits for (`BuiltinImageWait`).
+    private let builtinImage: BuiltinImageWait?
     /// macOS image builds holding a macOS VM slot (`takeMacOSSlot`), by operation key: with running macOS sandboxes, the
     /// one count of this Mac's macOS VMs.
     private var macOSBuilds: Set<String> = []
@@ -189,8 +192,9 @@ public actor SandboxHost {
     /// Loads every sandbox under `sandboxesDirectory`; nothing boots until `recover()`. Host capacity defaults to this
     /// Mac's, and the admission budget to `admissionFraction` of its RAM (`admissionBytes` caps it in dev runs).
     public init(sandboxesDirectory: URL, factory: any SandboxBackendFactory, operations: HostOperationStore, store: ImageStore, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil,
-                allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+                allowsSimulatedPower: Bool = false, agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, builtinImage: BuiltinImageWait? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
         root = sandboxesDirectory; self.factory = factory; self.operations = operations; self.store = store; self.now = now; self.allowsSimulatedPower = allowsSimulatedPower; self.agentSetup = agentSetup; self.agentUpdater = agentUpdater
+        self.builtinImage = builtinImage
         self.hostCPUs = hostCPUs ?? ProcessInfo.processInfo.activeProcessorCount
         let memory = hostMemoryBytes ?? ProcessInfo.processInfo.physicalMemory
         self.hostMemoryBytes = memory
@@ -536,6 +540,10 @@ public actor SandboxHost {
     private func createRequest(_ object: [String: Any], sandboxID: String, input: [String: Any]) async -> Data {
         guard let creation = SandboxCreation(input) else { return Reply.failure(object, code: "invalid_input", message: "sandbox.create requires name, image, cpus, memory_bytes and sleep_after_ms") }
         guard let copyKey = input["after_copy"] as? String else {
+            // A create re-run for a sandbox already here only boots it; a new one waits for the image to arrive.
+            if creation.image == builtInImage, runtimes[sandboxID] == nil, let refusal = builtinImage?.refusal(store) {
+                return Reply.failure(object, code: "sandbox_not_ready", message: refusal.message, details: refusal.details, retryable: true)
+            }
             do { let created = try await create(sandboxID, creation); return Reply.success(object, report(input, produced: created.produced, actions: created.actions)) }
             catch let refused as AdmissionRefused { return machineFull(object, refused) }
             catch let failure as HostOperationFailure { return Reply.failure(object, failure) }

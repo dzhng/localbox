@@ -33,7 +33,7 @@
     {
       "code": "builtin_image_missing",
       "message": "The built-in Linux image isn't on this Mac, so new Linux sandboxes can't start.",
-      "fix": "Quit Localbox and open it again to download it."
+      "fix": "Quit Localbox and open it again to download it, or run localbox app image ensure."
     },
     {
       "code": "hibernate_blocked",
@@ -56,5 +56,5 @@
       "fix": "Quit Localbox and open it again to install it."
     }
   ],
-  "watch_version": 178663214643176
+  "watch_version": 56766061785945
 }

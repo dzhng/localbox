@@ -84,7 +84,27 @@ test("auto placement moves on when the roomiest machine does not answer, and say
   assert.deepEqual(removed, ["sandbox_m_b"], "the offline machine's reservation is released");
 });
 
-const railsDev: PlacementImage = { id: "image_rails", name: "rails-dev", os: "linux", sizeBytes: 8 * GIB };
+test("a Mac still downloading its built-in image refuses the create retryably, and the caller gets that refusal as the Mac gave it", async () => {
+  const { runOps } = await import("../apps/relay/src/ops.js");
+  const { memoryMailbox } = await import("./fixtures/memory-mailbox.js");
+  const capacity = { total_bytes: 16 * 2 ** 30, reserved_bytes: 0, room_bytes: 12 * 2 ** 30, running: 0, revision: 1, cpus: 8 };
+  const waiting = { code: "sandbox_not_ready" as const, message: "the built-in image is still downloading (120 MB of 345 MB); try again when `localbox app status` shows it ready", retryable: true, details: { state: "downloading", image: "linux", phase: "downloading", progress: { done_bytes: 120_000_000, total_bytes: 345_000_000 } } };
+  const { deps } = memoryMailbox({ machines: [{ machineId: "m_a", name: "studio", capacity }], connectors: { m_a: async (request) => ({ protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "localbox-contract-v1", ok: false, error: waiting }) } });
+  const removed: string[] = [];
+  const accountCall = deps.accountCall;
+  deps.accountCall = async (principal, kind, name, args) => {
+    if (name === "sandboxes:create") return { sandbox_id: "sandbox_new", name: "early-otter", machine_id: args.machineId, image_id: args.imageId, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: 1_800_000, delete_after_ms: null };
+    if (name === "sandboxes:remove") { removed.push(String(args.sandboxId)); return null; }
+    return accountCall(principal, kind, name, args);
+  };
+  const result = await runOps({ accountId: "acct", machineId: "m_a" }, { operation: "sandbox.create", mutation_id: "cli-early", machine: "studio", input: { cpus: 1, memory_bytes: 2 ** 31 } }, deps);
+  const response = (result.body as any).response;
+  assert.equal(response.ok, false, JSON.stringify(response));
+  assert.deepEqual(response.error, waiting);
+  assert.deepEqual(removed, ["sandbox_new"], "nothing was made, so the reservation goes and a retry starts afresh");
+});
+
+const railsDev: PlacementImage ={ id: "image_rails", name: "rails-dev", os: "linux", sizeBytes: 8 * GIB };
 const macBase: PlacementImage = { id: "image_mac", name: "mac-base", os: "macos", minMacOS: "27.0", sizeBytes: 40 * GIB };
 /** Studio holds rails-dev (most recently), attic doesn't, garage holds it but is offline. All run macOS 27.0.1 except garage (26.4). */
 const imaged = (overrides: Record<string, Partial<PlacementMachine>> = {}) => [

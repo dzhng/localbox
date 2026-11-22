@@ -58,7 +58,15 @@ test("the linux image ships as disk parts, boot store and image.json, and expand
   await verifyRelease(download, manifest);
   const expanded = join(root, "expanded", IMAGE_PATH);
   await mkdir(join(root, "expanded/images"), { recursive: true });
-  await expandImage(download, manifest, expanded);
+  // A killed run's temporary (its pid is gone) is cleared; a live run's is left alone.
+  await mkdir(join(root, "expanded/images/.linux.partial-999999"));
+  await mkdir(join(root, `expanded/images/.linux.partial-${process.ppid}`));
+  const progress: number[] = [];
+  await expandImage(download, manifest, expanded, (bytes) => progress.push(bytes));
+  assert.deepEqual((await readdir(join(root, "expanded/images"))).sort(), [`.linux.partial-${process.ppid}`, "linux"]);
+  await rm(join(root, `expanded/images/.linux.partial-${process.ppid}`), { recursive: true });
+  assert.ok(progress.length > 1 && progress.every((bytes, index) => index === 0 || bytes > progress[index - 1]), "progress climbs");
+  assert.equal(progress.at(-1), disk.length);
   assert.deepEqual((await readdir(expanded, { recursive: true })).sort(), ["boot", "boot/efi-vars", "disk.img", "image.json"]);
   assert.equal(await sha256(join(expanded, "disk.img")), image.sha256);
   assert.equal(await readFile(join(expanded, "boot/efi-vars"), "utf8"), "variable store");

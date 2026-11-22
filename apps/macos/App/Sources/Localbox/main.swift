@@ -86,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let daemon = ChildProcess(name: "localbox-hostd", launch: DaemonLaunch.make(bundle: bundle, paths: paths, environment: environment),
                                   policy: .daemon, onLine: { line in lifetimeBox.value?.daemonSaid(line) }, diagnostic: diagnostic)
         let connector = ChildProcess(name: "connector", launch: cli.connector(log: paths.log("connector.log")), policy: .connector, diagnostic: diagnostic)
-        let lifetime = Lifetime(connector: connector, daemon: daemon) { [weak self] state in
+        let image = ChildProcess(name: "image-ensure", launch: cli.imageEnsure(log: paths.log("image.log")), policy: .imageEnsure, backoff: .imageEnsure,
+                                 restart: .untilSuccess, diagnostic: diagnostic)
+        let lifetime = Lifetime(connector: connector, daemon: daemon, image: image) { [weak self] state in
             RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated { self?.lifetimeChanged(state) } }
         }
         lifetimeBox.value = lifetime

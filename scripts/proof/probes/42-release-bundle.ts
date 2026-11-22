@@ -129,6 +129,15 @@ async function release(ctx: ProofContext): Promise<Check[]> {
       const status = JSON.parse(execFileSync(join(home, ".local/bin/localbox"), ["cli", "status", "--json"], { env, encoding: "utf8" })).result;
       assert.deepEqual([status.state, status.release, status.app], ["installed", VERSION, app]);
     }));
+    checks.push(await ctx.check("the installed app's CLI installs the built-in image from this release, checked against the key the bundle pins", async () => {
+      const machine = join(work, "machine");
+      const env = { PATH: FINDER_PATH, HOME: home, LOCALBOX_MACHINE_ROOT: machine, LOCALBOX_RELEASE_URL: server!.url };
+      // Not spawnSync: the release server answers from this process's event loop.
+      const ensured = await ctx.exec(join(contents, "Resources/cli/localbox"), ["app", "image", "ensure", "--json"], { env });
+      assert.equal(ensured.code, 0, `${ensured.stdout}${ensured.stderr}`);
+      assert.equal(JSON.parse(ensured.stdout.trim().split("\n").at(-1)!).phase, "ready");
+      assert.equal(await sha256(join(machine, "images/linux/disk.img")), await sha256(join(image, "disk.img")));
+    }));
     return checks;
   } finally {
     server?.close();

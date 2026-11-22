@@ -89,7 +89,7 @@ async function withScenario<T>(scenario: Scenario, body: (deps: FactsDeps, daemo
   const daemon = scriptedDaemon({ version: 7, rows: [], operations: [], ...scenario.daemon });
   const deps: FactsDeps = {
     app: { layout: { app: "/Applications/Localbox.app" }, paths: { appSocket }, launch: { env: { LOCALBOX_MACHINE_ROOT: root } } },
-    daemon, root, images, now: () => NOW,
+    daemon, builtinImage: join(root, "builtin-image.json"), images, now: () => NOW,
     credentials: async () => scenario.signedIn === false ? undefined : CREDENTIALS,
     hostCheck: scenario.host ?? (() => UNLOCKED), agentSetup: scenario.setup ?? (async () => SETUP),
   };

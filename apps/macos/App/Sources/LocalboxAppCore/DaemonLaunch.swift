@@ -4,7 +4,7 @@ import Foundation
 /// definition). The app never derives a path itself (specs/menu-bar-app, invariant 4).
 public struct AppPaths: Decodable, Equatable, Sendable {
     public let root: String, credentials: String, ipcToken: String, socket: String, hostdLock: String, appSocket: String
-    public let sandboxes: String, operations: String, images: String, logs: String, binDir: String
+    public let sandboxes: String, operations: String, images: String, logs: String, builtinImage: String, binDir: String
 
     /// Asks the bundled CLI, which also creates the machine directories and the IPC token.
     public static func load(_ cli: BundledCLI) async throws -> AppPaths {
@@ -30,6 +30,8 @@ public enum DaemonLaunch {
         env["LOCALBOX_SANDBOXES"] = paths.sandboxes
         env["LOCALBOX_OPERATIONS"] = paths.operations
         env["LOCALBOX_IMAGES"] = paths.images
+        // The daemon never fetches the built-in image; it reads the app's download progress to tell a create to wait.
+        env["LOCALBOX_BUILTIN_IMAGE_PROGRESS"] = paths.builtinImage
         env["LOCALBOX_BIN_DIR"] = paths.binDir
         env["LOCALBOX_CLI"] = resources.appendingPathComponent("cli/localbox").path
         // A development bundle built without the guest agent has none; the daemon then leaves sandboxes' agents alone.

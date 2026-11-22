@@ -23,19 +23,29 @@ public final class Lifetime: @unchecked Sendable {
 
     private let connector: Supervised
     private let daemon: Supervised
+    /// `localbox app image ensure`, a one-shot: it ends once this release's built-in image is installed.
+    private let image: Supervised?
     private let changed: @Sendable (State) -> Void
     private let lock = NSLock()
     private var current = State.running
 
-    public init(connector: Supervised, daemon: Supervised, changed: @escaping @Sendable (State) -> Void) {
-        self.connector = connector; self.daemon = daemon; self.changed = changed
+    public init(connector: Supervised, daemon: Supervised, image: Supervised? = nil, changed: @escaping @Sendable (State) -> Void) {
+        self.connector = connector; self.daemon = daemon; self.image = image; self.changed = changed
     }
 
     public var state: State { lock.withLock { current } }
 
-    /// The daemon first, so the connector finds its socket sooner.
+    /// The daemon first, so the connector finds its socket sooner; then the built-in image's check. Every launch runs
+    /// it, so the relaunch after an update (`--localbox-update-relaunch` is a launch) fetches the new release's image.
     public func start() {
-        daemon.start(); connector.start()
+        daemon.start(); connector.start(); image?.start()
+    }
+
+    /// Runs the built-in image's check again (it is not restarted once it succeeded), for a change of release that
+    /// arrives without a relaunch. Nothing while stopping.
+    public func ensureImage() {
+        guard state == .running else { return }
+        image?.start()
     }
 
     /// Begins the stop and returns at once; `changed` reports `stopped` once both children are gone. `running` names
@@ -50,6 +60,8 @@ public final class Lifetime: @unchecked Sendable {
         changed(.stopping(reason: reason, pending: running))
         Thread.detachNewThread { [self] in
             connector.stop()
+            // A download stopped here resumes at the next launch.
+            image?.stop()
             daemon.stop()
             lock.withLock { current = .stopped }
             changed(.stopped)
