@@ -32,6 +32,8 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
   const fixture = options.backend === "process-fixture";
   const env: Record<string, string> = {
     HOME: home, LOCALBOX_MACHINE_ROOT: root, LOCALBOX_SANDBOX_BACKEND: options.backend,
+    // SMAppService matches by bundle id, not path, so a scratch bundle's real login item would be this account's.
+    LOCALBOX_APP_LOGIN_ITEM: "fake",
     PATH: fixture ? `${dirname(process.execPath)}:${FINDER_PATH}` : FINDER_PATH,
     ...(fixture ? { LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: ctx.root } : {}),
   };

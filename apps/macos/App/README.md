@@ -23,6 +23,15 @@ rationale are in [specs/menu-bar-app](../../../specs/menu-bar-app/README.md).
   however long hibernation takes; silence for 120 s earns one SIGTERM, never a
   SIGKILL. One daemon per machine root is the daemon's own lock, not the app's
   bookkeeping.
+- **The CLI reaches the app's native powers through one door,** `AppSocket` at
+  `<root>/app.sock`, answered by `AppControl`. Anything only the app can do
+  (its children's state, the login item, later updates) is an operation there
+  that `localbox app` calls, never a second path from the CLI to the app. It
+  answers while the daemon is down.
+- **`LoginItem` is the only code that registers the app at login,** through a
+  `LoginItemDriver`. Only a release build in an Applications folder registers
+  by itself, once; tests and probes use the fake driver
+  (`LOCALBOX_APP_LOGIN_ITEM=fake`, honoured by development builds only).
 - **The daemon's environment is built in one place,** `DaemonLaunch`.
 - **Children log straight to files,** never through a pipe the app reads, so
   a child outlives a killed app long enough to stop cleanly. The app reads the

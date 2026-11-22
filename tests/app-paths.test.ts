@@ -10,7 +10,7 @@ test("app paths creates the machine directories and the IPC token once, and keep
   const env = { LOCALBOX_MACHINE_ROOT: root, HOME: "/nonexistent-home", LOCALBOX_BIN_DIR: join(root, "bin") };
   const first = await appPaths(env);
   assert.deepEqual(first, {
-    root, credentials: join(root, "credentials.json"), ipc_token: join(root, "ipc-token"), socket: join(root, "agent.sock"), hostd_lock: join(root, "hostd.lock"),
+    root, credentials: join(root, "credentials.json"), ipc_token: join(root, "ipc-token"), socket: join(root, "agent.sock"), hostd_lock: join(root, "hostd.lock"), app_socket: join(root, "app.sock"),
     sandboxes: join(root, "sandboxes"), operations: join(root, "operations"), images: join(root, "images"), logs: join(root, "logs"), bin_dir: join(root, "bin"),
   });
   for (const directory of [first.root, first.sandboxes, first.operations, first.images, first.logs]) assert.ok((await stat(directory)).isDirectory(), directory);

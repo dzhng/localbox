@@ -201,3 +201,38 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   (was `stopping on signal`). Reverse: `apps/connector/src/index.ts`.
 - **`DaemonLaunch`** drops an inherited `LOCALBOX_IPC_TOKEN` (the token is the file `app paths` made) and sets
   `LOCALBOX_GUEST_AGENT` only when the bundle has one. **`BundledCLI`** gives a command 120 s, then SIGTERM.
+
+## 09 · App control: socket, login item, `localbox app`
+
+- **Wire shape.** Request `{"id","operation","params"}`; the answer uses the CLI envelope's words: `{"id","ok":true,
+  "result"}` or `{"id","ok":false,"error":{code,message,retryable:false}}` (Bento's `data` became `result`). The id is
+  a required non-empty string (`cli-<uuid>` from the CLI) and the client rejects an answer with another id. A
+  garbled request is answered `invalid_input` with `id: null`. Codes are the CLI's `ERROR_CODES`. Reverse:
+  `AppSocket.respond` and `apps/cli/src/app-socket.ts`.
+- **The socket is served once paths are known** (it lives in the root `app paths` names, so `AppPaths` gained
+  `app_socket`, `machinePaths().appSocket`), before the children start, and is removed only when the app answers its
+  quit, so `app status` shows `stopping`. A socket another live app answers is left alone and only `localbox app`
+  is lost (logged); supervision goes on. The handler is synchronous on the socket's queue; slice 15 may need an
+  asynchronous answer for Sparkle. Reverse: `serveAppSocket` in `main.swift`.
+- **Child states.** `running` = the process is alive (also while it stops); `backing_off` = it exited or failed to
+  launch and a restart is scheduled; `starting` = started but not yet launched, which is momentary since `start()`
+  launches at once; `stopped` = not supervised. Whether the daemon answers its socket is not the app's to say
+  (slice 12's facts). Reverse: `ChildProcess.state`.
+- **`ensureApp` waits on the app socket** for `localbox app`, not the daemon's, so `app status` works while the
+  daemon backs off. An app that cannot be reached is the retryable `guest_unreachable` every local command already
+  gives when Localbox is not running (there is no better code in the contract). Reverse: `askApp`.
+- **`app status` is `app.info` with `login_item: { state }` added**, two socket calls. Reverse: `appStatus`.
+- **Login item rule.** The defaults key is `loginItemInitialized` (the slice's name). It is set by the automatic
+  registration, by an item already enabled or awaiting approval at first launch, and by any `login_item.set` (an
+  explicit choice is final, also for a copy outside an Applications folder later moved into one). A failed
+  automatic registration, a dev build, or a release outside an Applications folder sets nothing, so a later launch
+  can still register. Turning off an item that is not registered does not call `unregister`. Reverse: `LoginItem`.
+- **The fake driver in a running app.** A development build honours `LOCALBOX_APP_LOGIN_ITEM=fake` (an in-memory
+  item starting disabled), and tier `a`/`v` launches set it: `SMAppService.mainApp` matches by bundle id, so even a
+  scratch dev bundle's real login item would be this account's. Reverse: `makeLoginItem` in `main.swift` and the
+  env in `scripts/proof/lib/packaged-app.ts`.
+- **`login` in an app-managed layout** reports `connector: "supervised"` instead of calling `restartConnectorJob()`.
+- **Probe 41 polls `app.info` through the CLI's client directly** for the backing-off window (a CLI process takes
+  about as long to start as the 1 s backoff), and checks the end state through `localbox app status`.
+- **Not run here:** the slice's manual check on the real account (the dev build in `~/Applications`, `login-item
+  on`, relaunch, System Settings, then `off`). It is left for the orchestrator.

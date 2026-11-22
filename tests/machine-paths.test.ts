@@ -10,7 +10,7 @@ test("machine paths use the platform defaults and credentials config", () => {
 
 test("machine root relocates every machine path", () => {
   assert.deepEqual(machinePaths({ LOCALBOX_MACHINE_ROOT: "/tmp/localbox-machine" }), {
-    root: "/tmp/localbox-machine", credentials: "/tmp/localbox-machine/credentials.json", ipcToken: "/tmp/localbox-machine/ipc-token", socket: "/tmp/localbox-machine/agent.sock", hostdLock: "/tmp/localbox-machine/hostd.lock", sandboxes: "/tmp/localbox-machine/sandboxes", operations: "/tmp/localbox-machine/operations", images: "/tmp/localbox-machine/images", logs: "/tmp/localbox-machine/logs",
+    root: "/tmp/localbox-machine", credentials: "/tmp/localbox-machine/credentials.json", ipcToken: "/tmp/localbox-machine/ipc-token", socket: "/tmp/localbox-machine/agent.sock", hostdLock: "/tmp/localbox-machine/hostd.lock", appSocket: "/tmp/localbox-machine/app.sock", sandboxes: "/tmp/localbox-machine/sandboxes", operations: "/tmp/localbox-machine/operations", images: "/tmp/localbox-machine/images", logs: "/tmp/localbox-machine/logs",
   });
 });
 

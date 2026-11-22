@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
+import { callApp } from "../../../apps/cli/src/app-socket.js";
 import { installLinuxImage } from "../../release.js";
 import { linuxImage } from "../lib/linux-image.js";
 import { packagedApp } from "../lib/packaged-app.js";
@@ -11,7 +12,9 @@ import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 // Menu bar app, slice 08: Localbox.app supervises the daemon and the connector. Launched quietly it starts both as
 // its children (with no screen too); a crashed connector comes back; quitting stops the connector, waits for the
 // daemon to save every sandbox and only then exits; killing the app outright still stops the daemon cleanly (its
-// stdin closes) and a relaunch has exactly one daemon. No launchd job is involved.
+// stdin closes) and a relaunch has exactly one daemon. No launchd job is involved. Slice 09: `localbox app status`
+// reports both children through the app socket, including a killed daemon backing off and coming back; the login
+// item is the app's fake one, never this account's.
 //
 //   npm run proof -- 41 --tier a      the packaged dev app on the process-fixture backend
 //   npm run proof -- 41 --tier v      quit and relaunch with a real VM whose memory survives
@@ -90,6 +93,33 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       const status = await runningAgain();
       assert.equal(status.last_boot?.kind, "cold_booted", JSON.stringify(status.last_boot));
       assert.match(status.last_boot?.detail ?? "", /fixture/);
+    }));
+
+    checks.push(await ctx.check("localbox app status: both children running, the login item untouched (a dev build registers none)", async () => {
+      const status = await app.cli(["app", "status"]);
+      assert.deepEqual(status.children, { daemon: "running", connector: "running" }, JSON.stringify(status));
+      assert.equal(status.build, "dev"); assert.equal(status.in_applications, false); assert.equal(status.stopping, null);
+      assert.deepEqual(status.login_item, { state: "disabled" });
+      assert.deepEqual(await app.cli(["app", "login-item", "on"]), { state: "enabled" }, "the fake login item, never this account's");
+      assert.deepEqual(await app.cli(["app", "login-item", "off"]), { state: "disabled" });
+      const unknown = await callApp(app.paths.appSocket, "update.status" as never).then(() => undefined, (error) => error);
+      assert.equal(unknown?.code, "unsupported", String(unknown));
+    }));
+
+    checks.push(await ctx.check("a killed daemon: app status shows backing_off, then running again", async () => {
+      const [killed] = app.processes().daemons;
+      process.kill(killed.pid, "SIGKILL");
+      // Straight to the app socket, the CLI's own client: a CLI process takes longer to start than the 1 s backoff.
+      const seen: string[] = [];
+      await app.until(async () => {
+        const daemon = ((await callApp(app.paths.appSocket, "app.info")) as any).children.daemon;
+        if (seen.at(-1) !== daemon) seen.push(daemon);
+        return daemon === "running" && seen.includes("backing_off");
+      }, "the daemon to back off and come back", 20_000);
+      assert.deepEqual(seen.slice(seen.indexOf("backing_off")), ["backing_off", "running"], `daemon states seen: ${seen}`);
+      assert.deepEqual((await app.cli(["app", "status"])).children, { daemon: "running", connector: "running" });
+      assert.equal(app.processes().daemons.length, 1);
+      await runningAgain();
     }));
 
     checks.push(await ctx.check("a killed connector is restarted by the app", async () => {

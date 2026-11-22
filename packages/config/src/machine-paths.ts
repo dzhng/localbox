@@ -9,6 +9,8 @@ export interface MachinePaths {
   socket: string;
   /** The host daemon's lock: one daemon per root, held for its life (`MachineLock` in the daemon). */
   hostdLock: string;
+  /** Localbox.app's own socket (`AppSocket`): `localbox app` reaches the app's native powers through it. */
+  appSocket: string;
   /** One directory per sandbox (`<id>/sandbox.json`, `disk.img`, `state.vzsave`), owned by the host daemon. */
   sandboxes: string;
   /** One journal per long host operation (`<mutation_id>.json`), owned by the host daemon's `HostOperationStore`. */
@@ -36,6 +38,7 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env, app: AppBundl
     ipcToken: join(root, "ipc-token"),
     socket: join(root, "agent.sock"),
     hostdLock: join(root, "hostd.lock"),
+    appSocket: join(root, "app.sock"),
     sandboxes: join(root, "sandboxes"),
     operations: join(root, "operations"),
     images: join(root, "images"),
