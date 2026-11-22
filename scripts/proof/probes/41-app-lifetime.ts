@@ -17,7 +17,8 @@ import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
 // reports both children through the app socket, including a killed daemon backing off and coming back; the login
 // item is the app's fake one, never this account's. Slice 12: `app status` is the app's facts; a long poll with
 // `--since` answers as soon as a sandbox goes to sleep. Slice 13: the popover opens (through the development build's
-// `popover.*` test hooks) without the app taking focus, and its Sleep and Wake reach the daemon.
+// `popover.*` test hooks) without the app taking focus, and its Sleep and Wake reach the daemon. Slice 14: Settings
+// opens the same way (`settings.*`) and its Open at login switch reaches the app's fake login item through the CLI.
 //
 //   npm run proof -- 41 --tier a      the packaged dev app on the process-fixture backend
 //   npm run proof -- 41 --tier v      quit and relaunch with a real VM whose memory survives
@@ -162,6 +163,31 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       assert.equal((await popover("popover.close")).shown, false);
       const after = app.front();
       assert.ok(!fronts.has(pid) && after !== pid, `the app was frontmost (front before ${before}, after ${after}, seen ${[...fronts]})`);
+    }));
+
+    checks.push(await ctx.check("Settings opens (test hook) without the app becoming frontmost; its Open at login switch runs app login-item on the fake item", async () => {
+      const settings = async (operation: string, params: Record<string, unknown> = {}): Promise<any> => await callApp(app.paths.appSocket, operation as never, params as never);
+      const fronts = new Set<number>();
+      const until = async (what: string, done: (state: any) => boolean) => {
+        let seen: any;
+        await app.until(async () => {
+          seen = await settings("settings.state");
+          const now = app.front(); if (now !== undefined) fronts.add(now);
+          return done(seen);
+        }, `Settings: ${what}`, 30_000);
+        return seen;
+      };
+      assert.equal((await settings("settings.open")).shown, true);
+      const opened = await until("signed out, the login item read", (state) => state.account === "signed_out" && state.login_item === "disabled");
+      assert.equal(opened.login_item_description, "Localbox does not open when you log in.");
+      await settings("settings.set_open_at_login", { enabled: true });
+      await until("open at login on", (state) => state.login_item === "enabled" && !state.pending);
+      assert.equal((await app.cli(["app", "login-item"])).state, "enabled", "the switch went through the CLI to the app's (fake) item");
+      await settings("settings.set_open_at_login", { enabled: false });
+      const off = await until("open at login off", (state) => state.login_item === "disabled" && !state.pending);
+      assert.equal(off.login_failure, null);
+      assert.equal((await settings("settings.close")).shown, false);
+      assert.ok(!fronts.has(pid) && app.front() !== pid, `the app was frontmost (seen ${[...fronts]})`);
     }));
 
     checks.push(await ctx.check("a killed daemon: app status shows backing_off, then running again", async () => {

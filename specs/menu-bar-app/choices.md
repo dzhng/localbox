@@ -482,3 +482,91 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   answer before the sleep landed (something else changed the facts in its first second), left the sandbox asleep, and
   the later checks that wait for it running failed in turn. The popover check now starts the sandbox itself if it is
   not running. The four other runs, including the last two in a row, were 11/11.
+
+## 14 · Settings window
+
+- **Bento's Settings was rendered, not read off the code.** A `git archive` of Bento's `apps/macos` at the frozen
+  commit was exported into scratch, and its own `tests/settings-view-shots.mjs` was run there with
+  `SHOTS=<scratch>`. It builds `BentoControls` and draws `SettingsView` in a borderless 560 × 780 window off screen,
+  at 1x. The `manual` state (no `update`) is `assets/bento-settings-{light,dark}-manual.png` (top: About) and
+  `…-manual-bottom.png` (scrolled to the end: General). Our Settings shots use the same capture (`SettingsShots.swift`,
+  1x, 560 × 780), so the two can be cropped and compared row for row.
+- **`localbox login` as it really behaves** (`apps/cli/src/index.ts`) differs from the slice's guess in three ways:
+  - Without `--code`, it prints a sentence for a person even with `--json` ("Code sent to E. Ask the user…"), not JSON.
+    "Code sent" is therefore exit 0, and the model ignores stdout.
+  - Its refusals are plain text on stderr with exit 1, not an envelope. Examples: "email is invalid", "verification
+    code is invalid or expired", "too many verification attempts; try again later", "this Mac is already signed in to
+    X; run localbox logout first". `BundledCLI` already falls back to stderr text. Settings shows that text as a
+    sentence (capitalised, with a full stop).
+  - A second login while signed in is refused before any code is sent. Settings offers the code flow only while
+    `facts.account` is null.
+
+  The CLI was not changed. Making `login --json` print JSON is a separate CLI fix. Reverse: in `CLISettingsActions`.
+- **Account layout (delegated).** Signed out: an "Email" row with a bordered field 200 pt wide and Send Code on the
+  same row. Code sent: Bento's detail row "Check your email / Enter the code we emailed to E." with Use a Different
+  Email on its right, then "Code" with a field and Sign In. Signed in: Bento's Workspace › Account detail row
+  (Account / email, Sign Out…) and a "This Mac" row. Refusals show in Bento's orange status label under the rows. The
+  footer is "Signing in connects this Mac to your Localbox account." while signed out, and "Other computers and cloud
+  agents signed in to this account can use this Mac's sandboxes." once signed in. Sign Out… asks "Sign this Mac out of
+  Localbox?", then "Signing out removes this Mac from your Localbox account, so other computers and cloud agents can
+  no longer reach its sandboxes." with a destructive "Sign Out". A credential written before emails were recorded
+  shows "Signed in". A revoked Mac (account still named, connector `signed_out`) shows as signed in, so Sign Out is
+  what it offers; the popover carries the warning.
+- **Form state lives in the model** (`SettingsModel`, `@MainActor ObservableObject` in `LocalboxAppCore`):
+  - `email`, `code`, `codeSentTo`, `busy` and one failure line each for account, agent setup, login item and updates.
+  - A switch shows its requested value while its command runs, then whatever `app status` says. On a refusal, the
+    switch goes back and the message stays.
+  - Facts that name an account end the code flow, so a sign-in from the terminal also does.
+  - A second tap while busy does nothing.
+  - The refresh after a change is one `app status` read through `SettingsActions.facts()`, on top of the long poll
+    `FactsSource` runs while the window is open. The last answer wins.
+- **"Set up my agents" summary.** Bento's sentence when command and skill are both `installed` ("localbox command +
+  skill, kept current. All good ✓"). Otherwise Bento's "Command …; skill …." built from the facts' states:
+  `not_in_applications` reads "Command waits for Localbox to be in Applications", `not_app_managed` "Command
+  unavailable in this build", an unknown state "Command needs attention". A failed `agents setup` shows a red line
+  under the row, in the same style Bento uses for the login item. "Open at login" lines are Bento's four with the name
+  changed.
+- **Updates rows are wired for slice 15.** `AppFacts.update` now decodes slice 15's announced shape
+  `{available, enabled, can_check, status?, version?}`, which is null today. The toggle runs `localbox update
+  automatic on|off`, the button `localbox update check`, and the footer is slice 15's sentence ("Installs when
+  sandboxes and background work are idle."). Slice 15 only has to make the CLI report `update` and add those commands.
+  The `updates` shot shows the rows fed by synthetic facts.
+- **The version in About is the bundle's `CFBundleShortVersionString`**, read as Bento's is. It equals the CLI's
+  version, which is copied from the same `package.json`, and an offscreen render shows "Development", as Bento's does.
+- **Window.** `SettingsWindow` is Bento's `makeWindow` (560 wide, height `min(780, visible - 60)`, titled, closable,
+  miniaturizable, frame in defaults `settingsFrame`, restored only if it meets a screen). Opening activates the app,
+  as Bento's does, because a person chose it. Under `LOCALBOX_APP_TEST_HOOKS=1` it orders in behind instead, like
+  Bento's `ControlsProbe.observed`. Opening and closing feed `FactsSource.setWatching(popover || settings)`.
+  "Show this window when Localbox starts" (defaults `showSettingsAtLaunch`, off) opens it at launch except on
+  `--localbox-update-relaunch`. `WindowMenu` is Bento's plus an Edit menu, so ⌘V works in the email and code fields.
+  The Login Items button calls `SMAppService.openSystemSettingsLoginItems()` through a closure, so `LocalboxMenu`
+  calls nothing native. Only macOS 13 APIs are used (grouped `Form`, `LabeledContent`, `sizingOptions`), plus
+  `NSApplication.activate()` (14).
+- **Test hooks:** `settings.open`, `settings.close`, `settings.state` and `settings.set_open_at_login {enabled}`. Probe 41
+  tier `a` opens Settings, flips Open at login on and off through the model (so through `localbox app login-item` to
+  the fake item), checks `app login-item` agrees, and checks that the app's pid is never frontmost.
+- **Tests:** `settings-cli.test.mjs` runs the real model, `CLISettingsActions` and `BundledCLI` against a fake bundle
+  CLI. It checks:
+  - the exact command log: each control's command and then `app status`, nothing else;
+  - the three account states;
+  - that a refused email, a wrong code and a refused login item each show the CLI's message and keep what was typed.
+
+  `settings-model.test.mjs` covers the summary and login-item lines, updates hidden until the facts carry them, the
+  preference, and the busy guard.
+- **Compare (Bento's manual-updates state, 1x, light and dark; `evidence/14/compare/`).** Slice variable: the name.
+  - **About:** pixel-identical to Bento's (pixelmatch 0, mae 0).
+  - **General, header to the bottom of the box:** same rows in the same order, and every text line and box edge sits at
+    the same offset from the header as Bento's. The words match apart from "Bento" becoming "Localbox". pixelmatch
+    0.025–0.027 lies on the name runs, plus the knobs of the two detail-row toggles, which sit one pixel lower than
+    Bento's. The code is identical, and the section sits at a different absolute y than in Bento's scrolled shot. That
+    looks like the toggle's half-point snapping, not layout; it was not chased further.
+  - The capture uses the reference's switch values (window at launch on, login item off: the `manual-updates` state).
+  - Verdict: pass.
+- **Critique (one unprimed agent, every state light and dark plus crops; `evidence/14/critique.md`).**
+  - Fixed: prompts that read as entered values (fields are now bordered and left-aligned), lone buttons on empty rows
+    (actions are inline), the error away from its field, and the signed-in footer still talking about signing in.
+  - Declined: the General section's own traits (no fix button for agent setup, the updates rows' layout, toggle on
+    while approval is pending, blank space under a short form). They are Bento's, which the slice copies exactly, or
+    slice 15's. Also declined: faint disabled buttons in dark mode (system style).
+- **Not run here:** the human checkpoint (the orchestrator's), and clicking the real popover's Settings… on this
+  account.

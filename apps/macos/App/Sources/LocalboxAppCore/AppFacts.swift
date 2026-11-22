@@ -3,7 +3,7 @@ import Foundation
 /// What `localbox app status --json` prints (`apps/cli/src/app-facts.ts`): everything the popover and Settings show,
 /// warnings included (specs/menu-bar-app, invariant 10: the CLI decides them, views only render them). The shared
 /// fixtures under `apps/macos/App/tests/fixtures/facts/` are written by the CLI's tests and decoded by this type's, so
-/// the two sides cannot drift. Keys are the CLI's snake_case; `update` is slice 15's and not read yet.
+/// the two sides cannot drift. Keys are the CLI's snake_case; `update` is null until slice 15.
 public struct AppFacts: Codable, Equatable, Sendable {
     public enum Build: String, Codable, Sendable { case release, dev }
     public enum Daemon: String, Codable, Sendable { case running, starting, stopped, backingOff = "backing_off" }
@@ -44,6 +44,16 @@ public struct AppFacts: Codable, Equatable, Sendable {
         public let error: String?
     }
     public struct Stopping: Codable, Equatable, Sendable { public let reason: String; public let pending: [String] }
+    /// The update controls (slice 15 fills them; until then the CLI says null and Settings shows the manual-updates
+    /// line). `available` is whether this build updates itself at all.
+    public struct Update: Codable, Equatable, Sendable {
+        public let available: Bool
+        public let enabled: Bool
+        public let canCheck: Bool
+        /// A line about the last or current check or install, shown under the button.
+        public let status: String?
+        public let version: String?
+    }
     public struct Warning: Codable, Equatable, Sendable {
         /// One of the CLI's warning codes; a view shows `message` and `fix`, never its own text for a code.
         public let code: String
@@ -64,6 +74,7 @@ public struct AppFacts: Codable, Equatable, Sendable {
     public let images: [Image]
     public let builtinImage: BuiltinImage
     public let stopping: Stopping?
+    public let update: Update?
     public let warnings: [Warning]
     /// A fingerprint of the facts; passed back as `--since` to wait for the next change.
     public let watchVersion: Int
