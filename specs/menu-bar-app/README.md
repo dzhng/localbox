@@ -12,16 +12,14 @@ is [brief.md](brief.md). Read it before any slice.
 
 ## Next Agent Prompt
 
-**Status (2026-11-22):** spikes 01, 02 and 04 are done and all go; see
-[spikes.md](spikes.md). Nothing in the product is built. The id rename
-(`com.localbox.*` → `sh.localbox.*`) is already committed (a45a38f).
+**Status (2026-11-22):** the spikes and slices 06 (daemon) and 07 (CLI) are
+done and merged; see [spikes.md](spikes.md) and [choices.md](choices.md).
 
-**You are picking this up at slice 06** (daemon) and slice 07 (CLI), which
-are independent. The spikes are finished. There are no spikes 03 or 05: the
-user pointed out that signing a bundle with a CLI inside and the patched
-Sparkle update are already proven by Bento and Yap, so those are ported
-directly, and only what is new to Localbox is checked, inside slices 10 and
-15 (see "Ported from Bento, not re-proven").
+**You are picking this up at slice 08** (app shell), then 09. There are no
+slices 03 or 05: signing a bundle with a CLI inside and the patched Sparkle
+update are already proven by Bento and Yap, so they are ported directly, and
+only what is new to Localbox is checked, in slices 10 and 15 (see "Ported
+from Bento, not re-proven").
 
 **Warnings**
 
@@ -39,6 +37,8 @@ directly, and only what is new to Localbox is checked, inside slices 10 and
   there, before the first publish.
 - Signing in spikes and probes uses a throwaway identity in a temporary
   keychain. The keychain's "Agent Computer Local" identity blocks on a dialog.
+- The rare cold boot from spike 02 was not reproduced in 520 restores
+  (slice 06's soak); what is known is in `choices.md`. It stays open.
 - Never `pkill` Virtualization processes (Colima is one). Manual daemon runs
   need a scratch `HOME` or `LOCALBOX_MACHINE_ROOT`.
 - Logging out or sleeping the development Mac kills your session. Those legs
@@ -51,8 +51,8 @@ directly, and only what is new to Localbox is checked, inside slices 10 and
 - [x] 01 [Spike: hands-off first launch and login item](slices/01-first-launch-spike.md)
 - [x] 02 [Spike: VMs under an app-supervised child](slices/02-vm-child-spike.md)
 - [x] 04 [Spike: built-in image fetch](slices/04-image-fetch-spike.md)
-- [ ] 06 [Daemon: supervised mode, one daemon per root](slices/06-daemon-supervised.md)
-- [ ] 07 [CLI: app-managed layout, launcher, home command](slices/07-cli-app-managed.md)
+- [x] 06 [Daemon: supervised mode, one daemon per root](slices/06-daemon-supervised.md)
+- [x] 07 [CLI: app-managed layout, launcher, home command](slices/07-cli-app-managed.md)
 - [ ] 08 [App shell: lifetime and supervision](slices/08-app-shell.md)
 - [ ] 09 [App control: socket, login item, `localbox app`](slices/09-app-control.md)
 - [ ] 10 [Release, agent install, and deleting the old path](slices/10-release-cutover.md)
