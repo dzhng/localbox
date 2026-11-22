@@ -303,6 +303,69 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
 - **Not run here:** the real-account install from `ssh localhost` (the orchestrator's), and a real Gatekeeper
   quarantine case.
 
+## 11 · Built-in image on first launch
+
+- **The probe is `43-builtin-image.ts`**, not the slice's 42 (probe 42 is the release); slice 15's update probe is 44.
+  Tier `a` also quits mid-download and relaunches, the slice's human check: the cut part is asked for from its
+  partial's length and the finished one not at all. Probe 42 gained one check: the installed app's CLI runs `ensure`
+  against `release.sh`'s own output, so the asset names `packImage` writes are the ones `ensure` reads.
+- **The install is `replaceLinuxImage`, not `installLinuxImage`.** `ensure` expands into
+  `<root>/downloads/linux-<version>/images/linux` and swaps that directory in by rename (the old image set aside as
+  `.linux.replaced-<pid>` first, then deleted), so the new image never sits in `<images>` under a sweepable name.
+  `installLinuxImage` (probes, `real-daemon.ts`) still clones into `.linux.installing-<pid>` and now ends in the same
+  swap. Reverse: in `scripts/release.ts`.
+- **"Already current"** is decided from `builtin-image.json`'s `ready` line, which records `version`, `image_sha256`
+  (the signed disk digest) and `image_json_sha256`: the same release with an unchanged `images/linux/image.json` asks
+  the network nothing (a relaunch, an offline Mac); another release whose manifest names the same disk and
+  `image.json` digests fetches only `release.json`. Hashing the multi-GiB disk at every launch was the lost
+  alternative; `image.json` alone cannot tell two disks apart (it has no digest). A probe-seeded image has no record,
+  so `ensure` replaces it. Reverse: `install` in `apps/cli/src/builtin-image.ts`.
+- **`release.json` must name this CLI's version**, or `ensure` fails: a folder override pointing at another release
+  never installs that release's image. `checkManifest` is exported for the manifest's own consistency.
+- **Where it fetches from.** `LOCALBOX_RELEASE_URL` (the override installation.md already documents) names the release
+  folder, any of `https:`, `http:`, `file:`; else `https://github.com/<LOCALBOX_RELEASE_REPOSITORY or
+  dzhng/localbox>/releases/download/v<version>`. Any scheme is accepted since nothing is trusted before the signature
+  verifies. The key is `Layout.publicKey`: the bundle's `Resources/release-public.pem`, else the skill's.
+- **Lock:** `<staging>/lock` holds `pid token`, made with `link(2)` from a draft so it appears whole. It is stale when
+  its pid is dead or is not a process whose command line has `image ensure` (pid reuse), and is then taken over; it is
+  removed only while it still holds this run's token. A second `ensure` prints the progress file's line and exits
+  **75**; `ready` exits 0, `failed` 1. Staging folders of other versions are deleted unless their lock is live.
+- **Failures.** A dropped connection is retried 3 times in the run, then the run ends `failed` with the partial kept
+  (resumed next time, the offset taken from the file's length); a refusal (wrong length, `Content-Range` that does not
+  start where asked, a checksum mismatch, 404) deletes that part. Both are `failed`: the slice has no other phase. A
+  stalled connection waits on Node's default 300 s body timeout; not tuned.
+- **Progress:** at most one line every 250 ms within a phase, with a trailing write so a stall shows the last bytes;
+  every phase change and every finished part is written at once. `downloading` counts the artifacts' bytes (parts, boot
+  store, `image.json`); `expanding` the disk's bytes expanded (`expandImage`'s new callback, after each chunk);
+  `installing` and `ready` carry the image's size. Each line is written to `builtin-image.json` by rename.
+- **`expandImage`** now removes `.<name>.partial-<pid>` temporaries whose pid is dead, beside its destination.
+- **Supervision.** `ChildProcess` gained `Restart.untilSuccess` (exit 0 ends supervision; a later `start()` runs it
+  again) instead of a second supervisor. The one-shot runs `localbox app image ensure --json` into `<logs>/image.log`,
+  with `StopPolicy.imageEnsure` (SIGTERM at once: `ensure` does not watch stdin, because a shell often starts it with
+  stdin closed) and `Backoff.imageEnsure` (5 s doubling to 300 s, reset after a 10 min run). `Lifetime` starts it after
+  the daemon and the connector and stops it after the connector, before the daemon. Every launch runs it, which covers
+  the relaunch after an update; `Lifetime.ensureImage()` is the hook for slice 15 should a change of release arrive
+  without one. Reverse: `ChildProcess.exited`, `Lifetime`.
+- **The daemon's refusal is gated on `LOCALBOX_BUILTIN_IMAGE_PROGRESS`**, which only `DaemonLaunch` sets (to `app
+  paths`' new `builtin_image`). Under the app a new create from `linux` with no `images/linux` is `sandbox_not_ready`,
+  `retryable: true`, details `{ state: downloading|failed, image, phase, progress? }`, on every backend (so probe 41's
+  fixture tier now seeds a stand-in `images/linux`); a create re-run for a sandbox already here is not refused. With
+  no app (probes starting the daemon directly) a missing image is still `image_not_found`. A failed download is
+  refused retryable too, since the app keeps retrying. The daemon's envelope gained a `retryable` argument (it was
+  always false). The relay already passed a settled machine refusal through and released the reservation; a test now
+  pins it.
+- **Paths.** `machinePaths()` gained `downloads` and `builtinImage`; `app paths` prints `builtin_image`; Swift
+  `AppPaths.builtinImage`. `app status` reads the progress file from `machinePaths().builtinImage`.
+- **Warning fixes made true:** `builtin_image_missing` "Quit Localbox and open it again to download it, or run
+  localbox app image ensure."; `builtin_image_failed` "Localbox keeps trying; check this Mac's internet connection."
+- **Tier `a` never reaches GitHub:** `packagedApp` launches with `LOCALBOX_RELEASE_URL` on an empty scratch folder,
+  so the launch-time `ensure` fails at once (probe 41's status then shows `builtin_image: failed` behind
+  `signed_out`); probe 43 passes its fault server instead. `Processes` gained `imageEnsures`, which cleanup kills.
+- **Fixture images are 32 MiB:** APFS allocates a file of 16 MiB or less whole, so a smaller one cannot show holes.
+  The fault server and the signed fixture release live in `scripts/proof/lib/image-release.ts` (tests and probe 43).
+- **Not run here:** the slice's manual run against a real published release (time and peak disk). No release in this
+  manifest shape is published yet (v0.1.1 is the older one), so it waits for the first release cut with `release.sh`.
+
 ## 12 · App facts: the one state shape
 
 - **One additive daemon change, to `host.watch`** (internal, not in the catalog): each sandbox row gains `name`, `os`

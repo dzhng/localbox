@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createConnection } from "node:net";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ProofContext } from "../run.js";
 import { LocalIPCTransport } from "../../../packages/client/src/index.js";
 import { machinePaths } from "../../../packages/config/src/index.js";
@@ -12,7 +13,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** What a Finder or `open` launch inherits from launchd: no developer shell, no toolchain on PATH. */
 const FINDER_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
-export interface Processes { app: number | undefined; daemons: Array<{ pid: number; ppid: number }>; connectors: Array<{ pid: number; ppid: number }> }
+export interface Processes { app: number | undefined; daemons: Array<{ pid: number; ppid: number }>; connectors: Array<{ pid: number; ppid: number }>; imageEnsures: Array<{ pid: number; ppid: number }> }
 
 /**
  * Proof tier `a` (specs/menu-bar-app, A13): the development Localbox.app assembled by apps/macos/App/scripts/build-app.mjs
@@ -34,6 +35,9 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     HOME: home, LOCALBOX_MACHINE_ROOT: root, LOCALBOX_SANDBOX_BACKEND: options.backend,
     // SMAppService matches by bundle id, not path, so a scratch bundle's real login item would be this account's.
     LOCALBOX_APP_LOGIN_ITEM: "fake",
+    // The app fetches the built-in image at launch; a probe never reaches GitHub. An empty folder makes that fetch fail
+    // at once, and a probe that wants the download serves a scratch release in its place (probe 43).
+    LOCALBOX_RELEASE_URL: pathToFileURL(join(scratch, "no-release")).href,
     PATH: fixture ? `${dirname(process.execPath)}:${FINDER_PATH}` : FINDER_PATH,
     ...(fixture ? { LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: ctx.root } : {}),
   };
@@ -51,6 +55,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
       app: of((command) => command.startsWith(join(here, "Contents/MacOS/Localbox")))[0]?.pid,
       daemons: of((command) => command.startsWith(join(here, "Contents/MacOS/localbox-hostd"))),
       connectors: of((command) => command.includes("connector run")),
+      imageEnsures: of((command) => command.includes("app image ensure")),
     };
   };
   /** The frontmost app's pid, as LaunchServices reports it (loginwindow while the screen is locked). */
@@ -63,10 +68,10 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
 
   /**
    * Assembles the development bundle into the scratch directory, or into `into` (the scratch HOME's Applications, say),
-   * replacing one there; `version` replaces package.json's.
+   * replacing one there; `version` replaces package.json's, `publicKey` the release key the bundle pins (a scratch one).
    */
-  const build = async (options: { into?: string; version?: string } = {}) => {
-    const built = await ctx.exec("node", ["apps/macos/App/scripts/build-app.mjs", "--out", options.into ?? scratch, ...(options.version ? ["--version", options.version] : [])]);
+  const build = async (options: { into?: string; version?: string; publicKey?: string } = {}) => {
+    const built = await ctx.exec("node", ["apps/macos/App/scripts/build-app.mjs", "--out", options.into ?? scratch, ...(options.version ? ["--version", options.version] : []), ...(options.publicKey ? ["--public-key", options.publicKey] : [])]);
     assert.equal(built.code, 0, `build-app.mjs: ${built.stderr.slice(-1500)}`);
     bundle = built.stdout.trim().split("\n").at(-1)!;
     assert.ok(existsSync(executable()), `no app at ${bundle}`);
@@ -137,11 +142,15 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
   };
 
   let calls = 0;
-  /** One catalog request straight to the daemon, as the connector forwards one; its result. */
-  const ok = async (operation: string, sandboxId: string | null, input: Json = {}): Promise<any> => {
+  /** One catalog request straight to the daemon, as the connector forwards one; its whole answer. */
+  const request = async (operation: string, sandboxId: string | null, input: Json = {}): Promise<ResponseEnvelope> => {
     const requestId = `p${options.probe}-${Date.now()}-${calls++}`;
     const transport = new LocalIPCTransport({ socketPath: paths.socket, tokenFile: paths.ipcToken, timeoutMs: 300_000 });
-    const response: ResponseEnvelope = await transport.dispatch({ protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, sandbox_id: sandboxId, deadline_ms: 120_000, mutation_id: requestId, input } as any);
+    return await transport.dispatch({ protocol_version: PROTOCOL_VERSION, request_id: requestId, operation, sandbox_id: sandboxId, deadline_ms: 120_000, mutation_id: requestId, input } as any);
+  };
+  /** `request`, which must succeed; its result. */
+  const ok = async (operation: string, sandboxId: string | null, input: Json = {}): Promise<any> => {
+    const response = await request(operation, sandboxId, input);
     assert.equal(response.ok, true, `${operation}: ${JSON.stringify(response).slice(0, 1500)}`);
     return (response as any).result;
   };
@@ -155,14 +164,14 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     if (bundle) {
       const running = processes();
       const guests = running.daemons.flatMap(({ pid }) => { try { return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).trim().split(/\s+/).map(Number).filter(Boolean); } catch { return []; } });
-      for (const pid of [running.app, ...running.daemons.map((row) => row.pid), ...running.connectors.map((row) => row.pid), ...guests]) if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+      for (const pid of [running.app, ...running.daemons.map((row) => row.pid), ...running.connectors.map((row) => row.pid), ...running.imageEnsures.map((row) => row.pid), ...guests]) if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
       // A real VM's service process belongs to launchd, not the daemon; it is this run's when it holds a file under this root.
       for (const pid of virtualizationServices()) if (holds(pid, root)) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
     }
     if (!ctx.keep) rmSync(scratch, { recursive: true, force: true });
   };
 
-  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, until, ok, record, log, cleanup };
+  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, until, request, ok, record, log, cleanup };
 }
 
 function virtualizationServices(): number[] {

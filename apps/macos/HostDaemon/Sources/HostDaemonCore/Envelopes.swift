@@ -5,8 +5,9 @@ import Foundation
 enum Reply {
     static func success(_ request: [String: Any], _ result: Any) -> Data { envelope(request, ["ok": true, "result": result]) }
 
-    static func failure(_ request: [String: Any], code: String, message: String, details: [String: Any]? = nil) -> Data {
-        var error: [String: Any] = ["code": code, "message": message, "retryable": false]
+    /// `retryable`: the same request may succeed later as it is (a wait, not a fault in the request).
+    static func failure(_ request: [String: Any], code: String, message: String, details: [String: Any]? = nil, retryable: Bool = false) -> Data {
+        var error: [String: Any] = ["code": code, "message": message, "retryable": retryable]
         if let details { error["details"] = details }
         return envelope(request, ["ok": false, "error": error])
     }

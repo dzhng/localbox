@@ -41,7 +41,8 @@ async function verifyImageDirectory(directory: string, manifest: ReleaseManifest
     || await sha256(join(directory, IMAGE_FILES.bootStore)) !== digest(image.bootStore)
     || await sha256(join(directory, IMAGE_FILES.manifest)) !== digest(image.manifest)) throw new Error("checksum mismatch: linux image");
 }
-function checkManifest(manifest: ReleaseManifest, platformArch: string): void {
+/** The manifest's own consistency: schema, artifact names and architecture, and an image entry naming its artifacts. */
+export function checkManifest(manifest: ReleaseManifest, platformArch = "arm64"): void {
   if (manifest.schema !== "agent-computer.release.v1") throw new Error("unsupported release manifest schema");
   if (platformArch !== "arm64") throw new Error(`unsupported architecture: ${platformArch}`);
   if (!manifest.imageDigest.startsWith("sha256:")) throw new Error("invalid image digest");
@@ -96,12 +97,18 @@ const ZERO_BLOCK = Buffer.alloc(HOLE_BLOCK);
 /**
  * Expand a verified release's image artifacts into the image directory `destination`. Zero blocks of the disk are left
  * as holes, so the mostly-empty disk takes only the space its files use; the disk must match the signed size and
- * digest, the boot store and `image.json` their artifacts' digests, or nothing is written.
+ * digest, the boot store and `image.json` their artifacts' digests, or nothing is written. `progress` hears how many
+ * bytes of the disk are expanded so far, after each chunk.
  */
-export async function expandImage(dir: string, manifest: ReleaseManifest, destination: string): Promise<void> {
+export async function expandImage(dir: string, manifest: ReleaseManifest, destination: string, progress?: (doneBytes: number) => void): Promise<void> {
   const image = manifest.image;
   if (!image) throw new Error("release has no linux image");
-  const temporary = join(dirname(destination), `.${basename(destination)}.partial-${process.pid}`);
+  const prefix = `.${basename(destination)}.partial-`;
+  // The temporary is named after its pid, so one a killed run left is never reused: remove it, unless its run is alive.
+  for (const name of await readdir(dirname(destination)).catch(() => [] as string[])) {
+    if (name.startsWith(prefix) && !processAlive(Number(name.slice(prefix.length)))) await rm(join(dirname(destination), name), { recursive: true, force: true });
+  }
+  const temporary = join(dirname(destination), `${prefix}${process.pid}`);
   await mkdir(join(temporary, dirname(IMAGE_FILES.bootStore)), { recursive: true });
   try {
     const hash = createHash("sha256");
@@ -117,6 +124,7 @@ export async function expandImage(dir: string, manifest: ReleaseManifest, destin
             if (!block.equals(ZERO_BLOCK.subarray(0, block.length))) await handle.write(block, 0, block.length, offset + at);
           }
           offset += chunk.length;
+          progress?.(offset);
         }
       });
       await handle.truncate(offset);
@@ -131,6 +139,11 @@ export async function expandImage(dir: string, manifest: ReleaseManifest, destin
     await rm(temporary, { recursive: true, force: true }); throw error;
   }
 }
+/** Whether process `pid` exists (EPERM: it does, as another user's). */
+export function processAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
 /**
  * Make the image expanded under `releaseDir` (at `IMAGE_PATH`) this Mac's `images/linux`: an APFS clone (sharing every
  * block, so it costs no space) assembled under a dot-prefixed name, which `ImageStore` sweeps if a crash leaves it,
@@ -138,9 +151,7 @@ export async function expandImage(dir: string, manifest: ReleaseManifest, destin
  */
 export async function installLinuxImage(releaseDir: string, imagesDir: string): Promise<void> {
   const source = join(releaseDir, IMAGE_PATH);
-  const destination = join(imagesDir, BUILT_IN_IMAGE);
   const temporary = join(imagesDir, `.${BUILT_IN_IMAGE}.installing-${process.pid}`);
-  const replaced = join(imagesDir, `.${BUILT_IN_IMAGE}.replaced-${process.pid}`);
   await rm(temporary, { recursive: true, force: true });
   await mkdir(join(temporary, dirname(IMAGE_FILES.bootStore)), { recursive: true });
   // `cp -c` is clonefile(2); Node's COPYFILE_FICLONE has no clone on macOS and its fallback writes out every hole. A
@@ -149,8 +160,23 @@ export async function installLinuxImage(releaseDir: string, imagesDir: string): 
     const [from, to] = [join(source, file), join(temporary, file)];
     await execFileAsync("cp", ["-c", from, to]).catch(() => execFileAsync("cp", [from, to]));
   }
+  await replaceLinuxImage(temporary, imagesDir);
+}
+/**
+ * Swap the complete image directory `prepared` in as `imagesDir/linux` (on the same volume). The new image arrives in
+ * one rename, so it never sits in the images directory under a name `ImageStore`'s start-time sweep would delete; only
+ * the old image, set aside first, does, and deleting it is what comes next anyway.
+ */
+export async function replaceLinuxImage(prepared: string, imagesDir: string): Promise<void> {
+  const destination = join(imagesDir, BUILT_IN_IMAGE);
+  const replaced = join(imagesDir, `.${BUILT_IN_IMAGE}.replaced-${process.pid}`);
+  await mkdir(imagesDir, { recursive: true });
   const hadImage = await rename(destination, replaced).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return false; throw error; });
-  await rename(temporary, destination);
+  try { await rename(prepared, destination); } catch (error) {
+    // Put the old image back: a failed install must leave `images/linux` as it was.
+    if (hadImage) await rename(replaced, destination).catch(() => undefined);
+    throw error;
+  }
   if (hadImage) await rm(replaced, { recursive: true, force: true });
 }
 /** Sign the canonical manifest fields with a release Ed25519 private key. */

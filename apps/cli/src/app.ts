@@ -11,6 +11,8 @@ import { layout, type Layout } from "./layout.js";
 export interface AppPaths {
   root: string; credentials: string; ipc_token: string; socket: string; hostd_lock: string; app_socket: string;
   sandboxes: string; operations: string; images: string; logs: string;
+  /** The built-in image's progress file; the daemon reads it to say how far the download is when a create must wait. */
+  builtin_image: string;
   /** Where agent setup installs the `localbox` command; the daemon's agent reconcile writes it there. */
   bin_dir: string;
 }
@@ -27,7 +29,7 @@ export async function appPaths(env: NodeJS.ProcessEnv = process.env): Promise<Ap
   await ensureToken(paths.ipcToken);
   return {
     root: paths.root, credentials: paths.credentials, ipc_token: paths.ipcToken, socket: paths.socket, hostd_lock: paths.hostdLock, app_socket: paths.appSocket,
-    sandboxes: paths.sandboxes, operations: paths.operations, images: paths.images, logs: paths.logs, bin_dir: commandDirectory(env),
+    sandboxes: paths.sandboxes, operations: paths.operations, images: paths.images, logs: paths.logs, builtin_image: paths.builtinImage, bin_dir: commandDirectory(env),
   };
 }
 

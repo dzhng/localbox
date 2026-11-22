@@ -152,12 +152,13 @@ extension XCTestCase {
     /// A `SandboxHost` over `sandboxesDirectory` with a scratch journal and image store of its own, for tests
     /// of sandboxes alone (no operation kinds registered; `TestDaemon` wires everything).
     func sandboxHost(sandboxesDirectory: URL, factory: any SandboxBackendFactory, hostCPUs: Int? = nil, hostMemoryBytes: UInt64? = nil, admissionBytes: UInt64? = nil, allowsSimulatedPower: Bool = false,
-                     agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, freeDiskBytes: (@Sendable () -> UInt64)? = nil, now: @escaping @Sendable () -> Date = { Date() }) throws -> SandboxHost {
+                     agentSetup: AgentSetupCLI? = nil, agentUpdater: GuestAgentUpdater? = nil, freeDiskBytes: (@Sendable () -> UInt64)? = nil, store: ImageStore? = nil, builtinImage: BuiltinImageWait? = nil,
+                     now: @escaping @Sendable () -> Date = { Date() }) throws -> SandboxHost {
         let root = try scratch()
         let operations = try HostOperationStore(operationsDirectory: root.appendingPathComponent("operations"))
-        let store = try ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: freeDiskBytes)
+        let store = try store ?? ImageStore(imagesDirectory: root.appendingPathComponent("images"), freeBytesOverride: freeDiskBytes)
         return SandboxHost(sandboxesDirectory: sandboxesDirectory, factory: factory, operations: operations, store: store, hostCPUs: hostCPUs, hostMemoryBytes: hostMemoryBytes, admissionBytes: admissionBytes,
-                           allowsSimulatedPower: allowsSimulatedPower, agentSetup: agentSetup, agentUpdater: agentUpdater, now: now)
+                           allowsSimulatedPower: allowsSimulatedPower, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage, now: now)
     }
 }
 

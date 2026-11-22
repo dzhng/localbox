@@ -9,6 +9,7 @@ import { readCredentials, type Credentials } from "../../../packages/credentials
 import { AgentSetup } from "./agent-setup.js";
 import type { AppDeps } from "./app.js";
 import { askApp } from "./app-socket.js";
+import type { ImageProgress } from "./builtin-image.js";
 import { checkHost, type HostCheck } from "./host-check.js";
 import { layout } from "./layout.js";
 
@@ -44,8 +45,8 @@ export type WarningCode = "daemon_down" | "signed_out" | "connector_down" | "bui
   | "not_in_applications" | "login_item_needs_approval" | "command_not_installed";
 export interface Warning { code: WarningCode; message: string; fix?: string }
 
-/** What slice 11's `app image ensure` leaves in `<root>/builtin-image.json`: its last progress line. */
-interface BuiltinImageProgress { phase: "downloading" | "expanding" | "installing" | "ready" | "failed"; done_bytes?: number; total_bytes?: number; error?: string }
+/** What `app image ensure` leaves in `<root>/builtin-image.json`: its latest progress line. */
+type BuiltinImageProgress = Partial<ImageProgress> & Pick<ImageProgress, "phase">;
 
 /** One `host.watch` answer, with the fields this command reads. */
 interface Watch {
@@ -64,8 +65,8 @@ export interface FactsDeps {
   credentials?: () => Promise<Credentials | undefined>;
   hostCheck?: () => Pick<HostCheck, "hibernate" | "fixes">;
   agentSetup?: () => Promise<AppFacts["agent_setup"]>;
-  /** The machine root (for `builtin-image.json`) and its images folder. */
-  root?: string;
+  /** The built-in image's progress file (`builtin-image.json`) and the images folder. */
+  builtinImage?: string;
   images?: string;
   /** The clock failures are aged by (the wait itself always uses the real one). */
   now?: () => number;
@@ -90,13 +91,13 @@ export async function appFacts(options: { since?: number; timeoutMs?: number } =
   const now = deps.now ?? Date.now;
   const deadline = Date.now() + Math.min(Math.max(options.timeoutMs ?? MAX_WAIT_MS, 0), MAX_WAIT_MS);
   const paths = machinePaths();
-  const root = deps.root ?? paths.root, images = deps.images ?? paths.images;
+  const progressFile = deps.builtinImage ?? paths.builtinImage, images = deps.images ?? paths.images;
   const daemon = deps.daemon ?? new LocalIPCTransport();
   const host = (deps.hostCheck ?? checkHost)();
   const setup = await (deps.agentSetup ?? defaultAgentSetup)();
   let watch = await hostWatch(daemon, 0, 0);
   for (;;) {
-    const facts = await compose({ deps, daemon, watch, host, setup, root, images, now: now() });
+    const facts = await compose({ deps, daemon, watch, host, setup, progressFile, images, now: now() });
     const remaining = deadline - Date.now();
     if (options.since === undefined || facts.watch_version !== options.since || remaining <= 0) return facts;
     const wait = Math.min(remaining, RECHECK_MS);
@@ -135,17 +136,17 @@ async function hostWatch(daemon: NonNullable<FactsDeps["daemon"]>, since: number
 
 interface Inputs {
   deps: FactsDeps; daemon: NonNullable<FactsDeps["daemon"]>; watch: Watch | undefined;
-  host: Pick<HostCheck, "hibernate" | "fixes">; setup: AppFacts["agent_setup"]; root: string; images: string; now: number;
+  host: Pick<HostCheck, "hibernate" | "fixes">; setup: AppFacts["agent_setup"]; progressFile: string; images: string; now: number;
 }
 
-async function compose({ deps, daemon, watch, host, setup, root, images, now }: Inputs): Promise<AppFacts> {
+async function compose({ deps, daemon, watch, host, setup, progressFile, images, now }: Inputs): Promise<AppFacts> {
   const ask = (operation: "app.info" | "login_item.get") => askApp(deps.app?.layout ?? layout(), deps.app?.paths ?? machinePaths(), operation, {}, deps.app?.launch);
   const [info, loginItem, signedIn, relay, builtin] = await Promise.all([
     ask("app.info") as Promise<unknown> as Promise<AppInfo>,
     ask("login_item.get") as Promise<unknown> as Promise<{ state: AppFacts["open_at_login"] }>,
     (deps.credentials ?? (() => readCredentials(machinePaths().credentials)))().then((credentials) => ({ credentials }), (error: Error) => ({ credentials: undefined, error: error.message })),
     watch ? daemon.dispatch(local("relay.status", {}, 10_000)).then((response) => response.ok ? response.result as { connector: string; detail: string | null; reported_at: string | null } : undefined, () => undefined) : undefined,
-    readFile(join(root, "builtin-image.json"), "utf8").then((text) => JSON.parse(text) as BuiltinImageProgress, () => undefined),
+    readFile(progressFile, "utf8").then((text) => JSON.parse(text) as BuiltinImageProgress, () => undefined),
   ]);
   const { credentials } = signedIn;
   const daemonState: AppFacts["daemon"] = watch ? "running" : info.children.daemon === "running" ? "starting" : info.children.daemon;
@@ -240,9 +241,9 @@ export function warnings(facts: Omit<AppFacts, "watch_version" | "warnings">, co
   else if (facts.connector.state === "down")
     out.push({ code: "connector_down", message: "This Mac can't reach your Localbox account, so other computers can't reach its sandboxes.", fix: "Localbox keeps retrying; if this lasts, quit Localbox and open it again." });
   if (facts.builtin_image === "failed")
-    out.push({ code: "builtin_image_failed", message: `The built-in Linux image didn't download${context.builtinError ? ` (${context.builtinError})` : ""}, so new Linux sandboxes can't start.`, fix: "Check this Mac's internet connection; Localbox tries again when it next opens." });
+    out.push({ code: "builtin_image_failed", message: `The built-in Linux image didn't download${context.builtinError ? ` (${context.builtinError})` : ""}, so new Linux sandboxes can't start.`, fix: "Localbox keeps trying; check this Mac's internet connection." });
   else if (facts.builtin_image === "missing")
-    out.push({ code: "builtin_image_missing", message: "The built-in Linux image isn't on this Mac, so new Linux sandboxes can't start.", fix: "Quit Localbox and open it again to download it." });
+    out.push({ code: "builtin_image_missing", message: "The built-in Linux image isn't on this Mac, so new Linux sandboxes can't start.", fix: "Quit Localbox and open it again to download it, or run localbox app image ensure." });
   if (facts.hibernate === "only_while_unlocked")
     out.push({ code: "hibernate_blocked", message: "While this Mac is locked, idle sandboxes can't free their memory, because the lock screen asks for a password.", ...(context.hostFixes.length ? { fix: context.hostFixes.join("; then ") } : {}) });
   // A development build runs from wherever it was built; only a release is meant to live in Applications.

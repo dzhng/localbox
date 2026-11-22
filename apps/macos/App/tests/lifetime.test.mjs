@@ -40,6 +40,29 @@ func describe(_ state: Lifetime.State) -> String {
 }
 `;
 
+const WITH_IMAGE = DRIVER.replace(/@main struct Driver \{[\s\S]*$/, `
+@main struct Driver {
+  static func main() {
+    let log = Log(), done = DispatchSemaphore(value: 0)
+    let lifetime = Lifetime(connector: Fake("connector", log), daemon: Fake("daemon", log), image: Fake("image", log)) { state in
+      if state == .stopped { done.signal() } }
+    lifetime.start()
+    lifetime.ensureImage()
+    lifetime.stop(.quit)
+    done.wait()
+    lifetime.ensureImage()
+    for line in log.all { print(line) }
+  }
+}
+`);
+
+test("the built-in image's check starts with the children and can be asked for again; it stops before the daemon, and never after a stop", () => {
+  assert.deepEqual(run(compile(WITH_IMAGE)).split("\n"), [
+    "start daemon", "start connector", "start image", "start image",
+    "stop connector begins", "stop connector ends", "stop image begins", "stop image ends", "stop daemon begins", "stop daemon ends",
+  ]);
+});
+
 test("the connector starts after the daemon and stops before it; pending empties as the daemon reports each sandbox; only the first stop counts", () => {
   const lines = run(compile(DRIVER)).split("\n");
   assert.deepEqual(lines, [

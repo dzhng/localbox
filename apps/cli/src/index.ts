@@ -39,6 +39,7 @@ const LOCAL_COMMANDS: Array<[string, string]> = [
   ["app paths", "Print this Mac's Localbox paths, creating the machine directories and IPC token (run by Localbox.app)"],
   ["app status [--since N] [--timeout-ms M]", "Show everything Localbox.app shows: this Mac's sandboxes and images, its account and connection, and warnings; --since waits for a change"],
   ["app login-item [on|off]", "Show, or turn on or off, opening Localbox at login"],
+  ["app image ensure", "Download, verify and install this release's built-in Linux image unless it is already here (run by Localbox.app at launch)"],
   ["host check", "Check this Mac's settings for sleeping sandboxes (screen lock, automatic login)"],
   ["contract probe|generate-snapshots", "Inspect the contract or regenerate its snapshots"],
 ];
@@ -347,6 +348,7 @@ async function main(): Promise<void> {
     print(await run(request, undefined)); return;
   }
   if (group === "connector" && subcommand === "run") { const { runConnector } = await import("../../connector/src/index.js"); process.exit(await runConnector(process.env)); }
+  if (group === "app" && subcommand === "image" && rest[0] === "ensure" && rest.length === 1) { const { ensureCommand } = await import("./builtin-image.js"); process.exitCode = await ensureCommand(json); return; }
   if (group === "app" && subcommand === "paths") { const { appPaths } = await import("./app.js"); print(await appPaths() as unknown as Json); return; }
   if (group === "app" && (subcommand === "status" || subcommand === "login-item")) {
     const { appLoginItem } = await import("./app.js");

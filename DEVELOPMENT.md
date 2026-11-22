@@ -329,6 +329,20 @@ apps/macos/HostDaemon`, sign the binaries with the virtualization entitlement
 dist/vm-image/images/linux --json` on an image directory written with `--out`;
 vmlab keeps the kernel and boot console beside a scratch clone of the disk.
 
+A Mac gets this image after install, not in the app: at every launch the app
+runs `localbox app image ensure` as a one-shot child, the only writer of
+`images/linux`. It fetches the release's `release.json` (from
+`LOCALBOX_RELEASE_URL` when set, else the release on GitHub,
+`LOCALBOX_RELEASE_REPOSITORY` to change the repository), verifies it against the
+bundle's `release-public.pem`, and does nothing more when the installed image
+is that release's. Otherwise it downloads the parts with `Range` resume into
+`<root>/downloads/`, where the daemon's start-time sweep never looks, and swaps
+the expanded image in with one rename. Its progress is `<root>/builtin-image.json`
+(and the app's `image.log`); until the image is there a create from `linux`
+answers `sandbox_not_ready`, retryable, with that progress. Probes launch the app
+with `LOCALBOX_RELEASE_URL` on an empty folder, so they never reach GitHub;
+probe 43 serves a scratch release instead.
+
 ### The macOS base
 
 No script builds a macOS image: the daemon does, as host operation

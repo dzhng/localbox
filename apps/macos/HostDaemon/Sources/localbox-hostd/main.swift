@@ -32,8 +32,10 @@ struct HostDaemonMain {
             let guestAgent = ProcessInfo.processInfo.environment["LOCALBOX_GUEST_AGENT"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: expanded($0), isDirectory: true) }
             let agentUpdater = guestAgent.map { GuestAgentUpdater(directory: $0) }
             if agentUpdater == nil { log("guest agent updates: no LOCALBOX_GUEST_AGENT, so sandboxes keep the agent their image carries") }
+            // Only Localbox.app fetches the built-in image, so only under it does a create wait for one.
+            let builtinImage = ProcessInfo.processInfo.environment["LOCALBOX_BUILTIN_IMAGE_PROGRESS"].flatMap { $0.isEmpty ? nil : BuiltinImageWait(progressFile: URL(fileURLWithPath: expanded($0))) }
             let host = SandboxHost(sandboxesDirectory: sandboxes, factory: try factory(images), operations: operations, store: images, hostCPUs: dev.cpus, hostMemoryBytes: dev.memoryBytes,
-                                   admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater)
+                                   admissionBytes: dev.admissionBytes, allowsSimulatedPower: isDev, agentSetup: agentSetup, agentUpdater: agentUpdater, builtinImage: builtinImage)
             let macBuilder = MacBaseBuilder(store: images, operations: operations, sandboxes: host, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: guestAgent)
             // Copies go straight to the other Mac through ImageTransfer: the local network first, then a punched connection.
             let daemon = await HostDaemon(sandboxes: host, macBuilder: macBuilder, transport: ImageTransferCopyTransport(), dev: isDev)

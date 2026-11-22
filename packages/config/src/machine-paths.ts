@@ -17,6 +17,13 @@ export interface MachinePaths {
   operations: string;
   /** One directory per image on this Mac (`<id>/image.json`, `disk.img`, `boot/`), owned by the host daemon's `ImageStore`. */
   images: string;
+  /**
+   * `localbox app image ensure`'s staging (`linux-<version>/`: the image's parts and its expansion), kept out of
+   * `images` because the daemon's start-time sweep deletes any unfinished write it finds there.
+   */
+  downloads: string;
+  /** The built-in image's progress as `localbox app image ensure` last reported it; `app status` and the daemon read it. */
+  builtinImage: string;
   /** Where Localbox.app writes its own, the daemon's and the connector's logs. */
   logs: string;
 }
@@ -42,6 +49,8 @@ export function machinePaths(env: NodeJS.ProcessEnv = process.env, app: AppBundl
     sandboxes: join(root, "sandboxes"),
     operations: join(root, "operations"),
     images: join(root, "images"),
+    downloads: join(root, "downloads"),
+    builtinImage: join(root, "builtin-image.json"),
     logs: relocated ? join(root, "logs") : join(home, "Library", "Logs", name),
   };
 }

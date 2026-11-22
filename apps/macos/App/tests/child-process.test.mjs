@@ -38,6 +38,30 @@ if (mode === "saving") {
   console.log("ready");
 }
 if (mode === "wedged") { process.stdin.on("data", () => {}); setInterval(() => {}, 1000); console.log("ready"); }
+if (mode === "oneshot") end(run === 3 || run === 4 ? 0 : 1);
+`;
+
+// A one-shot (the built-in image's ensure) fails twice, succeeds, and is then left alone until started again.
+const ONESHOT = `
+import Foundation
+@main struct Driver {
+  static func main() {
+    let a = CommandLine.arguments
+    let (events, log, node, peer) = (a[1], a[2], a[3], a[4])
+    let child = ChildProcess(name: "oneshot", launch: ChildLaunch(executable: URL(fileURLWithPath: node), arguments: [peer, "oneshot", events], environment: ProcessInfo.processInfo.environment, log: URL(fileURLWithPath: log)),
+                             policy: .imageEnsure, backoff: Backoff(initial: 0.2, maximum: 0.8, resetAfter: 10), restart: .untilSuccess, diagnostic: { _ in })
+    func count(_ prefix: String) -> Int { ((try? String(contentsOfFile: events, encoding: .utf8)) ?? "").split(separator: "\\n").filter { $0.hasPrefix(prefix) }.count }
+    func wait(_ check: () -> Bool) { let end = Date().addingTimeInterval(15); while !check() && Date() < end { Thread.sleep(forTimeInterval: 0.01) }; precondition(check(), "timed out") }
+    child.start()
+    wait { count("exit ") == 3 }
+    Thread.sleep(forTimeInterval: 1.5)
+    print("after success: \\(count("start ")) starts, \\(child.state.rawValue)")
+    child.start()
+    wait { count("exit ") == 4 }
+    Thread.sleep(forTimeInterval: 0.5)
+    print("started again: \\(count("start ")) starts, \\(child.state.rawValue)")
+  }
+}
 `;
 
 const DRIVER = `
@@ -69,11 +93,18 @@ import Foundation
 final class Counter: @unchecked Sendable { private let lock = NSLock(); private var n = 0; func add() { lock.withLock { n += 1 } }; var value: Int { lock.withLock { n } } }
 `;
 
-let driver, directory;
+let driver, oneshot, directory;
 before(() => {
   directory = temporary();
   writeFileSync(join(directory, "peer.mjs"), PEER);
   driver = compile(DRIVER, directory);
+  oneshot = compile(ONESHOT);
+});
+
+test("a one-shot child is retried with backoff until it exits 0, then not restarted until it is started again", () => {
+  const events = join(directory, "oneshot.events");
+  const output = run(oneshot, [events, join(directory, "oneshot.log"), process.execPath, join(directory, "peer.mjs")]);
+  assert.deepEqual(output.split("\n"), ["after success: 3 starts, stopped", "started again: 4 starts, stopped"]);
 });
 
 function supervise(mode) {

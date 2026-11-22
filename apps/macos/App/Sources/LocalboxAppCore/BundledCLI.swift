@@ -36,6 +36,11 @@ public final class BundledCLI: Sendable {
         ChildLaunch(executable: executable, arguments: ["connector", "run"], environment: environment, log: log)
     }
 
+    /// The built-in image's one-shot: `localbox app image ensure --json`, whose progress lines go to `log`.
+    public func imageEnsure(log: URL) -> ChildLaunch {
+        ChildLaunch(executable: executable, arguments: ["app", "image", "ensure", "--json"], environment: environment, log: log)
+    }
+
     private func execute(_ arguments: [String], _ running: RunningCommand) throws -> Data {
         let process = Process()
         process.executableURL = executable

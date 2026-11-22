@@ -25,7 +25,7 @@ test("a CLI inside Localbox.app knows its bundle from its realpath, even loaded 
   await symlink(join(cli, "dist"), join(base, "linked-dist"));
   assert.deepEqual(await layoutAt(join(cli, "dist/apps/cli/src"), join(base, "linked-dist/apps/cli/src")), {
     skill: join(cli, "skill"), skillsInstaller: join(cli, "skills-installer/bin/cli.mjs"),
-    revision: "0.4.0", app, launcher: join(app, "Contents/Resources/bin/localbox"),
+    revision: "0.4.0", app, launcher: join(app, "Contents/Resources/bin/localbox"), publicKey: join(app, "Contents/Resources/release-public.pem"),
   });
 });
 
@@ -34,6 +34,6 @@ test("a checkout uses the repo's skill and installer, its package.json version, 
   await writeFile(join(repo, "package.json"), JSON.stringify({ version: "0.3.0" }));
   assert.deepEqual(await layoutAt(join(repo, "apps/cli/src")), {
     skill: join(repo, "skills/localbox"), skillsInstaller: join(repo, "node_modules/skills/bin/cli.mjs"),
-    revision: "0.3.0", app: null, launcher: null,
+    revision: "0.3.0", app: null, launcher: null, publicKey: join(repo, "skills/localbox/release-public.pem"),
   });
 });

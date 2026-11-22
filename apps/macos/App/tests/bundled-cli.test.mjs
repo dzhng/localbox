@@ -16,7 +16,7 @@ import Foundation
       let paths = try await AppPaths.load(cli)
       let launch = DaemonLaunch.make(bundle: bundle, paths: paths, environment: ["LOCALBOX_IPC_TOKEN": "inherited", "LOCALBOX_SANDBOX_BACKEND": "process-fixture"])
       let object: [String: Any] = ["executable": launch.executable.path, "arguments": launch.arguments, "log": launch.log.path, "environment": launch.environment,
-                                   "connector": cli.connector(log: paths.log("connector.log")).arguments]
+                                   "connector": cli.connector(log: paths.log("connector.log")).arguments, "image": cli.imageEnsure(log: paths.log("image.log")).arguments]
       print(String(decoding: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self))
     } catch let failure as CLIFailure { print("failure \\(failure.code): \\(failure.message)") } catch { print("other \\(error)") }
   }
@@ -35,7 +35,7 @@ function bundle(script, guestAgent = false) {
   return app;
 }
 
-const PATHS = { root: "/r", credentials: "/r/credentials.json", ipc_token: "/r/ipc-token", socket: "/r/agent.sock", hostd_lock: "/r/hostd.lock", app_socket: "/r/app.sock", sandboxes: "/r/sandboxes", operations: "/r/operations", images: "/r/images", logs: "/logs", bin_dir: "/home/.local/bin" };
+const PATHS = { root: "/r", credentials: "/r/credentials.json", ipc_token: "/r/ipc-token", socket: "/r/agent.sock", hostd_lock: "/r/hostd.lock", app_socket: "/r/app.sock", sandboxes: "/r/sandboxes", operations: "/r/operations", images: "/r/images", logs: "/logs", builtin_image: "/r/builtin-image.json", bin_dir: "/home/.local/bin" };
 
 test("the daemon runs supervised with every path app paths printed, this bundle's CLI and guest agent, and no inherited token", () => {
   const app = bundle(`[ "$*" = "app paths --json" ] || exit 9\ncat <<'EOF'\n${JSON.stringify(PATHS)}\nEOF`, true);
@@ -44,10 +44,12 @@ test("the daemon runs supervised with every path app paths printed, this bundle'
   assert.deepEqual(launch.arguments, ["--supervised"]);
   assert.equal(launch.log, "/logs/hostd.log");
   assert.deepEqual(launch.connector, ["connector", "run"]);
+  assert.deepEqual(launch.image, ["app", "image", "ensure", "--json"]);
   assert.deepEqual(launch.environment, {
     LOCALBOX_SANDBOX_BACKEND: "process-fixture",
     LOCALBOX_SOCKET: "/r/agent.sock", LOCALBOX_IPC_TOKEN_PATH: "/r/ipc-token", LOCALBOX_HOSTD_LOCK: "/r/hostd.lock",
     LOCALBOX_SANDBOXES: "/r/sandboxes", LOCALBOX_OPERATIONS: "/r/operations", LOCALBOX_IMAGES: "/r/images", LOCALBOX_BIN_DIR: "/home/.local/bin",
+    LOCALBOX_BUILTIN_IMAGE_PROGRESS: "/r/builtin-image.json",
     LOCALBOX_CLI: join(app, "Contents/Resources/cli/localbox"), LOCALBOX_GUEST_AGENT: join(app, "Contents/Resources/guest-agent"),
   });
 });

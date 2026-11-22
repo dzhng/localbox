@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
 import { callApp } from "../../../apps/cli/src/app-socket.js";
 import { installLinuxImage } from "../../release.js";
+import { writeImageFiles } from "../lib/images.js";
 import { linuxImage } from "../lib/linux-image.js";
 import { packagedApp } from "../lib/packaged-app.js";
 import { buildRealVMs, screenLocked } from "../lib/real-daemon.js";
@@ -77,6 +78,8 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
     }));
 
     checks.push(await ctx.check("quit: the connector stops, the daemon records its sandbox's outcome and exits, and only then does the app", async () => {
+      // Under the app a create waits for the built-in image (probe 43); the fixture boots no disk, so a stand-in does.
+      writeImageFiles(join(app.paths.images, "linux"), "linux", { bytes: 1024 * 1024 });
       await app.ok("sandbox.create", SANDBOX, { name: NAME, image: "linux", cpus: 2, memory_bytes: 2 * 1024 ** 3, sleep_after_ms: 60 * 60_000 });
       const offset = app.log("hostd.log").length;
       const { daemonGoneAt, appGoneAt, atDaemonExit } = await app.stop(() => app.record(SANDBOX));
@@ -85,7 +88,7 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       const said = app.log("hostd.log").slice(offset);
       assert.match(said, /stopping \(stdin closed\): hibernating running sandboxes/);
       assert.match(said, new RegExp(`stopped ${NAME}: the process fixture cannot save its state`));
-      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [] }, "nothing of the app is left running");
+      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [], imageEnsures: [] }, "nothing of the app is left running");
       assert.match(app.log("connector.log"), /stopping: stdin closed/);
     }));
 
@@ -177,7 +180,7 @@ async function fixture(ctx: ProofContext): Promise<Check[]> {
       assert.match(app.log("app.log"), /no screen; the status item waits for one/);
       await app.ok("sandbox.delete", SANDBOX, { confirm: NAME });
       await app.stop(() => undefined);
-      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [] }, "nothing of the app is left running");
+      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [], imageEnsures: [] }, "nothing of the app is left running");
       assert.deepEqual(launchdJobs(), jobs, "no launchd job was added");
     }));
   } finally {
@@ -237,7 +240,7 @@ async function realVM(ctx: ProofContext): Promise<Check[]> {
       assert.ok(first >= counterAtStop && second > first, `the counter kept its value and climbs: ${counterAtStop} -> ${first} -> ${second}`);
       await app.ok("sandbox.delete", SANDBOX, { confirm: NAME });
       await app.stop(() => undefined);
-      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [] }, "nothing of the app is left running");
+      assert.deepEqual(app.processes(), { app: undefined, daemons: [], connectors: [], imageEnsures: [] }, "nothing of the app is left running");
     }));
   } finally {
     await app.cleanup();

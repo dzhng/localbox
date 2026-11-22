@@ -27,6 +27,9 @@ public enum StopPolicy: Sendable, Equatable {
     public static let connector = StopPolicy.bounded(eof: 4, signal: 2)
     /// The daemon's: hibernating can take as long as the sandboxes need; 120 s without a progress line is a wedge.
     public static let daemon = StopPolicy.patient(quiet: 120)
+    /// `localbox app image ensure`'s: it does not watch stdin (run from a shell, stdin is often already closed), so
+    /// SIGTERM at once. What it downloaded stays on disk and the next run resumes it.
+    public static let imageEnsure = StopPolicy.bounded(eof: 0, signal: 2)
 }
 
 /// Restart delays: `initial`, doubling to `maximum`; a child that stayed up longer than `resetAfter` starts over.
@@ -35,6 +38,18 @@ public struct Backoff: Sendable, Equatable {
     public init(initial: TimeInterval = 1, maximum: TimeInterval = 30, resetAfter: TimeInterval = 30) {
         self.initial = initial; self.maximum = maximum; self.resetAfter = resetAfter
     }
+
+    /// The built-in image's: a failed download is retried soon, then every few minutes, so a Mac offline for a day
+    /// does not ask GitHub every 30 s. A run that got somewhere (10 min) starts the delays over.
+    public static let imageEnsure = Backoff(initial: 5, maximum: 300, resetAfter: 600)
+}
+
+/// When a supervised child that exited is started again.
+public enum Restart: Sendable, Equatable {
+    /// Whenever it exits: the daemon and the connector, which are meant to run for the app's life.
+    case always
+    /// Until it exits 0: a one-shot job (the built-in image) that is done once it succeeds.
+    case untilSuccess
 }
 
 /// Where a supervised child is, as `app.info` reports it. `running` means its process is alive (a child still
@@ -49,15 +64,16 @@ public enum ChildState: String, Sendable {
     case backingOff = "backing_off"
 }
 
-/// The one supervisor of Localbox.app's long-running children (the daemon and the connector), ported from Bento's
-/// `ChildProcess`: it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its own, and
-/// stops it by closing that pipe, escalating as its `StopPolicy` allows. The pipe also stops the child when the app
-/// dies, since the kernel closes the app's end. Every line the child writes reaches `onLine` (read back from its log).
+/// The one supervisor of Localbox.app's children (the daemon, the connector and the built-in image's one-shot), ported
+/// from Bento's `ChildProcess`: it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its
+/// own (a `.untilSuccess` child only until it exits 0), and stops it by closing that pipe, escalating as its
+/// `StopPolicy` allows. The pipe also stops the child when the app dies, since the kernel closes the app's end. Every line the child writes reaches `onLine` (read back from its log).
 public final class ChildProcess: @unchecked Sendable {
     public let name: String
     private let launch: ChildLaunch
     private let policy: StopPolicy
     private let backoff: Backoff
+    private let restart: Restart
     private let onLine: @Sendable (String) -> Void
     private let diagnostic: @Sendable (String) -> Void
     private let queue: DispatchQueue
@@ -71,9 +87,9 @@ public final class ChildProcess: @unchecked Sendable {
     private var tail: LogTail?
     private var lastOutput = Date()
 
-    public init(name: String, launch: ChildLaunch, policy: StopPolicy, backoff: Backoff = Backoff(),
+    public init(name: String, launch: ChildLaunch, policy: StopPolicy, backoff: Backoff = Backoff(), restart: Restart = .always,
                 onLine: @escaping @Sendable (String) -> Void = { _ in }, diagnostic: @escaping @Sendable (String) -> Void) {
-        self.name = name; self.launch = launch; self.policy = policy; self.backoff = backoff
+        self.name = name; self.launch = launch; self.policy = policy; self.backoff = backoff; self.restart = restart
         self.onLine = onLine; self.diagnostic = diagnostic
         self.queue = DispatchQueue(label: "sh.localbox.mac.child.\(name)")
         self.delay = backoff.initial
@@ -134,6 +150,13 @@ public final class ChildProcess: @unchecked Sendable {
         tail?.poll()
         process = nil; try? input?.fileHandleForWriting.close(); input = nil
         guard enabled else { return }
+        if restart == .untilSuccess && child.terminationReason == .exit && child.terminationStatus == 0 {
+            // Done: not supervised any more, so a later `start()` runs it again from the first delay.
+            enabled = false; delay = backoff.initial
+            stopTailing()
+            diagnostic("\(name) finished")
+            return
+        }
         if Date().timeIntervalSince(started) > backoff.resetAfter { delay = backoff.initial }
         diagnostic("\(name) exited (\(child.terminationReason == .exit ? "status" : "signal") \(child.terminationStatus)); restarting in \(delay) s")
         retry()
