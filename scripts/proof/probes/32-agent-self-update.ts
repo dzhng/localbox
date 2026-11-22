@@ -64,7 +64,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       await daemon.start(bin);
     }));
     checks.push(await ctx.check("a host shipping the image's own agent leaves it alone", async () => {
-      await daemon.ok("sandbox.create", first, { name: "alpha-p32", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
+      await daemon.ok("sandbox.create", first, { name: "alpha-p32", image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
       assert.equal((await info(first)).agent_version, imageVersion);
     }));
     let job = "", pid = "", before = { bootId: "", uptime: 0 };
@@ -92,7 +92,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
       assert.equal(daemon.record(first).cold_boot_pending ?? null, null);
     }));
     checks.push(await ctx.check("a sandbox that boots with the older agent gets the host's build at connect", async () => {
-      const created = await daemon.ok("sandbox.create", second, { name: "bravo-p32", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
+      const created = await daemon.ok("sandbox.create", second, { name: "bravo-p32", image: "linux", cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 3_600_000 });
       const booted = await facts(second);
       evidence.connect_update_ms = await untilVersion(second, nextVersion, 30_000);
       evidence.second_created = created.actions;

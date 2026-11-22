@@ -247,7 +247,7 @@ struct Lab {
         let builds = MacBaseBuilder(store: store, operations: operations, driver: AppleMacBuildDriver(), catalog: AppleIPSWCatalog(), guestAgent: nil)
         let host = SandboxHost(sandboxesDirectory: sandboxes, factory: factory, operations: operations, store: store, macBuilds: builds)
         let id = "sandbox_vmlab"
-        _ = try await hostResult(host, "sandbox.create", id, ["name": "vmlab", "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": Int(Int32.max)])
+        _ = try await hostResult(host, "sandbox.create", id, ["name": "vmlab", "image": image.lastPathComponent, "cpus": 2, "memory_bytes": 2 * 1024 * 1024 * 1024, "sleep_after_ms": Int(Int32.max)])
         _ = try await hostResult(host, "shell.exec", id, ["command": "while :; do date +%s%3N >> /var/tmp/ticks; sleep 0.05; done", "background": true])
         try await Task.sleep(nanoseconds: 1_500_000_000)
         guard let runtime = await host.runtime(id) else { throw LabError("the sandbox has no runtime") }
