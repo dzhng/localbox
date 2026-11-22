@@ -9,11 +9,14 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "LocalboxAppCore", targets: ["LocalboxAppCore"]),
+        .library(name: "LocalboxMenu", targets: ["LocalboxMenu"]),
         .executable(name: "Localbox", targets: ["Localbox"]),
     ],
     targets: [
         // Lifetime and supervision, with no AppKit UI, so the Node test runners compile it into small drivers.
         .target(name: "LocalboxAppCore"),
-        .executableTarget(name: "Localbox", dependencies: ["LocalboxAppCore"]),
+        // The popover's SwiftUI views: they draw `PopoverRows` and spawn nothing, so view shots render them offscreen.
+        .target(name: "LocalboxMenu", dependencies: ["LocalboxAppCore"]),
+        .executableTarget(name: "Localbox", dependencies: ["LocalboxAppCore", "LocalboxMenu"]),
     ]
 )

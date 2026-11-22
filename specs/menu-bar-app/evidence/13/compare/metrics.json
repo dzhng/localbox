@@ -1,0 +1,74 @@
+{
+  "kind": "screenshot-parity-diff",
+  "generatedAt": "2026-11-22T17:25:17.299Z",
+  "note": "Lower parityDistance means the candidate is closer to the reference for this fixed pair. This is a distance metric, not an acceptance gate.",
+  "pairCount": 1,
+  "worstPair": "header-dark",
+  "results": [
+    {
+      "id": "header-dark",
+      "current": "../lb13-cmp/ref/header-dark.png",
+      "candidate": "../lb13-cmp/cand/header-dark.png",
+      "dimensions": {
+        "width": 392,
+        "height": 172
+      },
+      "parityDistance": 0.20767,
+      "sceneMetrics": {
+        "current": {
+          "colorBuckets": 74,
+          "colorEntropyBits": 1.48605,
+          "edgeDensity": 0.06616,
+          "dominantColorShare": 0.70648,
+          "transparentShare": 0,
+          "luminanceMean": 35.60534,
+          "luminanceP5": 26,
+          "luminanceP95": 48,
+          "luminanceContrast": 22
+        },
+        "candidate": {
+          "colorBuckets": 57,
+          "colorEntropyBits": 0.7167,
+          "edgeDensity": 0.09747,
+          "dominantColorShare": 0.9213,
+          "transparentShare": 0,
+          "luminanceMean": 33.56297,
+          "luminanceP5": 26,
+          "luminanceP95": 101,
+          "luminanceContrast": 75
+        }
+      },
+      "grayscale": {
+        "mae": 13.66213,
+        "rmse": 37.62421,
+        "diffRatio16": 0.1072,
+        "diffRatio32": 0.09025,
+        "diffRatio64": 0.06974,
+        "pixelmatchRatio": 0.10192
+      },
+      "contentProxies": {
+        "blackRatioCurrent": 0,
+        "blackRatioCandidate": 0,
+        "terrainLikeRatioCurrent": 0.03441,
+        "terrainLikeRatioCandidate": 0.05023,
+        "avgLuminanceCurrent": 35.6543,
+        "avgLuminanceCandidate": 33.69663,
+        "avgLuminanceDelta": -1.95767,
+        "edgeEnergyCurrent": 0.06186,
+        "edgeEnergyCandidate": 0.10086,
+        "edgeEnergyRatio": 1.63044,
+        "edgeDiffRatio32": 0.17925
+      },
+      "artifacts": {
+        "sideBySide": "out/header-dark-side-by-side.png",
+        "currentGray": "out/header-dark-current-gray.png",
+        "candidateGray": "out/header-dark-candidate-gray.png",
+        "absDiff": "out/header-dark-absdiff.png",
+        "pixelmatch": "out/header-dark-pixelmatch.png",
+        "currentEdges": "out/header-dark-current-edges.png",
+        "candidateEdges": "out/header-dark-candidate-edges.png",
+        "edgeDiff": "out/header-dark-edge-diff.png"
+      }
+    }
+  ]
+}

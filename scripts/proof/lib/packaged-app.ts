@@ -34,6 +34,8 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     HOME: home, LOCALBOX_MACHINE_ROOT: root, LOCALBOX_SANDBOX_BACKEND: options.backend,
     // SMAppService matches by bundle id, not path, so a scratch bundle's real login item would be this account's.
     LOCALBOX_APP_LOGIN_ITEM: "fake",
+    // The popover's `popover.*` operations on the app socket (a development build honours it; a release ignores it).
+    LOCALBOX_APP_TEST_HOOKS: "1",
     PATH: fixture ? `${dirname(process.execPath)}:${FINDER_PATH}` : FINDER_PATH,
     ...(fixture ? { LOCALBOX_DEV: "1", LOCALBOX_REPO_ROOT: ctx.root } : {}),
   };
@@ -162,7 +164,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     if (!ctx.keep) rmSync(scratch, { recursive: true, force: true });
   };
 
-  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, until, ok, record, log, cleanup };
+  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, front, until, ok, record, log, cleanup };
 }
 
 function virtualizationServices(): number[] {

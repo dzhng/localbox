@@ -352,3 +352,70 @@ the dials were reset immediately. Reverse: not applicable (nothing changed).
   SIGSTOP and the facts truthfully say `paused`; the check is that the long poll answers with the new state well
   before its 25 s timeout. `asleep` needs a real VM (tier `v`, not extended here). The probe saves its `app status`
   sample to the run's evidence folder.
+
+## 13 · Popover
+
+- **The Bento reference was rendered, not read off the code.** `git archive` of Bento at the frozen commit into
+  scratch, then its own `compileControlsCheck` and `tests/fixtures/capture-view.swift` (a small runner in scratch,
+  since the export has no `.git` for `capture-view-shots.mjs`'s revision record) built `BentoControls` and drew every
+  capture state on this Mac (macOS 27, no Sparkle needed). `idle.png` is `assets/bento-popover.png` (1x, Bento's own
+  dark backing; Bento's shots, like ours, do not composite native glass).
+- **Chrome taken from Bento:** 352 pt wide; 16 pt outer padding; a 30 pt mark and 16 pt semibold title at the top;
+  11 pt medium secondary section labels; 12 pt rows with a 10 pt secondary second line, 48 pt tall, icon at x 22;
+  Bento's banner (orange 18 % fill, 55 % stroke, radius 8, 10 pt inset) for the warning band; a full-width separator
+  over a footer whose Quit sits 28 pt from the right edge; NSPopover's own material and corners behind a transparent
+  SwiftUI view. Row text sits at x 50 and titles at x 58 because that is where Bento's NSTextField glyphs land (2 pt
+  field inset), not where its frames start.
+- **Compare (header band plus first row, dark, 1x; `evidence/13/compare/`):** landmarks match: mark, title, section
+  label, row text and Quit ink within 1 px of Bento's. Pixel numbers (mae 13.7, pixelmatch 0.10, edge-energy ratio
+  1.63) are content (Bento's source tiles vs our rows) and decided nothing. One deliberate deviation: Bento's section
+  label renders at about 80 % white although its code asks for `secondaryLabelColor`; ours uses the system secondary
+  (about 55 %, the same as Bento's footer). Verdict: chrome matches; accepted.
+- **Critique (one unprimed agent, all 28 shots and 9 crops, no context):** fixed: the twelve-row list ended mid-row with
+  no cue (the capped list now fades its last 36 pt when it overflows); Settings… disabled in every state (hidden until
+  slice 14 has a window: `Local.settingsAvailable`); a stale "Connecting…" while quitting (the header says
+  "Quitting…"); the empty line indented past its label; bars ending at no edge and icons drifting in taller rows (bars
+  and errors now run under the text to the row's edge, the icon centres on the two text lines); the red error with no
+  icon; grey-on-orange fix text (75 % primary now); uneven gap before "Images in progress"; "Copying · receiving · 43%"
+  against a sandbox's "Copying 43%" (now "Copying 43% · receiving"); the badge a size larger. Declined: the warnings'
+  own sentences (the band says "Sign in from Settings", the hibernate fix runs on, no monospace for the command) are
+  the CLI's, invariant 10, and Settings arrives with slice 14; the header showing "Connecting…" while the band says the
+  daemon is down (both are the facts); asleep, paused and stopped sharing a grey dot (the word tells them apart);
+  image names being ids (slice 12); thin row icons and a black, not coloured, badge (template art, placeholder).
+- **The words.** Header: the email (or "Signed in" for a credential without one, "Not signed in"), then "Connected",
+  "Connecting…", "Offline" (signed out) or "Disconnected" (connector down); room as "Free: 6 of 10 CPUs · 24 of 32 GB
+  · 210 GB disk" (memory in powers of 1024 like About This Mac, disk in powers of 1000 like Finder); "Version 0.2.0",
+  "(dev)" for a development build. Rows: "Running · Linux", "Copying 43% · Linux" (nearest percent, never 100 % until
+  done). Empty states: "No sandboxes on this Mac yet." and, with the daemon not running, "Sandboxes show here once
+  Localbox is running." Stopping: "Putting N sandboxes to sleep…" with the names, or "Quitting…" when none are left.
+  Before the first read: "Loading…"; a failed start: "Localbox couldn't start. Quit it and open it again."
+- **Menus.** Wake runs `sandbox start NAME` for asleep, paused and stopped; starting, copying and failed rows offer
+  only Copy Name and Open Log. The menu is the row's ⋯ button and its context menu (same items).
+- **The stopping state comes from the app, not the facts:** `FactsSource` stops as a quit begins, so `MenuBar.quitting`
+  feeds `Lifetime`'s pending names into `PopoverPresentation.Local.quitting`, which outranks `facts.stopping`.
+- **Open Log** writes the `lines` of `sandbox logs NAME --json` to `$TMPDIR/Localbox Logs/NAME.log.txt` and opens it
+  with the default app for plain text (`.log` alone would open Console). That app activates, which is the point.
+- **A failed action's message** is kept by sandbox name and cleared by the next published facts. Since `FactsSource`
+  publishes only on a new `watch_version`, a refusal that changes nothing stays until something else changes.
+- **Popover host.** `NSPopover`, `.transient`, not animated, sized by `NSHostingController.sizingOptions =
+  .preferredContentSize`; it never calls `NSApp.activate`. A global mouse-down monitor and Esc close it, as Bento's
+  does, since a menu bar app is usually not active and `.transient` then misses outside clicks. Not run here: clicking
+  the real status item (the orchestrator's `app:dev` check).
+- **The list cap is 400 pt** (`PopoverView.listLimit`), measured by a preference on the content; header, band and
+  footer stay outside the scroll.
+- **Test hooks:** `popover.open`, `popover.close`, `popover.perform {action, name}` on the app socket, answered only by a
+  development build launched with `LOCALBOX_APP_TEST_HOOKS=1` (the tier `a`/`v` harness sets it). `perform` refuses
+  (`conflict`) an action the popover does not offer for that row now, so the probe goes through the same rows a person
+  sees. The frontmost check follows slice 08's: the app's pid is never frontmost while the popover opens and acts.
+- **Status item art:** placeholder `shippingbox` symbol; the warning variant cuts a ring and draws an 8 pt dot in the
+  corner (template images take no colour). Real art goes in `apps/macos/App/art/StatusItem.pdf` and
+  `StatusItemWarning.pdf`; `build-app.mjs` copies them and `StatusIcon` prefers them.
+- **View shots** compile `LocalboxAppCore` and `LocalboxMenu` with `swiftc` as static modules targeting macOS 14 (so
+  the shots also check the 14 floor), render an `NSHostingView` with no window at 2x on a flat backing (dark is
+  Bento's 0.10 grey, light 0.95), and check that every state draws and the twelve-row list is capped. `npm run
+  app:shots`; not part of `npm run test:app`. Extra states beyond the fixtures: `action-failed`, `loading`,
+  `quitting`. No fixture was missing: the slice's list was already covered by slice 12's.
+- **Probe 41 flake seen once (not this slice's check):** in one of five tier `a` runs, slice 12's `--since` check got an
+  answer before the sleep landed (something else changed the facts in its first second), left the sandbox asleep, and
+  the later checks that wait for it running failed in turn. The popover check now starts the sandbox itself if it is
+  not running. The four other runs, including the last two in a row, were 11/11.

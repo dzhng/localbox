@@ -16,6 +16,7 @@
     "test": "tsx --test tests/**/*.test.ts",
     "test:app": "node --test apps/macos/App/tests/*.test.mjs",
     "app:dev": "npm run build && node apps/macos/App/scripts/build-app.mjs --open",
+    "app:shots": "node apps/macos/App/tests/view-shots/view-shots.mjs",
     "test:workspaces": "turbo run test",
     "contract:probe": "tsx apps/cli/src/index.ts contract probe",
     "generate:snapshots": "tsx apps/cli/src/index.ts contract generate-snapshots",
