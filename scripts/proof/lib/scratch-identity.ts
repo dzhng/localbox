@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * A throwaway self-signed code-signing identity, as the files `scripts/release.sh` reads for the real one
+ * A throwaway self-signed code-signing identity, as the files the release's build stage reads for the real one
  * (`release-identity.p12` and its password file), so probes sign exactly as a release does without the release
  * identity. sign.mjs imports it into a disposable keychain; nothing here touches a keychain. Never a release credential.
  */

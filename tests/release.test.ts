@@ -11,6 +11,7 @@ import { zstdCompressSync } from "node:zlib";
 import { installLinuxImage } from "../scripts/proof/lib/linux-image.js";
 import { expandImage, makeManifest, packImage, sha256, signManifest, verifyManifestSignature, writeRelease, verifyRelease, IMAGE_PATH } from "../scripts/release.js";
 import { installationSteps, pinnedKey, runSteps, serveRelease, trusting } from "../scripts/proof/lib/installation.js";
+import { ZIP as RELEASE_ZIP } from "../scripts/release/config.js";
 
 test("release manifest and checksums verify artifacts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-computer-release-")); await writeFile(join(dir, "agent-computer-arm64"), "fixture");
@@ -125,17 +126,16 @@ test("the installation procedure pins exactly the release public key the skill s
   assert.equal(pinnedKey(installationSteps(process.cwd())), await readFile("skills/localbox/release-public.pem", "utf8"), "a first install trusts only the key printed in the procedure");
 });
 
-test("the installation procedure downloads exactly the assets release.sh publishes besides the image", async () => {
+test("the installation procedure downloads exactly the assets the release build names besides the image", async () => {
   const steps = installationSteps(process.cwd());
   const downloaded = /for name in ([^;]+); do/.exec(steps.get(2) ?? "")?.[1].trim().split(/\s+/);
-  const zip = /ditto -c -k [^\n]*"\$OUT_DIR\/([^"]+)"/.exec(await readFile("scripts/release.sh", "utf8"))?.[1];
-  assert.equal(zip, ZIP);
+  assert.equal(RELEASE_ZIP, ZIP);
   assert.deepEqual(downloaded, ["release.json", "SHA256SUMS", ZIP]);
   assert.match(steps.get(3)!, new RegExp(`grep ' ${ZIP.replaceAll(".", "\\.")}\\$' SHA256SUMS \\| shasum -a 256 -c -`));
   assert.match(steps.get(4)!, new RegExp(`ditto -x -k ${ZIP.replaceAll(".", "\\.")} unpacked`));
 });
 
-/** A release as release.sh writes one (manifest, checksums, a stand-in zip), signed with `key`. */
+/** A release as the build stage writes one (manifest, checksums, a stand-in zip), signed with `key`. */
 async function scratchRelease(dir: string, key: KeyObject, version = "0.10.0") {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, ZIP), "the app");

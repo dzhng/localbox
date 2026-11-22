@@ -10,7 +10,8 @@
 //   builds (probes run the daemon on the process fixture, which release builds refuse), no update feed, the guest
 //   agent only if it was built, signed ad hoc. `--open` then starts it without focusing it.
 // - `--release`: `DIR/Localbox.app` (default dist/app-release), bundle id sh.localbox.mac, release Swift builds,
-//   Sparkle and its update feed, the guest agent required, and unsigned: scripts/release.sh signs it with sign.mjs.
+//   Sparkle and its update feed, the guest agent required, and unsigned: the release's build stage
+//   (scripts/release/build.ts) signs it with sign.mjs.
 //
 // `--version` replaces package.json's version, `--node` the running Node, `--public-key` the skill's
 // release-public.pem (a scratch release signed with a scratch key carries that key; it is also the update feed's key,
@@ -25,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { frameworkIdentity } from "../sparkle/framework.mjs";
+import { frameworkProblem } from "../sparkle/framework.mjs";
 import { signApp } from "./sign.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -144,11 +145,8 @@ function sparkleKeys() {
 
 /** The framework `npm run sparkle:build` made from the pinned source and patch, unchanged since (its receipt). */
 function verifyFramework(framework) {
-  if (!existsSync(framework)) fail(`no Sparkle framework at ${framework}: run npm run sparkle:build, or set LOCALBOX_SPARKLE_FRAMEWORK`);
-  const receipt = JSON.parse(readFileSync(join(framework, "../build-receipt.json"), "utf8"));
-  const pin = JSON.parse(readFileSync(join(root, "apps/macos/App/sparkle/upstream.json"), "utf8"));
-  if (receipt.inputs?.commit !== pin.commit || receipt.inputs?.patchSha256 !== pin.patchSha256 || frameworkIdentity(framework).sha256 !== receipt.framework?.sha256)
-    fail(`${framework} does not match its build receipt and apps/macos/App/sparkle/upstream.json; rebuild it with npm run sparkle:build`);
+  const problem = frameworkProblem(framework);
+  if (problem) fail(problem);
 }
 
 function plist(values) {

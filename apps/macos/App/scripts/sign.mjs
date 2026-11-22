@@ -63,6 +63,36 @@ export function signApp(app, { identity, keychain }) {
   return executables.map((path) => relative(app, path));
 }
 
+/** A PKCS#12 file's bytes; the release keeps its identity as base64 text. */
+function p12Bytes(p12) {
+  const raw = readFileSync(p12), text = raw.toString("utf8").trim();
+  return /^[A-Za-z0-9+/=\s]+$/.test(text) ? Buffer.from(text, "base64") : raw;
+}
+
+/** The SHA-1 and SHA-256 fingerprints (lowercase hex, no colons) and common name of the certificate in a binary PKCS#12. */
+function fingerprints(binaryP12, password) {
+  const certificate = execFileSync("openssl", ["pkcs12", "-in", binaryP12, "-clcerts", "-nokeys", "-passin", "stdin"], { input: `${password}\n`, stdio: ["pipe", "pipe", "ignore"] });
+  const fingerprint = (algorithm) => execFileSync("openssl", ["x509", "-noout", "-fingerprint", `-${algorithm}`], { input: certificate, encoding: "utf8" }).replace(/.*=/, "").replaceAll(":", "").trim().toLowerCase();
+  const subject = execFileSync("openssl", ["x509", "-noout", "-subject", "-nameopt", "multiline"], { input: certificate, encoding: "utf8" });
+  return { sha1: fingerprint("sha1"), sha256: fingerprint("sha256"), name: /commonName\s*=\s*(.*)/.exec(subject)?.[1].trim() };
+}
+
+/**
+ * The certificate of a PKCS#12 identity (`p12` binary or base64 text, its password in `passwordFile`), as
+ * `.release-signing/public.json` records it: `sha1`, `sha256` and its common name `name`. The release's validation
+ * checks the identity with this before anything is built.
+ */
+export function certificateOf({ p12, passwordFile }) {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "localbox-identity-")));
+  try {
+    const binary = join(scratch, "identity.p12");
+    writeFileSync(binary, p12Bytes(p12), { mode: 0o600 });
+    return fingerprints(binary, readFileSync(passwordFile, "utf8").trim());
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 /**
  * Runs `action({ identity, keychain })` with the PKCS#12 identity in a disposable keychain, then deletes it. The keychain
  * is never added to the search list or made the default; codesign is handed it with `--keychain`.
@@ -73,12 +103,9 @@ export async function withIdentity({ p12, passwordFile, sha1 }, action) {
   const keychainPassword = randomBytes(24).toString("hex");
   const security = (...args) => execFileSync("security", args, { stdio: ["ignore", "ignore", "pipe"] });
   try {
-    const raw = readFileSync(p12), text = raw.toString("utf8").trim();
-    const bytes = /^[A-Za-z0-9+/=\s]+$/.test(text) ? Buffer.from(text, "base64") : raw;
-    writeFileSync(identityFile, bytes, { mode: 0o600 });
+    writeFileSync(identityFile, p12Bytes(p12), { mode: 0o600 });
     const password = readFileSync(passwordFile, "utf8").trim();
-    const certificate = execFileSync("openssl", ["pkcs12", "-in", identityFile, "-clcerts", "-nokeys", "-passin", "stdin"], { input: `${password}\n`, stdio: ["pipe", "pipe", "ignore"] });
-    const identity = execFileSync("openssl", ["x509", "-noout", "-fingerprint", "-sha1"], { input: certificate, encoding: "utf8" }).replace(/.*=/, "").replaceAll(":", "").trim().toLowerCase();
+    const identity = fingerprints(identityFile, password).sha1;
     if (sha1 && identity !== sha1.toLowerCase()) throw new Error(`the signing identity ${identity} is not the pinned one (${sha1})`);
     security("create-keychain", "-p", keychainPassword, keychain);
     security("set-keychain-settings", keychain);
