@@ -6,35 +6,35 @@ description: Publish a Localbox release and keep the agent-installed CLI and ski
 # Localbox release
 
 Use this skill when the user asks to publish Localbox or repair its release
-installation. Releases are built on this Mac with `scripts/release.sh` and
-uploaded with `gh release create`; there is no publishing workflow. Do not create
-a browser download flow or a second installer: the one install path is the
-agent installation procedure, `skills/localbox/references/installation.md`.
+installation. A release is cut on this Mac with `npm run release -- <stage>`;
+there is no publishing workflow. [DEVELOPMENT.md, "Releasing"](../../../DEVELOPMENT.md#releasing)
+is the runbook: the checklist, what each stage guarantees, the inputs, failures
+and withdrawing. Do not create a browser download flow or a second installer:
+the one install path is the agent installation procedure,
+`skills/localbox/references/installation.md`.
 
-1. Pull the current source and tags, inspect the release diff, and keep the
-   source tree clean before packaging.
-2. Build the full linux image (`npm run image:build -- --out DIR`, needs
-   Colima/Docker), then the release with `scripts/release.sh` (see
-   DEVELOPMENT.md, "Releasing", for its inputs). It writes the signed app zip,
-   with the CLI, its Node, the Localbox skill and the pinned `skills@1.7.0`
-   installer inside, the image parts, `release.json` and `SHA256SUMS`.
-3. Rehearse before publishing: `npm run proof -- 42 --tier a,v` checks a
-   scratch-key release end to end. Then follow the installation procedure
-   against the real output, served locally (`LOCALBOX_RELEASE_URL`), in a
-   scratch `HOME`: step 3 must print the version, and `localbox skill install`
-   must work with a poisoned `npx`/`npm` on PATH, proving the bundled installer
-   is used.
-4. Only after that passes, push the tag and upload every file in the release
-   directory with `gh release create vVERSION dist/release/*`.
-5. Verify the public tag and assets: the procedure downloads `release.json`,
-   `SHA256SUMS` and the app zip from `releases/latest/download`, so those names
-   must be on the latest full release.
+1. On `main`, pull the source and tags and read the diff since the last
+   release. Bump the version with `npm version X.Y.Z --no-git-tag-version`,
+   commit and push it (ask the user for the version).
+2. `npm run release -- validate` and fix what each refusal says. The linux
+   image needs Docker: `npm run image:build -- --out DIR` (ask before starting
+   Colima), then `LOCALBOX_IMAGE=DIR`.
+3. `npm run release -- test`, `build`, then `smoke`, in order; each stops on
+   the first problem and prints the next command.
+4. `npm run release -- publish` uploads a DRAFT and checks every asset. Show
+   the user the draft's URL and the assets, and run
+   `npm run release -- publish --confirm` only when they say to publish: that
+   makes it public, and installs and updates follow it within the hour.
+5. If a published release is bad, the fix is the next version (Sparkle only
+   moves forward); meanwhile move `latest` back as "Withdrawing a release"
+   says.
 
-Release credentials live in the checkout's git-ignored `.release-signing/`
-(see DEVELOPMENT.md); restore it from the owner's Obsidian backup
-(`dev/localbox/release-signing/`), never regenerate it, and never use it for a
-rehearsal. A new manifest key would strand every installed copy, and
-`release.sh` refuses one that does not match `skills/localbox/release-public.pem`.
-That public key is the pinned trust root, printed in the installation procedure
-for first installs; a public key copied from the manifest being verified is
-never trusted.
+Release credentials live in the checkout's git-ignored `.release-signing/`,
+restored from the owner's offline backup. Never regenerate them, never read or
+copy them beyond running the stages, and never use them for a rehearsal: a new
+manifest key would strand every installed copy, and `validate` refuses one that
+does not match `skills/localbox/release-public.pem`. That public key is the
+pinned trust root, printed in the installation procedure for first installs; a
+public key copied from the manifest being verified is never trusted. To try the
+process, use `--rehearsal` with scratch credentials ("Rehearsing a release"),
+which can never publish.

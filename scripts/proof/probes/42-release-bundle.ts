@@ -11,8 +11,8 @@ import { installationSteps, runSteps, serveRelease, trusting } from "../lib/inst
 import { buildRealVMs, realDaemon } from "../lib/real-daemon.js";
 import { scratchIdentity } from "../lib/scratch-identity.js";
 
-// The release. Tier a runs scripts/release.sh as a release is cut, with a scratch identity
-// and a scratch manifest key (never the release credentials), then installs its output with the installation
+// The release. Tier a runs the release's build stage as a release is cut (`npm run release -- build --rehearsal`), with
+// a scratch identity and a scratch manifest key (never the release credentials), then installs its output with the installation
 // procedure's own blocks into a scratch HOME and checks what is new to Localbox in a signed bundle: the sealed guest
 // agent, Node's JIT, the CLI identifiers and the daemon's entitlement. Tier v boots a real VM with the daemon from
 // inside the signed bundle.
@@ -39,7 +39,7 @@ export async function run(ctx: ProofContext): Promise<Check[]> {
 async function release(ctx: ProofContext): Promise<Check[]> {
   const checks: Check[] = [];
   const work = realpathSync(mkdtempSync("/tmp/lb42-"));
-  const keys = generateKeyPairSync("ed25519"), other = generateKeyPairSync("ed25519");
+  const keys = generateKeyPairSync("ed25519");
   const signing = join(work, "signing"), out = join(work, "release"), image = join(work, "image");
   const home = join(work, "home"), temporary = join(work, "tmp");
   let server: Awaited<ReturnType<typeof serveRelease>> | undefined;
@@ -49,20 +49,20 @@ async function release(ctx: ProofContext): Promise<Check[]> {
   writeFileSync(join(work, "release-public.pem"), pem(keys.publicKey));
   // A stand-in linux image (this tier boots no VM), packed the way the real one is.
   writeImageFiles(image, "linux", { bytes: 1024 * 1024 }, VERSION);
-  const releaseEnv = (extra: NodeJS.ProcessEnv = {}) => ({
-    VERSION, IMAGE_DIGEST: `sha256:${"0".repeat(64)}`, LOCALBOX_IMAGE: image, LOCALBOX_SIGNING_DIR: signing,
-    LOCALBOX_RELEASE_PUBLIC_KEY: join(work, "release-public.pem"), ...extra,
-  });
+  const env = { IMAGE_DIGEST: `sha256:${"0".repeat(64)}`, LOCALBOX_IMAGE: image, LOCALBOX_SIGNING_DIR: signing };
+  const releaseBuild = (args: string[], extra: NodeJS.ProcessEnv = {}) => ctx.exec("npx", ["tsx", "scripts/release/main.ts", "build", ...args], { env: { ...env, ...extra } });
   const app = join(home, "Applications/Localbox.app"), contents = join(app, "Contents");
   try {
-    checks.push(await ctx.check("release.sh refuses a manifest key other than the one installers pin", async () => {
-      writeFileSync(join(work, "other.pem"), other.privateKey.export({ type: "pkcs8", format: "pem" }));
-      const refused = await ctx.exec("sh", ["scripts/release.sh", join(work, "refused")], { env: releaseEnv({ RELEASE_PRIVATE_KEY: join(work, "other.pem") }) });
-      assert.equal(refused.code, 1); assert.match(refused.stderr, /RELEASE_PRIVATE_KEY does not match/);
+    checks.push(await ctx.check("a real build refuses a manifest key other than the one installers pin, and a rehearsal key passed as the release's", async () => {
+      const refused = await releaseBuild(["--out", join(work, "refused")]);
+      assert.equal(refused.code, 1); assert.match(refused.stdout, /release-private\.pem is not the key installers trust/);
+      const overridden = await releaseBuild(["--out", join(work, "refused")], { LOCALBOX_RELEASE_PUBLIC_KEY: join(work, "release-public.pem") });
+      assert.equal(overridden.code, 1); assert.match(overridden.stdout, /Unset LOCALBOX_RELEASE_PUBLIC_KEY/);
     }));
-    checks.push(await ctx.check("release.sh writes the app zip, its appcast, the image parts, release.json and SHA256SUMS, and nothing else", async () => {
-      const built = await ctx.exec("sh", ["scripts/release.sh", out], { env: releaseEnv() });
+    checks.push(await ctx.check("the rehearsal build writes the app zip, its appcast, the image parts, release.json and SHA256SUMS, and nothing else, and verifies them", async () => {
+      const built = await releaseBuild(["--rehearsal", "--version", VERSION, "--out", out], { LOCALBOX_RELEASE_PUBLIC_KEY: join(work, "release-public.pem") });
       assert.equal(built.code, 0, `${built.stdout.slice(-1500)}${built.stderr.slice(-1500)}`);
+      assert.match(built.stdout, /build passed/);
       const files = readdirSync(out).sort();
       assert.deepEqual(files.filter((name) => !name.startsWith(`localbox-linux-${VERSION}.`)), ["Localbox-macos-arm64.zip", "SHA256SUMS", "appcast.xml", "release.json"], files.join(", "));
       assert.ok(files.includes(`localbox-linux-${VERSION}.disk.img.zst.000`));

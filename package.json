@@ -26,7 +26,7 @@
     "image:build": "tsx packages/vm-image/scripts/build-boot-artifacts.ts --profile full",
     "image:boot": "tsx packages/vm-image/scripts/build-boot-artifacts.ts",
     "image:parity": "tsx packages/vm-image/scripts/duet-parity.ts",
-    "release": "sh scripts/release.sh",
+    "release": "tsx scripts/release/main.ts",
     "site:build": "npm --prefix apps/site run build",
     "site:test": "npm --prefix apps/site test"
   },

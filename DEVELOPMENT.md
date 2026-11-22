@@ -298,8 +298,8 @@ functions are in the [security model](SECURITY.md#convex-is-an-authenticated-bou
 
 The guest agent builds with one pinned Bun (`BUN_VERSION` in
 [`scripts/build-guest-agent.ts`](scripts/build-guest-agent.ts)), which refuses any
-other; `npm run build:guest-agent`, `image:boot` and `scripts/release.sh` all run
-that build, so install that Bun first.
+other; `npm run build:guest-agent`, `image:boot` and the release's build stage
+all run that build, so install that Bun first.
 
 ### The built-in linux image
 
@@ -357,98 +357,166 @@ and they share the IPSW and base cache with tier `m` ([Proofs](#proofs)).
 
 ## Releasing
 
-Releases are built on an Apple Silicon Mac and uploaded to GitHub Releases by
-hand; no CI publishes them. `scripts/release.sh` builds, for the `version` in
-`package.json` (override with `VERSION`), `Localbox-macos-arm64.zip` (the signed
-app with the CLI and Sparkle inside), `appcast.xml` (Sparkle's feed for that
-zip), the built-in linux image's parts, `release.json` (the signed manifest) and
-`SHA256SUMS`. Set `LOCALBOX_IMAGE` to the image directory
-`npm run image:build -- --out DIR` wrote, and `IMAGE_DIGEST` to the `digest` in
-`dist/vm-image/full/manifest.json`. The image's own agent doesn't have to match:
-the app ships the release's agent and the daemon pushes it into every guest whose
-agent build differs. The script needs `zstd` (`brew install zstd`) and the pinned
-Bun ([Images](#images)).
+A release is cut on an Apple Silicon Mac by one command in stages,
+[`scripts/release/main.ts`](scripts/release/main.ts); no CI builds or
+publishes. On `main`, with the inputs below in place:
 
-Sparkle is built from source, never downloaded as a binary: `npm run
-sparkle:build` (full Xcode and network) fetches Sparkle at the commit pinned in
-[`apps/macos/App/sparkle/upstream.json`](apps/macos/App/sparkle/upstream.json),
-applies `localbox.patch` (the shared
-launch lock, a quiet relaunch with `--localbox-update-relaunch`, the host's
-permission before any replacement) and writes
-`dist/sparkle/Sparkle.framework` with a build receipt. `release.sh` uses it
-(or `LOCALBOX_SPARKLE_FRAMEWORK`), and `build-app.mjs` refuses a framework whose
-receipt does not match the pin. A changed patch needs its SHA-256 in
-`upstream.json` and a fresh build (delete `dist/sparkle` and
-`dist/sparkle-source`).
+```sh
+npm version X.Y.Z --no-git-tag-version && git commit -am "Release X.Y.Z" && git push
+npm run release -- validate          # refuses, one sentence per problem, until everything is in place
+npm run release -- test              # the gates
+npm run release -- build             # dist/release, verified
+npm run release -- smoke             # installed from a local server into a scratch HOME, launched, quit
+npm run release -- publish           # a DRAFT release with every file, each downloaded back and compared
+npm run release -- publish --confirm # after reviewing the draft: public, then checked from outside
+```
 
-The feed is signed with the manifest key: `release.sh` signs the zip and the
-feed with `RELEASE_PRIVATE_KEY` as Sparkle's `sign_update` would
-([`scripts/appcast.ts`](scripts/appcast.ts)), and the bundle carries that key's
-raw public half as `SUPublicEDKey`, so there is one key to keep. The feed's item
-points at the zip's versioned URL (`LOCALBOX_RELEASE_REPOSITORY` overrides the
-repository); installed apps read `https://localbox.sh/mac/appcast.xml`, which
-the site redirects to the latest release's `appcast.xml`.
+`npm run release -- all` runs the first five and stops at the draft. Every
+stage prints what it checked and the next command; `--help` prints the stages
+and flags. The version lives only in `package.json` (and the lock `npm version`
+updates with it); `validate` refuses a lock that disagrees.
 
+### What each stage guarantees
+
+- **validate**: the tree is clean, on `main`, at a commit pushed to
+  `origin/main`; the version is a SemVer version, matches the lock, has no tag
+  or published release, and is newer than the newest release (Sparkle installs
+  only newer versions); `gh` is signed in; the signing folder is complete, its
+  manifest key is the pinned `skills/localbox/release-public.pem` (which must
+  also be the key printed in the installation procedure) and its identity is
+  the one `public.json` pins; full Xcode, `zstd` and the pinned Bun are
+  installed; the patched Sparkle matches its receipt and pin; the linux image
+  and its digest are given; and the disk has room. It changes nothing.
+- **test**: `npm run build`, `npm test`, the app's build and `test:app`, the
+  host daemon's `swift test`, contract snapshots that match the code, and
+  probes 42, 43 and 44 at tier `a` (a release built and installed, the image
+  fetch, an N to N+1 update), all with scratch keys.
+- **build**: re-judges the tree and the local inputs, then builds what ships
+  into `dist/release`, where every file is an asset: the signed app zip with
+  the CLI, its Node and Sparkle inside; `appcast.xml`, the signed feed offering
+  that zip at the tag's download URL; the image's parts; `release.json`, the
+  signed manifest; and `SHA256SUMS`. It then checks its own output as an
+  installer and an updater would (signatures, digests, `SHA256SUMS` against the
+  manifest, the feed's version, URL, length and signature, and the unzipped
+  app's code signature, identity, version and pinned key) and records the
+  commit in `dist/release.build.json`.
+- **smoke**: the installation procedure's own blocks install the build from a
+  local server into a scratch `HOME`, verifying it against the pinned key
+  exactly as printed; the installed app runs with a scratch machine root and
+  the real daemon, answers `app status` as this release, fetches and expands
+  the image from this release, and quits on SIGTERM. It needs no running
+  Localbox (a second copy of the same bundle id hands off to the first) and
+  launches a copy outside every Applications folder, since a release registers
+  its real login item from one; the `sh.localbox.mac` defaults and the
+  `~/Library` folders the run creates are put back afterwards.
+- **publish**: only a build from the current `HEAD`, never a rehearsal's. It
+  creates the draft at that commit (or reuses a draft of the same version),
+  uploads every file, downloads each asset back and compares its SHA-256, and
+  stops; a draft is invisible to installs and updates. `--dry-run` prints the
+  assets and the exact `gh` calls without calling GitHub.
+- **publish --confirm**: makes the draft public, which creates the tag at the
+  built commit; a version with a suffix (`1.2.0-rc.1`) becomes a prerelease and
+  `latest` stays put. For a full release it then waits until
+  `https://localbox.sh/mac/appcast.xml` serves the new feed and
+  `releases/latest/download/release.json` is the new manifest, which is what
+  installs and updates read.
+
+### Inputs
+
+- **Credentials**, in the checkout's git-ignored `.release-signing/` (or
+  `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
+
+  | File | Contents |
+  | --- | --- |
+  | `release-private.pem` | Ed25519 key signing `release.json`, the zip and the feed; its public half is `skills/localbox/release-public.pem` |
+  | `release-identity.p12` | Base64 self-signed code-signing identity ("Localbox Release") |
+  | `release-identity-password.txt` | Password for that identity |
+  | `public.json` | `sha1`, `certificateSha256` and `releasePublicKey` of the above |
+
+  A missing or mismatched credential is a refusal, never a reason to make
+  one: a new key or identity is a different signer, and installed copies
+  trust only the pinned ones. `sign.mjs` imports the identity into a
+  disposable keychain for one signing and deletes it.
+- **The linux image**: `LOCALBOX_IMAGE`, the directory
+  `npm run image:build -- --out DIR` wrote ([Images](#images); needs Docker),
+  and `IMAGE_DIGEST`, the `digest` in `dist/vm-image/full/manifest.json`
+  (read from there when unset). Its agent need not match: the app ships the
+  release's agent and the daemon pushes it into every guest.
+- **Sparkle**, built from source, never downloaded: `npm run sparkle:build`
+  (full Xcode and network) fetches the commit pinned in
+  [`upstream.json`](apps/macos/App/sparkle/upstream.json), applies
+  `localbox.patch` (the shared launch lock, a quiet relaunch, the host's
+  permission before any replacement) and writes
+  `dist/sparkle/Sparkle.framework` with a receipt (`LOCALBOX_SPARKLE_FRAMEWORK`
+  names another). A changed patch needs its SHA-256 in `upstream.json` and a
+  fresh build.
+- **Node**: the bundle carries the Node running the build, or
+  `LOCALBOX_NODE_BIN`; `build-app.mjs` refuses one a stock Mac can't run
+  (Homebrew's).
+
+### How a release fits together
+
+There is one key: the feed and the zip are signed with the manifest key, as
+Sparkle's `sign_update` would ([`scripts/appcast.ts`](scripts/appcast.ts)), and
+the bundle carries its raw public half as `SUPublicEDKey`. Installed apps read
+`https://localbox.sh/mac/appcast.xml`, which the site redirects to the latest
+release's `appcast.xml`, so `latest` is what both installs and updates follow.
 The bundle's layout has one definition,
-[`build-app.mjs`](apps/macos/App/scripts/build-app.mjs) (`--release` for this
-build), and its signature one,
-[`sign.mjs`](apps/macos/App/scripts/sign.mjs): inside out, never `--deep`, the
-virtualization entitlement on the daemon alone, and the guest agent sealed as
-built so its digests stay true. Nothing is notarized; the
-[security model](SECURITY.md#releases-and-updates) says what that means.
+[`build-app.mjs`](apps/macos/App/scripts/build-app.mjs) (`--release`), and its
+signature one, [`sign.mjs`](apps/macos/App/scripts/sign.mjs): inside out, never
+`--deep`, the virtualization entitlement on the daemon alone, and the guest
+agent sealed as built. Nothing is notarized; the
+[security model](SECURITY.md#releases-and-updates) says what that means. The
+image ships beside the app because GitHub caps an asset at 2 GiB: its disk
+zstd-compressed in parts, its boot store and `image.json`, all named by the
+signed manifest with the expanded disk's digest ([`scripts/release.ts`](scripts/release.ts)).
 
-The app carries no kernel: the image boots its own through EFI. The image ships
-beside the app because GitHub caps a release asset at 2 GiB: its disk
-zstd-compressed and split into parts, with its boot store and `image.json`
-beside them (`packImage` in [`scripts/release.ts`](scripts/release.ts) names the
-assets). The signed manifest names them and the expanded disk's SHA-256 and
-size, so a Mac can check the image against the same signature as the app.
+### When a stage fails
 
-Upload every file in the output directory to a release named after the tag:
-`gh release create vVERSION dist/release/* --title "Localbox VERSION"`. Add
-`--prerelease` for a suffixed version (`1.2.0-rc.1`); the installation procedure
-takes the latest full release.
+Fix what the sentence says and run the same stage again; each stage stands
+alone and redoes its own checks. A `test` failure is a bug to fix on `main`
+before releasing. `build` empties `dist/release` first, so a rerun never mixes
+builds. If `publish` stops midway (an upload or a download-back that failed),
+run it again: it reuses the draft and replaces its assets. A draft that should
+not ship is deleted with `gh release delete vX.Y.Z --repo dzhng/localbox`; no
+tag exists until `--confirm`. If `--confirm`'s outside checks time out, the
+release is already public: check the two URLs by hand.
 
-Release credentials live in the checkout's git-ignored `.release-signing/`
-(override with `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
+### Withdrawing a release
 
-| File | Contents |
-| --- | --- |
-| `release-private.pem` | Ed25519 manifest key; its public half is `skills/localbox/release-public.pem` |
-| `release-identity.p12` | Base64 self-signed code-signing identity ("Localbox Release") |
-| `release-identity-password.txt` | Password for that identity |
-| `public.json` | `sha1`, `certificateSha256` and `releasePublicKey` of the above |
+Sparkle installs forward only, so a release that reached users is fixed by the
+next version, not by taking it down. To stop new installs and updates from
+taking a bad one meanwhile, move `latest` back: mark it a prerelease
+(`gh release edit vX.Y.Z --repo dzhng/localbox --prerelease`) or delete it
+(`gh release delete vX.Y.Z --repo dzhng/localbox --cleanup-tag`), then check
+that the feed and `releases/latest/download/release.json` name the previous
+release. Copies that already updated stay on it until the fix ships; a deleted
+version's number is never reused.
 
-The script refuses a manifest key that does not match the pinned public key
-and, where `public.json` is present, an identity that does not match it.
-`sign.mjs` imports the identity into a disposable keychain for headless
-`codesign` and deletes it afterwards. A missing credential fails rather than
-creating another identity: a new key is a different signer, and installed copies
-trust only the pinned one. `APPLE_SIGNING_IDENTITY` names a keychain identity
-instead; `RELEASE_PRIVATE_KEY` overrides the manifest key path.
-`ALLOW_UNSIGNED=1` (ad hoc code signature, unsigned manifest) is only for local
-packaging checks.
+The first release cut this way follows v0.1.1, which was published in the old
+format: `Localbox-0.1.1.zip`, a CLI tarball and a `template` image, with no
+`Localbox-macos-arm64.zip` or `appcast.xml`. Until the next release, then, the
+installation procedure finds nothing to install on `latest`, and a v0.1.1
+install, which predates the app's updater, never updates itself; its users
+reinstall with the procedure. `validate` only needs the version to be newer.
 
 ### Rehearsing a release
 
-Never use the release credentials to test. A scratch release takes a throwaway
-identity (`LOCALBOX_SIGNING_DIR` holding its `.p12` and password), a scratch
-manifest key (`RELEASE_PRIVATE_KEY`) and that key's public half
-(`LOCALBOX_RELEASE_PUBLIC_KEY`, which the bundle then carries in place of the
-pinned one). `npm run proof -- 42 --tier a` does exactly that, then runs the
-installation procedure's own blocks against it, served over HTTP
-(`LOCALBOX_RELEASE_URL`) into a scratch `HOME`; `--tier v` boots a real VM with
-the daemon from inside the signed bundle. To rehearse by hand, serve the output
-directory (`python3 -m http.server -d dist/release`), set `LOCALBOX_RELEASE_URL`
-to it and follow the procedure with the scratch public key in step 3.
+Never use the release credentials to test. `--rehearsal` runs every stage from
+any branch or tree, with `--version V` and scratch credentials: a
+`LOCALBOX_SIGNING_DIR` holding a throwaway identity, its `public.json` and a
+scratch `release-private.pem`, and `LOCALBOX_RELEASE_PUBLIC_KEY` naming that
+key's public half, which the bundle then pins instead. Any image directory
+serves (`dist/vm-image/images/linux` from `npm run image:boot -- --profile
+minimal --out`, or a stand-in like probe 42's). A rehearsal waives only the git
+checks, and its `publish` is always a dry run.
 
-Only the release's bundle id, `sh.localbox.mac`, owns the real machine root;
-any other id keeps its root, logs and credential under `Localbox (<id>)`
-(`machinePaths()`), and its launch lock, login item and defaults follow the id
-too. So a rehearsal installed on a real account under its own id never shares
-a real install's state.
-
-`npm run proof -- 44 --tier a` (and `--tier v`, with one real VM) rehearses an
-update: two scratch-signed bundles, a scratch feed key, a local feed and a
-scratch `HOME`. Each run gets its own bundle id, whose launch lock, Sparkle
-cache and defaults under this account's `~/Library` it removes afterwards.
+`npm run proof -- 42 --tier a` builds a scratch release with the build stage
+and installs it with the procedure's own blocks (`--tier v` boots a real VM
+with the daemon from inside the signed bundle); `npm run proof -- 44 --tier a`
+(and `--tier v`) rehearses an update between two scratch-signed bundles from a
+local feed. Only the release's bundle id, `sh.localbox.mac`, owns the real
+machine root; any other id keeps its root, logs and credential under
+`Localbox (<id>)` (`machinePaths()`), and its launch lock, login item and
+defaults follow the id, so probe 44 gives each run its own id and removes its
+`~/Library` traces afterwards.

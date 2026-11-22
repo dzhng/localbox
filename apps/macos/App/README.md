@@ -111,7 +111,7 @@ npm run proof -- 44 --tier a,v # N to N+1 through Sparkle, scratch-signed, from 
 ```
 
 A release build (bundle id `sh.localbox.mac`, Sparkle and its feed keys in its
-Info.plist) is what `scripts/release.sh` assembles and signs. A development
+Info.plist) is what the release's build stage ([`scripts/release`](../../../scripts/release/main.ts)) assembles and signs. A development
 build (bundle id `sh.localbox.mac.dev`, no update feed, Sparkle only when
 `LOCALBOX_SPARKLE_FRAMEWORK` is set) uses
 `~/Library/Application Support/Localbox Dev` and its own logs folder. It

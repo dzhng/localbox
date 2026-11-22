@@ -22,9 +22,10 @@ export interface Processes { app: number | undefined; daemons: Array<{ pid: numb
  * watches the frontmost app while it launches. Only processes running from this run's bundle are ever signalled.
  *
  * `backend` picks the daemon's sandboxes: `process-fixture` (tier a; the guest agent runs as a local process, so
- * the daemon also gets this checkout and Node on PATH) or `apple` (tier v, real VMs).
+ * the daemon also gets this checkout and Node on PATH) or `apple` (tier v, real VMs, and the release's smoke stage,
+ * which `adopt`s the release bundle it installed instead of building one).
  */
-export function packagedApp(ctx: ProofContext, options: { probe: string; backend: "process-fixture" | "apple" }) {
+export function packagedApp(ctx: Pick<ProofContext, "root" | "keep" | "exec">, options: { probe: string; backend: "process-fixture" | "apple" }) {
   // Under /tmp, so the daemon's socket path stays far below the Unix limit whatever the checkout's path.
   const scratch = realpathSync(mkdtempSync(`/tmp/lb-a${options.probe}-`));
   const home = join(scratch, "home"), root = join(scratch, "machine");
@@ -72,6 +73,11 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     bundle = built.stdout.trim().split("\n").at(-1)!;
     assert.ok(existsSync(executable()), `no app at ${bundle}`);
     return bundle;
+  };
+  /** Makes an already built bundle (a release, installed by the installation procedure) the one this run drives. */
+  const adopt = (path: string) => {
+    bundle = path;
+    assert.ok(existsSync(executable()), `no app at ${bundle}`);
   };
 
   /**
@@ -166,7 +172,7 @@ export function packagedApp(ctx: ProofContext, options: { probe: string; backend
     if (!ctx.keep) rmSync(scratch, { recursive: true, force: true });
   };
 
-  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, start, stop, cli, waitForSocket, processes, front, until, request, ok, record, log, cleanup };
+  return { scratch, home, root, paths, env, get bundle() { return bundle; }, build, adopt, start, stop, cli, waitForSocket, processes, front, until, request, ok, record, log, cleanup };
 }
 
 /** The frontmost app's pid, as LaunchServices reports it (loginwindow while the screen is locked). */

@@ -1,6 +1,24 @@
 import { createHash } from 'node:crypto'
-import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
-import { isAbsolute, join, relative as relativePath, sep } from 'node:path'
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative as relativePath, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const pinFile = join(dirname(fileURLToPath(import.meta.url)), 'upstream.json')
+
+/**
+ * Why `framework` is not the one `npm run sparkle:build` made from the pinned commit and patch (its build receipt
+ * against upstream.json, and its bytes against the receipt), or null when it is. The app build and the release's
+ * validation both ask this.
+ */
+export function frameworkProblem(framework) {
+  if (!existsSync(framework)) return `There is no Sparkle framework at ${framework}: run npm run sparkle:build (full Xcode and network), or set LOCALBOX_SPARKLE_FRAMEWORK`
+  let receipt
+  try { receipt = JSON.parse(readFileSync(join(framework, '../build-receipt.json'), 'utf8')) } catch { receipt = undefined }
+  const pin = JSON.parse(readFileSync(pinFile, 'utf8'))
+  if (receipt?.inputs?.commit !== pin.commit || receipt?.inputs?.patchSha256 !== pin.patchSha256 || frameworkIdentity(framework).sha256 !== receipt?.framework?.sha256)
+    return `${framework} does not match its build receipt and apps/macos/App/sparkle/upstream.json: delete dist/sparkle and dist/sparkle-source, then run npm run sparkle:build`
+  return null
+}
 
 export function frameworkIdentity(root) {
   root = realpathSync(root)

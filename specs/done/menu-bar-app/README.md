@@ -189,8 +189,8 @@ Invariants outside the app package that would break silently if violated:
 - The daemon's side: `HostDaemonCore/DaemonShutdown.swift`,
   `MachineLock.swift`, `BuiltinImageWait.swift`, `host.watch` in
   `SandboxHost.swift`; `DaemonLifetimeTests`, `BuiltinImageWaitTests`.
-- Release: `scripts/release.sh`, `scripts/release.ts`, `scripts/appcast.ts`;
-  `tests/release.test.ts`, `tests/appcast.test.ts`;
+- Release: `scripts/release/` (the staged release command), `scripts/release.ts`, `scripts/appcast.ts`;
+  `tests/release.test.ts`, `tests/release-process.test.ts`, `tests/appcast.test.ts`;
   [DEVELOPMENT.md](../../../DEVELOPMENT.md#releases-are-the-only-install-path).
 - Probes: `40-supervised-daemon`, `41-app-lifetime`, `42-release-bundle`,
   `43-builtin-image`, `44-installed-update`, plus `14-agent-setup` and

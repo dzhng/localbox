@@ -256,7 +256,7 @@ The invariants this work added, which would break silently if violated:
   `tests/guest-self-update.test.ts`, `tests/desktop-backends.test.ts`,
   `tests/capture-prompt.test.ts`, `tests/guest-identity.test.ts`.
 - The Linux image: `packages/vm-image/scripts/build-boot-artifacts.ts` (the GPT
-  disk), `scripts/release.sh`, `scripts/release.ts`; `tests/release.test.ts`.
+  disk), `scripts/release/build.ts`, `scripts/release.ts`; `tests/release.test.ts`.
 - Probes: `scripts/proof/probes/15-*` through `39-*`, named by the build step
   they prove (`npm run proof -- NN --tier …`). Steps 21, 22, 25, 31, 33, 36 and 37
   have no probe of their own; their unit tests above prove them. The tiers are
