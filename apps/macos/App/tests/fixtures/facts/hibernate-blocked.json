@@ -17,6 +17,7 @@
     "disk_free_bytes": 210000000000
   },
   "hibernate": "only_while_unlocked",
+  "screen_locked_now": true,
   "open_at_login": "enabled",
   "agent_setup": {
     "enabled": true,
@@ -35,5 +36,5 @@
       "fix": "System Settings > Lock Screen: set \"Require password after screen saver begins or display is turned off\" to Never; then System Settings > Users & Groups: turn on automatic login"
     }
   ],
-  "watch_version": 248218240259444
+  "watch_version": 185792549150955
 }

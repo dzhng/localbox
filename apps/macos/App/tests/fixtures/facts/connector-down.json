@@ -18,6 +18,7 @@
     "disk_free_bytes": 210000000000
   },
   "hibernate": "available",
+  "screen_locked_now": false,
   "open_at_login": "enabled",
   "agent_setup": {
     "enabled": true,
@@ -36,5 +37,5 @@
       "fix": "Localbox keeps retrying; if this lasts, quit Localbox and open it again."
     }
   ],
-  "watch_version": 155528405246303
+  "watch_version": 187398357844504
 }

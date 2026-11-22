@@ -81,9 +81,10 @@ instead.
   however long it takes), and no `localbox` command holding the launch lock
   (`LaunchLock`). It then exits well inside the helper's 20 s. Anything that
   fails before the permit restarts the children; there is no rollback.
-  Automatic installs wait while sandboxes run and this Mac cannot hibernate
-  them; a person's install (Check for Updates, `localbox update install`)
-  does not.
+  Automatic installs wait while sandboxes run and saving them could fail right
+  now (the screen locked, and its lock asking for a password or its setting
+  unreadable); a person's install (Check for Updates, `localbox update
+  install`) does not.
 - **Children log straight to files,** never through a pipe the app reads, so
   a child outlives a killed app long enough to stop cleanly. The app reads the
   daemon's progress back from its log.

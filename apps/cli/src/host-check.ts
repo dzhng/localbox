@@ -15,6 +15,11 @@ const run: Run = (command, args) => { try { return execFileSync(command, args, {
 /** sysadminctl prints its answer on stderr, so capture both streams. */
 const runBoth: Run = (command, args) => { try { return execFileSync("/bin/sh", ["-c", `${command} ${args.join(" ")} 2>&1`], { encoding: "utf8" }); } catch (error) { return String((error as { stdout?: string }).stdout ?? ""); } };
 
+/** Whether the console session's screen is locked at this moment (a screen saver or sleeping display counts). */
+export function screenLockedNow(exec: Run = run): boolean {
+  return /"CGSSessionScreenIsLocked"=Yes/.test(exec("/usr/sbin/ioreg", ["-n", "Root", "-d1"]));
+}
+
 /**
  * Apple's VM framework encrypts a sandbox's saved memory with a key it creates in the logged-in user's session,
  * which refuses while the session is locked with a password. So hibernation (sleep that frees RAM) needs a screen
@@ -25,7 +30,7 @@ const runBoth: Run = (command, args) => { try { return execFileSync("/bin/sh", [
 export function checkHost(exec: { run: Run; runBoth: Run } = { run, runBoth }): HostCheck {
   const lock = exec.runBoth("/usr/sbin/sysadminctl", ["-screenLock", "status"]);
   const screenLock = /screenLock is off/.test(lock) ? "off" : /screenLock (delay is|is immediate|is on)/.test(lock) ? "on" : "unknown";
-  const lockedNow = /"CGSSessionScreenIsLocked"=Yes/.test(exec.run("/usr/sbin/ioreg", ["-n", "Root", "-d1"]));
+  const lockedNow = screenLockedNow(exec.run);
   const autoLogin = exec.run("/usr/bin/defaults", ["read", "/Library/Preferences/com.apple.loginwindow", "autoLoginUser"]).trim();
   const autoLoginUser = autoLogin && !/does not exist/.test(autoLogin) ? autoLogin.split("\n")[0] : null;
   const fixes: string[] = [];

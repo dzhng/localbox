@@ -68,6 +68,8 @@ public struct AppFacts: Codable, Equatable, Sendable {
     public let connector: Connector
     public let capacity: Capacity?
     public let hibernate: Hibernate
+    /// Whether the screen is locked at this moment.
+    public let screenLockedNow: Bool
     public let openAtLogin: OpenAtLogin
     public let agentSetup: AgentSetup
     public let sandboxes: [Sandbox]
@@ -81,6 +83,11 @@ public struct AppFacts: Codable, Equatable, Sendable {
 
     /// The sandboxes the daemon hibernates on the way out (it saves running and paused ones), for `Lifetime.stop`.
     public var hibernating: [String] { sandboxes.filter { $0.state == .running || $0.state == .paused }.map(\.name) }
+
+    /// Whether the daemon's saves could fail right now: they fail only while the screen is locked and the lock asks
+    /// for a password. An unreadable lock setting (`unknown`) counts as asking for one while the screen is locked;
+    /// with the screen unlocked saves work whatever the setting.
+    public var hibernationMayFailNow: Bool { screenLockedNow && hibernate != .available }
 
     public static func decode(_ data: Data) throws -> AppFacts {
         let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase

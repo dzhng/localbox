@@ -14,6 +14,7 @@
     "disk_free_bytes": 210000000000
   },
   "hibernate": "available",
+  "screen_locked_now": false,
   "open_at_login": "enabled",
   "agent_setup": {
     "enabled": true,
@@ -32,5 +33,5 @@
       "fix": "Sign in from Settings, or run localbox login --email you@example.com."
     }
   ],
-  "watch_version": 65777207592962
+  "watch_version": 61873741002408
 }
