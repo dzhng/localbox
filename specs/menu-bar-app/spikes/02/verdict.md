@@ -150,5 +150,7 @@ second one behind it). Deny it unless that session's signing should proceed.
 - `spikes/02/main.swift`, `Info.plist`, `build.sh`: the supervisor app.
 - `spikes/02/scratch-identity.sh`: the throwaway identity for check 8.
 - `spikes/02/restore-soak.ts`: the soak (ran as a temporary probe 98; not registered).
-- `scripts/proof/probes/40-app-child.ts`: the probe, tier `v`.
+- `scripts/proof/probes/40-app-child.ts`: the probe, tier `v` (at commit
+  6cd328f; slice 06 replaced it with the regression `40-supervised-daemon.ts`,
+  which needs no app and no signing).
 - `evidence/02/`: four probe runs, three soak runs, probes 10 and 12, `swift test`.

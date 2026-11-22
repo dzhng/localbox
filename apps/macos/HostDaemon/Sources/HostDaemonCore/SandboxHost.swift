@@ -239,12 +239,15 @@ public actor SandboxHost {
     }
 
     /// SIGTERM and power-off: hibernate every running sandbox, all at once; one that cannot be saved stops and
-    /// owes a cold boot. Returns what each did.
-    @discardableResult public func shutdown() async -> [String: SandboxAction] {
+    /// owes a cold boot. `finished` hears each sandbox as it is done (its name, and why it was not saved), for a
+    /// supervisor's progress. Returns what each did.
+    @discardableResult public func shutdown(finished: @escaping @Sendable (_ name: String, _ failure: String?) -> Void = { _, _ in }) async -> [String: SandboxAction] {
         // A freezing sandbox is saved once its clone ends and it thaws (`hibernate` waits for the operation).
         await concurrently(await runtimes(in: [.ready, .paused, .freezing])) { runtime in
             let name = await runtime.record.name
-            if let failure = await runtime.hibernate() { return ["kind": "stopped", "detail": "stopped \(name), which cold-boots at the next start: \(failure)"] }
+            let failure = await runtime.hibernate()
+            finished(name, failure)
+            if let failure { return ["kind": "stopped", "detail": "stopped \(name), which cold-boots at the next start: \(failure)"] }
             return ["kind": "slept", "detail": "hibernated \(name)"]
         }
     }

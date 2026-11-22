@@ -24,7 +24,7 @@ public actor FramedControlChannel: GuestControlChannel {
     private let reader: FileHandle
     private let writer: FileHandle
     private let maxFrameBytes: UInt32
-    private let readQueue = DispatchQueue(label: "org.localbox.guest-control.read")
+    private let readQueue = DispatchQueue(label: "sh.localbox.guest-control.read")
     private let onClose: @Sendable () -> Void
     private var reading = false
     private var closed = false
