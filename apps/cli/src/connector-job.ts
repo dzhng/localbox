@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-export const CONNECTOR_LABEL = "com.localbox.connector";
+export const CONNECTOR_LABEL = "sh.localbox.connector";
 export type ConnectorJobState = "started" | "not_installed" | "skipped" | "failed";
 
 /**

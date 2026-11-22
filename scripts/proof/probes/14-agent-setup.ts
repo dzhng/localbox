@@ -45,7 +45,7 @@ class Mac {
   }
   /** Starts the installed daemon exactly as its launchd plist would, with the process fixture for sandboxes. */
   startDaemon(): void {
-    const plist = join(this.home, "Library/LaunchAgents/com.localbox.hostd.plist");
+    const plist = join(this.home, "Library/LaunchAgents/sh.localbox.hostd.plist");
     const read = (key: string) => JSON.parse(execFileSync("plutil", ["-extract", key, "json", "-o", "-", plist], { encoding: "utf8" }));
     writeFileSync(this.log, "");
     const fd = openSync(this.log, "a");
@@ -104,7 +104,7 @@ async function releaseKit(ctx: ProofContext, work: string, hostd: string, versio
   const app = join(stage, "Localbox.app/Contents");
   mkdirSync(join(app, "MacOS"), { recursive: true }); mkdirSync(join(app, "Resources"), { recursive: true });
   copyFileSync(hostd, join(app, "MacOS/localbox-hostd")); chmodSync(join(app, "MacOS/localbox-hostd"), 0o755);
-  for (const plist of ["com.localbox.hostd.plist", "com.localbox.updater.plist", "com.localbox.connector.plist"]) copyFileSync(join(ctx.root, "apps/macos/HostDaemon/Resources", plist), join(app, "Resources", plist));
+  for (const plist of ["sh.localbox.hostd.plist", "sh.localbox.updater.plist", "sh.localbox.connector.plist"]) copyFileSync(join(ctx.root, "apps/macos/HostDaemon/Resources", plist), join(app, "Resources", plist));
   // A stand-in linux image (this probe boots no VM), shipped and installed the way a real one is.
   const image = join(stage, "image");
   writeImageFiles(image, BUILT_IN_IMAGE, { bytes: 1024 * 1024 }, version);

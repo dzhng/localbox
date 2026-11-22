@@ -141,7 +141,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key>
   <string>localbox-hostd</string>
   <key>CFBundleIdentifier</key>
-  <string>com.localbox.hostd</string>
+  <string>sh.localbox.hostd</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -157,9 +157,9 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 cp "$ROOT/apps/macos/HostDaemon/.build/arm64-apple-macosx/release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd" 2>/dev/null \
   || cp "$ROOT/apps/macos/HostDaemon/.build/out/Products/Release/localbox-hostd" "$APP/Contents/MacOS/localbox-hostd"
-cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.hostd.plist" "$APP/Contents/Resources/com.localbox.hostd.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.updater.plist" "$APP/Contents/Resources/com.localbox.updater.plist"
-cp "$ROOT/apps/macos/HostDaemon/Resources/com.localbox.connector.plist" "$APP/Contents/Resources/com.localbox.connector.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.hostd.plist" "$APP/Contents/Resources/sh.localbox.hostd.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.updater.plist" "$APP/Contents/Resources/sh.localbox.updater.plist"
+cp "$ROOT/apps/macos/HostDaemon/Resources/sh.localbox.connector.plist" "$APP/Contents/Resources/sh.localbox.connector.plist"
 cp "$ROOT/apps/macos/HostDaemon/Resources/localbox-hostd.entitlements" "$APP/Contents/Resources/localbox-hostd.entitlements"
 # The host is the authority on the guest agent; images only carry a copy. Signing the app seals these as resources
 # without rewriting their bytes, so the digests in agent-version.json stay true.

@@ -176,7 +176,7 @@ test("the installer refuses macOS below 14 and names the version; 14 and newer p
 
 test("uninstall removes every launch agent it installed, the connector's included", async () => {
   const home = await mkdtemp(join(tmpdir(), "localbox-uninstall-")), agents = join(home, "Library/LaunchAgents");
-  const plists = ["com.localbox.hostd.plist", "com.localbox.updater.plist", "com.localbox.connector.plist"];
+  const plists = ["sh.localbox.hostd.plist", "sh.localbox.updater.plist", "sh.localbox.connector.plist"];
   await mkdir(agents, { recursive: true });
   for (const plist of plists) await writeFile(join(agents, plist), "<plist/>");
   const result = spawnSync("sh", ["scripts/uninstall.sh"], { env: { PATH: process.env.PATH, HOME: home, SHELL: "/bin/zsh", LOCALBOX_SKIP_LAUNCHD: "1" }, encoding: "utf8" });

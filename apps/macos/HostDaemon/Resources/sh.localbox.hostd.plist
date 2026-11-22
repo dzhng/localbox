@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.localbox.hostd</string>
+  <string>sh.localbox.hostd</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Applications/Localbox.app/Contents/MacOS/localbox-hostd</string>

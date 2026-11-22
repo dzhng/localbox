@@ -30,7 +30,7 @@ D5, D6, D13). Removes seam T2.
   Convex subscription for up to `min(deadline, 50 s)` and returns the response
   inline; past that it returns a continuation. `RelayHttpTransport` loses its
   50 ms poll loop.
-- `apps/connector` (new; bundled Node; launchd job `com.localbox.connector`):
+- `apps/connector` (new; bundled Node; launchd job `sh.localbox.connector`):
   `ConvexClient` with `setAuth` (fetching the machine JWT),
   `onUpdate(pendingForMachine)` → `claim` → forward over the daemon socket with
   `LocalIPCTransport` → `complete`. Long-polls the daemon's new `host.watch

@@ -17,7 +17,7 @@ exists for the user.
   `llms.txt` stays a pitch plus install steps (see `apps/site/README.md`). `tests/skill-commands.test.ts` runs every command they name with
   `--help` and fails on unknown commands.
 - Requirements: installer refuses macOS below 14 (`scripts/install-release.sh`);
-  `com.localbox.connector.plist` installed and loaded; README, site and positioning
+  `sh.localbox.connector.plist` installed and loaded; README, site and positioning
   "Today" lines updated to what shipped.
 - `DEVELOPMENT.md` settings: add `LOCALBOX_JWT_PRIVATE_KEY`, `LOCALBOX_JWKS`,
   `RESEND_API_KEY`, `LOCALBOX_DEV_PRINT_CODES`, `LOCALBOX_MACHINE_ROOT`, the limit

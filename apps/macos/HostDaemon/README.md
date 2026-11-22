@@ -170,7 +170,7 @@ token file from environment variables, starts the same `SandboxHost` and
 `UnixDomainSocketServer` used by tests, brings back what the last run left
 running, and hibernates on `SIGTERM`/`SIGINT` (the plist's `ExitTimeOut` bounds
 the saves). The checked-in
-`Resources/com.localbox.hostd.plist` is a bundle template; an installer
+`Resources/sh.localbox.hostd.plist` is a bundle template; an installer
 must materialize its paths, create the token file with mode `0600`, load it with
 `launchctl`, and unload it before replacement.
 

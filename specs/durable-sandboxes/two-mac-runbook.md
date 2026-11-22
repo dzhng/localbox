@@ -63,7 +63,7 @@ Expected: `Signed in to <account-name> as <this Mac's name>. 1 machine.
 Connector started.` Then:
 
 ```sh
-launchctl print gui/$(id -u)/com.localbox.connector | grep 'state ='   # state = running
+launchctl print gui/$(id -u)/sh.localbox.connector | grep 'state ='   # state = running
 ```
 
 Repeat on B with the same email. Expected: the same account name,
@@ -229,7 +229,7 @@ to copy (SIZE); localbox image wait netcopy2"). On B, while
 `localbox sandbox status <that sandbox>` shows `copying` with progress:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/com.localbox.hostd
+launchctl kickstart -k gui/$(id -u)/sh.localbox.hostd
 ```
 
 Then on A, `localbox image wait netcopy2` until done. Expected: the progress
@@ -279,7 +279,7 @@ On B:
 
 ```sh
 localbox machine list                    # refused: this Mac was removed or must sign in again
-launchctl print gui/$(id -u)/com.localbox.connector | grep -E 'state =|last exit code'
+launchctl print gui/$(id -u)/sh.localbox.connector | grep -E 'state =|last exit code'
 ```
 
 Expected on B, within a few seconds of the removal: the connector stopped on its

@@ -154,15 +154,15 @@ NODE
 
 ACTIVE_APP="$RELEASE_ROOT/active/Localbox.app"
 ACTIVE_CLI="$RELEASE_ROOT/active/localbox-cli/bin/localbox"
-PLIST="$LAUNCH_AGENTS_DIR/com.localbox.hostd.plist"
-UPDATER_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.updater.plist"
-CONNECTOR_PLIST="$LAUNCH_AGENTS_DIR/com.localbox.connector.plist"
+PLIST="$LAUNCH_AGENTS_DIR/sh.localbox.hostd.plist"
+UPDATER_PLIST="$LAUNCH_AGENTS_DIR/sh.localbox.updater.plist"
+CONNECTOR_PLIST="$LAUNCH_AGENTS_DIR/sh.localbox.connector.plist"
 # launchd does not expand ~ in log paths, and a job whose log path it cannot open never starts.
 LOG_DIR="$HOME/Library/Logs/Localbox"
 mkdir -p "$LOG_DIR"
-cp "$ACTIVE_APP/Contents/Resources/com.localbox.hostd.plist" "$PLIST"
-cp "$ACTIVE_APP/Contents/Resources/com.localbox.updater.plist" "$UPDATER_PLIST"
-cp "$ACTIVE_APP/Contents/Resources/com.localbox.connector.plist" "$CONNECTOR_PLIST"
+cp "$ACTIVE_APP/Contents/Resources/sh.localbox.hostd.plist" "$PLIST"
+cp "$ACTIVE_APP/Contents/Resources/sh.localbox.updater.plist" "$UPDATER_PLIST"
+cp "$ACTIVE_APP/Contents/Resources/sh.localbox.connector.plist" "$CONNECTOR_PLIST"
 /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $ACTIVE_APP/Contents/MacOS/localbox-hostd" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_IPC_TOKEN_PATH' -string "$TOKEN_FILE" "$PLIST"
 plutil -replace 'EnvironmentVariables.LOCALBOX_SOCKET' -string "$SOCKET_PATH" "$PLIST"
@@ -213,17 +213,17 @@ fi
 
 if [ "${LOCALBOX_SKIP_LAUNCHD:-0}" != "1" ]; then
   DOMAIN="gui/$(id -u)"
-  launchctl bootout "$DOMAIN/com.localbox.hostd" >/dev/null 2>&1 || true
+  launchctl bootout "$DOMAIN/sh.localbox.hostd" >/dev/null 2>&1 || true
   launchctl bootstrap "$DOMAIN" "$PLIST"
-  launchctl kickstart -k "$DOMAIN/com.localbox.hostd"
+  launchctl kickstart -k "$DOMAIN/sh.localbox.hostd"
   if [ "${LOCALBOX_SKIP_UPDATER_RELOAD:-0}" != "1" ]; then
-    launchctl bootout "$DOMAIN/com.localbox.updater" >/dev/null 2>&1 || true
+    launchctl bootout "$DOMAIN/sh.localbox.updater" >/dev/null 2>&1 || true
     launchctl bootstrap "$DOMAIN" "$UPDATER_PLIST"
-    launchctl kickstart -k "$DOMAIN/com.localbox.updater"
+    launchctl kickstart -k "$DOMAIN/sh.localbox.updater"
   fi
-  launchctl bootout "$DOMAIN/com.localbox.connector" >/dev/null 2>&1 || true
+  launchctl bootout "$DOMAIN/sh.localbox.connector" >/dev/null 2>&1 || true
   launchctl bootstrap "$DOMAIN" "$CONNECTOR_PLIST"
-  launchctl kickstart -k "$DOMAIN/com.localbox.connector"
+  launchctl kickstart -k "$DOMAIN/sh.localbox.connector"
 fi
 
 echo "installed Localbox $VERSION"

@@ -227,7 +227,7 @@ as a continuation the client resumes. `sandbox create` resolves its image there
 before placing it; a Mac without that image answers at once in state `copying`
 and creates the sandbox once the copy lands (deleting it meanwhile stops that
 create, and the copy when no other sandbox waits on it). On each Mac, `localbox connector run` (launchd job
-`com.localbox.connector`) is the only process that talks to Convex: it exchanges
+`sh.localbox.connector`) is the only process that talks to Convex: it exchanges
 the machine credential for a machine token at `POST /api/relay/machine-token`,
 subscribes to `relay:pendingForMachine`, claims each row and forwards it to the
 daemon's socket. It also reports what the daemon's long work finished (the

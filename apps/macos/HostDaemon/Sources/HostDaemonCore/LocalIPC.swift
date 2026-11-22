@@ -117,7 +117,7 @@ public actor UnixDomainSocketServer {
         listenerFD = fd
         resolvedPath = path
         running = true
-        let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "com.localbox.host-daemon.ipc", qos: .userInitiated))
+        let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "sh.localbox.host-daemon.ipc", qos: .userInitiated))
         readSource.setEventHandler { [weak self] in
             guard let self else { return }
             Task { await self.acceptReadyConnections() }
@@ -202,7 +202,7 @@ public actor UnixDomainSocketServer {
     private static func blocking<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in blockingQueue.async { continuation.resume(with: Result(catching: body)) } }
     }
-    private static let blockingQueue = DispatchQueue(label: "com.localbox.host-daemon.ipc.connection", qos: .userInitiated, attributes: .concurrent)
+    private static let blockingQueue = DispatchQueue(label: "sh.localbox.host-daemon.ipc.connection", qos: .userInitiated, attributes: .concurrent)
 
     private static func readFrame(from handle: FileHandle, maxFrameBytes: UInt32) throws -> Data {
         let header = try readExactly(4, from: handle)
