@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-/** What this Mac's settings mean for sleeping sandboxes; `localbox host check`, `status` and the installer show it. */
+/** What this Mac's settings mean for sleeping sandboxes; `localbox host check`, `status` and `app status` show it. */
 export interface HostCheck {
   hibernate: "available" | "only_while_unlocked" | "unknown";
   screen_lock: "off" | "on" | "unknown";

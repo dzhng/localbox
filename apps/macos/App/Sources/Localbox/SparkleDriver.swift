@@ -59,7 +59,7 @@ final class SparkleDriver: NSObject, SPUUpdaterDelegate, SPUUserDriver {
     // MARK: - SPUUserDriver (no UI)
 
     func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
-        // Automatic checks are on by default (slice 15); the person's switch is Settings', never a Sparkle prompt.
+        // Automatic checks are on by default; the person's switch is Settings', never a Sparkle prompt.
         reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, sendSystemProfile: false))
     }
 

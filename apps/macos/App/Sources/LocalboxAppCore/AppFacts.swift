@@ -1,7 +1,7 @@
 import Foundation
 
 /// What `localbox app status --json` prints (`apps/cli/src/app-facts.ts`): everything the popover and Settings show,
-/// warnings included (specs/menu-bar-app, invariant 10: the CLI decides them, views only render them). The shared
+/// warnings included (the CLI decides them; views only render them). The shared
 /// fixtures under `apps/macos/App/tests/fixtures/facts/` are written by the CLI's tests and decoded by this type's, so
 /// the two sides cannot drift. Keys are the CLI's snake_case; `update` is null in a build that cannot update itself.
 public struct AppFacts: Codable, Equatable, Sendable {

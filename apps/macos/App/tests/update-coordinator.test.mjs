@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import { compile, run, swiftString } from "./driver.mjs";
 
-// Localbox's update gate (specs/menu-bar-app, slice 15): the real
+// Localbox's update gate: the real
 // UpdateCoordinator with fake steps, driven as Sparkle drives it. Each scenario prints what happened, in order.
 const facts = new URL("./fixtures/facts/three-sandboxes.json", import.meta.url).pathname;
 const DRIVER = `

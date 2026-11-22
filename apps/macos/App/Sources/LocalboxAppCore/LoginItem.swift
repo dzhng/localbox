@@ -4,8 +4,8 @@ import ServiceManagement
 /// Whether the app opens at login, as `login_item.get` reports it.
 public enum LoginItemState: String, Sendable {
     case enabled, disabled
-    /// Registered, but the user must allow it in System Settings › General › Login Items (spike 01, fallback 2). A
-    /// state the CLI shows, not an error.
+    /// Registered, but the user must allow it in System Settings › General › Login Items. A state the CLI shows, not
+    /// an error.
     case requiresApproval = "requires_approval"
     /// macOS cannot find the app to register (a bundle it does not know).
     case notFound = "not_found"
@@ -19,7 +19,7 @@ public protocol LoginItemDriver: Sendable {
     func unregister() throws
 }
 
-/// The real login item: this bundle, matched by its bundle id (spike 01), so a release and a dev build are separate
+/// The real login item: this bundle, matched by its bundle id, so a release and a dev build are separate
 /// items and a replaced bundle keeps its registration.
 public struct MainAppLoginItem: LoginItemDriver {
     public init() {}
@@ -51,7 +51,7 @@ public final class FakeLoginItem: LoginItemDriver, @unchecked Sendable {
 
 private final class MemoryFlag: @unchecked Sendable { var value = false }
 
-/// Open at login, on by default (brief, decision 5): the first launch of a release build in an Applications folder
+/// Open at login, on by default, since a Mac without the app running is offline: the first launch of a release build in an Applications folder
 /// registers once and remembers that it did, so a user who turns it off (here, in Settings or in System Settings) is
 /// never turned back on. A development build, or a copy outside an Applications folder, registers only when asked.
 public final class LoginItem: @unchecked Sendable {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// One thing a person can do from the popover. The sandbox actions are CLI invocations (invariant 5); Copy Name,
+/// One thing a person can do from the popover. The sandbox actions are CLI invocations; Copy Name,
 /// Settings and Quit are the app's own.
 public enum PopoverAction: Hashable, Sendable, CustomStringConvertible {
     case copyName(String), sleep(String), wake(String), openLog(String), settings, quit
@@ -92,7 +92,7 @@ public struct PopoverRows: Equatable, Sendable {
     public let sandboxesTitle: String
     public let imagesTitle: String
     public let body: Body
-    /// Absent until there is a Settings window to open (slice 14).
+    /// Absent until there is a Settings window to open (once the app knows its paths).
     public let settings: Item?
     public let quit: Item
     public let statusIcon: StatusIcon
@@ -106,7 +106,7 @@ public enum PopoverPresentation {
         public var quitting: [String]?
         /// A failed action's message by sandbox name, shown in its row until the next facts arrive.
         public var failures: [String: String]
-        /// Whether a Settings window exists to open (slice 14).
+        /// Whether a Settings window exists to open.
         public var settingsAvailable: Bool
         /// The app could not learn its paths, so nothing is supervised.
         public var couldNotStart: Bool

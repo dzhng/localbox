@@ -55,13 +55,13 @@ enum SettingsShots {
         State(name: "manual-updates", fixture: "idle", showAtLaunch: true, change: { facts in
             facts["open_at_login"] = "disabled"
         }),
-        // What slice 15 turns on: the rows fed by `AppFacts.update`.
+        // The update rows, fed by `AppFacts.update`.
         State(name: "updates", fixture: "idle", change: { facts in
             facts["update"] = ["available": true, "enabled": true, "can_check": true, "status": "You’re up to date."]
         }),
     ]
 
-    /// Slice 15's update rows, named and switched as the reference states are (the reference's `failure` is
+    /// The update rows, named and switched as the reference states are (the reference's `failure` is
     /// `failed` here), with the same window-at-launch and login-item switches as `manual-updates`, so a compare against
     /// the same-named reference shot changes only the product's name, the first footer sentence and Localbox's own status
     /// lines. "Waiting" is the A12 blocker, where Check for Updates installs anyway (so it stays enabled).

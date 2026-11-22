@@ -23,14 +23,14 @@ public struct UpdateSteps: Sendable {
     }
 }
 
-/// The only owner of update gating (specs/menu-bar-app, slice 15). Sparkle (`SparkleDriver`) owns the feed, the
+/// The only owner of update gating. Sparkle (`SparkleDriver`) owns the feed, the
 /// schedule, the signed download and the replacement; this decides when the app lets it install. Everything slow
 /// happens before Sparkle's permit: Sparkle's helper takes the launch lock when it is granted and cancels unless the
 /// app exits within 20 s, so hibernation must already be over.
 ///
 /// `install(automatic:)` runs, in order:
 /// 1. blockers: the built-in image being swapped in; for an automatic install only, sandboxes running while this Mac
-///    cannot hibernate them (A12: a manual install proceeds and they restart);
+///    cannot hibernate them (a manual install proceeds and they restart);
 /// 2. and 3. stop the connector, then the daemon, through `Lifetime` (reason `update`), and wait for it, unbounded;
 /// 4. wait until no `localbox` command holds the shared launch lock;
 /// 5. grant Sparkle's permit, and exit as soon as Sparkle authorizes the replacement.

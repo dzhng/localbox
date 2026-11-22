@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// The shared launch lock (specs/menu-bar-app, README "Names"), seen from the app. Every `localbox` command started
+/// The shared launch lock, seen from the app. Every `localbox` command started
 /// through the home command holds it shared for its whole life (`apps/macos/App/launcher/main.c`); Sparkle's patched
 /// helper takes it exclusively while it replaces the bundle. The path is the Info.plist key
 /// `LocalboxLaunchLockRelativePath` (copied from the launcher's source) under the account home Sparkle uses.

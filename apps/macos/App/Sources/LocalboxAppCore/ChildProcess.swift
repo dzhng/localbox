@@ -20,7 +20,7 @@ public enum StopPolicy: Sendable, Equatable {
     /// Wait `eof`, then SIGTERM, wait `signal`, then SIGKILL its process group. For children with nothing to save.
     case bounded(eof: TimeInterval, signal: TimeInterval)
     /// Wait for the exit however long it takes. SIGTERM once if the child has written nothing for `quiet` seconds;
-    /// never SIGKILL, since a daemon that is quiet may still be saving a VM (specs/menu-bar-app, invariant 3).
+    /// never SIGKILL, since a daemon that is quiet may still be saving a VM.
     case patient(quiet: TimeInterval)
 
     /// The connector's: 4 s, SIGTERM, 2 s, SIGKILL.
@@ -65,8 +65,10 @@ public enum ChildState: String, Sendable {
 }
 
 /// The one supervisor of Localbox.app's children (the daemon, the connector and the built-in image's one-shot):
-/// it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its own (a `.untilSuccess` child only until it exits 0), and stops it by closing that pipe, escalating as its
-/// `StopPolicy` allows. The pipe also stops the child when the app dies, since the kernel closes the app's end. Every line the child writes reaches `onLine` (read back from its log).
+/// it starts a child with a stdin pipe, restarts it with backoff whenever it exits on its own (a `.untilSuccess`
+/// child only until it exits 0), and stops it by closing that pipe, escalating as its `StopPolicy` allows. The pipe
+/// also stops the child when the app dies, since the kernel closes the app's end. Every line the child writes reaches
+/// `onLine` (read back from its log).
 public final class ChildProcess: @unchecked Sendable {
     public let name: String
     private let launch: ChildLaunch
