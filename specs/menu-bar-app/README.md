@@ -12,10 +12,10 @@ is [brief.md](brief.md). Read it before any slice.
 
 ## Next Agent Prompt
 
-**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell), 09 (app control), 10 (release cutover) and 12 (app facts) are
+**Status (2026-11-22):** the spikes and slices 06 (daemon), 07 (CLI), 08 (app shell), 09 (app control), 10 (release cutover), 11 (built-in image), 12 (app facts) and 13 (popover) are
 done and merged; see [spikes.md](spikes.md) and [choices.md](choices.md).
 
-**You are picking this up at slices 11** (built-in image) **and 13** (popover), which are independent; 14 follows 13. There are no
+**You are picking this up at slice 14** (Settings), then 15 (updates), then 16. There are no
 slices 03 or 05: signing a bundle with a CLI inside and the patched Sparkle
 update are already proven by Bento and Yap, so they are ported directly, and
 only what is new to Localbox is checked, in slices 10 and 15 (see "Ported
@@ -56,9 +56,9 @@ from Bento, not re-proven").
 - [x] 08 [App shell: lifetime and supervision](slices/08-app-shell.md)
 - [x] 09 [App control: socket, login item, `localbox app`](slices/09-app-control.md)
 - [x] 10 [Release, agent install, and deleting the old path](slices/10-release-cutover.md)
-- [ ] 11 [Built-in image on first launch](slices/11-builtin-image.md)
+- [x] 11 [Built-in image on first launch](slices/11-builtin-image.md)
 - [x] 12 [App facts: the one state shape](slices/12-app-facts.md)
-- [ ] 13 [Popover](slices/13-popover.md)
+- [x] 13 [Popover](slices/13-popover.md)
 - [ ] 14 [Settings window](slices/14-settings.md)
 - [ ] 15 [Updates](slices/15-updates.md)
 - [ ] 16 [Closeout](slices/16-closeout.md)
