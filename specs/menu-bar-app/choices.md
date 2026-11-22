@@ -1,749 +1,983 @@
-# Choices made while implementing
+# Menu bar app: choices ledger
 
-Decisions a slice left to the implementer. Each says what, why, and how to reverse it.
+The decisions the agents made on the user's behalf while building the menu bar
+app, checked against the shipped code at the end of the build. The user's
+decisions (1–12 in the [brief](brief.md)) are not repeated here. An entry
+restates one only where the code made a further choice inside it, or where it
+is a trade-off the user now owns. The planning-time agent decisions A1–A14 (in
+the [README](README.md#plan-decisions)) appear here in their final state when
+they are trade-offs the user owns.
 
-## 06 · Daemon: supervised mode, one daemon per root
+This ledger replaces the one appended slice by slice during the build. Entries
+a later slice reversed are gone (the old install's command link, the CLI
+tarball's layout, the connector's unsupervised mode, `Lifetime.ensureImage()`,
+the daemon's fallback lock path). "Until slice N" entries now say how slice N
+settled them. Gate results, probe evidence and review narration are gone too;
+what the spikes and the real-account proof found is in the README.
 
-**The lock is taken first, not just before the socket server.**
-`main.swift` takes `MachineLock` before it reads the token, sweeps image
-temporaries or builds anything, because `ImageStore.sweepTemps` would also
-delete a running daemon's partial writes. Reverse: move `takeMachineLock()`
-down to just before `server.start()`.
+**How to read it.** Entries are grouped by verdict:
 
-**The lock file holds the holder's pid**, and the refusal names it
-(`another daemon (pid N) holds PATH, …`), so a person or the app can tell which
-process to look at. The pid is informational; the `flock` is the lock.
-Reverse: drop the `pwrite` in `MachineLock.init` and the pid in
-`MachineLockError.held`.
+- **Needs your call:** a trade-off only the user can make. Each names the
+  provisional call that ships now and how to reverse it.
+- **Unsound:** a choice that breaks a given. Each names the decision to redo it
+  from.
+- **Provisional:** sound for now, but waiting on something named (a manual
+  run, a check on another macOS, art).
+- **Sound:** the architecture the user now owns.
 
-**`machinePaths().hostdLock`** (`<root>/hostd.lock`) is the one definition of
-the path on the TypeScript side; `stack.ts` and `realDaemon()` set
-`LOCALBOX_HOSTD_LOCK` from it, and slice 08's `DaemonLaunch` should too. The
-launchd plist template is untouched: its daemon derives the same path from the
-socket's directory, and slice 10 deletes the template. Reverse: remove the
-field and set the variable from a literal.
+Within each group the least confident entry comes first. **Confidence** is how
+sure the audit is that the user would have made the same call. **When** names
+the slice that made the choice (`review` is the whole-spec review); the
+README's [slice table](README.md#where-to-look) says what each slice built. ⚠
+marks a choice that stretches or contradicts one of the brief's decisions.
 
-**Stop is one core type, `DaemonShutdown`,** in `HostDaemonCore` rather than in
-`main.swift`, so `swift test` drives the real EOF path with the process
-fixture. `main.swift` only decides which triggers to install. Reverse: inline
-it back into `main.swift` (the tests would then need the binary for every
-case).
+**Review these first:** U2 (on a Mac whose lock screen asks for a password,
+automatic updates wait while any sandbox runs, even with the screen unlocked),
+N1 (a daemon that stops talking while it saves is waited on forever), U1
+(`localbox login --json` prints no JSON, and Settings reads it by exit code)
+and N2 (automatic updates are on by default).
 
-**The EOF watcher is a thread** blocked in `read(2)` on stdin. Bytes read are
-dropped (the supervisor never writes); a read error stops the daemon like EOF,
-since the parent can no longer be heard. A `DispatchSource` would do the same
-with more code for the EOF case. Reverse: swap the `Thread` for a read source.
+---
 
-**A second stop request is dropped**, not queued: SIGTERM followed by the pipe
-closing (an app that signals and then exits) saves once and logs once.
-Reverse: remove the `started` guard in `DaemonShutdown.run`.
+## Needs your call
 
-**Shutdown progress lines** are `hibernated NAME` and `stopped NAME: reason`,
-with the daemon's usual `localbox-hostd: ` prefix, after one
-`stopping (CAUSE): hibernating running sandboxes` line (CAUSE is `SIGTERM`,
-`SIGINT`, `stdin closed`). There is no count line; the app knows what runs from
-`app status`. To emit them as each sandbox finishes, `SandboxHost.shutdown`
-gained an observer parameter, `finished: (name, failure?)`, defaulting to a
-no-op; what shutdown saves, stops and returns is unchanged (the firewall).
-Reverse: drop the parameter and print from the returned actions at the end.
+### N1. A daemon that goes quiet while saving is waited on forever
 
-**Unknown arguments exit 64** (`usage: localbox-hostd [--supervised]`), so a
-typo such as `--supervise` cannot start a daemon that silently outlives its
-app. Reverse: ignore unknown arguments again in `supervisedArgument()`.
+**When:** 08 · **Owner:** `StopPolicy.daemon` in `ChildProcess.swift`; `DaemonShutdown.run`
 
-**Probe 40 no longer uses the spike's app.** It spawns `localbox-hostd
---supervised` directly with a stdin pipe (via `realDaemon().start(bin,
-{ supervised: true })` and `closeStdin()`), and is renamed
-`40-supervised-daemon.ts`. The app as supervisor is slice 08's to prove with
-the real app; the spike's timing table, orphan record and signed-bundle check
-were measurements, not regressions, and live in git at 6cd328f. Reverse:
-restore `40-app-child.ts` from that commit.
+Say you quit Localbox with three sandboxes running. The app closes the
+daemon's stdin (its stop signal), and the daemon starts hibernating: it saves
+each sandbox's memory to disk and prints `hibernated NAME` as each one
+finishes. The app waits for the daemon to exit with no deadline, because a save
+cut short loses that sandbox's memory. If the daemon writes nothing for 120 s,
+the app sends it one SIGTERM and keeps waiting; it never sends SIGKILL.
 
-**The rare cold boot after a restore: not reproduced, cause not established,
-no fix made.** Spike 02 saw one restore in about 40 fall back to `cold_booted`
-with "guest channel is unavailable" after 125 s. That error and that time
-mean `GuestLane.open` spent its whole 120 s `guestWait`: every vsock dial was
-accepted and then closed before the agent's ready frame (a refused dial would
-have said "nothing in the guest accepted vsock port 1024"). 120 s is also two
-of socat's 60 s `UNIX-CONNECT` retry windows, which fits the agent's socket
-not accepting for two minutes, but rapid closes would end at the same time.
+The catch is that the SIGTERM does nothing in the common case. The daemon's
+shutdown runs once: a second stop request (the SIGTERM after stdin already
+closed) is dropped by `DaemonShutdown`'s `started` guard. So a daemon that
+really is wedged mid-save (a Virtualization call that never returns) keeps the
+app in "Putting 3 sandboxes to sleep…" until macOS kills the app at logout, or
+the person force-quits it. An update in that state waits the same way, and
+`localbox` commands meanwhile get "Localbox is updating" from nothing. Any
+output line counts as progress, not only the two shutdown shapes, since a
+daemon that is still writing is not wedged.
 
-What ran (2026-11-22, this Mac, Colima up, the screen unlocked), with a daemon
-instrumented to log each lane attempt and the restore's timings (the
-instrumentation was never committed):
+- **Gap:** the brief said quitting hibernates; nobody said how long to wait.
+  Spike 02 measured 4 × 2 GiB at 3.2–10.7 s, so Bento's 4 s + 2 s window was
+  too short.
+- **Reach:** every quit, logout and update. A deadline would trade a hang for a
+  lost sandbox.
+- **Verdict:** needs your call. **Provisional call:** keep the unbounded wait
+  (a hung quit is visible and recoverable; a killed save is silent data loss).
+  To reverse it, give `StopPolicy.patient` a final deadline that sends SIGKILL,
+  or make the daemon's second stop request log what it is waiting for, so the
+  SIGTERM at least leaves a trace in `hostd.log`.
+- **Confidence:** low–medium.
 
-- 124 SIGTERM-and-restart cycles of the same 4 × 2 GiB sandboxes, each with
-  1280 MiB of random bytes in a tmpfs: 496 restores, all `woke`. Restore to
-  attached: median 1.9 s, p99 3.6 s, max 3.7 s. One restore's first dial
-  closed before ready (3 ms) and the second dial attached at once: the
-  documented "a restored guest closes its first connection" path, seen
-  1 in 496.
-- 6 cycles of freshly created 4 × 2 GiB sandboxes (the spike's failing
-  restore was the first restore of guests booted seconds earlier): 24
-  restores, all `woke`. This run was cut short when the session's turn ended
-  and was not resumed.
-- Probe 40, 10 and 12 runs during the soak: every restore woke.
+### N2. Automatic updates are on by default, check hourly, and wait while sandboxes can't hibernate
 
-About 31 minutes of soak machine time, 130 cycles, not the 200 the slice
-asked for. Ruled out on this evidence: a steady-state restore race in the
-host's lane code or Virtualization's restore at roughly the 1-in-40 rate
-seen in the spike (0 in 520 here). Not ruled out: the spike's conditions,
-which this run did not recreate (heavy swap from the 8 GiB cells, a blocked
-keychain dialog, restores right after a kill -9 mid-save on the same daemon),
-and fresh guests (only 24 restores). The guest journal is volatile in the
-minimal image (`journalctl --list-boots` finds none), so a fallback leaves
-only the restored boot's `console.log`, where the agent's output also goes.
+**When:** 15 (A12) · **Owner:** `sparkleKeys()` in `build-app.mjs`; `UpdateCoordinator.run`
 
-Next step if it recurs: keep the failing sandbox's `console.log` (the agent
-logs there via `journal+console`) and the daemon log, and check whether the
-agent was down (systemd `start-limit-hit` on `localbox-guest.service` under
-`Restart=always`, `RestartSec=0` would leave it down until a cold boot) or
-the dials were reset immediately. Reverse: not applicable (nothing changed).
+A fresh install checks `https://localbox.sh/mac/appcast.xml` every hour
+(`SUEnableAutomaticChecks` true, `SUScheduledCheckInterval` 3600) and installs
+what it finds without asking. Sparkle's own permission prompt never shows: the
+no-UI driver answers it "yes, check automatically". Installing an update stops
+the connector, then the daemon (which hibernates every running sandbox), waits
+for every `localbox` command to finish, and only then lets Sparkle replace the
+bundle and relaunch. The sandboxes wake under the new version with their
+processes intact.
 
-## 07 · CLI: app-managed layout, launcher, home command
+An automatic install waits instead when sandboxes are running and this Mac
+can't hibernate them (see U2 for what "can't" means today); the Settings line
+then says so. A person's install (Check for Updates while one waits, or
+`localbox update install`) goes ahead and says the sandboxes will restart.
+With automatic updates off, an update still downloads and waits: "Localbox X is
+ready. Check for Updates to install it."
 
-- **The old install keeps its link until slice 10.** `reconcileCommand` still symlinks `~/.local/bin/localbox` into
-  `releases/active` (states `linked`, `missing`, `elsewhere`, `not_a_link`) when the CLI is an old-install release and
-  not in an app, so probe 14 and today's installer keep working. Why: the slice keeps the `cli` field until slice 10,
-  and its only caller is that link. Reverse: slice 10 deletes `reconcileLink`, `link()` and `LinkView`.
-- **An earlier Localbox launcher is replaced; anyone else's file is not.** The launcher embeds the mark
-  `sh.localbox.launcher`; a `different` command carrying it is overwritten, one without it is left alone. Why: the
-  slice says `different` is left alone, but then an updated bundle could never refresh the command. Reverse: drop
-  the mark check in `reconcileCommand` to leave every `different` file alone, or to always overwrite as Bento does.
-- **"Inside an Applications folder" means the app's parent is `~/Applications` or `/Applications`**, the two folders
-  the launcher searches (compared as realpaths). Why: a command for an app elsewhere would run a different copy or
-  none. Reverse: widen `applications()` in `agent-setup.ts`.
-- **Field names.** The command's view (`cli.status`, `produced.command`) is `{ path, state, app, launcher, on_path,
-  profile }`; the action subject and the `agents.setup.status` field are `command` (was `cli_link`). A checkout reads
-  `not_app_managed` (was `not_a_release`).
-- **The PATH block is the app CLI's only.** `AgentSetup` adds it after installing the command and removes it when
-  setup is turned off, only for a CLI in an app; the old installer's identical block stays the installer's. The
-  command itself stays when setup is turned off (the slice names only the block). Reverse: in `set(false)`.
-- **Profiles that are links are edited where they point** (dotfiles checkouts stay links), with the file's mode kept.
-  `scripts/localbox-path.sh` replaced the link with a file.
-- **Launch failures.** If `open` fails twice, `ensureApp` returns at once with "Localbox could not be started (…);
-  open Localbox from Applications" instead of polling 20 s. The socket is polled every 250 ms, each probe bounded to
-  1 s. Within one command the launch is attempted once (memoised in `index.ts`). `logout` now reaches the daemon
-  through the same `localTransport()`, so it too starts the app. Reverse: `apps/cli/src/app-launch.ts`.
-- **Launcher refusals** other than the update conflict use code `internal`: exit 69 when no app is found, 74 for an
-  unusable lock or path. The JSON envelope goes to stdout and `code: message` to stderr, as `render` does with
-  `--json`. Tests compile with `-DLOCALBOX_ACCOUNT_HOME` and `-DLOCALBOX_SYSTEM_APPLICATIONS`; a release never sets
-  them. The launcher exports `LOCALBOX_LAUNCH_LOCK_FD`, `LOCALBOX_LAUNCH_LOCK` and `LOCALBOX_APP` (Bento's names,
-  renamed).
-- **Where the launcher builds during development:** `npm run build` ends with `build:launcher`, writing
-  `dist/launcher/localbox` (ignored). Reverse: drop it from `build`; slice 10's assembler builds its own.
-- **`cli-entry.sh` serves two layouts until slice 10:** beside `dist/` (the bundle, Node at `../node/bin/node`) or in
-  `bin/` (the release tarball, Node and `dist/` one level up). Reverse: slice 10 deletes the tarball branch.
+- **Gap:** the brief chose Sparkle and copying Bento's "Automatically download
+  and install updates" switch, not its default.
+- **Reach:** every installed Mac updates itself within an hour of a release,
+  briefly offline while it does. A bad release reaches everyone that hour, and
+  there is no rollback (brief 9).
+- **Verdict:** needs your call. **Provisional call:** on, as Bento ships it. To
+  reverse it, set `SUEnableAutomaticChecks` false in `sparkleKeys()` (checks
+  then happen only on Check for Updates), or lengthen the interval.
+- **Confidence:** medium.
 
-## 08 · App shell: lifetime and supervision
+### N3. ⚠ Image rows in the popover show image ids, not names (stretches 3)
 
-- **How the dev root is derived.** `packages/config/src/app-bundle.ts` finds the bundle around the running module's
-  realpath and reads its `CFBundleIdentifier` from `Info.plist`; `machinePaths(env, app)` gives `sh.localbox.mac.dev`
-  the root `~/Library/Application Support/Localbox Dev`. `layout()` uses the same bundle detection (one regex, not
-  two). Why: `machinePaths()` is also called by `packages/client`, so the derivation must live in `packages/config`,
-  and invariant 7 forbids an environment variable. Reverse: drop the `app` parameter.
-- **A dev build's credential lives in its root,** not in `~/.config/localbox/credentials.json`, so a dev app and a
-  release app never share a machine identity (the slice says they never share a root). Reverse: in `machinePaths`.
-- **Logs.** `machinePaths().logs` is `~/Library/Logs/Localbox` (`Localbox Dev` for a dev build) unless the root is
-  relocated (then `<root>/logs`, as probes expect). It was `<root>/logs`, which nothing outside probes read. Files:
-  `app.log` (the app's own lines; what it says before `app paths` answers is buffered and written first),
-  `hostd.log`, `connector.log`. Reverse: in `machinePaths` and the three names in `main.swift` and `DaemonLaunch`.
-- **`app paths` JSON** uses snake_case keys (`ipc_token`, `hostd_lock`) like the rest of the CLI's output, and adds
-  `bin_dir` (`AgentSetup`'s command directory, now the exported `commandDirectory`) for the daemon's
-  `LOCALBOX_BIN_DIR`. The token is kept when non-empty, else written to a temporary file and renamed (a crash
-  leaves no half token). Reverse: `apps/cli/src/app.ts`.
-- **The installer's token step** now runs `"$ACTIVE_CLI" app paths` with the root pinned to the token's directory
-  (where its plist points the daemon). Its `mkdir` of the machine directories stays until slice 10 deletes it.
-- **Children log straight to their files** (opened `O_APPEND`), never through a pipe the app reads: an app killed
-  with `kill -9` would leave the daemon writing its shutdown lines into a dead pipe (EPIPE, and Foundation's
-  `FileHandle.write` raises on it). The app reads the daemon's lines back by tailing its log every 100 ms. Reverse:
-  pipe stdout/stderr in `ChildProcess.spawn`.
-- **Any output counts as progress** for the daemon's 120 s rule, not only the two shutdown line shapes. Why: a
-  daemon still writing is not wedged. Reverse: filter in `ChildProcess.heard`.
-- **`ChildProcess.start()` does not throw**; a child that cannot be launched is retried on the same backoff as one
-  that exits. A daemon refused by the lock (exit 75, an orphan still saving) is retried the same way. Reverse:
-  rethrow from `spawn`.
-- **`Lifetime.pending` is filled from `running`, passed to `stop`,** minus each sandbox the daemon reports. The
-  daemon prints no list of what runs (slice 06), and the app has no `app status` yet, so slice 08's app passes
-  none and its menu says "Stopping: hibernating sandboxes…". Slice 12 passes the running names from the facts.
-  Reverse: drop the parameter.
-- **Quit reason.** Logout, restart and shutdown are recognised from the quit Apple event's `kAEQuitReason`;
-  everything else is `quit`; `update` is unused until slice 15.
-- **`LaunchDecision`** dropped Bento's translocation handling (no move prompt, A10, so it had no consumer);
-  `inApplications` is computed from the bundle's own path and logged for slice 12. A dev build never hands off,
-  even to another dev copy: their daemons settle it (one per root). Reverse: port `Translocation` back.
-- **The no-screen stub** is `LOCALBOX_APP_SCREENS=0`, honoured only by a build without `SUFeedURL`. With no screen
-  the status item waits for `didChangeScreenParametersNotification`; supervision starts first regardless.
-- **Placeholder UI.** The SF Symbol `shippingbox` (template); menu: `Localbox VERSION` (disabled) and `Quit Localbox`
-  (⌘Q). While stopping, the first item reads "Stopping: hibernating …" and Quit is disabled.
-- **The dev bundle** is `dist/app-dev/Localbox Dev.app` (name `Localbox Dev`, version from `package.json`, which is
-  also `cli/version`). It carries the building Node (`process.execPath`), production `node_modules` installed once
-  per `package.json` + `package-lock.json` into `dist/app-cache/`, `release-public.pem`, and `Resources/guest-agent`
-  only if `npm run build:guest-agent` ran. Signed ad hoc, inside out. No `LocalboxLaunchLockRelativePath` key yet:
-  only Sparkle reads it (slice 15). Debug Swift builds, since probes need the process fixture. Reverse:
-  `apps/macos/App/scripts/build-app.mjs`.
-- **The app's tests** are Node runners in `apps/macos/App/tests`, run by `npm run test:app`, not by `npm test`
-  (each compiles Swift for several seconds). A `BundledCLI`/`DaemonLaunch` runner was added beside the slice's list.
-- **Tier `a` harness.** Scratch under `/tmp` (short socket paths); a scratch `HOME` and `LOCALBOX_MACHINE_ROOT`, so
-  the bundled CLI never launches an app and nothing touches this account's skill or command. The frontmost app comes
-  from `lsappinfo front`; the check is "the app's pid is never frontmost", not "the front app never changes", since
-  a person using this Mac may switch apps meanwhile. Processes are found by this run's bundle path (`/private/tmp`
-  and `/tmp` both), and quit is SIGTERM, the Quit item's path. The fixture backend needs `node` on the daemon's
-  PATH, so tier `a` prepends the running Node's directory to the Finder PATH.
-- **`launchctl list` shows the running app** as `application.sh.localbox.mac.dev.…` (LaunchServices' record of a
-  running app, not a job). Probe 41 ignores `application.*` labels; the slice's human check
-  `launchctl list | grep localbox` shows that one line while the app runs.
-- **Tier `a` stands in for hibernation with the fixture's outcome.** The fixture cannot save, so "hibernated before
-  the app's pid is gone" is checked as the record's `cold_boot_pending` (the fixture's shutdown outcome) being on disk
-  when the daemon exits, and "woke" as `cold_booted` with the fixture's reason. Tier `v` checks the real ones.
-- **The supervised connector remembers a revoked secret** and waits for credentials with a different one, so a
-  revoked credential still on disk is not retried every 2 s. The unsupervised stop line is now `stopping: signal`
-  (was `stopping on signal`). Reverse: `apps/connector/src/index.ts`.
-- **`DaemonLaunch`** drops an inherited `LOCALBOX_IPC_TOKEN` (the token is the file `app paths` made) and sets
-  `LOCALBOX_GUEST_AGENT` only when the bundle has one. **`BundledCLI`** gives a command 120 s, then SIGTERM.
+**When:** 12 · **Owner:** `imageFacts` in `apps/cli/src/app-facts.ts`
 
-## 09 · App control: socket, login item, `localbox app`
+Say you run `localbox image copy my-xcode-base --machine studio`. On the
+receiving Mac the popover's "Images in progress" shows the image's opaque
+account id with "Copying 43% · receiving", not `my-xcode-base`. The daemon knows
+images only by id; the names live in the account's catalog in Convex, which
+only the connector talks to. The built-in image reads `linux`, which is also
+its id. The brief asked for "images building or copying on this Mac, with
+progress", and an id is a poor label for a person.
 
-- **Wire shape.** Request `{"id","operation","params"}`; the answer uses the CLI envelope's words: `{"id","ok":true,
-  "result"}` or `{"id","ok":false,"error":{code,message,retryable:false}}` (Bento's `data` became `result`). The id is
-  a required non-empty string (`cli-<uuid>` from the CLI) and the client rejects an answer with another id. A
-  garbled request is answered `invalid_input` with `id: null`. Codes are the CLI's `ERROR_CODES`. Reverse:
-  `AppSocket.respond` and `apps/cli/src/app-socket.ts`.
-- **The socket is served once paths are known** (it lives in the root `app paths` names, so `AppPaths` gained
-  `app_socket`, `machinePaths().appSocket`), before the children start, and is removed only when the app answers its
-  quit, so `app status` shows `stopping`. A socket another live app answers is left alone and only `localbox app`
-  is lost (logged); supervision goes on. The handler is synchronous on the socket's queue; slice 15 may need an
-  asynchronous answer for Sparkle. Reverse: `serveAppSocket` in `main.swift`.
-- **Child states.** `running` = the process is alive (also while it stops); `backing_off` = it exited or failed to
-  launch and a restart is scheduled; `starting` = started but not yet launched, which is momentary since `start()`
-  launches at once; `stopped` = not supervised. Whether the daemon answers its socket is not the app's to say
-  (slice 12's facts). Reverse: `ChildProcess.state`.
-- **`ensureApp` waits on the app socket** for `localbox app`, not the daemon's, so `app status` works while the
-  daemon backs off. An app that cannot be reached is the retryable `guest_unreachable` every local command already
-  gives when Localbox is not running (there is no better code in the contract). Reverse: `askApp`.
-- **`app status` is `app.info` with `login_item: { state }` added**, two socket calls. Reverse: `appStatus`.
-- **Login item rule.** The defaults key is `loginItemInitialized` (the slice's name). It is set by the automatic
-  registration, by an item already enabled or awaiting approval at first launch, and by any `login_item.set` (an
-  explicit choice is final, also for a copy outside an Applications folder later moved into one). A failed
-  automatic registration, a dev build, or a release outside an Applications folder sets nothing, so a later launch
-  can still register. Turning off an item that is not registered does not call `unregister`. Reverse: `LoginItem`.
-- **The fake driver in a running app.** A development build honours `LOCALBOX_APP_LOGIN_ITEM=fake` (an in-memory
-  item starting disabled), and tier `a`/`v` launches set it: `SMAppService.mainApp` matches by bundle id, so even a
-  scratch dev bundle's real login item would be this account's. Reverse: `makeLoginItem` in `main.swift` and the
-  env in `scripts/proof/lib/packaged-app.ts`.
-- **`login` in an app-managed layout** reports `connector: "supervised"` instead of calling `restartConnectorJob()`.
-- **Probe 41 polls `app.info` through the CLI's client directly** for the backing-off window (a CLI process takes
-  about as long to start as the 1 s backoff), and checks the end state through `localbox app status`.
-- **Not run here:** the slice's manual check on the real account (the dev build in `~/Applications`, `login-item
-  on`, relaunch, System Settings, then `off`). It is left for the orchestrator.
+- **Gap:** the plan assumed the facts could name images; nothing on the Mac
+  holds the names.
+- **Reach:** the popover and `localbox app status` (`images[].name`).
+- **Verdict:** needs your call. **Provisional call:** ship ids. To reverse it,
+  have the connector's `image.mirror` call (which already sends the account's
+  image ids for this Mac) carry names too, store them beside the images, and
+  have `imageFacts` use them.
+- **Confidence:** medium.
 
-## 10 · Release, agent install, and deleting the old path
+### N4. ⚠ `HOME` is copied into Sparkle's relaunch (stretches 2)
 
-- **The signature check runs in JavaScriptCore.** The system `openssl` is LibreSSL 3.3.6, which cannot load an
-  Ed25519 key (`unsupported algorithm`); `Security.framework` has no Ed25519 key type; CryptoKit needs Swift, which a
-  stock Mac lacks; `ssh-keygen -Y verify` checks SSHSIG envelopes, not a raw signature over the manifest's bytes.
-  `/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc` is on every Mac and runs modern JS with
-  BigInt, so `installation.md` carries a ~70-line Ed25519 (RFC 8032) and SHA-512 verifier. It builds the payload with
-  the same `JSON.stringify({ ...manifest, signature: undefined })` as `signManifest`, so it checks exactly the signed
-  bytes (a non-ASCII version is in the test), and it also requires `SHA256SUMS` to be exactly the signed digests
-  before `shasum -c` checks the zip. Proven on this Mac (macOS 27.0.1) against scratch-key releases and six tampered
-  ones (`tests/release.test.ts`), and against a real `release.sh` output (probe 42); the `jsc` path on macOS 14 was
-  not checked here. Reverse: once a stock tool verifies Ed25519, replace step 3's script with it.
-- **The zip is `Localbox-macos-arm64.zip`**, one name for every version, so the procedure takes all three files from
-  `releases/latest/download` with no version lookup (Bento's pattern). Reverse: name it per version and read the
-  version from `release.json` first.
-- **The release Info.plist carries `SUFeedURL` now** (Sparkle itself, `SUPublicEDKey` and the framework stay slice
-  15's). The app treats a bundle with a feed as a release (`LaunchDecision.isRelease`); without it the release would
-  never register its login item, hand off to a running copy or refuse the dev-only stubs, and step 7 would be false.
-  Nothing reads the feed until Sparkle is linked. Reverse: drop the key in `build-app.mjs` and judge releases by
-  bundle id.
-- **Both builds carry `LocalboxLaunchLockRelativePath`,** copied from the launcher's `#define` in `main.c` (the one
-  source); slice 08 left it out of the dev build. The assembler test and probe 42 check the launcher binary holds the
-  same string.
-- **The disposable keychain lives in `sign.mjs` (`withIdentity`),** lifted out of `release.sh`, which still reads the
-  credentials and passes `--p12/--password-file/--sha1` (or `--identity` for `APPLE_SIGNING_IDENTITY`, `-` for
-  `ALLOW_UNSIGNED`). The keychain is never put on the search list (spike 02's scratch identity signed fine without it);
-  Bento adds it. `LOCALBOX_RELEASE_PUBLIC_KEY` (new) names the key `release.sh` checks the manifest key against and the
-  bundle carries, so a scratch release pins its scratch key; it defaults to the skill's, and the mismatch refusal
-  stays. Probes build the throwaway identity with `scripts/proof/lib/scratch-identity.ts`.
-- **No hardened runtime and no timestamp on any binary** (Bento's `signReleaseTree` uses neither); the old `release.sh`
-  hardened the daemon. Node keeps its JIT with no entitlement, and the daemon boots VMs signed this way (probe 42 v).
-  The bundle's own signature seals `Resources/guest-agent`, including the Mach-O darwin tools, without `codesign`
-  complaining. The assembler signs the bundle under its staging name, so `signApp` treats the folder it is given as
-  the outer bundle whatever it is called.
-- **A release build refuses a Node that links libraries outside `/System/Library` and `/usr/lib`** (Homebrew's), and a
-  non-arm64 one; `--node` (or `LOCALBOX_NODE_BIN` through `release.sh`) picks another.
-- **Proof helpers never ship:** tests import `scripts/proof/lib/installation.ts`, so tsc emits it under
-  `dist/scripts/proof`; the assembler skips that folder.
-- **The procedure's blocks run as written.** `scripts/proof/lib/installation.ts` cuts the `sh` block out of each
-  numbered step; the unit test and probe 42 run steps 2–4 over HTTP (`LOCALBOX_RELEASE_URL`, an override the procedure
-  documents) with the scratch key substituted in step 3, in a scratch `HOME` and `TMPDIR`. Each block stands alone
-  (state is the download folder in `$TMPDIR`), since an agent's shell rarely keeps variables between calls.
-- **Waiting for the old app** uses `osascript -e 'application id "sh.localbox.mac" is running'` before and after the
-  slice's `quit app id`, so a copy that is not running is never launched to be quit. Not exercised here: no release
-  copy runs on this account. The quarantine check is `xattr -r … | grep com.apple.quarantine` on the unpacked app.
-- **Probe 14 is tiers u, a and l.** Tier a installs the dev bundle into a scratch `HOME/Applications` and runs the old
-  checks through launches and relaunches; the home command is called with `LOCALBOX_APP` set, since the launcher looks
-  only for `Localbox.app` and a dev bundle is `Localbox Dev.app`. Tier l keeps the MCP parity check, which needs the
-  local stack (run green in a short clone of this checkout). The release itself is probe **42** (tiers a, v).
-- **The connector always waits and stops on stdin EOF.** Proof connectors (`startConnector`) get a stdin pipe held
-  (unref'd) by the probe, so they stop with it; DEVELOPMENT.md's manual example pipes `tail -f /dev/null` into it.
-  Probe 13's "B removed" check now waits for "waiting for this Mac to be signed in again" instead of exit 0. `login`
-  no longer reports a `connector` field.
-- **Left in place:** the contract's action kind `linked` (the firewall freezes the contract beyond `cli.status`
-  states; nothing produces it now); `launchctl asuser` in `app-launch.ts` and step 5, which is spike 01's launch
-  command, not a job; probe 41's `launchctl list` check that no job is added; the `launchctl` calls inside macOS
-  guests (`MacBaseBuilder`, `localbox-vmlab`). These are the slice grep's only hits outside `apps/guest-agent/darwin`
-  and the spec.
-- **Until slice 11 a fresh install has no `linux` image**, so `sandbox create` from the human check fails there;
-  `installation.md` already says the app fetches it, as the slice asks.
-- **The launcher's lock in the real account.** The packaged smoke and probe 14 run the real launcher, which creates
-  `~/Library/Caches/sh.localbox.mac/launch.lock` in this account's real home (by design, from `getpwuid`); nothing
-  else touches the real account.
-- **Not run here:** the real-account install from `ssh localhost` (the orchestrator's), and a real Gatekeeper
-  quarantine case.
+**When:** 15 · **Owner:** `apps/macos/App/sparkle/localbox.patch`
 
-## 11 · Built-in image on first launch
+After installing an update, Sparkle's helper relaunches the app. The patch
+copies three variables from the running app's environment into that relaunch:
+`LOCALBOX_MACHINE_ROOT`, `LOCALBOX_APP` and `HOME`. Bento's patch, which the
+brief chose to reuse, carries only its own two names. `HOME` was added because
+agent setup decides where the skill and the `localbox` command go from `HOME`,
+and LaunchServices refuses to set `HOME` from `LSEnvironment` (it was tried).
+Without it, a lab copy launched with a scratch `HOME` would relaunch with the
+real one and write this account's skill. For a real install `HOME` is the
+account's own both times, so nothing changes.
 
-- **The probe is `43-builtin-image.ts`**, not the slice's 42 (probe 42 is the release); slice 15's update probe is 44.
-  Tier `a` also quits mid-download and relaunches, the slice's human check: the cut part is asked for from its
-  partial's length and the finished one not at all. Probe 42 gained one check: the installed app's CLI runs `ensure`
-  against `release.sh`'s own output, so the asset names `packImage` writes are the ones `ensure` reads.
-- **The install is `replaceLinuxImage`, not `installLinuxImage`.** `ensure` expands into
-  `<root>/downloads/linux-<version>/images/linux` and swaps that directory in by rename (the old image set aside as
-  `.linux.replaced-<pid>` first, then deleted), so the new image never sits in `<images>` under a sweepable name.
-  `installLinuxImage` (probes, `real-daemon.ts`) still clones into `.linux.installing-<pid>` and now ends in the same
-  swap. Reverse: in `scripts/release.ts`.
-- **"Already current"** is decided from `builtin-image.json`'s `ready` line, which records `version`, `image_sha256`
-  (the signed disk digest) and `image_json_sha256`: the same release with an unchanged `images/linux/image.json` asks
-  the network nothing (a relaunch, an offline Mac); another release whose manifest names the same disk and
-  `image.json` digests fetches only `release.json`. Hashing the multi-GiB disk at every launch was the lost
-  alternative; `image.json` alone cannot tell two disks apart (it has no digest). A probe-seeded image has no record,
-  so `ensure` replaces it. Reverse: `install` in `apps/cli/src/builtin-image.ts`.
-- **`release.json` must name this CLI's version**, or `ensure` fails: a folder override pointing at another release
-  never installs that release's image. `checkManifest` is exported for the manifest's own consistency.
-- **Where it fetches from.** `LOCALBOX_RELEASE_URL` (the override installation.md already documents) names the release
-  folder, any of `https:`, `http:`, `file:`; else `https://github.com/<LOCALBOX_RELEASE_REPOSITORY or
-  dzhng/localbox>/releases/download/v<version>`. Any scheme is accepted since nothing is trusted before the signature
-  verifies. The key is `Layout.publicKey`: the bundle's `Resources/release-public.pem`, else the skill's.
-- **Lock:** `<staging>/lock` holds `pid token`, made with `link(2)` from a draft so it appears whole. It is stale when
-  its pid is dead or is not a process whose command line has `image ensure` (pid reuse), and is then taken over; it is
-  removed only while it still holds this run's token. A second `ensure` prints the progress file's line and exits
-  **75**; `ready` exits 0, `failed` 1. Staging folders of other versions are deleted unless their lock is live.
-- **Failures.** A dropped connection is retried 3 times in the run, then the run ends `failed` with the partial kept
-  (resumed next time, the offset taken from the file's length); a refusal (wrong length, `Content-Range` that does not
-  start where asked, a checksum mismatch, 404) deletes that part. Both are `failed`: the slice has no other phase. A
-  stalled connection waits on Node's default 300 s body timeout; not tuned.
-- **Progress:** at most one line every 250 ms within a phase, with a trailing write so a stall shows the last bytes;
-  every phase change and every finished part is written at once. `downloading` counts the artifacts' bytes (parts, boot
-  store, `image.json`); `expanding` the disk's bytes expanded (`expandImage`'s new callback, after each chunk);
-  `installing` and `ready` carry the image's size. Each line is written to `builtin-image.json` by rename.
-- **`expandImage`** now removes `.<name>.partial-<pid>` temporaries whose pid is dead, beside its destination.
-- **Supervision.** `ChildProcess` gained `Restart.untilSuccess` (exit 0 ends supervision; a later `start()` runs it
-  again) instead of a second supervisor. The one-shot runs `localbox app image ensure --json` into `<logs>/image.log`,
-  with `StopPolicy.imageEnsure` (SIGTERM at once: `ensure` does not watch stdin, because a shell often starts it with
-  stdin closed) and `Backoff.imageEnsure` (5 s doubling to 300 s, reset after a 10 min run). `Lifetime` starts it after
-  the daemon and the connector and stops it after the connector, before the daemon. Every launch runs it, which covers
-  the relaunch after an update; `Lifetime.ensureImage()` is the hook for slice 15 should a change of release arrive
-  without one. Reverse: `ChildProcess.exited`, `Lifetime`.
-- **The daemon's refusal is gated on `LOCALBOX_BUILTIN_IMAGE_PROGRESS`**, which only `DaemonLaunch` sets (to `app
-  paths`' new `builtin_image`). Under the app a new create from `linux` with no `images/linux` is `sandbox_not_ready`,
-  `retryable: true`, details `{ state: downloading|failed, image, phase, progress? }`, on every backend (so probe 41's
-  fixture tier now seeds a stand-in `images/linux`); a create re-run for a sandbox already here is not refused. With
-  no app (probes starting the daemon directly) a missing image is still `image_not_found`. A failed download is
-  refused retryable too, since the app keeps retrying. The daemon's envelope gained a `retryable` argument (it was
-  always false). The relay already passed a settled machine refusal through and released the reservation; a test now
-  pins it.
-- **Paths.** `machinePaths()` gained `downloads` and `builtinImage`; `app paths` prints `builtin_image`; Swift
-  `AppPaths.builtinImage`. `app status` reads the progress file from `machinePaths().builtinImage`.
-- **Warning fixes made true:** `builtin_image_missing` "Quit Localbox and open it again to download it, or run
-  localbox app image ensure."; `builtin_image_failed` "Localbox keeps trying; check this Mac's internet connection."
-- **Tier `a` never reaches GitHub:** `packagedApp` launches with `LOCALBOX_RELEASE_URL` on an empty scratch folder,
-  so the launch-time `ensure` fails at once (probe 41's status then shows `builtin_image: failed` behind
-  `signed_out`); probe 43 passes its fault server instead. `Processes` gained `imageEnsures`, which cleanup kills.
-- **Fixture images are 32 MiB:** APFS allocates a file of 16 MiB or less whole, so a smaller one cannot show holes.
-  The fault server and the signed fixture release live in `scripts/proof/lib/image-release.ts` (tests and probe 43).
-- **Not run here:** the slice's manual run against a real published release (time and peak disk). No release in this
-  manifest shape is published yet (v0.1.1 is the older one), so it waits for the first release cut with `release.sh`.
+- **Gap:** the brief's reuse of Bento's patch did not foresee a relaunch that
+  must keep a scratch home.
+- **Reach:** every update relaunch. It grants the new copy nothing the old one
+  lacked.
+- **Verdict:** needs your call (it changes Sparkle beyond a rename).
+  **Provisional call:** keep it. To reverse it, drop `@"HOME"` from the patch,
+  update `patchSha256` in `upstream.json`, rebuild Sparkle, and give probe 44
+  another way to keep its scratch home.
+- **Confidence:** medium.
 
-## 12 · App facts: the one state shape
+### N5. A release build honours `LOCALBOX_RELEASE_URL` and `LOCALBOX_RELEASE_REPOSITORY`
 
-- **One additive daemon change, to `host.watch`** (internal, not in the catalog): each sandbox row gains `name`, `os`
-  and `lifecycle` (the raw runtime state, since the catalog's `sleeping` hides paused versus saved to disk), and the
-  answer gains `operations`, `HostOperationStore.current()`: every running operation plus each image's latest one when
-  it failed, as `image.wait` shows a record, with `sandbox: { sandbox_id, name }` on a create waiting for its copy (only
-  its checkpoint knows the name). Why: the daemon has no local `image.list` (that is the account's), and one answer
-  keeps `app status` to two daemon calls (`host.watch`, `relay.status`) instead of `sandbox.list` plus an
-  `image.wait` per image. Reverse: drop the fields and compose `sandbox.list` and `image.wait`.
-- **`watch_version` is a fingerprint of the facts** (48 bits of the SHA-256 of everything else), not the daemon's
-  version. `--since N` waits until the facts differ from N, so a change the daemon does not announce (the app's
-  children, the login item, a sign-in, image progress, `builtin-image.json`) also ends the wait. While waiting, the CLI
-  long-polls `host.watch` on the daemon's own version in 2 s slices and recomposes between them; with the daemon down
-  it rechecks every second. `checkHost()` and agent setup (they spawn processes) are read once per invocation.
-  Reverse: `appFacts` in `apps/cli/src/app-facts.ts`.
-- **States.** `daemon`: `running` when the daemon answers; the app's child state otherwise, with an app-side `running`
-  that does not answer reading `starting`. `connector`: `signed_out` without credentials or when the relay reports
-  `revoked` (with the account still named); `down` when the app's child is not running or its last report is stale;
-  `connecting` when it has not reported yet or the daemon is down. Sandbox states map the daemon's lifecycle
-  (`ready`/`freezing` running, `paused`, `asleep`, `starting`, `stopping`/`stopped` stopped, `error` failed).
-  `capacity.cpus_free` is cores minus the CPUs of running sandboxes (the daemon reserves memory, not CPUs);
-  `memory_free_bytes` is the admission room.
-- **Images by id.** The daemon knows images only by id, so `images[].name` is the id (`linux` for the built-in).
-  An image already in the images folder is not listed (this also leaves out the sending side of a copy). A failure
-  (image or waiting sandbox) shows for an hour after it ended; a cancelled create (its sandbox was deleted) never.
-  Failed rows carry `error` (the record's message), a field the slice did not name.
-- **`account.email`** comes from the credential: `localbox login` now writes the `email` it was given (the account
-  itself holds only a generated name). Credentials written before this have none and show `email: null`.
-- **Warnings, most severe first:** `daemon_down` (not while quitting), `signed_out` / `connector_down`,
-  `builtin_image_failed` / `builtin_image_missing`, `hibernate_blocked` (fix: `checkHost().fixes` joined with
-  "; then "), `not_in_applications` (release builds only: a dev build always runs from where it was built),
-  `login_item_needs_approval`, `command_not_installed` (agent setup on and the command `missing` or someone else's
-  file; an app outside Applications is `not_in_applications`'s). `builtin_image` reads `builtin-image.json` when
-  present, but `ready` there with no `images/linux` is `missing`.
-- **An app that cannot be reached** is the error slice 09 gave (`guest_unreachable`, or `unsupported` outside an app):
-  the facts start from the app socket. `appStatus` in `app.ts` is gone; `app status` is `appFacts`.
-- **`FactsSource`** publishes a value only when its `watch_version` changes (that is the debounce). Watching, it reads
-  once without `--since` and then long-polls; a failure is retried after 2 s watching, 60 s idle. Not watching, it
-  cancels the poll (`BundledCLI.run` is now cancellable: SIGTERM to the child, `CancellationError`) and reads every
-  60 s. The app stops it as soon as a quit begins, since a read after the app socket closes could start another copy
-  of the app. `Lifetime.stop` gets `facts.latest.hibernating` (running and paused names, what the daemon saves). The
-  popover and Settings are what will call `setWatching`; until slice 13 nothing does.
-- **Swift `AppFacts`** uses strict enums for every closed state, so a new CLI state fails the shared-fixture test
-  instead of decoding silently; `agent_setup.command`/`skill` and warning codes stay strings. `update` is not decoded
-  until slice 15. The fixture test re-encodes each fixture and compares it (nulls dropped) to the file.
-- **Probe 41 tier `a` sees `paused`, not `asleep`.** The process fixture cannot save its state, so its sleep is
-  SIGSTOP and the facts truthfully say `paused`; the check is that the long poll answers with the new state well
-  before its 25 s timeout. `asleep` needs a real VM (tier `v`, not extended here). The probe saves its `app status`
-  sample to the run's evidence folder.
+**When:** 11, review · **Owner:** `releaseBase` in `apps/cli/src/builtin-image.ts`
 
-## 13 · Popover
+At every launch the app runs `localbox app image ensure`, which downloads the
+built-in Linux image for this version. By default it reads
+`https://github.com/dzhng/localbox/releases/download/v<version>`. If
+`LOCALBOX_RELEASE_URL` is set in the app's environment it reads that folder
+instead (`https:`, `http:` or `file:`), and `LOCALBOX_RELEASE_REPOSITORY`
+swaps the GitHub repository. This works in a release build, not only a
+development one. It adds no trust: nothing fetched is used until `release.json`
+verifies against the key sealed in the bundle and names this exact version, and
+every artifact matches its signed digest. The worst a hostile value can do is
+make the download fail. The installation procedure documents the same
+override, and the release probe uses it against a release-built app.
 
-- **The Bento reference was rendered, not read off the code.** `git archive` of Bento at the frozen commit into
-  scratch, then its own `compileControlsCheck` and `tests/fixtures/capture-view.swift` (a small runner in scratch,
-  since the export has no `.git` for `capture-view-shots.mjs`'s revision record) built `BentoControls` and drew every
-  capture state on this Mac (macOS 27, no Sparkle needed). `idle.png` is `assets/bento-popover.png` (1x, Bento's own
-  dark backing; Bento's shots, like ours, do not composite native glass).
-- **Chrome taken from Bento:** 352 pt wide; 16 pt outer padding; a 30 pt mark and 16 pt semibold title at the top;
-  11 pt medium secondary section labels; 12 pt rows with a 10 pt secondary second line, 48 pt tall, icon at x 22;
-  Bento's banner (orange 18 % fill, 55 % stroke, radius 8, 10 pt inset) for the warning band; a full-width separator
-  over a footer whose Quit sits 28 pt from the right edge; NSPopover's own material and corners behind a transparent
-  SwiftUI view. Row text sits at x 50 and titles at x 58 because that is where Bento's NSTextField glyphs land (2 pt
-  field inset), not where its frames start.
-- **Compare (header band plus first row, dark, 1x; `evidence/13/compare/`):** landmarks match: mark, title, section
-  label, row text and Quit ink within 1 px of Bento's. Pixel numbers (mae 13.7, pixelmatch 0.10, edge-energy ratio
-  1.63) are content (Bento's source tiles vs our rows) and decided nothing. One deliberate deviation: Bento's section
-  label renders at about 80 % white although its code asks for `secondaryLabelColor`; ours uses the system secondary
-  (about 55 %, the same as Bento's footer). Verdict: chrome matches; accepted.
-- **Critique (one unprimed agent, all 28 shots and 9 crops, no context):** fixed: the twelve-row list ended mid-row with
-  no cue (the capped list now fades its last 36 pt when it overflows); Settings… disabled in every state (hidden until
-  slice 14 has a window: `Local.settingsAvailable`); a stale "Connecting…" while quitting (the header says
-  "Quitting…"); the empty line indented past its label; bars ending at no edge and icons drifting in taller rows (bars
-  and errors now run under the text to the row's edge, the icon centres on the two text lines); the red error with no
-  icon; grey-on-orange fix text (75 % primary now); uneven gap before "Images in progress"; "Copying · receiving · 43%"
-  against a sandbox's "Copying 43%" (now "Copying 43% · receiving"); the badge a size larger. Declined: the warnings'
-  own sentences (the band says "Sign in from Settings", the hibernate fix runs on, no monospace for the command) are
-  the CLI's, invariant 10, and Settings arrives with slice 14; the header showing "Connecting…" while the band says the
-  daemon is down (both are the facts); asleep, paused and stopped sharing a grey dot (the word tells them apart);
-  image names being ids (slice 12); thin row icons and a black, not coloured, badge (template art, placeholder).
-- **The words.** Header: the email (or "Signed in" for a credential without one, "Not signed in"), then "Connected",
-  "Connecting…", "Offline" (signed out) or "Disconnected" (connector down); room as "Free: 6 of 10 CPUs · 24 of 32 GB
-  · 210 GB disk" (memory in powers of 1024 like About This Mac, disk in powers of 1000 like Finder); "Version 0.2.0",
-  "(dev)" for a development build. Rows: "Running · Linux", "Copying 43% · Linux" (nearest percent, never 100 % until
-  done). Empty states: "No sandboxes on this Mac yet." and, with the daemon not running, "Sandboxes show here once
-  Localbox is running." Stopping: "Putting N sandboxes to sleep…" with the names, or "Quitting…" when none are left.
-  Before the first read: "Loading…"; a failed start: "Localbox couldn't start. Quit it and open it again."
-- **Menus.** Wake runs `sandbox start NAME` for asleep, paused and stopped; starting, copying and failed rows offer
-  only Copy Name and Open Log. The menu is the row's ⋯ button and its context menu (same items).
-- **The stopping state comes from the app, not the facts:** `FactsSource` stops as a quit begins, so `MenuBar.quitting`
-  feeds `Lifetime`'s pending names into `PopoverPresentation.Local.quitting`, which outranks `facts.stopping`.
-- **Open Log** writes the `lines` of `sandbox logs NAME --json` to `$TMPDIR/Localbox Logs/NAME.log.txt` and opens it
-  with the default app for plain text (`.log` alone would open Console). That app activates, which is the point.
-- **A failed action's message** is kept by sandbox name and cleared by the next published facts. Since `FactsSource`
-  publishes only on a new `watch_version`, a refusal that changes nothing stays until something else changes.
-- **Popover host.** `NSPopover`, `.transient`, not animated, sized by `NSHostingController.sizingOptions =
-  .preferredContentSize`; it never calls `NSApp.activate`. A global mouse-down monitor and Esc close it, as Bento's
-  does, since a menu bar app is usually not active and `.transient` then misses outside clicks. Not run here: clicking
-  the real status item (the orchestrator's `app:dev` check).
-- **The list cap is 400 pt** (`PopoverView.listLimit`), measured by a preference on the content; header, band and
-  footer stay outside the scroll.
-- **Test hooks:** `popover.open`, `popover.close`, `popover.perform {action, name}` on the app socket, answered only by a
-  development build launched with `LOCALBOX_APP_TEST_HOOKS=1` (the tier `a`/`v` harness sets it). `perform` refuses
-  (`conflict`) an action the popover does not offer for that row now, so the probe goes through the same rows a person
-  sees. The frontmost check follows slice 08's: the app's pid is never frontmost while the popover opens and acts.
-- **Status item art:** placeholder `shippingbox` symbol; the warning variant cuts a ring and draws an 8 pt dot in the
-  corner (template images take no colour). Real art goes in `apps/macos/App/art/StatusItem.pdf` and
-  `StatusItemWarning.pdf`; `build-app.mjs` copies them and `StatusIcon` prefers them.
-- **View shots** compile `LocalboxAppCore` and `LocalboxMenu` with `swiftc` as static modules targeting macOS 14 (so
-  the shots also check the 14 floor), render an `NSHostingView` with no window at 2x on a flat backing (dark is
-  Bento's 0.10 grey, light 0.95), and check that every state draws and the twelve-row list is capped. `npm run
-  app:shots`; not part of `npm run test:app`. Extra states beyond the fixtures: `action-failed`, `loading`,
-  `quitting`. No fixture was missing: the slice's list was already covered by slice 12's.
-- **Probe 41 flake seen once (not this slice's check):** in one of five tier `a` runs, slice 12's `--since` check got an
-  answer before the sleep landed (something else changed the facts in its first second), left the sandbox asleep, and
-  the later checks that wait for it running failed in turn. The popover check now starts the sandbox itself if it is
-  not running. The four other runs, including the last two in a row, were 11/11.
+- **Gap:** invariant 7 forbids environment variables for "app-managed"; nobody
+  ruled on download locations.
+- **Reach:** a local mirror or a test release can feed a real install.
+- **Verdict:** needs your call. **Provisional call:** keep honouring it. To
+  reverse it, ignore both variables when the bundle is a release (the facts'
+  `build`), and give probes 42 and 43 a development-only path.
+- **Confidence:** medium–high.
 
-## 14 · Settings window
+### N6. The app lives in `~/Applications`, and `/Applications` only when a copy is already there
 
-- **Bento's Settings was rendered, not read off the code.** A `git archive` of Bento's `apps/macos` at the frozen
-  commit was exported into scratch, and its own `tests/settings-view-shots.mjs` was run there with
-  `SHOTS=<scratch>`. It builds `BentoControls` and draws `SettingsView` in a borderless 560 × 780 window off screen,
-  at 1x. The `manual` state (no `update`) is `assets/bento-settings-{light,dark}-manual.png` (top: About) and
-  `…-manual-bottom.png` (scrolled to the end: General). Our Settings shots use the same capture (`SettingsShots.swift`,
-  1x, 560 × 780), so the two can be cropped and compared row for row.
-- **`localbox login` as it really behaves** (`apps/cli/src/index.ts`) differs from the slice's guess in three ways:
-  - Without `--code`, it prints a sentence for a person even with `--json` ("Code sent to E. Ask the user…"), not JSON.
-    "Code sent" is therefore exit 0, and the model ignores stdout.
-  - Its refusals are plain text on stderr with exit 1, not an envelope. Examples: "email is invalid", "verification
-    code is invalid or expired", "too many verification attempts; try again later", "this Mac is already signed in to
-    X; run localbox logout first". `BundledCLI` already falls back to stderr text. Settings shows that text as a
-    sentence (capitalised, with a full stop).
-  - A second login while signed in is refused before any code is sent. Settings offers the code flow only while
-    `facts.account` is null.
+**When:** brief 8 (agent), 10 · **Owner:** `installation.md` step 4; the launcher's search order in `main.c`
 
-  The CLI was not changed. Making `login --json` print JSON is a separate CLI fix. Reverse: in `CLISettingsActions`.
-- **Account layout (delegated).** Signed out: an "Email" row with a bordered field 200 pt wide and Send Code on the
-  same row. Code sent: Bento's detail row "Check your email / Enter the code we emailed to E." with Use a Different
-  Email on its right, then "Code" with a field and Sign In. Signed in: Bento's Workspace › Account detail row
-  (Account / email, Sign Out…) and a "This Mac" row. Refusals show in Bento's orange status label under the rows. The
-  footer is "Signing in connects this Mac to your Localbox account." while signed out, and "Other computers and cloud
-  agents signed in to this account can use this Mac's sandboxes." once signed in. Sign Out… asks "Sign this Mac out of
-  Localbox?", then "Signing out removes this Mac from your Localbox account, so other computers and cloud agents can
-  no longer reach its sandboxes." with a destructive "Sign Out". A credential written before emails were recorded
-  shows "Signed in". A revoked Mac (account still named, connector `signed_out`) shows as signed in, so Sign Out is
-  what it offers; the popover carries the warning.
-- **Form state lives in the model** (`SettingsModel`, `@MainActor ObservableObject` in `LocalboxAppCore`):
-  - `email`, `code`, `codeSentTo`, `busy` and one failure line each for account, agent setup, login item and updates.
-  - A switch shows its requested value while its command runs, then whatever `app status` says. On a refusal, the
-    switch goes back and the message stays.
-  - Facts that name an account end the code flow, so a sign-in from the terminal also does.
-  - A second tap while busy does nothing.
-  - The refresh after a change is one `app status` read through `SettingsActions.facts()`, on top of the long poll
-    `FactsSource` runs while the window is open. The last answer wins.
-- **"Set up my agents" summary.** Bento's sentence when command and skill are both `installed` ("localbox command +
-  skill, kept current. All good ✓"). Otherwise Bento's "Command …; skill …." built from the facts' states:
-  `not_in_applications` reads "Command waits for Localbox to be in Applications", `not_app_managed` "Command
-  unavailable in this build", an unknown state "Command needs attention". A failed `agents setup` shows a red line
-  under the row, in the same style Bento uses for the login item. "Open at login" lines are Bento's four with the name
-  changed.
-- **Updates rows are wired for slice 15.** `AppFacts.update` now decodes slice 15's announced shape
-  `{available, enabled, can_check, status?, version?}`, which is null today. The toggle runs `localbox update
-  automatic on|off`, the button `localbox update check`, and the footer is slice 15's sentence ("Installs when
-  sandboxes and background work are idle."). Slice 15 only has to make the CLI report `update` and add those commands.
-  The `updates` shot shows the rows fed by synthetic facts.
-- **The version in About is the bundle's `CFBundleShortVersionString`**, read as Bento's is. It equals the CLI's
-  version, which is copied from the same `package.json`, and an offscreen render shows "Development", as Bento's does.
-- **Window.** `SettingsWindow` is Bento's `makeWindow` (560 wide, height `min(780, visible - 60)`, titled, closable,
-  miniaturizable, frame in defaults `settingsFrame`, restored only if it meets a screen). Opening activates the app,
-  as Bento's does, because a person chose it. Under `LOCALBOX_APP_TEST_HOOKS=1` it orders in behind instead, like
-  Bento's `ControlsProbe.observed`. Opening and closing feed `FactsSource.setWatching(popover || settings)`.
-  "Show this window when Localbox starts" (defaults `showSettingsAtLaunch`, off) opens it at launch except on
-  `--localbox-update-relaunch`. `WindowMenu` is Bento's plus an Edit menu, so ⌘V works in the email and code fields.
-  The Login Items button calls `SMAppService.openSystemSettingsLoginItems()` through a closure, so `LocalboxMenu`
-  calls nothing native. Only macOS 13 APIs are used (grouped `Form`, `LabeledContent`, `sizingOptions`), plus
-  `NSApplication.activate()` (14).
-- **Test hooks:** `settings.open`, `settings.close`, `settings.state` and `settings.set_open_at_login {enabled}`. Probe 41
-  tier `a` opens Settings, flips Open at login on and off through the model (so through `localbox app login-item` to
-  the fake item), checks `app login-item` agrees, and checks that the app's pid is never frontmost.
-- **Tests:** `settings-cli.test.mjs` runs the real model, `CLISettingsActions` and `BundledCLI` against a fake bundle
-  CLI. It checks:
-  - the exact command log: each control's command and then `app status`, nothing else;
-  - the three account states;
-  - that a refused email, a wrong code and a refused login item each show the CLI's message and keep what was typed.
+The procedure installs to `~/Applications/Localbox.app`, which needs no
+administrator, so an agent over SSH can do it with no password (brief 8). It
+uses `/Applications/Localbox.app` only when a copy is already there and
+writable. The launcher looks in `$HOME/Applications` first, then
+`/Applications`; agent setup counts only those two folders as "in
+Applications". The trade-off: `~/Applications` is per user (a second account
+on the Mac installs its own), and Finder's sidebar shows `/Applications`, so a
+person may not find it there.
 
-  `settings-model.test.mjs` covers the summary and login-item lines, updates hidden until the facts carry them, the
-  preference, and the busy guard.
-- **Compare (Bento's manual-updates state, 1x, light and dark; `evidence/14/compare/`).** Slice variable: the name.
-  - **About:** pixel-identical to Bento's (pixelmatch 0, mae 0).
-  - **General, header to the bottom of the box:** same rows in the same order, and every text line and box edge sits at
-    the same offset from the header as Bento's. The words match apart from "Bento" becoming "Localbox". pixelmatch
-    0.025–0.027 lies on the name runs, plus the knobs of the two detail-row toggles, which sit one pixel lower than
-    Bento's. The code is identical, and the section sits at a different absolute y than in Bento's scrolled shot. That
-    looks like the toggle's half-point snapping, not layout; it was not chased further.
-  - The capture uses the reference's switch values (window at launch on, login item off: the `manual-updates` state).
-  - Verdict: pass.
-- **Critique (one unprimed agent, every state light and dark plus crops; `evidence/14/critique.md`).**
-  - Fixed: prompts that read as entered values (fields are now bordered and left-aligned), lone buttons on empty rows
-    (actions are inline), the error away from its field, and the signed-in footer still talking about signing in.
-  - Declined: the General section's own traits (no fix button for agent setup, the updates rows' layout, toggle on
-    while approval is pending, blank space under a short form). They are Bento's, which the slice copies exactly, or
-    slice 15's. Also declined: faint disabled buttons in dark mode (system style).
-- **Not run here:** the human checkpoint (the orchestrator's), and clicking the real popover's Settings… on this
-  account.
+- **Gap:** the brief delegated the location under "no password".
+- **Reach:** every install, the launcher, the login item rule (S12), the
+  `not_in_applications` warning.
+- **Verdict:** needs your call. **Provisional call:** `~/Applications`. To
+  reverse it, have step 4 prefer `/Applications` when it is writable without
+  `sudo`, and keep the launcher's two-folder search.
+- **Confidence:** medium–high.
 
-## 15 · Updates
+### N7. No rollback, no uninstall command, no move-to-Applications prompt
 
-- **A9 answered: Sparkle accepts the release key's format.** Sparkle's EdDSA is plain Ed25519, so Node's
-  `sign(null, …)` with a PKCS#8 PEM key (as `signManifest` uses) gives exactly what Sparkle's `sign_update` gives for the
-  same seed: with a scratch key, the archive signature and the whole signed feed were byte-identical to the pinned
-  `sign_update`'s, and `sign_update --verify` accepted both (`tests/appcast.test.ts` pins a known answer from it). At run
-  time, probe 44 has Sparkle (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`) install N+1 from a feed and zip
-  signed this way, and refuse a feed signed by another key ("the update feed is improperly signed"). So `release.sh`
-  signs `appcast.xml` and the zip with `RELEASE_PRIVATE_KEY`, and `SUPublicEDKey` is the raw public half of
-  `--public-key` (base64). No separate Sparkle key exists. Reverse: a `LOCALBOX_FEED_PRIVATE_KEY` in `release.sh`.
-- **The feed generator is `scripts/appcast.ts`**, not `generate_appcast`: one item, the release's zip at its versioned
-  GitHub URL (`LOCALBOX_RELEASE_REPOSITORY` overrides the repository, as for the image), minimum macOS 14, signed as
-  `sign_update --disable-signing-warning` would. The zip Sparkle downloads is the installer's own
-  `Localbox-macos-arm64.zip`. `appcast.xml` is listed in `release.json` and `SHA256SUMS` like every other asset.
-- **The relaunch keeps `HOME` too** (patch allowlist `HOME`, `LOCALBOX_MACHINE_ROOT`, `LOCALBOX_APP`, one more than the
-  brief's names). LaunchServices will not take `HOME` from `LSEnvironment` (tried: it applies other variables, never
-  `HOME` or `PATH`), while the relaunch's `NSWorkspace` environment does override it, and agent setup decides "in an
-  Applications folder", the skill's and the command's places from `HOME`. Without it, a copy relaunched from a scratch
-  `HOME` would write this account's skill. For a real install `HOME` is the account's own, so nothing changes.
-  Reverse: drop `@"HOME"` from the patch (and its hash in `upstream.json`).
-- **Order is Bento's reversed around the permit.** Bento grants Sparkle's install and then closes its service inside
-  the helper's 20 s; here the daemon's hibernation is unbounded, so steps 1 to 4 run while Sparkle waits in
-  `showReady`, and only then is `.install` replied. The helper then takes the lock (non-blocking, as Bento's), the
-  coordinator authorizes at once, and the app terminates on `updaterWillRelaunchApplication`. Probe 44 measured the old
-  app gone within a second of the permit. A command that starts between the coordinator's last lock check and the
-  helper's makes the helper refuse; the cycle then fails, the children restart and Sparkle's next check (an hour) tries
-  again.
-- **What is manual.** `update install`, and Check for Updates (or `update check`) while an update waits, are a person's
-  install: they skip the A12 hibernation blocker. A check that finds an update installs it under the automatic rules
-  when automatic installs are on; with them off the update downloads and waits ("Localbox X is ready. Check for Updates
-  to install it."). The built-in image being swapped in blocks both. Facts are read fresh (`localbox app status`) at
-  each attempt, and every published fact change retries a blocked one.
-- **Status lines** (delegated): "Checking for updates…", "Downloading Localbox X…", "Getting ready to install Localbox
-  X…" (nothing to save), "Putting N sandbox(es) to sleep to install Localbox X…", "Installing Localbox X; sandboxes will
-  restart, since this Mac can't hibernate them while it is locked." (manual, A12), "Waiting for localbox commands to
-  finish.", "Waiting for the built-in Linux image to finish installing.", "Installing Localbox X…" (the permit),
-  Bento's "You’re up to date.", and "Update failed: WHY. Your current version is unchanged." with Sparkle's own
-  message. The app logs each change (`update PHASE: LINE` in `app.log`).
-- **Where state lives.** The automatic preference is Sparkle's own `SUEnableAutomaticChecks` default in the app's
-  domain, on by default from Info.plist (no permission prompt: the driver answers it). `app.info` carries the
-  coordinator's snapshot as `update`, which `app status` passes on as `{available, enabled, can_check, status?,
-  version?}`; `update.*` answers add `state`. The socket handlers hop to the main thread with `DispatchQueue.main.sync`,
-  as the test hooks do, so the socket stayed synchronous (choices §09).
-- **`localbox update check|install` let go of the launch lock** (they close `LOCALBOX_LAUNCH_LOCK_FD`) before asking,
-  since the install they wait for waits for every command holding it; they poll the socket directly afterwards, so an
-  app that quit to install is never started again from there.
-- **Stopping and restarting the children for an update** is `Lifetime.stop(.update)` and a new `Lifetime.restart()`,
-  which only undoes an update's stop once it is over. `Lifetime.ensureImage()` is gone: every Sparkle install ends in
-  a relaunch, whose `start()` runs `app image ensure` (probe 44 checks N+1 ran it). While an update stops the
-  children, the popover shows the quitting rows ("Putting 1 sandbox to sleep…"), and returns to normal on restart.
-- **The killed-installer case** ends Sparkle's cycle while the coordinator waits for commands; the wait is cancelled
-  (`LaunchLock.waitUntilFree` polls a flag) and the children restart at once, rather than after the command ends.
-- **Build.** `build-app.mjs` links and embeds Sparkle whenever `LOCALBOX_SPARKLE_FRAMEWORK` is set (a release defaults it
-  to `dist/sparkle/Sparkle.framework`), after checking its receipt; the dev bundle then still has no feed. Sparkle's
-  keys are Bento's `configureReleasePlist` set, including `SUSignedFeedFailureExpirationInterval` 0.
-  `npm run sparkle:build` (new) fetches the pinned commit into `dist/sparkle-source`. The site redirect is a 302
-  (`statusCode`), as the slice says.
-- **Probe 44's isolation.** Sparkle's helper resolves the launch lock under the account's real home
-  (`NSHomeDirectory()`, which ignores `HOME`, as the launcher's `getpwuid` does), so each run uses its own bundle id
-  `sh.localbox.mac.lab<hex>` and a launcher compiled with that lock path (the `#define` the release leaves at its
-  default); the run deletes `~/Library/{Caches,HTTPStorages,Preferences,…}/<id>*` afterwards and checks nothing is
-  left. The lab bundles are dev Swift builds (the fixture) made release-shaped by Info.plist edits before signing,
-  with `LSEnvironment` carrying the scratch variables to Sparkle's relaunch; they live in the scratch `HOME`'s
-  Applications, which the app (judging by the real home) does not count, so it registers no login item. N's and N+1's
-  launchers differ only by optimisation level. The 75 check watches the lock with a one-millisecond shared try and then
-  runs `localbox help` through the home command until it works. Tier `a` has no sandbox (Sparkle's relaunch gets no
-  `PATH` with Node for the fixture's guest); tier `v` triggers the cycle with `localbox update check`.
-- **Compare (General section, bottom-anchored, 1x, Bento's six same-named states rendered from its export;
-  `evidence/15/compare/`).** Every row, toggle, button and line sits at Bento's offset from the section's bottom;
-  differences are the name, the footer's first sentence, Localbox's waiting sentence (with Check for Updates enabled,
-  since it installs), and the failure line wrapping to two lines with Sparkle's longer message. Parity distance
-  0.022–0.077 for the one-line states, 0.13–0.14 for `failed` (the wrap). Verdict: pass.
-- **Critique (`evidence/15/critique.md`).** Declined as Bento's own traits: grey "on" toggles in the offscreen capture,
-  an undecorated failure line, no spinner while checking, the layout. Open: "Install from Settings" names no control
-  that says Install (Check for Updates does it); the sentence is the slice's, so it stays for the user to decide.
+**When:** brief 9, A10, A11; 10, 16 · **Owner:** `UpdateCoordinator`; `installation.md` "Removing Localbox"; `LaunchDecision`
 
-## 16 · Closeout
+Three things Bento has that Localbox does not:
 
-- **Only the release bundle id owns the real machine root.** `machinePaths()` gives every id other than
-  `sh.localbox.mac` (and `sh.localbox.mac.dev`, still `Localbox Dev`) its own root, logs and credential, named
-  `Localbox (<id>)`. Why: the real-account proof had to install a release-shaped bundle on this account without any
-  chance of sharing a future real install's daemon, sandboxes or identity, and before this any unknown id fell back to
-  the real root. Named after the id, not the bundle's folder, so renaming the release changes nothing. Reverse: the
-  `stateName` rule in `packages/config/src/machine-paths.ts`.
-- **The locked-Mac update sentence** is "Waiting: installing now would restart sandboxes. Unlock this Mac, or use
-  Check for Updates in Settings to install anyway." (was "… Install from Settings, …", which named no control). The
-  button keeps its label; the sentence names it. Reverse: `UpdateCoordinator.hibernationBlocked`.
-- **`update check` answers `checking` at once.** Found by the real-account proof: `UpdateCoordinator.check()` and
-  `install()` now call `checking()` before asking Sparkle, so the CLI's wait sees a busy state instead of returning the
-  last cycle's "You're up to date." while an update installs. Safe because Sparkle ends every check it starts with a
-  result (`cycleFinished`, `ready`, or a failure). Reverse: `beginCheck()`.
-- **Lineage comments were removed, not allow-listed.** Every comment crediting Bento as a file's source is gone
-  (the facts they carried, such as layout numbers, stay); `apps/macos/App/sparkle/` needed no Bento name. The naming
-  test scans tracked files under `apps`, `packages`, `scripts`, `skills`, `bin`, `api` and the root docs; `tests/` and
-  `specs/` are not shipped and are not scanned. Each allow-list entry names its file, term and the line shape it may
-  appear on, and the test fails on an entry that no longer matches anything. Reverse: `tests/naming.test.ts`.
-- **The real-account proof kept agent setup on.** The slice's fallback (agent setup off) applied only if the home
-  command and skill could not be isolated. They could: the rehearsal bundle's `LSEnvironment` set `LOCALBOX_BIN_DIR`
-  and `LOCALBOX_SKILL_HOME` to a scratch home, which every LaunchServices launch (step 5's `open`, the login item,
-  Sparkle's relaunch) applies, and the daemon's agent setup wrote only there. No PATH block was written (the command's
-  directory counted as on PATH in that environment). Sign-in used the local dev stack, never a real account or email.
-  The pre-launch path check refused the first bundle (assembled from a stale `dist/`) before it ran.
-- **Removal, as written now:** optional `logout`, then `agents setup off`, `skill uninstall`, `app login-item off`,
-  quit, delete the app and the command, and, to leave nothing, the logs, caches, HTTP storage and defaults. Proven
-  in the real-account proof. Not proven: whether System Settings keeps a disabled login item record (listing BTM
-  needs an administrator).
-- **Docs.** The App README holds all ten invariants as principles (five were missing: agent setup, app-managed,
-  the bundle's two writers, `images/linux`'s writer, computed warnings), plus "quitting takes the Mac offline". The
-  skill says the app must be running and the CLI starts it; `skill-lifecycle.md` describes Sparkle updates (it still
-  said the app did not update itself). SECURITY.md gained "What runs on the Mac". The README, the site and `llms.txt`
-  each gained one sentence on the popover and that the app opens at login and updates itself; nothing else changed.
-- **The runbook** is `manual-runbook.md`, with results recorded under `evidence/manual/`; it adds a true-SSH install
-  and a cold-boot evidence leg to the README's three.
-- **A hang in `DaemonLifetimeTests`, fixed in the test.** `testASupervisedDaemonStopsWhenItsStdinCloses` hung twice
-  in the sweep (9 and 5 minutes): the daemon had exited, but `Process.waitUntilExit()` on a concurrency thread never
-  returned, while the stderr `readabilityHandler` spun at EOF (most of a `sample`). Neither the test nor the daemon
-  changed in this slice. The handler now stops itself at EOF and the async tests wait by polling `isRunning`; three
-  filtered runs and the full suite then passed. Reverse: `exited(_:)` in that file.
+1. **Rollback** (the user's call, brief 9). A failed update before Sparkle's
+   permit restarts the children on the old version; after the permit, Sparkle
+   has replaced the bundle and there is no way back but installing an older
+   release by hand. The procedure keeps the previous app in a temporary
+   folder when it reinstalls, which is the only copy.
+2. **An uninstall command** (A11). Removal is a documented sequence:
+   optionally `localbox logout`, then `agents setup off`, `skill uninstall`,
+   `app login-item off`, quit, delete the app and `~/.local/bin/localbox`, and,
+   to leave nothing, the logs, caches, HTTP storage and defaults. The
+   `localbox` commands run first, because each would reopen a quit app.
+   Sandboxes and images stay until the user deletes the machine root.
+3. **A move-to-Applications prompt** (A10). A release copy run from Downloads
+   runs and serves sandboxes, but registers no login item, installs no
+   command, and shows the `not_in_applications` warning.
 
-## Whole-spec review
+- **Gap:** each is a scope call the plan made to keep the app small.
+- **Reach:** a bad release can only be fixed forward; a person removing
+  Localbox needs the procedure.
+- **Verdict:** needs your call. **Provisional call:** as shipped. To reverse:
+  a `localbox app uninstall` that runs the sequence before quitting the app;
+  Bento's `AppRelocator` behind `LaunchDecision`; rollback would need a kept
+  previous bundle and a way to swap it in, which brief 9 ruled out.
+- **Confidence:** medium–high.
 
-The review of `git diff 6cd328f` as one feature, after every slice had its own: refactor-clean, then code-review,
-then write-docs. Each entry is a change made, or a thing deliberately left.
+---
 
-- **The daemon's lock path has one definition.** `localbox-hostd` fell back to `hostd.lock` beside the socket when
-  `LOCALBOX_HOSTD_LOCK` was unset: a second definition of `machinePaths().hostdLock`, kept (§06) only for the launchd
-  plist that slice 10 deleted. The variable is now required, like the socket's (exit 78 before the root is touched);
-  `DaemonLaunch`, `stack.ts`, `real-daemon.ts` and the daemon's own tests pass it. Reverse: restore the fallback in
-  `takeMachineLock()`.
-- **`installLinuxImage` moved to the proof lib** (`scripts/proof/lib/linux-image.ts`, now taking the image directory
-  itself). It lived in `scripts/release.ts`, which ships in the bundle, so every release carried a second writer of
-  `images/linux` that no shipped code called (invariant 9). Only probes and one test seed an image; `ensure` and
-  `replaceLinuxImage` stay in `release.ts`. Reverse: move it back.
-- **One `askApp` entry.** `AppDeps` moved into `app-socket.ts` and `askApp(operation, params, deps)` applies the CLI's
-  own layout and paths, instead of `app.ts`, `app-facts.ts` and `update.ts` each rebuilding those defaults around a
-  five-argument call. Reverse: `apps/cli/src/app-socket.ts`.
-- **One main-thread hop in the app.** `onMain` in `main.swift` is the socket-queue-to-main-thread step the test hooks
-  and `update.*` each carried; the Settings-at-launch check names the relaunch argument through `LaunchDecision`.
-- **Probe 44 shares `frontmostPid` and `killVirtualMachinesUnder`** with `packaged-app.ts` instead of its own copies;
-  `real-daemon.ts` takes every path from `machinePaths()`.
-- **Lineage comments removed.** Slice, spike, brief and invariant numbers in shipped code, tests and probe headers
-  became the facts they stood for; stale install words (the installer, the localbox link, launchd) went where they no
-  longer describe anything. Spec links that point a reader at the rationale (the App README, `build-app.mjs`'s
-  reference shots, the view-shot output folders) stay.
-- **Kept, decided: `LOCALBOX_RELEASE_URL` is honoured by a release build.** `ensure` uses nothing it fetched until
-  `release.json` verifies against the bundle's pinned key and names this CLI's version, so the location adds no trust;
-  the installation procedure documents the same override, and probe 42 uses it against a release-built app. A comment
-  at `releaseBase` now says why. `LOCALBOX_RELEASE_REPOSITORY` the same.
-- **Kept, decided: `HOME` in Sparkle's relaunch allowlist.** The patch copies `HOME`, `LOCALBOX_MACHINE_ROOT` and
-  `LOCALBOX_APP` from the running app's own environment into its relaunch, so a release relaunches with exactly what
-  it already ran with; for a real install that is the account's own `HOME`. It grants nothing the running copy lacked.
-- **Kept, checked: the development-only stubs.** `LOCALBOX_APP_TEST_HOOKS`, `LOCALBOX_APP_LOGIN_ITEM=fake` and
-  `LOCALBOX_APP_SCREENS=0` are read only when `LaunchDecision.isRelease` is false, and every `--release` bundle carries
-  `SUFeedURL`, so a release can neither register a fake login item nor answer `popover.*`/`settings.*`. The launcher's
-  `-DLOCALBOX_ACCOUNT_HOME`/`-DLOCALBOX_SYSTEM_APPLICATIONS` are compile-time and absent from the release build.
-- **Kept: the app reads the daemon's shutdown lines from `hostd.log`.** It is the app's own child's output, the one
-  channel a daemon whose app was killed can still write to (§08), not Localbox state; every other read is
-  `app status`.
-- **Left: probe 44's lab harness** still has its own `processes`, `until` and `log` beside `packagedApp`'s, because
-  the lab's bundle lives in a scratch `HOME/Applications` under its own bundle id and two copies (N, N+1) replace each
-  other; folding it into `packagedApp` would mean teaching that harness about replacement. Removal condition: a second
-  probe needs an installed, replaceable bundle.
-- **Left: the contract's `linked` action kind**, unproduced since slice 10, because the firewall freezes
-  `packages/contract` beyond `cli.status` states.
-- **Size**, by `git diff --unified=0 6cd328f` over everything but the evidence and reference PNGs and the lockfile,
-  production split from comment lines by a leading `//`, `///`, `/*`, `*` or `#` (blank lines not counted), after
-  this review: production code +4,120 −904 (net +3,216), comments +885 −84 (+801), tests and proof harness +5,480
-  −739 (+4,741), specs and docs +1,524 −220 (+1,304). Production is an app (supervision, socket, popover, Settings,
-  updates), four CLI modules and the release cutover, with the old installer, updater and plists deleted; no part
-  read as out of proportion to what it does. Tests outweigh production mostly through the packaged-app probes
-  (41–44), which drive real bundles. The vendored Sparkle patch, licence and pin (+1,259) are counted apart: Sparkle's
-  code under Localbox's names, rebuilt from the pin, not code this repo maintains line by line.
-- **Decisions reconciled.** Brief 1–12, A1–A14, the contracts and the names each match the shipped code, with the
-  changes already recorded above (§10's `SUFeedURL` as the release test, §11's probe numbers, §14's
-  `update automatic on|off`). The spec README's bundle layout now lists `Resources/cli/package.json`, which the
-  assembler has always copied.
+## Unsound
+
+### U1. ⚠ `localbox login --json` prints no JSON, and Settings reads it by exit code (contradicts 12)
+
+**When:** 14 · **Owner:** `login` in `apps/cli/src/index.ts`; `CLISettingsActions` in `SettingsModel.swift`
+
+Every Settings action runs the bundled CLI with `--json` (brief 12). Sign-in
+is the exception that breaks it. `localbox login --email you@example.com
+--json` prints a sentence meant for a person, "Code sent to you@example.com.
+Ask the user for the 6-digit code…", and its refusals ("verification code is
+invalid or expired", "this Mac is already signed in to X; run localbox logout
+first") are plain text on stderr with exit 1, not the CLI's error envelope.
+Settings copes: exit 0 means "code sent" or "signed in", stdout is ignored, and
+on failure it shows the stderr text as a sentence. It also offers the code flow
+only while the facts show no account, so the "already signed in" refusal
+cannot happen from Settings.
+
+This works, but it is a workaround for a CLI that ignores its own `--json`:
+any agent or future client parsing `login --json` gets text.
+
+- **Gap:** the slice guessed `login --json` printed an envelope; it did not.
+- **Reach:** Settings' account section, and anything else that scripts sign-in.
+- **Verdict:** unsound. **Corrected decision:** `login --json` answers like
+  every other command: `{ state: "code_sent", email }` without `--code`, the
+  signed-in account with it, and refusals as the error envelope with codes
+  (`invalid_input`, `unauthorized`, `conflict`). Settings then reads the
+  envelope like every other action.
+- **Confidence:** high that it should change.
+
+### U2. On a Mac whose lock screen asks for a password, automatic updates wait while any sandbox runs, even unlocked
+
+**When:** 15, 16 · **Owner:** `UpdateCoordinator.run` (`restarting`); `hibernate` in `apps/cli/src/app-facts.ts`
+
+The facts' `hibernate` comes from `localbox host check`, which reads the lock
+screen *setting*: `available` when the lock asks for no password,
+`only_while_unlocked` when it does, `unknown` otherwise. The coordinator
+treats anything but `available`, with any sandbox running or paused, as "this
+Mac can't hibernate them". But the daemon hibernates fine while the screen is
+unlocked; it only fails while the screen is locked (`consoleScreenIsLocked()`
+in the daemon).
+
+Walk it through: a developer's MacBook asks for a password on wake, the
+person is at it with the screen unlocked, and one sandbox is running. An
+update arrives. The coordinator waits, and Settings says "Waiting: installing
+now would restart sandboxes. Unlock this Mac, or use Check for Updates in
+Settings to install anyway." The Mac is already unlocked, so the advice cannot
+help, and the update waits until no sandbox runs. If the person presses Check
+for Updates, the line says "sandboxes will restart", yet the daemon will in
+fact hibernate them, since the screen is unlocked.
+
+- **Gap:** A12 said "wait while hibernation is unavailable"; the facts carry
+  only the setting, not whether the screen is locked now.
+- **Reach:** every automatic update on most laptops, and the words shown for a
+  manual one.
+- **Verdict:** unsound. **Corrected decision:** block only when hibernation
+  would fail now: the facts carry `screen_locked_now` (`checkHost()` already
+  computes it) and the coordinator blocks when the setting is not `available`
+  *and* the screen is locked (or the state is unknown). The waiting and
+  "will restart" sentences follow the same test.
+- **Confidence:** medium–high that it should change.
+
+---
+
+## Provisional
+
+### V1. A restore rarely cold-boots; the cause is unknown and nothing was changed
+
+**When:** spike 02, 06 · **Owner:** `GuestLane.open` (`guestWait`, 120 s); the manual runbook's leg 5
+
+In spike 02, one restore in about 40 came back `cold_booted`: the daemon
+restored the VM's saved memory, then waited the full 120 s for the guest agent
+to answer and gave up with "guest channel is unavailable", so the sandbox
+booted fresh and lost its processes. A later soak of 520 restores (130
+SIGTERM-and-restart cycles of four 2 GiB sandboxes) never repeated it. What
+that rules out is a steady race at the spike's rate. What it doesn't: the
+spike's conditions (heavy swap, a blocked keychain dialog, restores right
+after a daemon was killed mid-save) and freshly booted guests. The guest's
+journal is not kept across boots in the minimal image, so a recurrence leaves
+only the restored boot's `console.log`.
+
+- **Gap:** no slice could reproduce it.
+- **Reach:** any wake after a quit, logout or update may, rarely, lose a
+  sandbox's processes.
+- **Verdict:** provisional, waiting on evidence. **Provisional call:** ship
+  with no fix; the runbook's leg 5 says what to copy the moment it happens, and
+  where to look (the guest service hitting systemd's `start-limit-hit`, or
+  dials reset at once). To reverse: once the cause is known, fix it there;
+  making the guest journal persistent in the image would make the next
+  occurrence diagnosable.
+- **Confidence:** low.
+
+### V2. The first launch over SSH is proven only by a stand-in
+
+**When:** spike 01, 10, 16 · **Owner:** `installation.md` step 5; `openQuietly` in `apps/cli/src/app-launch.ts`
+
+The procedure opens the app with
+`/bin/launchctl asuser "$(id -u)" /usr/bin/open -g "$app"`: `asuser` puts the
+`open` in the logged-in person's GUI session, and `-g` keeps it from taking
+focus. The CLI's quiet launch uses the same command. This Mac had no SSH key
+login to itself, so every run (spike 01, the release probe, the real-account
+proof) used a detached shell with a stripped environment as a stand-in for an
+SSH session. That worked every time, also with the screen locked, but a real
+`ssh` session differs in ways the stand-in may not reproduce (its audit
+session, its bootstrap namespace).
+
+- **Gap:** no second machine with key login.
+- **Reach:** brief 8's promise that an agent installs Localbox remotely.
+- **Verdict:** provisional, waiting on the runbook's leg 4 (a true SSH install
+  from another machine). If `open` fails from real SSH, the fallback needs the
+  user's sign-off, since the obvious one is a launchd job.
+- **Confidence:** medium.
+
+### V3. The installer verifies the release in the system `jsc` shell, checked only on macOS 27
+
+**When:** 10 · **Owner:** `installation.md` step 3; `tests/release.test.ts`
+
+Step 3 must check `release.json`'s Ed25519 signature before trusting
+anything, on a stock Mac with no Node. The system `openssl` is LibreSSL, which
+cannot load an Ed25519 key; Security.framework has no Ed25519 key type;
+CryptoKit needs a Swift toolchain; `ssh-keygen -Y verify` checks a different
+envelope. So the procedure carries a 70-line Ed25519 and SHA-512 verifier in
+JavaScript and runs it with
+`/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc`,
+a JavaScript shell that ships inside macOS but is not a documented tool. It
+checks exactly the bytes the release signed, and that `SHA256SUMS` lists
+exactly the signed digests. It is tested against good and tampered releases,
+but only on macOS 27; the minimum is macOS 14 (A14).
+
+- **Gap:** no stock macOS tool verifies Ed25519.
+- **Reach:** every install. If Apple moves or removes `jsc`, step 3 fails
+  closed (no install), it never passes a bad release.
+- **Verdict:** provisional, waiting on a run of step 3 on macOS 14 and 15.
+  To reverse: replace the script with a stock tool once one verifies Ed25519,
+  or sign releases with a second, ECDSA P-256 signature that Security.framework
+  can check.
+- **Confidence:** medium.
+
+### V4. Whether a turned-off login item leaves a record in System Settings is unknown
+
+**When:** 16 · **Owner:** `installation.md` "Removing Localbox"
+
+Removal runs `localbox app login-item off`, which unregisters
+`SMAppService.mainApp`; `SMAppService` then reports `disabled`. Whether System
+Settings › General › Login Items keeps a greyed-out "Localbox" entry after the
+app is deleted could not be checked: listing Background Task Management's
+records (`sfltool dumpbtm`) needs an administrator.
+
+- **Gap:** no administrator in an agent session.
+- **Reach:** what a removed install leaves behind.
+- **Verdict:** provisional, waiting on one look at System Settings (or
+  `sudo sfltool dumpbtm`) after a removal. If a record lingers, the procedure
+  says so; there is no unprivileged way to delete it.
+- **Confidence:** medium.
+
+### V5. The update probe's packaged tier has no sandbox
+
+**When:** 15 · **Owner:** `scripts/proof/probes/44-installed-update.ts`
+
+Probe 44 proves an update from version N to N+1 through the real patched
+Sparkle, from a local feed signed with a scratch key. Its tier `a` (the
+packaged app on the process fixture, no real VM) runs the whole cycle without a
+sandbox, because Sparkle's relaunch gives the app no `PATH` with Node, which
+the fixture's fake guest needs. So tier `a` proves the gate, the lock, the
+replacement and the relaunch, not that a sandbox survives. Tier `v` (a real
+VM) does, and the real-account proof did too (a counting process kept its
+count across 0.16.0 → 0.16.1).
+
+- **Gap:** the fixture's dependency on Node.
+- **Reach:** a regression in "sandboxes survive an update" is caught only at
+  tier `v`.
+- **Verdict:** provisional. To reverse: give the fixture an absolute Node path
+  in its sandbox record, so tier `a` can carry a sandbox through the relaunch.
+- **Confidence:** medium–high.
+
+### V6. The status item is a placeholder symbol
+
+**When:** 13 · **Owner:** `StatusIcon` in `LocalboxMenu`; `apps/macos/App/art/`
+
+The menu bar shows SF Symbols' `shippingbox` as a template image; with a
+warning it cuts a ring and draws an 8 pt dot in the corner (template images
+take no colour). `build-app.mjs` copies `art/StatusItem.pdf` and
+`art/StatusItemWarning.pdf` when they exist, and the app prefers them.
+
+- **Verdict:** provisional, waiting on art. Adding the two PDFs is the whole
+  change.
+- **Confidence:** high.
+
+---
+
+## Sound: trade-offs and shapes you now own
+
+### Lifetime and supervision
+
+#### S1. Quitting takes the Mac offline; there is no background service
+
+**When:** 08 (brief 1) · **Owner:** `Lifetime`, `ChildProcess`
+
+The app starts `localbox-hostd --supervised` and `localbox connector run` as
+children, each with a stdin pipe. Closing a child's stdin is its stop signal,
+and the kernel closes it when the app dies too, so a `kill -9` of the app
+still stops its children. On the way up the daemon starts first (the
+connector finds its socket sooner); on the way down the connector stops first,
+so the Mac leaves the account before its sandboxes stop being served. A
+release has no launchd job; a LaunchAgent whose binary changes on update is
+refused by macOS under a self-signed identity (Bento's dead end), which is why
+children are app-supervised.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S2. Restarts back off from 1 s to 30 s; a child that cannot launch is retried the same way
+
+**When:** 08, 11 · **Owner:** `Backoff`, `ChildProcess.start`
+
+A child that exits is restarted after 1 s, doubling to 30 s, and the delay
+resets once it has stayed up 30 s. A child that fails to launch at all, or a
+daemon refused by the machine lock (exit 75, an orphan still saving), is
+retried on the same schedule; `start()` never throws. The built-in image's
+one-shot uses 5 s doubling to 300 s, reset after 10 minutes, so a Mac offline
+for a day does not ask GitHub every 30 s.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S3. Children log straight to files, and the app tails the daemon's log
+
+**When:** 08 · **Owner:** `ChildLaunch.log`, `LogTail`
+
+Each child's stdout and stderr are appended to its own file
+(`hostd.log`, `connector.log`, `image.log`), never piped through the app. If
+the app is killed, a daemon writing its shutdown lines into a dead pipe would
+get EPIPE. The app reads the daemon's progress (`hibernated NAME`) by tailing
+`hostd.log` every 100 ms. Logs live in `~/Library/Logs/Localbox`
+(`<root>/logs` when the root is relocated); the app's own lines go to
+`app.log`, buffered until `app paths` names the folder.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S4. One daemon per machine root, by the daemon's own lock, taken before anything else
+
+**When:** 06, review · **Owner:** `MachineLock`; `takeMachineLock()` in `localbox-hostd/main.swift`
+
+The daemon takes an exclusive `flock` on `<root>/hostd.lock` before it reads
+the token or sweeps image temporaries, because the sweep would delete a
+running twin's partial writes. The lock file holds the holder's pid, and the
+refusal names it. `LOCALBOX_HOSTD_LOCK` is required (exit 78 without it), so
+`machinePaths().hostdLock` is the path's only definition. An unknown argument
+exits 64, so a typo like `--supervise` cannot start a daemon that outlives its
+app.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S5. The daemon stops once, in one path, and reports each sandbox as it goes
+
+**When:** 06 · **Owner:** `DaemonShutdown`
+
+SIGTERM, SIGINT and the end of stdin (for a supervised daemon) all run the
+same steps once: stop taking requests, hibernate every running sandbox, exit
+0. A second request is dropped. It prints `stopping (CAUSE): hibernating
+running sandboxes`, then `hibernated NAME` or `stopped NAME: reason` per
+sandbox. `SandboxHost.shutdown` gained an observer for those lines; what it
+saves and returns is unchanged. See N1 for what the dropped second request
+means for the app's SIGTERM.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S6. Logout, restart and shutdown are told apart from a plain quit, and act the same
+
+**When:** 08 · **Owner:** `AppDelegate.reason()`
+
+The quit Apple event's `kAEQuitReason` marks logout, restart and shutdown as
+`logout`; everything else is `quit`; an update's stop is `update`. All three
+stop the children the same way and hold the app's termination until the
+daemon exits. Only an update's stop can be undone (`Lifetime.restart()`), when
+the update does not install. How long macOS waits at a real logout is the
+runbook's leg 1.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S7. Supervision never waits for a screen
+
+**When:** 08 · **Owner:** `showStatusItemOnceAScreenExists`
+
+On a Mac with no display, the app starts its children at once and attaches
+the status item when a screen appears. A development build can pretend there
+is none (`LOCALBOX_APP_SCREENS=0`). Whether a headless Mac comes up through
+the login item is the runbook's leg 2.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S8. A second release copy hands off; development builds never do
+
+**When:** 08 · **Owner:** `LaunchDecision.decide`
+
+A release launched while another release copy runs exits at once. A
+development build has its own bundle id and machine root, so it runs beside a
+release and beside other development copies; their daemons settle it (one per
+root). Bento's translocation handling was dropped with the move prompt (N7).
+
+- **Verdict:** sound. **Confidence:** high.
+
+### Paths, identity and builds
+
+#### S9. Only the release bundle id owns the real machine root
+
+**When:** 08, 16 · **Owner:** `stateName` in `packages/config/src/machine-paths.ts`; `appBundle` in `app-bundle.ts`
+
+The CLI finds the bundle around its own realpath and reads its
+`CFBundleIdentifier`. `sh.localbox.mac` uses
+`~/Library/Application Support/Localbox` and
+`~/.config/localbox/credentials.json`. `sh.localbox.mac.dev` uses
+`Localbox Dev`, and any other id (a rehearsal or lab build) uses
+`Localbox (<id>)`; both keep their credential inside their root. So no build
+but the release can share a real install's daemon, sandboxes or machine
+identity, and a development build signed in to a test account never becomes
+the real Mac.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S10. The app learns every path from `localbox app paths --json`
+
+**When:** 08, 09, 11 · **Owner:** `appPaths` in `apps/cli/src/app.ts`; `AppPaths`, `DaemonLaunch`
+
+`app paths` prints the root, credential, token, sockets, lock, folders, logs,
+`builtin_image` and `bin_dir` in snake_case, and is the one creator of the
+machine directories and the IPC token (32 random bytes, written whole then
+renamed). `DaemonLaunch` builds the daemon's whole environment from it, drops
+an inherited `LOCALBOX_IPC_TOKEN`, and sets `LOCALBOX_GUEST_AGENT` only when
+the bundle has one.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S11. A release is a bundle with `SUFeedURL`; a development build is everything else
+
+**When:** 10 · **Owner:** `LaunchDecision.isRelease`; `build-app.mjs`
+
+The app treats a bundle carrying a Sparkle feed as a release: only then does
+it register its login item, hand off to a running copy, run Sparkle, and
+refuse the development-only switches (`LOCALBOX_APP_TEST_HOOKS`,
+`LOCALBOX_APP_LOGIN_ITEM=fake`, `LOCALBOX_APP_SCREENS`). The dev bundle,
+`dist/app-dev/Localbox Dev.app`, has no feed, debug Swift builds (probes need
+the process fixture), and is signed ad hoc.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S12. Open at login registers once, by itself, only for a release in an Applications folder
+
+**When:** 09 (brief 5) · **Owner:** `LoginItem.launched`
+
+The first launch of a release in `~/Applications` or `/Applications`
+registers `SMAppService.mainApp` and sets the defaults key
+`loginItemInitialized`. After that the person's choice stands: turning it off
+in Settings, with `localbox app login-item off`, or in System Settings is
+never undone. A failed registration is not remembered, so the next launch
+tries again. A development build or a copy elsewhere registers only when
+asked. `SMAppService` matches by bundle id, so probes use an in-memory fake
+login item.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### The CLI's side
+
+#### S13. The app does nothing the CLI can't, through one socket
+
+**When:** 09, 12 (brief 12, A5) · **Owner:** `AppSocket`, `AppControl`; `apps/cli/src/app-socket.ts`
+
+The app's native powers (the login item, update control, its children's
+state) are reachable from the CLI through `<root>/app.sock`: one JSON line in
+(`{"id","operation","params"}`), one out in the CLI's envelope words
+(`{"id","ok":true,"result"}` or an `error`). The id is required and checked,
+so a stale answer is refused. The socket answers while the daemon is down,
+which is how `app status` says the daemon is down. It is served before the
+children start and removed only when the app answers its quit, so `app
+status` shows `stopping`. Every popover and Settings read is
+`localbox app status --json`.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S14. A command run while the app is quit opens it quietly
+
+**When:** 07 (brief 6) · **Owner:** `ensureApp` in `apps/cli/src/app-launch.ts`
+
+A `localbox` command inside the app that finds no daemon socket runs the
+quiet launch (V2's command), retries once after 1 s if `open` fails (spike 02
+saw one failure in about 70 right after an exit), then polls the socket every
+250 ms for up to 20 s. `localbox app …` waits on the app's socket instead. A
+CLI from a checkout, or any run with `LOCALBOX_MACHINE_ROOT` (probes), never
+launches an app. A failure is the retryable `guest_unreachable` every local
+command already gives when Localbox is not running.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S15. The home command is a copy of the launcher, replacing only Localbox's own
+
+**When:** 07 · **Owner:** `reconcileCommand` in `apps/cli/src/agent-setup.ts`; `apps/macos/App/launcher/main.c`
+
+Agent setup writes the launcher's bytes to `~/.local/bin/localbox` (a temp
+file renamed into place, 0755), never a link into the bundle, and only for an
+app in one of the two Applications folders. The launcher carries the mark
+`sh.localbox.launcher`: a different file with the mark (an older launcher) is
+replaced, one without it (someone else's `localbox`) is left alone and warned
+about.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S16. The PATH block is added after the command and removed when agent setup is turned off
+
+**When:** 07 · **Owner:** `addPathBlock`, `removePathBlock` in `apps/cli/src/shell-profile.ts`
+
+When the login shell's startup files do not already put `~/.local/bin` on
+PATH, agent setup adds a marked block to the right file. A profile that is a
+link (a dotfiles checkout) is edited where it points and stays a link.
+`agents setup off` removes the block but leaves the command, which the removal
+procedure deletes by hand.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S17. The launcher holds the launch lock shared for the CLI's whole life
+
+**When:** 07, 10 · **Owner:** `main.c`; `LocalboxLaunchLockRelativePath` in Info.plist
+
+The launcher takes a shared `flock` on
+`~/Library/Caches/sh.localbox.mac/launch.lock` (under the account's real
+home, from `getpwuid`, not `$HOME`) and passes the descriptor to the CLI, so
+the lock lasts until the CLI exits. Sparkle's patched helper takes it
+exclusively while it replaces the bundle; a launcher that finds it held exits
+75 ("Localbox is updating; try again in a moment"). Other refusals exit 69 (no
+app found) or 74 (an unusable lock or path), each with the CLI's JSON envelope
+on stdout. The lock's path has one source, the `#define` in `main.c`, copied
+into Info.plist by the assembler.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S18. Warnings are decided once, in the facts, most severe first
+
+**When:** 12 · **Owner:** `warnings` in `apps/cli/src/app-facts.ts`
+
+The order: `daemon_down` (not while quitting), `signed_out` or
+`connector_down`, `builtin_image_failed` or `builtin_image_missing`,
+`hibernate_blocked`, `not_in_applications` (releases only),
+`login_item_needs_approval`, `command_not_installed`. Each carries a sentence
+and a fix. The popover and Settings render them and write none of their own.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S19. `app status --since N` waits for any change, by a fingerprint of the facts
+
+**When:** 12 · **Owner:** `appFacts`; `FactsSource`
+
+`watch_version` is 48 bits of the SHA-256 of all the other facts, not the
+daemon's version, so changes the daemon never announces (the app's children,
+the login item, a sign-in, image progress) also end a wait. The CLI
+long-polls the daemon's `host.watch` in 2 s slices and recomposes between
+them, at most 25 s per call. The app long-polls only while the popover or
+Settings is open; otherwise it reads every 60 s, so the warning dot stays
+true. It stops reading as soon as a quit begins, since a read after the app
+socket closes could start another copy of the app.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S20. The daemon's `host.watch` gained the rows the facts need
+
+**When:** 12 · **Owner:** `SandboxHost` (`host.watch`, `workInProgress`)
+
+Each sandbox row gained `name`, `os` and the raw `lifecycle` (the catalog's
+`sleeping` hides paused versus saved to disk), and the answer gained
+`operations`: every running host operation plus each image's latest failed
+one, with the waiting sandbox's name on a create waiting for its copy. One
+answer keeps `app status` to two daemon calls. `host.watch` is internal, not
+in the catalog.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S21. Free CPUs are cores minus running sandboxes' CPUs
+
+**When:** 12 · **Owner:** `capacityFact`
+
+The daemon reserves memory, not CPUs, so the popover's "Free: 6 of 10 CPUs"
+is the host's cores minus the CPUs given to running and starting sandboxes.
+Memory free is the daemon's admission room; disk free is the volume's. Memory
+is shown in powers of 1024 (like About This Mac), disk in powers of 1000 (like
+Finder).
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S22. `localbox login` records the email in the credential
+
+**When:** 12 · **Owner:** `login` in `apps/cli/src/index.ts`; `Credentials.email`
+
+The account holds only a generated name, so to show "you@example.com" in the
+popover and Settings, `login` now writes the email it was given into the
+credential. A credential without one shows "Signed in".
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S23. The connector waits for credentials, and stops on stdin EOF
+
+**When:** 08, 10 (A3) · **Owner:** `apps/connector/src/index.ts`
+
+Signed out, the connector waits for a credential instead of exiting; after a
+revoke it waits for a credential with a different secret, so a revoked one
+still on disk is not retried every 2 s. So `login` needs no "restart the
+connector" call. It stops when its stdin closes; proof connectors get a pipe
+the probe holds.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### The built-in image
+
+#### S24. The CLI fetches the image at every launch, and only it writes `images/linux`
+
+**When:** 11 (A6, A7) · **Owner:** `ensureBuiltinImage` in `apps/cli/src/builtin-image.ts`
+
+The app runs `localbox app image ensure --json` as a one-shot child at every
+launch, which covers the relaunch after an update. It fetches this version's
+`release.json`, trusts nothing until its signature verifies against the
+bundle's `Resources/release-public.pem` and it names this exact version, then
+downloads the image's parts with `Range` resume into
+`<root>/downloads/linux-<version>/` (outside `images/`, which the daemon's
+start-up sweep cleans), checks each SHA-256, expands the image there and
+swaps it in by one rename. A dropped connection is retried three times, then
+the run fails with the partial kept for the next run; a wrong answer (a bad
+checksum, a `Content-Range` that starts elsewhere, a 404) deletes that part. A
+stalled connection waits on Node's default 300 s body timeout.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S25. "Already current" comes from a record, not from hashing the disk
+
+**When:** 11 · **Owner:** `install` in `builtin-image.ts`
+
+`builtin-image.json`'s `ready` line records the version, the disk's signed
+digest and `image.json`'s digest. A relaunch of the same version with an
+unchanged `image.json` asks the network nothing (an offline Mac starts fine);
+a new version whose manifest names the same disk fetches only `release.json`.
+Hashing a multi-GiB disk at every launch was the lost alternative; `image.json`
+alone cannot tell two disks apart. A probe-seeded image has no record, so
+`ensure` replaces it.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S26. One `ensure` at a time, by a lock file made with `link(2)`
+
+**When:** 11 · **Owner:** `StagingLock`
+
+`<staging>/lock` holds `pid token`, made from a draft with `link(2)` so it
+appears whole. It is stale when its pid is dead or is not an `image ensure`
+(pid reuse), and is then taken over. A second `ensure` prints the running
+one's progress and exits 75. Progress lines come at most every 250 ms within a
+phase, with a trailing write so a stall shows the last bytes.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S27. Under the app, a create waiting for the image is refused retryable
+
+**When:** 11 · **Owner:** `BuiltinImageWait` in `HostDaemonCore`
+
+`DaemonLaunch` sets `LOCALBOX_BUILTIN_IMAGE_PROGRESS`. With it, a new
+`sandbox create` from `linux` while `images/linux` is missing is
+`sandbox_not_ready`, `retryable: true`, with the download's phase and
+progress, also when the download failed (the app keeps retrying). A daemon
+started directly (probes) still answers `image_not_found`.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### Updates
+
+#### S28. Sparkle's feed and archive are signed with the existing release key
+
+**When:** 15 (A9) · **Owner:** `scripts/appcast.ts`; `release.sh`
+
+Sparkle's EdDSA is plain Ed25519, so `release.sh` signs `appcast.xml` and the
+zip with `RELEASE_PRIVATE_KEY`, the same key that signs `release.json`, and
+`SUPublicEDKey` is its public half. The output is byte-identical to Sparkle's
+own `sign_update` for the same seed. There is one trust root and one secret:
+losing that key strands every install's updates and installs alike.
+`scripts/appcast.ts` writes a one-item feed pointing at the release's versioned
+GitHub URL; the zip is the installer's own `Localbox-macos-arm64.zip`, one name
+for every version.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S29. Everything slow happens before Sparkle's permit
+
+**When:** 15 · **Owner:** `UpdateCoordinator`, `LaunchLock.waitUntilFree`
+
+Sparkle's helper cancels an install unless the app exits within 20 s of the
+permit. So the coordinator stops the connector and then the daemon (however
+long hibernation takes) while Sparkle waits, then waits until no `localbox`
+command holds the launch lock, and only then grants the permit; the app exits
+on `updaterWillRelaunchApplication`, within about a second. A failure before
+the permit restarts the children. A command that starts between the
+coordinator's last lock check and the helper's makes the helper refuse; the
+children restart and Sparkle's next check tries again. The built-in image
+being swapped in blocks any install. `localbox update check|install` close
+their own share of the launch lock before asking, since the install they wait
+for waits for every holder.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S30. Check for Updates installs an update that is waiting
+
+**When:** 15, 16 (brief 4) · **Owner:** `UpdateCoordinator.check`
+
+Settings copies Bento's General section, which has no Install button. So
+Check for Updates (and `localbox update check`) installs an update that is
+already downloaded and waiting, as a person's install. The waiting sentence
+names that button ("…or use Check for Updates in Settings to install
+anyway"). `update check` reports `checking` at once, before Sparkle answers,
+so the CLI never reads the last cycle's "You're up to date." while an update
+installs.
+
+- **Verdict:** sound. **Confidence:** medium.
+
+#### S31. Sparkle is rebuilt from a pinned commit with the patch re-applied under Localbox names
+
+**When:** 15 (A8) · **Owner:** `apps/macos/App/sparkle/` (`localbox.patch`, `upstream.json`, `build.mjs`)
+
+`npm run sparkle:build` fetches Sparkle 2.10.0 at a pinned commit, applies
+`localbox.patch` (the launch lock held through replacement, the relaunch
+argument, the relaunch environment of N4), and writes a build receipt.
+`build-app.mjs` refuses a framework whose receipt does not match the pin and
+the patch's hash. Sparkle's Info.plist keys require a signed feed and verify
+the archive before extracting; Sparkle's own automatic installs are off, since
+the coordinator decides.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### Release and install
+
+#### S32. Signing is inside out, self-signed, with no hardened runtime and no timestamp
+
+**When:** 10 (brief 7) · **Owner:** `signApp` in `apps/macos/App/scripts/sign.mjs`
+
+Every Mach-O file is signed before the bundle that holds it, with no `--deep`
+and `--timestamp=none`; only `MacOS/localbox-hostd` gets the virtualization
+entitlement; the launcher and Node carry the identifier `sh.localbox.cli`.
+Nothing under `Resources/guest-agent` is signed, so the bundle seals those
+bytes and their digests still match `agent-version.json`. No binary gets the
+hardened runtime, as in Bento: Node keeps its JIT with no entitlement, and the
+daemon boots VMs signed this way. The trade-off is that without the hardened
+runtime a local process could inject a library into the entitled daemon;
+with a self-signed identity and no notarization, that protection was thin
+anyway. The PKCS#12 identity is imported into a disposable keychain for one
+signing and deleted.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S33. A release refuses a Node that a stock Mac can't run
+
+**When:** 10 · **Owner:** `build-app.mjs`
+
+The bundled Node must be arm64 and link only libraries under `/System/Library`
+and `/usr/lib`; Homebrew's Node links its own and is refused. `--node` (or
+`LOCALBOX_NODE_BIN` through `release.sh`) picks another.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S34. The procedure's blocks stand alone and stop on quarantine
+
+**When:** 10 · **Owner:** `installation.md`; `scripts/proof/lib/installation.ts`
+
+Each numbered `sh` block keeps its state in a download folder under `$TMPDIR`,
+since an agent's shell rarely keeps variables between calls; the tests and
+probe 42 cut the blocks out of the document and run them as written. Step 4
+stops if the unpacked app carries `com.apple.quarantine` (a Gatekeeper dialog
+nobody can click would hang every launch), waits for a running copy to quit
+with `osascript` (never launching one to quit it), and keeps the old app in a
+temporary folder.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### The popover and Settings
+
+#### S35. The popover never activates an app; Settings does
+
+**When:** 13, 14 · **Owner:** `MenuBar`, `SettingsWindow`
+
+The popover is a `.transient` `NSPopover` that never calls `NSApp.activate`;
+a global mouse-down monitor and Esc close it, since a menu bar app is usually
+not active and `.transient` then misses outside clicks. Opening Settings
+activates the app, because a person chose it. Under test hooks Settings orders
+in behind instead, so probes never take focus.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S36. Per-sandbox actions: Copy Name, Sleep or Wake, Open Log
+
+**When:** 13 (brief 3) · **Owner:** `PopoverPresentation`
+
+Running sandboxes offer Sleep; asleep, paused and stopped ones offer Wake
+(`sandbox start NAME`); starting, copying and failed rows offer only Copy Name
+and Open Log. Open Log writes `sandbox logs NAME --json`'s lines to
+`$TMPDIR/Localbox Logs/NAME.log.txt` and opens it in the default text editor
+(`.log` alone would open Console). A failed action's message stays on its row
+until the facts next change. The list caps at 400 pt and fades its last row
+when it overflows.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+#### S37. The popover's and Settings' words are made outside the views
+
+**When:** 13, 14 · **Owner:** `PopoverPresentation`, `SettingsModel` in `LocalboxAppCore`
+
+`PopoverPresentation` turns facts into rows and `SettingsModel` holds Settings'
+facts and form; both are pure and tested, and the SwiftUI views in
+`LocalboxMenu` only lay them out and hand clicks back. A switch shows its
+requested value while its command runs, then whatever `app status` says; a
+refusal puts it back and keeps the message. Swift's `AppFacts` uses strict
+enums for every closed state, so a new CLI state fails the shared-fixture test
+instead of decoding silently.
+
+- **Verdict:** sound. **Confidence:** high.
+
+#### S38. Settings' Account section is Bento's Workspace rows with Localbox's sign-in
+
+**When:** 14 (brief 4) · **Owner:** `SettingsView`, `SettingsModel`
+
+Signed out: an Email field and Send Code on one row. Code sent: "Check your
+email / Enter the code we emailed to E." with Use a Different Email, then a
+Code field and Sign In. Signed in: the account's email with Sign Out…, which
+confirms first, and a "This Mac" row. A revoked Mac (account still named)
+shows as signed in, so Sign Out is what it offers; the popover carries the
+warning. Settings' only setting of its own is "Show this window when
+Localbox starts" (off), never applied on the relaunch after an update.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+### Proof harness
+
+#### S39. Packaged-app probes run in scratch homes and never take focus
+
+**When:** 08, 13, 15 · **Owner:** `scripts/proof/lib/packaged-app.ts`; probe 44's lab
+
+Tier `a` launches the assembled app with `open -g` in a scratch `HOME` and
+`LOCALBOX_MACHINE_ROOT` under `/tmp`, with the fake login item and test hooks,
+and checks that the app's pid is never frontmost (not that the front app never
+changes, since a person may be using the Mac). Probe 44 gives each run its own
+bundle id `sh.localbox.mac.lab<hex>` and a launcher compiled with that lock
+path, because Sparkle's helper resolves the lock under the real home, and
+deletes everything under `~/Library` named for that id afterwards.
+
+- **Verdict:** sound. **Confidence:** high.
+
+---
+
+## Compressed: trivial discretion
+
+Internal names and cosmetic calls, banked without entries: the dev bundle's
+name `Localbox Dev`; log file names; the app socket's operation names
+(`app.info`, `login_item.*`, `update.*`); the test-hook names
+(`popover.*`, `settings.*`); popover chrome measured off Bento's rendered
+reference (352 pt wide, 48 pt rows); status lines' wording; the
+`--localbox-update-relaunch` argument; the contract's unproduced `linked`
+action kind, kept because the firewall freezes `packages/contract`; the naming
+test's allow-list shape (each entry names its file, term and line, and fails
+when it no longer matches).
