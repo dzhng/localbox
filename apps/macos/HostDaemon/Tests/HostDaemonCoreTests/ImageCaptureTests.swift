@@ -67,6 +67,27 @@ final class ImageCaptureTests: XCTestCase {
         XCTAssertNil(journaled, "a refused create journals nothing")
     }
 
+    /// The image's disk is its sandbox's size (here 8 GiB, ahead of the 64 KiB disk file until a boot grows it), or a
+    /// larger one asked for; never a smaller one.
+    func testTheImagesDiskIsItsSandboxsOrALargerOneAskedFor() async throws {
+        let daemon = try await Daemon(root: try scratch())
+        let plain = try await daemon.capture("m-1", image: "image_1")
+        XCTAssertEqual(try daemon.store.manifest("image_1").diskBytes, 8 * gib)
+        XCTAssertEqual((plain["result"] as? [String: Any])?["disk_bytes"] as? UInt64, 8 * gib)
+        XCTAssertEqual(try Data(contentsOf: daemon.store.root.appendingPathComponent("image_1/disk.img")), Daemon.diskBytes, "the disk is cloned as it is")
+
+        let larger = try await daemon.request("image.create", input: ["from": "sandbox_1", "image": "image_2", "disk_bytes": 20 * gib], mutationID: "m-2")
+        XCTAssertEqual((larger["result"] as? [String: Any])?["state"] as? String, "succeeded", "\(larger)")
+        XCTAssertEqual(try daemon.store.manifest("image_2").diskBytes, 20 * gib)
+
+        let smaller = try await daemon.request("image.create", input: ["from": "sandbox_1", "image": "image_3", "disk_bytes": 4 * gib], mutationID: "m-3")
+        let error = try XCTUnwrap(smaller["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "invalid_input")
+        XCTAssertEqual(error["message"] as? String, "an image's disk can't be smaller than its sandbox's: one's is 8 GiB, and 4 GiB was asked for")
+        let journaled = await daemon.operations.state("m-3")
+        XCTAssertNil(journaled)
+    }
+
     func testAResumeAfterTheCommitOnlyRecordsTheResult() async throws {
         let daemon = try await Daemon(root: try scratch())
         _ = try await daemon.capture("m-1", image: "image_1")

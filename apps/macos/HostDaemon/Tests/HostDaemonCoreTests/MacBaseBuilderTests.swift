@@ -5,7 +5,7 @@ import XCTest
 /// the phase order, a resume from every checkpoint, the refusals before anything is journaled, and the password, which
 /// must never reach a file.
 final class MacBaseBuilderTests: XCTestCase {
-    static let fullBuild = ["install", "provision", "upload /tmp/localbox-payload.tgz", "root bootstrap", "disable SIP", "boot", "root tcc", "root finish", "shut down"]
+    static let fullBuild = ["install", "provision", "upload /tmp/localbox-payload.tgz", "root bootstrap", "disable SIP", "free recovery space", "boot", "claim disk", "root tcc", "root finish", "shut down"]
 
     func testABuildRunsEveryPhaseInOrderAndCommitsAMacOSImage() async throws {
         let rig = try await Rig(test: self)
@@ -14,9 +14,10 @@ final class MacBaseBuilderTests: XCTestCase {
         let finished = try await rig.finished("m-1")
         XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
         XCTAssertEqual(rig.driver.calls, Self.fullBuild)
-        XCTAssertEqual(rig.driver.phasesSeen, ["install", "provision", "bootstrap", "bootstrap", "sip", "tcc", "tcc", "finish", "finish"], "each step runs after its phase is journaled")
+        XCTAssertEqual(rig.driver.phasesSeen, ["install", "provision", "bootstrap", "bootstrap", "sip", "tcc", "tcc", "tcc", "tcc", "finish", "finish"], "each step runs after its phase is journaled")
         let manifest = try rig.store.manifest("image_mac")
         XCTAssertEqual(manifest.os, .macos)
+        XCTAssertEqual(manifest.diskBytes, MacBaseBuilder.diskBytes, "the image's disk size is the size it was installed at")
         XCTAssertEqual(manifest.hardwareModel, Data("model".utf8).base64EncodedString())
         XCTAssertEqual(manifest.minMacOS, "27.0", "the IPSW's major release, so the 27.0.1 Mac that built it runs it")
         XCTAssertEqual(manifest.agentVersion, "0.1.1+abc")
@@ -28,6 +29,23 @@ final class MacBaseBuilderTests: XCTestCase {
         guard case .object(let result)? = finished.result else { return XCTFail("no result") }
         XCTAssertEqual(result["min_macos"], .string("27.0")); XCTAssertEqual(result["ipsw_version"], .string("27.2.1")); XCTAssertEqual(result["chrome_version"], .string("142.0.7444.60"))
         XCTAssertEqual(result["size_bytes"], .number(Double(manifest.sizeBytes)))
+        XCTAssertEqual(result["disk_bytes"], .number(Double(manifest.diskBytes)))
+        XCTAssertEqual(rig.driver.installedDiskBytes, MacBaseBuilder.diskBytes, "with no size asked, the default disk is installed")
+    }
+
+    func testABuildInstallsTheDiskSizeAskedForAndRefusesOneBelowTheDefault() async throws {
+        let rig = try await Rig(test: self)
+        _ = try await rig.build("m-1", image: "image_mac", diskBytes: 80 * gib)
+        let finished = try await rig.finished("m-1")
+        XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
+        XCTAssertEqual(rig.driver.installedDiskBytes, 80 * gib, "the disk asked for is the one installed")
+
+        let small = try await rig.request(["macos": true, "image": "image_small", "disk_bytes": 40 * gib], key: "m-2")
+        let error = try XCTUnwrap(small["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "invalid_input")
+        XCTAssertEqual(error["message"] as? String, "a macOS image's disk must be at least 46.6 GiB, and 40 GiB was asked for")
+        let journaled = await rig.operations.state("m-2")
+        XCTAssertNil(journaled, "refused before anything is journaled")
     }
 
     func testTheBuildStepsInstallTheAgentAndChromeThenGrantAndCloseRemoteLogin() async throws {
@@ -65,8 +83,9 @@ final class MacBaseBuilderTests: XCTestCase {
             .install: Self.fullBuild,
             // The password died with the last run, so these start over on a fresh clone of the installed disk.
             .provision: Array(Self.fullBuild.dropFirst()), .bootstrap: Array(Self.fullBuild.dropFirst()), .sip: Array(Self.fullBuild.dropFirst()),
-            .tcc: ["boot", "root tcc", "root finish", "shut down"],
-            .finish: ["boot", "root finish", "shut down"],
+            // Freeing the recovery space again finds nothing to free; a build that reached `finish` had claimed it.
+            .tcc: ["free recovery space", "boot", "claim disk", "root tcc", "root finish", "shut down"],
+            .finish: ["free recovery space", "boot", "root finish", "shut down"],
         ]
         for phase in MacBaseBuilder.Phase.allCases {
             let rig = try await Rig(test: self, leftAt: phase)
@@ -190,7 +209,7 @@ final class MacBaseBuilderTests: XCTestCase {
         XCTAssertEqual(finished.state, .succeeded, "\(String(describing: finished.error))")
         guard case .object(let result)? = finished.result else { return XCTFail("no result") }
         XCTAssertEqual(result["made_room"], .array([.string("slept a (8 GiB) to make room")]))
-        XCTAssertEqual(rig.driver.calls, ["boot", "root tcc", "root finish", "shut down"])
+        XCTAssertEqual(rig.driver.calls, ["free recovery space", "boot", "claim disk", "root tcc", "root finish", "shut down"])
     }
 
     func testTheStartSweepKeepsARunningBuildsDirectoryAndTheIPSWCache() throws {
@@ -229,6 +248,7 @@ final class MacBaseBuilderTests: XCTestCase {
             try FileManager.default.createDirectory(at: root.appendingPathComponent("operations"), withIntermediateDirectories: true)
             if let leftAt { try Self.leaveBuild(at: leftAt, store: try ImageStore(imagesDirectory: root.appendingPathComponent("images")), root: root) }
             driver = FakeMacDriver(journals: root.appendingPathComponent("operations"))
+            if leftAt == .finish { driver.unclaimed = false }
             let agent = root.appendingPathComponent("guest-agent", isDirectory: true)
             try FileManager.default.createDirectory(at: agent.appendingPathComponent("darwin"), withIntermediateDirectories: true)
             try Data("agent".utf8).write(to: agent.appendingPathComponent("localbox-agent-darwin-arm64"))
@@ -247,8 +267,8 @@ final class MacBaseBuilderTests: XCTestCase {
             try await call(rig.daemon, envelope("image.create", input, mutation: key))
         }
 
-        func build(_ key: String, image: String) async throws -> [String: Any] {
-            let response = try await request(["macos": true, "image": image], key: key)
+        func build(_ key: String, image: String, diskBytes: UInt64? = nil) async throws -> [String: Any] {
+            let response = try await request(["macos": true, "image": image].merging(diskBytes.map { ["disk_bytes": $0] } ?? [:]) { $1 }, key: key)
             return try XCTUnwrap(response["result"] as? [String: Any], "\(response)")
         }
 

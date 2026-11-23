@@ -39,18 +39,19 @@ public actor ImageHost {
             }
             return success(object, result: view(await settled(latest, object, timeoutMs: (input["timeout_ms"] as? NSNumber)?.intValue)))
         case "image.create":
+            let diskBytes = (input["disk_bytes"] as? NSNumber)?.uint64Value
             if input["macos"] as? Bool == true {
                 guard let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                     return failure(object, code: "invalid_input", message: "image.create { macos } takes image (the reserved image's id) and a mutation id")
                 }
-                do { return Reply.success(object, view(await settled(try await macBuilder.begin(key: key, imageID: image), object, timeoutMs: nil))) }
+                do { return Reply.success(object, view(await settled(try await macBuilder.begin(key: key, imageID: image, diskBytes: diskBytes), object, timeoutMs: nil))) }
                 catch let refused as HostOperationFailure { return Reply.failure(object, refused) }
                 catch { return Reply.failure(object, code: "invalid_input", message: explain(error)) }
             }
             guard let from = input["from"] as? String, !from.isEmpty, let image = input["image"] as? String, !image.isEmpty, let key = object["mutation_id"] as? String, !key.isEmpty else {
                 return failure(object, code: "invalid_input", message: "image.create takes from (the source sandbox's id), image (the reserved image's id) and a mutation id")
             }
-            do { return Reply.success(object, view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from), object, timeoutMs: nil))) }
+            do { return Reply.success(object, view(await settled(try await capture.begin(key: key, imageID: image, sandboxID: from, diskBytes: diskBytes), object, timeoutMs: nil))) }
             catch let refused as HostOperationFailure { return Reply.failure(object, refused) }
             catch { return Reply.failure(object, code: "invalid_input", message: explain(error)) }
         case "image.copy":

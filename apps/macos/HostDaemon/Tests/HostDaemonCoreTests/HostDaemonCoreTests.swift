@@ -181,7 +181,7 @@ final class HostDaemonCoreTests: XCTestCase {
         let resized = try await result(host, "sandbox.resize", #"{"cpus":3}"#, sandboxID: "sandbox_1")
         let action = (resized["actions"] as? [[String: Any]])?.first
         XCTAssertEqual(action?["kind"] as? String, "restarted")
-        XCTAssertEqual(action?["detail"] as? String, "restarted one at 3 CPUs and 2 GiB; 3 processes ended: init, node, python3")
+        XCTAssertEqual(action?["detail"] as? String, "restarted one at 3 CPUs, 2 GiB of memory and 8 GiB of disk; 3 processes ended: init, node, python3")
         XCTAssertEqual((resized["produced"] as? [String: Any])?["cpus"] as? Int, 3); XCTAssertEqual((resized["produced"] as? [String: Any])?["state"] as? String, "running")
         XCTAssertEqual(factory.boots, 2, "the new size needs a new boot")
         _ = try await result(host, "sandbox.stop", "{}", sandboxID: "sandbox_1")
@@ -317,7 +317,7 @@ final class HostDaemonCoreTests: XCTestCase {
         let host = try sandboxHost(sandboxesDirectory: try scratch(), factory: factory, hostCPUs: 12, hostMemoryBytes: 24 * gib)
         _ = try await result(host, "sandbox.create", #"{"name":"mac","image":"linux","cpus":2,"memory_bytes":2147483648,"sleep_after_ms":1800000}"#, sandboxID: "sandbox_1")
         let resized = try await result(host, "sandbox.resize", #"{"cpus":3}"#, sandboxID: "sandbox_1")
-        XCTAssertEqual((resized["actions"] as? [[String: Any]])?.first?["detail"] as? String, "restarted mac at 3 CPUs and 2 GiB; 2 processes ended: Xcode, launchd")
+        XCTAssertEqual((resized["actions"] as? [[String: Any]])?.first?["detail"] as? String, "restarted mac at 3 CPUs, 2 GiB of memory and 8 GiB of disk; 2 processes ended: Xcode, launchd")
     }
 
     func testAdmitSleepsLeastRecentlyUsed() async throws {

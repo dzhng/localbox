@@ -110,20 +110,36 @@ final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
     let log: EventLog
     let agent: FakeAgent
     private let images: Set<String>
+    /// Every image's disk size; each sandbox's disk starts at it.
+    let imageDiskBytes: UInt64
+    /// Each sandbox's disk size as its last grow left it.
+    private let disks = Locked<[String: UInt64]>([:])
     /// `saveError`: every save fails with it, e.g. `.screenLocked` or `.unsupported("permission denied")`; `stopError`
     /// likewise for every stop, `freezeError` for every freeze on the control lane. `bootDelay` (nanoseconds) is how
     /// long each start or restore takes. `images` are the images this Mac holds; provisioning from any other fails as
-    /// `ImageStore` does. Every backend writes to `log` and runs `agent`.
-    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage], log: EventLog = EventLog(), agent: FakeAgent = FakeAgent(), guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
-        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.images = images; self.log = log; self.agent = agent; self.guest = guest
+    /// `ImageStore` does. Every backend writes to `log` and runs `agent`; each disk grow is logged as `grow disk BYTES`.
+    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage], imageDiskBytes: UInt64 = 8 * gib,
+                log: EventLog = EventLog(), agent: FakeAgent = FakeAgent(), guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
+        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.images = images; self.imageDiskBytes = imageDiskBytes; self.log = log; self.agent = agent; self.guest = guest
     }
     public var boots: Int { made.count }
     public var made: [FakeSandboxBackend] { backends.value }
     public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
         guard images.contains(record.imageID) else { throw ImageNotHere(imageID: record.imageID) }
+        record.diskBytes = try DiskGrowth.sandboxSize(requested: record.diskBytes == 0 ? nil : record.diskBytes, image: record.imageID, imageBytes: imageDiskBytes)
+        let id = record.sandboxID, disk = imageDiskBytes
+        disks.withLock { $0[id] = disk }
         // Fixture convention: an image whose id starts with "macos" is a macOS image, as its manifest would say.
         if record.imageID.hasPrefix("macos") { record.os = .macos }
         record.mac = randomLocalMAC(); return [:]
+    }
+    public func growDisk(_ record: SandboxRecord, in directory: SandboxDirectory) throws -> Bool {
+        let grew = disks.withLock { disks -> Bool in
+            guard record.diskBytes > disks[record.sandboxID] ?? record.diskBytes else { return false }
+            disks[record.sandboxID] = record.diskBytes; return true
+        }
+        if grew { log.append("grow disk \(record.diskBytes)") }
+        return grew
     }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         let backend = FakeSandboxBackend(saveError: saveError, stopError: stopError, freezeError: freezeError, bootDelay: bootDelay, log: log, agent: agent, guest: guest)
@@ -312,7 +328,7 @@ final class FakeHTTP: RangedHTTP, @unchecked Sendable {
 /// Guests made of files. Records each step, the phase journaled (on disk, under `journals`) when it ran, every password
 /// it was handed, every journal write it could see, and the disk a provisioning boot started from.
 final class FakeMacDriver: MacBuildDriver, @unchecked Sendable {
-    struct Seen { var calls: [String] = [], phases: [String] = [], passwords: [String] = [], journals: [String] = [], scripts: [String] = []; var payload: URL?, provisionedDisk: Data?, failing: String? }
+    struct Seen { var calls: [String] = [], phases: [String] = [], passwords: [String] = [], journals: [String] = [], scripts: [String] = []; var payload: URL?, provisionedDisk: Data?, failing: String?; var unclaimed = true; var installedDiskBytes: UInt64? }
     let journals: URL
     /// Holds `install` until opened, so a test can look at a build whose VM runs.
     let installGate: Gate?
@@ -351,8 +367,12 @@ final class FakeMacDriver: MacBuildDriver, @unchecked Sendable {
         if name == failing { throw HostDaemonError.unsupported("a build step in the guest exited 56") }
     }
 
+    /// The disk size the last install was asked for.
+    var installedDiskBytes: UInt64? { seen.value.installedDiskBytes }
+
     func install(ipsw: URL, into build: MacBuildDirectory, diskBytes: UInt64, progress: @escaping @Sendable (Double) -> Void) async throws {
         XCTAssertEqual(try Data(contentsOf: ipsw), FakeHTTP.body, "installs the cached IPSW")
+        seen.withLock { $0.installedDiskBytes = diskBytes }
         try Self.writeInstalled(build)
         try step("install", build)
         await installGate?.wait()
@@ -362,6 +382,14 @@ final class FakeMacDriver: MacBuildDriver, @unchecked Sendable {
         seen.withLock { $0.passwords.append(user.password); $0.provisionedDisk = try? Data(contentsOf: build.disk) }
         try step("provision", build)
         return FakeMacGuest(driver: self, build: build)
+    }
+
+    /// The work copy has space its container does not reach yet: true until a guest claims it.
+    var unclaimed: Bool { get { seen.value.unclaimed } set { seen.withLock { $0.unclaimed = newValue } } }
+
+    func freeRecoverySpace(_ build: MacBuildDirectory) throws -> Bool {
+        try step("free recovery space", build)
+        return unclaimed
     }
 
     func boot(_ build: MacBuildDirectory) async throws -> any MacAgentGuest {
@@ -385,6 +413,7 @@ struct FakeMacGuest: MacProvisionedGuest, MacAgentGuest {
         try FileManager.default.copyItem(at: local, to: copy)
         try driver.step("upload \(remote)", build, payload: copy)
     }
+    func claimDisk() async throws { try driver.step("claim disk", build); driver.unclaimed = false }
     func shutDown() async throws { try driver.step("shut down", build) }
     func disableSIP(as user: MacProvisioningUser) async throws { try driver.step("disable SIP", build) }
     func abandon() async {}

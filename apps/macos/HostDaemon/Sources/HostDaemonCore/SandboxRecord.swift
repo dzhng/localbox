@@ -21,6 +21,12 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     public var os: GuestOS
     public var cpus: Int
     public var memoryBytes: UInt64
+    /// The disk's size: its image's, or more. Like the CPUs and memory it takes effect at a cold boot, which grows the
+    /// disk file to it first (`SandboxBackendFactory.growDisk`); a disk never shrinks.
+    public var diskBytes: UInt64
+    /// The host grew the disk and the guest has not yet grown its filesystem into it (`GuestDiskClaim`): tried after
+    /// each boot until it succeeds.
+    public var diskClaimPending: Bool
     /// Locally administered NAT MAC and base64 machine identifier (`VZGenericMachineIdentifier` for Linux,
     /// `VZMacMachineIdentifier` for macOS); written once, so a saved state restores.
     public var mac: String?
@@ -41,11 +47,13 @@ public struct SandboxRecord: Codable, Equatable, Sendable {
     /// much (nil: never).
     public var sleepAfterMs: Int
     public var deleteAfterMs: Int?
-    public init(sandboxID: String, name: String, imageID: String, cpus: Int, memoryBytes: UInt64, sleepAfterMs: Int, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
-        self.sandboxID = sandboxID; self.name = name; self.imageID = imageID; self.os = .linux; self.cpus = cpus; self.memoryBytes = memoryBytes; self.sleepAfterMs = sleepAfterMs; self.lifecycle = lifecycle; self.inCatalog = inCatalog
+    /// `diskBytes` 0 asks for the image's size, which provisioning fills in.
+    public init(sandboxID: String, name: String, imageID: String, cpus: Int, memoryBytes: UInt64, diskBytes: UInt64 = 0, sleepAfterMs: Int, lifecycle: SavedLifecycle = .stopped, inCatalog: Bool = true) {
+        self.sandboxID = sandboxID; self.name = name; self.imageID = imageID; self.os = .linux; self.cpus = cpus; self.memoryBytes = memoryBytes; self.diskBytes = diskBytes; self.diskClaimPending = false
+        self.sleepAfterMs = sleepAfterMs; self.lifecycle = lifecycle; self.inCatalog = inCatalog
     }
     enum CodingKeys: String, CodingKey {
-        case sandboxID = "sandbox_id", name, imageID = "image_id", os, cpus, memoryBytes = "memory_bytes", mac, machineIdentifier = "machine_identifier", hardwareModel = "hardware_model", lifecycle
+        case sandboxID = "sandbox_id", name, imageID = "image_id", os, cpus, memoryBytes = "memory_bytes", diskBytes = "disk_bytes", diskClaimPending = "disk_claim_pending", mac, machineIdentifier = "machine_identifier", hardwareModel = "hardware_model", lifecycle
         case lastActivityAt = "last_activity_at", coldBootPending = "cold_boot_pending", inCatalog = "in_catalog", listedBy = "listed_by"
         case sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms"
     }

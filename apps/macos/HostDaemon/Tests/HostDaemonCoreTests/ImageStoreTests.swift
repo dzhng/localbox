@@ -18,7 +18,7 @@ final class ImageStoreTests: XCTestCase {
         let boot = temp.appendingPathComponent("boot", isDirectory: true)
         try FileManager.default.createDirectory(at: boot, withIntermediateDirectories: true)
         try Data("boot store".utf8).write(to: boot.appendingPathComponent(os == .linux ? "efi-vars" : "aux.img"))
-        try JSONEncoder().encode(ImageManifest(imageID: id, os: os, sizeBytes: 16 << 20, hardwareModel: os == .macos ? "bW9kZWw=" : nil, agentVersion: "0.1.1+abc")).write(to: temp.appendingPathComponent("image.json"))
+        try JSONEncoder().encode(ImageManifest(imageID: id, os: os, sizeBytes: 16 << 20, diskBytes: 16 << 20, hardwareModel: os == .macos ? "bW9kZWw=" : nil, agentVersion: "0.1.1+abc")).write(to: temp.appendingPathComponent("image.json"))
     }
 
     private func committed(_ store: ImageStore, _ id: String, os: GuestOS = .linux) throws {

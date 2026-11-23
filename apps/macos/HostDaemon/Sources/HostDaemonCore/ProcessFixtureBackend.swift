@@ -32,11 +32,16 @@ public struct ProcessFixtureFactory: SandboxBackendFactory {
         try ProcessFixtureConfiguration.requireOptIn(environment: environment)
         self.configuration = configuration
     }
+    /// A fixture sandbox has no disk; it reports this as its size unless its create asked for more.
+    public static let diskBytes: UInt64 = 8 << 30
     public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] {
         try FileManager.default.createDirectory(at: directory.guestRoot, withIntermediateDirectories: true)
         record.mac = randomLocalMAC()
+        record.diskBytes = max(record.diskBytes, Self.diskBytes)
         return [:]
     }
+    /// Nothing to grow: the guest's files are a directory on this Mac.
+    public func growDisk(_ record: SandboxRecord, in directory: SandboxDirectory) throws -> Bool { false }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         ProcessFixtureBackend(configuration: configuration, record: record, directory: directory)
     }
