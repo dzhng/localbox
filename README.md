@@ -44,6 +44,8 @@ optional MCP endpoint.
 
 > "Open a macOS sandbox, install Xcode with my Apple ID, and run the iOS tests."
 
+> "Make the Mac mini a GitHub Actions runner for this repo, inside a sandbox."
+
 > "Run this with permissions off, inside a sandbox, not on my laptop."
 
 > "Pick up where we left off yesterday. The dev server should still be running."
@@ -100,6 +102,18 @@ click through, and installs Chrome. Xcode needs your Apple ID, so your agent
 installs it once in a macOS sandbox and saves that as an image. macOS sandboxes
 need macOS 27 or newer on the Mac, and Apple's licence allows two running at a
 time on each Mac, for your own development and testing.
+
+## Your own GitHub Actions runners
+
+CI is rented by the minute too, and macOS minutes on GitHub cost the most of
+all. Your Macs can take those jobs instead: your agent registers a self-hosted
+runner inside a sandbox, so a workflow can install and run anything without
+touching your real Mac. Linux sandboxes run arm64 jobs; macOS sandboxes run
+Xcode builds and iOS tests. It sets the runner up once, saves it as an image,
+and starts each new runner from it. A sandbox running its runner doesn't sleep
+and the Mac doesn't idle-sleep under it, and the runner keeps running through
+the Mac's sleep and Localbox updating itself. macOS runners are for your own
+repositories.
 
 ## A sandbox, not your whole computer
 

@@ -56,6 +56,7 @@ export const asks = [
   "Set up a sandbox with our toolchain and make it my default image.",
   "Give each of these three branches its own sandbox, on whichever Macs have room.",
   "Open a macOS sandbox, install Xcode with my Apple ID, and run the iOS tests.",
+  "Make the Mac mini a GitHub Actions runner for this repo, inside a sandbox.",
   "Run this with permissions off, inside a sandbox, not on my laptop.",
   "Pick up where we left off yesterday. The dev server should still be running.",
 ];
@@ -140,6 +141,10 @@ export const faq = [
     a: "Yes, on a Mac running macOS 27 or newer. Localbox builds the macOS base on your own Mac from Apple's restore image, with nothing for you to click through, and installs Chrome. Xcode needs your Apple ID, so your agent installs it once in a macOS sandbox and saves that as an image. Apple's licence allows two macOS sandboxes running at a time on each Mac, for your own development and testing.",
   },
   {
+    q: "Can my Macs run my GitHub Actions jobs?",
+    a: "Yes. Your agent registers a self-hosted runner inside a sandbox, so a workflow can install and run anything without touching your real Mac: Linux arm64 jobs in a Linux sandbox, Xcode builds and iOS tests in a macOS one. It sets the runner up once and saves it as an image for the next one. A sandbox running its runner doesn't sleep, and the runner keeps running through your Mac's sleep and Localbox updating itself. A runner keeps its files between jobs, so use it for your own private repositories, not public ones that take pull requests from anyone.",
+  },
+  {
     q: "How do images get to my other Macs?",
     a: "Directly from one of your Macs to another: over your local network when they share one, otherwise over a direct connection between the two across the internet. Image bytes never pass through the relay or any cloud storage. Ask for a sandbox on a Mac without the image and it's copied there first.",
   },
@@ -173,6 +178,7 @@ export function llmsText() {
 - **All the user's computers.** Wherever you run, on the user's laptop or in the cloud, work on the Mac you're on, name another, or let Localbox pick the Mac with the most room. Cloud agents reach the user's Macs through an outbound relay, with no open port, VPN or SSH key.
 - **A computer of its own, Linux or macOS.** A shell, files, a browser and a desktop. macOS sandboxes are for Xcode work and Mac apps, on the user's own Macs.
 - **Set up once.** Save any sandbox as an image and start new sandboxes from it; images copy directly between the user's Macs.
+- **GitHub Actions on the user's Macs.** Instead of renting GitHub's hosted runners, the user's Macs run their workflows as self-hosted runners, each inside a sandbox: Linux arm64, or macOS for Xcode builds, for the user's own repositories.
 - **A sandbox, not the user's whole computer.** Safe to run with permissions off: the sandbox is the boundary, and the user's own files, credentials and screen are not shared with it.
 - **Durable.** Installed packages, files and browser profiles survive across sessions. Idle sandboxes sleep and wake with every process intact.
 - **Built for agents.** One CLI, with MCP as an option. Every command reports exactly what it did.

@@ -98,6 +98,9 @@ sandbox's browser and its 1440×900 desktop, on Linux and macOS alike. Shell
 commands run as root in both; a macOS sandbox has macOS's own tools (`zsh`,
 `sw_vers`, no `apt`).
 
+To run the user's GitHub Actions jobs on their Macs, a self-hosted runner in a
+sandbox, follow [GitHub Actions runners](references/github-actions.md).
+
 ## Reading results
 
 - `--json` prints the envelope: `ok`, then `result` or `error` (`code`,

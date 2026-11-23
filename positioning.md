@@ -121,7 +121,27 @@ with every operation a Linux sandbox has, desktop and browser included.
   use, at most two running per Mac, so macOS sandboxes are for the person who
   owns the Mac.
 
-## 5. A sandbox, not your whole computer
+## 5. Your Macs as GitHub Actions runners
+
+CI is the other place developers rent computers by the minute. GitHub's hosted
+runners bill per minute, macOS minutes most of all, and the Macs you own sit
+idle between pushes. Register them as self-hosted runners
+instead, each inside a sandbox, so a workflow never touches your real Mac.
+
+- Each runner lives in its own sandbox: a job installs and runs whatever it
+  likes there, and your files, keys and logged-in sessions stay out of reach.
+- Linux arm64 sandboxes for everyday CI, macOS sandboxes for Xcode builds and
+  iOS tests.
+- Set the runner up once and save it as an image; another runner is another
+  sandbox from that image, on any of your Macs.
+- The hardware is already yours: no rented machine by the minute.
+- A sandbox running its runner doesn't sleep, and the Mac doesn't idle-sleep
+  under it. The runner keeps running through the Mac's sleep and Localbox
+  updating itself, and through a restart where the Mac can hibernate sandboxes.
+- macOS runners are for your own repositories and work, at most two macOS
+  sandboxes per Mac (Apple's licence).
+
+## 6. A sandbox, not your whole computer
 
 Reaching every computer is only worth it if handing that reach to an agent is
 safe. SSH gives the agent your whole computer; a sandbox gives it one of its own.
@@ -134,7 +154,7 @@ people are afraid to do on their own laptop.
   machine.
 - The worst case is deleting the sandbox.
 
-## 6. Share a folder, see every access
+## 7. Share a folder, see every access
 
 A sandbox sees nothing on your Mac by default. When the agent needs your project,
 you share exactly that folder, read-only or read-write, and Localbox records every
@@ -144,7 +164,7 @@ read and write the sandbox makes through it.
 - Read-only by default; read-write when you say so.
 - An audit log of every file the sandbox opened, read or wrote through the share.
 
-## 7. One sandbox per agent, many agents at once
+## 8. One sandbox per agent, many agents at once
 
 Parallel agents step on each other in one checkout and one set of ports.
 
@@ -152,7 +172,7 @@ Parallel agents step on each other in one checkout and one set of ports.
   browser.
 - Fan out several attempts at a problem, keep the winner, delete the rest.
 
-## 8. Still there next week
+## 9. Still there next week
 
 The durable default, in its purest form: a configured environment, a logged-in
 browser, an overnight build.
@@ -161,7 +181,7 @@ browser, an overnight build.
 - Long jobs run as long as they need.
 - A real desktop and browser for computer-use tasks.
 
-## 9. Sandboxes without the container tax
+## 10. Sandboxes without the container tax
 
 Docker on a Mac means a background VM that claims gigabytes of RAM and a fixed
 disk image the moment it starts, plus containers and volumes that pile up until
@@ -185,7 +205,7 @@ The honest resource claim: a running sandbox reserves memory like any VM. What
 changes is the lifecycle: start on demand, sleep when idle, delete in one command.
 Never say "uses no RAM".
 
-## 10. Built for agents to drive
+## 11. Built for agents to drive
 
 The CLI's customer is an agent, not a person. Every command does what it was asked
 when the result can be undone, and says exactly what it did: the size and machine
@@ -210,6 +230,13 @@ The agent never has to guess or ask a follow-up question.
 - macOS sandboxes are for Xcode work and Mac apps through the desktop, on your own
   Macs. Never imply offering them to other people, as a service or otherwise
   (Apple's licence).
+- GitHub Actions: self-hosted runners on your own Macs, each in a sandbox,
+  Linux arm64 or macOS. Never promise parity with GitHub's hosted images
+  (x86_64 `ubuntu-latest` and its preinstalled tools), autoscaling, or a fresh
+  sandbox per job: a runner's sandbox keeps its state between jobs, so they
+  suit private repositories, never public ones' pull requests from forks. Don't
+  promise what GitHub charges; say you stop renting its machines. macOS runners
+  are for your own repositories and work only.
 - "Any image" means any setup saved from a sandbox, Linux or macOS. Don't
   promise Dockerfiles, arbitrary Docker images or ISOs.
 - Don't leave out the single-Mac user: it starts with the Mac you're on, and

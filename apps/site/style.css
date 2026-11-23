@@ -372,6 +372,10 @@ td.us .yes {
   border-radius: 18px 18px 18px 4px;
   font-size: 1.02rem;
 }
+/* A last card alone on its row (seven asks in three columns or two) takes the whole row. */
+.asks li:last-child:nth-child(3n + 1) {
+  grid-column: 1 / -1;
+}
 
 /* Features */
 .features article {
