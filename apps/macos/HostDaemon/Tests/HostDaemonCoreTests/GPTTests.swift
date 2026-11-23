@@ -215,7 +215,7 @@ final class GPTTests: XCTestCase {
     }
 }
 
-/// The go-diskfs fixture `gpt.img`: a 10 MiB disk `sgdisk --new 1:2048:3048 --typecode=1:ef00 --change-name=1:'EFI System'` partitioned, rebuilt from its
+/// A 10 MiB disk `sgdisk --new 1:2048:3048 --typecode=1:ef00 --change-name=1:'EFI System'` partitioned, rebuilt from its
 /// non-zero bytes (the partition's random contents left out: nothing here reads them).
 func gptFixture() -> [UInt8] {
     var disk = [UInt8](repeating: 0, count: 10 * 1024 * 1024)

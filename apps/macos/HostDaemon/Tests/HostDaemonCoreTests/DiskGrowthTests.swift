@@ -73,6 +73,14 @@ final class DiskGrowthTests: XCTestCase {
         XCTAssertThrowsError(try DiskGrowth.grow(disk, to: 64 << 20, os: .linux), "a disk never shrinks")
     }
 
+    /// `sgdisk -n2:206848:+8192M` on the 8294M built-in disk leaves the root 2015 sectors short of the last usable one:
+    /// alignment slack, not space to claim, so a sandbox at the image's size has nothing to grow.
+    func testALinuxDiskAtItsImagesSizeHasNothingToGrow() throws {
+        let disk = try linuxDisk(64 << 20, slackSectors: 2015)
+        XCTAssertFalse(try DiskGrowth.grow(disk, to: 64 << 20, os: .linux))
+        XCTAssertTrue(try DiskGrowth.grow(disk, to: 65 << 20, os: .linux), "a MiB more is growth")
+    }
+
     func testALinuxGrowLeftHalfDoneIsFinishedAtTheNextBoot() throws {
         let disk = try linuxDisk(64 << 20)
         try FileHandle(forWritingTo: disk).truncate(atOffset: 96 << 20)
@@ -130,13 +138,14 @@ final class DiskGrowthTests: XCTestCase {
         return disk
     }
 
-    /// A 4 MiB ESP at 1 MiB and the root after it to the disk's end, as `sgdisk` lays the built-in image out.
-    private func linuxDisk(_ bytes: UInt64) throws -> URL {
+    /// A 4 MiB ESP at 1 MiB and the root after it, `slackSectors` short of the disk's last usable sector, as `sgdisk`
+    /// lays the built-in image out.
+    private func linuxDisk(_ bytes: UInt64, slackSectors: UInt64 = 0) throws -> URL {
         let disk = try blankDisk(bytes)
         let table = GPTTable(partitions: [GPTPartition(index: 1, start: 2048, end: 2048 + 8191, type: .efiSystemPartition, name: "esp"), GPTPartition(index: 2, start: 10240, type: .linuxFilesystem, name: "root")],
                              logicalSectorSize: 512, physicalSectorSize: 512, protectiveMBR: true)
         table.initTable(Int64(bytes))
-        table.partitions[1].end = table.lastDataSector
+        table.partitions[1].end = table.lastDataSector - slackSectors
         try table.write(try GPTDiskFile(disk), size: Int64(bytes))
         return disk
     }

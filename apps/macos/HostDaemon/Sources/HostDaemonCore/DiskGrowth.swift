@@ -48,7 +48,8 @@ public enum DiskGrowth {
     }
 
     /// Moves `disk`'s backup GPT to the disk's end and extends the partition that ends last (the root) to the last
-    /// usable sector. Returns whether it changed the table; a table that already fills the disk is not written.
+    /// usable sector. Returns whether it changed the table; a table whose backup is at the end and whose root stops
+    /// short of it by no more than `granularity` (the built-in image's alignment slack) is not written.
     static func extendLastPartition(_ disk: URL) throws -> Bool {
         let file = try GPTDiskFile(disk)
         let table: GPTTable
@@ -57,7 +58,8 @@ public enum DiskGrowth {
         guard let last = table.partitions.max(by: { $0.end < $1.end }) else { throw GPTError("the disk has no partition to grow") }
         let atEnd = table.totalSize() == size
         table.resize(size)
-        guard !atEnd || last.end < table.lastUsableSector() else { return false }
+        let short = last.end < table.lastUsableSector() && (table.lastUsableSector() - last.end) * UInt64(table.logicalSectorSize) > granularity
+        guard !atEnd || short else { return false }
         if last.end < table.lastUsableSector() { last.expand(table.lastUsableSector() - last.end) }
         do { try table.write(file, size: Int64(size)); try file.synchronize() } catch { throw GPTError("failed to write the new partition table: \(error)") }
         return true

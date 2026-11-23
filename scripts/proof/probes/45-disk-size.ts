@@ -130,6 +130,14 @@ async function linux(ctx: ProofContext): Promise<Check[]> {
       assert.ok(root.size > 23 * GIB && root.size <= 24 * GIB, `df says ${root.size}`);
     }));
 
+    checks.push(await ctx.check("a sandbox with no --disk gets its image's size and has nothing to grow", async () => {
+      const created = await daemon.ok("sandbox.create", "sandbox_p45_plain", { name: "disk-plain", image: "linux", ...base });
+      assert.equal(created.produced.disk_bytes, imageDisk);
+      assert.doesNotMatch(JSON.stringify(created.actions), /filesystem/, "no claim ran");
+      const root = await rootSize((command) => daemon.sh("sandbox_p45_plain", command)); evidence.df_plain = root;
+      assert.ok(root.size < 8.1 * GIB, `df says ${root.size}`);
+    }));
+
     checks.push(await ctx.check("a disk smaller than its image's is refused, naming the image's size, and leaves nothing behind", async () => {
       const refused = await daemon.call("sandbox.create", "sandbox_p45_small", { name: "disk-small", image: larger, ...base, disk_bytes: 16 * GIB });
       assert.equal(!refused.ok && refused.error.code, "invalid_input");
