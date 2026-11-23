@@ -398,22 +398,24 @@ updates with it); `validate` refuses a lock that disagrees.
   signed manifest; and `SHA256SUMS`. It then checks its own output as an
   installer and an updater would (signatures, digests, `SHA256SUMS` against the
   manifest, the feed's version, URL, length and signature, and the unzipped
-  app's code signature, identity, version and pinned key) and records the
-  commit in `dist/release.build.json`.
-- **smoke**: the installation procedure's own blocks install the build from a
-  local server into a scratch `HOME`, verifying it against the pinned key
-  exactly as printed; the installed app runs with a scratch machine root and
-  the real daemon, answers `app status` as this release, fetches and expands
-  the image from this release, and quits on SIGTERM. It needs no running
-  Localbox (a second copy of the same bundle id hands off to the first) and
-  launches a copy outside every Applications folder, since a release registers
-  its real login item from one; the `sh.localbox.mac` defaults and the
-  `~/Library` folders the run creates are put back afterwards.
-- **publish**: only a build from the current `HEAD`, never a rehearsal's. It
-  creates the draft at that commit (or reuses a draft of the same version),
-  uploads every file, downloads each asset back and compares its SHA-256, and
-  stops; a draft is invisible to installs and updates. `--dry-run` prints the
-  assets and the exact `gh` calls without calling GitHub.
+  app's code signature, identity, version and pinned key), once, and records
+  the commit and every file's SHA-256 in `dist/release.build.json`.
+- **smoke**: only the files the receipt pins. The installation procedure's own
+  blocks install the build from a local server into a scratch `HOME`,
+  verifying it against the pinned key exactly as printed; the installed app
+  runs with a scratch machine root and the real daemon, answers `app status` as
+  this release, fetches and expands the image from this release, and quits on
+  SIGTERM. It refuses while Localbox runs (a second copy of the same bundle id
+  hands off to the first) and launches a copy outside every Applications
+  folder, since a release registers its real login item from one; the
+  `sh.localbox.mac` defaults and the `~/Library` folders the run creates are
+  put back afterwards.
+- **publish**: only the files the receipt pins, built from the current `HEAD`,
+  never a rehearsal's. It creates the draft at that commit (or reuses a draft
+  of the same version), uploads every file, downloads each asset back and
+  compares its SHA-256, and stops; a draft is invisible to installs and
+  updates. `--dry-run` prints the assets and the exact `gh` calls without
+  calling GitHub.
 - **publish --confirm**: makes the draft public, which creates the tag at the
   built commit; a version with a suffix (`1.2.0-rc.1`) becomes a prerelease and
   `latest` stays put. For a full release it then waits until
@@ -424,7 +426,9 @@ updates with it); `validate` refuses a lock that disagrees.
 ### Inputs
 
 - **Credentials**, in the checkout's git-ignored `.release-signing/` (or
-  `LOCALBOX_SIGNING_DIR`), restored from the owner's offline backup:
+  `LOCALBOX_SIGNING_DIR`). On a new Mac or checkout, copy the owner's offline
+  backup of that folder in whole as `.release-signing/`; `validate` then checks
+  every file against the pinned key and `public.json`:
 
   | File | Contents |
   | --- | --- |
@@ -438,9 +442,10 @@ updates with it); `validate` refuses a lock that disagrees.
   trust only the pinned ones. `sign.mjs` imports the identity into a
   disposable keychain for one signing and deletes it.
 - **The linux image**: `LOCALBOX_IMAGE`, the directory
-  `npm run image:build -- --out DIR` wrote ([Images](#images); needs Docker),
-  and `IMAGE_DIGEST`, the `digest` in `dist/vm-image/full/manifest.json`
-  (read from there when unset). Its agent need not match: the app ships the
+  `npm run image:build -- --out DIR` wrote ([Images](#images)), and
+  `IMAGE_DIGEST`, the `digest` in `dist/vm-image/full/manifest.json` (read from
+  there when unset). The build needs Docker: `colima start --arch aarch64`
+  first, and `colima stop` after. Its agent need not match: the app ships the
   release's agent and the daemon pushes it into every guest.
 - **Sparkle**, built from source, never downloaded: `npm run sparkle:build`
   (full Xcode and network) fetches the commit pinned in
@@ -474,7 +479,8 @@ signed manifest with the expanded disk's digest ([`scripts/release.ts`](scripts/
 ### When a stage fails
 
 Fix what the sentence says and run the same stage again; each stage stands
-alone and redoes its own checks. A `test` failure is a bug to fix on `main`
+alone. `smoke` and `publish` refuse a folder whose files differ from the ones
+`build` verified, so anything changed after a build means building again. A `test` failure is a bug to fix on `main`
 before releasing. `build` empties `dist/release` first, so a rerun never mixes
 builds. If `publish` stops midway (an upload or a download-back that failed),
 run it again: it reuses the draft and replaces its assets. A draft that should
@@ -493,12 +499,9 @@ that the feed and `releases/latest/download/release.json` name the previous
 release. Copies that already updated stay on it until the fix ships; a deleted
 version's number is never reused.
 
-The first release cut this way follows v0.1.1, which was published in the old
-format: `Localbox-0.1.1.zip`, a CLI tarball and a `template` image, with no
-`Localbox-macos-arm64.zip` or `appcast.xml`. Until the next release, then, the
-installation procedure finds nothing to install on `latest`, and a v0.1.1
-install, which predates the app's updater, never updates itself; its users
-reinstall with the procedure. `validate` only needs the version to be newer.
+v0.1.1, the last release in the old format, predates the app's updater: its
+installs never update themselves, and their users reinstall with the
+procedure.
 
 ### Rehearsing a release
 

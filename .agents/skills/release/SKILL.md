@@ -16,9 +16,11 @@ the one install path is the agent installation procedure,
 1. On `main`, pull the source and tags and read the diff since the last
    release. Bump the version with `npm version X.Y.Z --no-git-tag-version`,
    commit and push it (ask the user for the version).
-2. `npm run release -- validate` and fix what each refusal says. The linux
-   image needs Docker: `npm run image:build -- --out DIR` (ask before starting
-   Colima), then `LOCALBOX_IMAGE=DIR`.
+2. `npm run release -- validate` and fix what each refusal says. Missing
+   credentials: copy the owner's backup folder in as `.release-signing/`.
+   Sparkle: `npm run sparkle:build`. The linux image needs Docker: ask before
+   `colima start --arch aarch64`, then `npm run image:build -- --out DIR` and
+   `LOCALBOX_IMAGE=DIR`.
 3. `npm run release -- test`, `build`, then `smoke`, in order; each stops on
    the first problem and prints the next command.
 4. `npm run release -- publish` uploads a DRAFT and checks every asset. Show
@@ -31,7 +33,7 @@ the one install path is the agent installation procedure,
 
 Release credentials live in the checkout's git-ignored `.release-signing/`,
 restored from the owner's offline backup. Never regenerate them, never read or
-copy them beyond running the stages, and never use them for a rehearsal: a new
+copy them beyond restoring that folder and running the stages, and never use them for a rehearsal: a new
 manifest key would strand every installed copy, and `validate` refuses one that
 does not match `skills/localbox/release-public.pem`. That public key is the
 pinned trust root, printed in the installation procedure for first installs; a
