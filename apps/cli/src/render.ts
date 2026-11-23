@@ -18,10 +18,10 @@ export function render(value: ResponseEnvelope | Json, options: { json: boolean 
     const details = value.error.details === undefined ? "" : text(value.error.details);
     return { stdout: "", stderr: `${value.error.code}: ${value.error.message}\n${details}`, exitCode: exitCode(value) };
   }
-  return { stdout: options.json ? `${JSON.stringify(value, null, 2)}\n` : text(value), stderr: "", exitCode: 0 };
+  return { stdout: options.json ? `${JSON.stringify(value, null, 2)}\n` : isReported(value) ? `${value.report.join("\n")}\n` : text(value), stderr: "", exitCode: 0 };
 }
 
-/** A finished image operation (`image create`, `image wait`) prints its report lines, the map's output standard; `--json` keeps the whole state. */
+/** A finished image operation (`image create`, `image wait`) or a login step prints its report lines; `--json` keeps the whole state. */
 const isReported = (value: Json): value is { report: string[] } => isObject(value) && Array.isArray(value.report) && value.report.every((line) => typeof line === "string");
 
 type ImageListRow = { name: string; os: string; size_bytes: number | null; from: string; on: string[]; default: boolean };
