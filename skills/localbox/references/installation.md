@@ -37,7 +37,9 @@ session, and refuses while that session is locked with a password. So:
   System Settings > Users & Groups > automatic login on (so it comes back
   unlocked after a restart or power loss), and System Settings > Lock Screen >
   "Require password after screen saver begins or display is turned off" set to
-  Never. The display may still sleep; only the password matters.
+  Never. The display may still sleep; only the password matters. No energy
+  setting needs changing: Localbox keeps the Mac from idle-sleeping while a
+  sandbox runs or an image builds or copies.
 - These are the user's settings. Tell them what to change and why; do not change
   them yourself (they need the user's password).
 

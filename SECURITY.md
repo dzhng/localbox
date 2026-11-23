@@ -237,8 +237,11 @@ Localbox is one menu bar app, `Localbox.app`, running as the logged-in user. It
 starts the host daemon (the only process holding the virtualization
 entitlement) and the connector as its own children; nothing runs as root, and
 there is no launchd job or background helper outside the app. While a sandbox
-runs, the daemon holds a power assertion that keeps the Mac from idle-sleeping
-(`pmset -g assertions` lists it); it changes nothing else. The installation
+runs or an image builds or copies, the daemon holds a power assertion that
+keeps the Mac from idle-sleeping (`pmset -g assertions` lists it as "Localbox is
+running sandboxes"); macOS drops it when the daemon exits. It changes nothing
+else: the display still sleeps, and closing the lid or choosing Sleep still
+sleeps the Mac. The installation
 procedure opens it, and it then opens at login (a login item the user can turn
 off in System Settings or with `localbox app login-item off`). Quitting it takes
 this Mac offline: its sandboxes hibernate, the relay can no longer reach it,
