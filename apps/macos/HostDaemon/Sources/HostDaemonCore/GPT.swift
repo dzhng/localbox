@@ -233,7 +233,8 @@ final class GPTTable {
         let gptTable: GPTTable
         do { gptTable = try tableFromBytes(b) } catch { throw GPTError("error reading GPT table: \(error)") }
         let size = GPTPartition.entrySize * partitionArraySize
-        do { b = try f.readAt(size, gptTable.partitionFirstLBA * UInt64(sectorSize)) } catch { throw GPTError("error reading partitions from file: \(error)") }
+        // the guest wrote this sector number: it wraps as upstream's Go does rather than trap, and a wrong one fails a check
+        do { b = try f.readAt(size, gptTable.partitionFirstLBA &* UInt64(sectorSize)) } catch { throw GPTError("error reading partitions from file: \(error)") }
         guard b.count == size else { throw GPTError("read only \(b.count) bytes of GPT from file instead of expected \(size)") }
         // we need a CRC/zlib of the partition entries, so we do those first, then append the bytes
         let checksum = crc32IEEE(b)
@@ -244,7 +245,7 @@ final class GPTTable {
     }
 
     /// The total size of the GPT in bytes, counted from the start of the MBR to the end of the backup header.
-    func totalSize() -> UInt64 { (secondaryHeader + 1) * UInt64(Self.sectorSize) }
+    func totalSize() -> UInt64 { (secondaryHeader &+ 1) &* UInt64(Self.sectorSize) }
 
     /// Changes the size of the GPT to `size` bytes, a multiple of the sector size: for a disk that is no longer the
     /// size its GPT says.

@@ -66,12 +66,19 @@ final class GPTTests: XCTestCase {
 
     /// The guest writes its own GPT; a header asking for a larger array is refused, not read.
     func testAnArrayOtherThan128EntriesOf128BytesIsRefused() {
-        var b = Array(gptFixture()[0..<1024])
+        var b = gptFixture()
         b[512 + 81] = 0x01 // 384 entries
-        b.replaceSubrange((512 + 16)..<(512 + 20), with: [0, 0, 0, 0])
-        let crc = crc32IEEE(Array(b[512..<(512 + 92)]))
-        for i in 0..<4 { b[512 + 16 + i] = UInt8(truncatingIfNeeded: crc >> (8 * i)) }
-        XCTAssertThrowsError(try GPTTable.tableFromBytes(b)) { XCTAssertTrue("\($0)".hasPrefix("unsupported partition array of 384 entries"), "\($0)") }
+        rehash(&b)
+        XCTAssertThrowsError(try GPTTable.tableFromBytes(Array(b[0..<1024]))) { XCTAssertTrue("\($0)".hasPrefix("unsupported partition array of 384 entries"), "\($0)") }
+    }
+
+    /// Sector numbers past any disk in a guest's header fail the read or count as space to claim; the host never traps.
+    func testSectorNumbersPastTheDiskInAGuestsHeaderDoNotCrashTheHost() throws {
+        let huge = UInt64(1) << 62
+        XCTAssertThrowsError(try GPTTable.read(try GPTDiskFile(try fixtureDisk(header: [72: huge]))), "the array's LBA")
+        for field in [32, 48] { // the backup header's LBA, the last usable sector
+            XCTAssertTrue(try DiskGrowth.hasUnclaimedSpace(try fixtureDisk(header: [field: huge])), "field \(field)")
+        }
     }
 
     func testACorruptPartitionArrayIsRefused() throws {
@@ -90,10 +97,21 @@ final class GPTTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func fixtureDisk() throws -> URL {
+    /// The fixture on disk, with the primary header's 64-bit fields at `header`'s offsets replaced and its CRC redone.
+    private func fixtureDisk(header: [Int: UInt64] = [:]) throws -> URL {
+        var b = gptFixture()
+        for (offset, value) in header { for i in 0..<8 { b[512 + offset + i] = UInt8(truncatingIfNeeded: value >> (8 * i)) } }
+        if !header.isEmpty { rehash(&b) }
         let disk = try scratch().appendingPathComponent("gpt.img")
-        try Data(gptFixture()).write(to: disk)
+        try Data(b).write(to: disk)
         return disk
+    }
+
+    /// Recomputes the primary header's CRC after a test edits it.
+    private func rehash(_ b: inout [UInt8]) {
+        b.replaceSubrange((512 + 16)..<(512 + 20), with: [0, 0, 0, 0])
+        let crc = crc32IEEE(Array(b[512..<(512 + 92)]))
+        for i in 0..<4 { b[512 + 16 + i] = UInt8(truncatingIfNeeded: crc >> (8 * i)) }
     }
 
     private func blankDisk(_ bytes: UInt64) throws -> URL {

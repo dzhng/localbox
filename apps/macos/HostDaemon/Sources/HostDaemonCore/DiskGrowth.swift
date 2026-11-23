@@ -71,7 +71,7 @@ public enum DiskGrowth {
         let table = try GPTTable.read(file)
         if table.totalSize() != (try size(disk)) { return true }
         let lastEnd = table.partitions.map(\.end).max() ?? 0
-        return table.lastDataSector > lastEnd && (table.lastDataSector - lastEnd) * UInt64(GPTTable.sectorSize) > granularity
+        return table.lastDataSector > lastEnd && table.lastDataSector - lastEnd > granularity / UInt64(GPTTable.sectorSize)
     }
 }
 
