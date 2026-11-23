@@ -35,7 +35,7 @@ public actor ImageHost {
         case "image.wait":
             guard let image = input["image"] as? String, !image.isEmpty else { return failure(object, code: "invalid_input", message: "image.wait requires image") }
             guard let latest = await operations.latest(subject: image) else {
-                return failure(object, code: "image_not_found", message: "this machine has no operation for image \(image)")
+                return failure(object, code: "image_not_found", message: "this machine has no operation for image \(store.displayName(image))")
             }
             return success(object, result: view(await settled(latest, object, timeoutMs: (input["timeout_ms"] as? NSNumber)?.intValue)))
         case "image.create":
@@ -86,9 +86,9 @@ public actor ImageHost {
             } catch { return failure(object, code: "invalid_input", message: explain(error)) }
         case "image.delete":
             guard let image = input["image"] as? String, !image.isEmpty else { return failure(object, code: "invalid_input", message: "image.delete requires image") }
-            if await operations.isRunning(subject: image) { return failure(object, code: "conflict", message: "an operation on image \(image) is still running on this machine") }
+            if await operations.isRunning(subject: image) { return failure(object, code: "conflict", message: "an operation on image \(store.displayName(image)) is still running on this machine") }
             do { return success(object, result: ["image": image, "removed": try store.removeIfPresent(image)]) }
-            catch { return failure(object, code: "internal", message: "could not remove image \(image): \(explain(error))") }
+            catch { return failure(object, code: "internal", message: "could not remove image \(store.displayName(image)): \(explain(error))") }
         case "image.mirror":
             let rows = (input["images"] as? [[String: Any]])?.map { (id: $0["image_id"] as? String ?? "", name: $0["name"] as? String) }
             guard let machineID = input["machine_id"] as? String, !machineID.isEmpty, let rows, !rows.contains(where: { $0.id.isEmpty }) else {
