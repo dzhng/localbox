@@ -52,7 +52,9 @@ saved state remembers it (a cold boot discards any; a resize while asleep
 discards it then and owes the cold boot). There `DiskGrowth` extends the sparse
 file and, for Linux, rewrites the GPT on the host (the backup header at the new
 end, the last partition, the root, to fill the disk); a macOS disk keeps its
-table, since the guest's `diskutil repairDisk` moves the backup header. After the
+table, since the guest's `diskutil repairDisk` moves the backup header. The host
+reads a table the guest wrote, so `GPT.swift` takes only the layout Localbox's
+disks have (512-byte sectors, a 128-entry array) and refuses any other. After the
 boot and before the sandbox is ready, `GuestDiskClaim` grows the guest's
 filesystem through the agent's root shell: `resize2fs` on the mounted ext4 root,
 or `repairDisk` then `apfs resizeContainer`. A grown disk sets
