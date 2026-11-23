@@ -53,15 +53,15 @@ public enum DiskGrowth {
     static func extendLastPartition(_ disk: URL) throws -> Bool {
         let file = try GPTDiskFile(disk)
         let table: GPTTable
-        do { table = try GPTTable.read(file, logicalBlockSize: GPTTable.logicalSectorSize, physicalBlockSize: GPTTable.physicalSectorSize) } catch { throw GPTError("failed to get the partition table: \(error)") }
+        do { table = try GPTTable.read(file) } catch { throw GPTError("failed to get the partition table: \(error)") }
         let size = try size(disk)
         guard let last = table.partitions.max(by: { $0.end < $1.end }) else { throw GPTError("the disk has no partition to grow") }
         let atEnd = table.totalSize() == size
         table.resize(size)
-        let short = last.end < table.lastUsableSector() && (table.lastUsableSector() - last.end) * UInt64(table.logicalSectorSize) > granularity
+        let short = last.end < table.lastDataSector && (table.lastDataSector - last.end) * UInt64(GPTTable.sectorSize) > granularity
         guard !atEnd || short else { return false }
-        if last.end < table.lastUsableSector() { last.expand(table.lastUsableSector() - last.end) }
-        do { try table.write(file, size: Int64(size)); try file.synchronize() } catch { throw GPTError("failed to write the new partition table: \(error)") }
+        if last.end < table.lastDataSector { last.expand(table.lastDataSector - last.end) }
+        do { try table.write(file); try file.synchronize() } catch { throw GPTError("failed to write the new partition table: \(error)") }
         return true
     }
 
@@ -70,11 +70,10 @@ public enum DiskGrowth {
     /// partition just deleted). Read with the VM off.
     public static func hasUnclaimedSpace(_ disk: URL) throws -> Bool {
         let file = try GPTDiskFile(disk)
-        let table = try GPTTable.read(file, logicalBlockSize: GPTTable.logicalSectorSize, physicalBlockSize: GPTTable.physicalSectorSize)
-        let sectors = try size(disk) / UInt64(table.logicalSectorSize)
-        if table.secondaryHeader != sectors - 1 { return true }
+        let table = try GPTTable.read(file)
+        if table.totalSize() != (try size(disk)) { return true }
         let lastEnd = table.partitions.map(\.end).max() ?? 0
-        return table.lastUsableSector() > lastEnd && (table.lastUsableSector() - lastEnd) * UInt64(table.logicalSectorSize) > granularity
+        return table.lastDataSector > lastEnd && (table.lastDataSector - lastEnd) * UInt64(GPTTable.sectorSize) > granularity
     }
 }
 
