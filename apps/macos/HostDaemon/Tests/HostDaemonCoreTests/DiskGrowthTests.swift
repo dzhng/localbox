@@ -7,23 +7,14 @@ final class DiskGrowthTests: XCTestCase {
     // MARK: - The recovery partition
 
     func testDelete() throws {
-        // Create a disk
-        let diskSizeBytes: UInt64 = 1 * 1024 * 1024
-        let diskPath = try blankDisk(diskSizeBytes)
-
-        // Partition our disk as GPT with a macOS recovery partition
-        let sectorSizeBytes: UInt64 = 512, partitionSizeSectors: UInt64 = 5
-        let partitionSizeBytes = partitionSizeSectors * sectorSizeBytes
-        let firstPartition = GPTPartition(index: 1, start: 34, size: partitionSizeBytes, type: .appleAPFS, name: "Doesn't matter")
-        let secondPartition = GPTPartition(index: 2, start: 34 + partitionSizeSectors, size: partitionSizeBytes, type: .appleAPFS, name: RecoveryPartition.name)
-        let gptTable = GPTTable(partitions: [firstPartition, secondPartition], logicalSectorSize: Int(sectorSizeBytes), physicalSectorSize: Int(sectorSizeBytes))
-        try gptTable.write(try GPTDiskFile(diskPath), size: Int64(diskSizeBytes))
+        // Create a disk, partitioned as GPT with a macOS recovery partition
+        let diskPath = try gptDisk(1 * 1024 * 1024, [(34, 38, "Doesn't matter"), (39, 43, RecoveryPartition.name)])
 
         // Delete the recovery partition
         XCTAssertTrue(try RecoveryPartition.delete(diskPath))
 
         // Ensure that the recovery partition was deleted
-        let partitions = try GPTTable.read(try GPTDiskFile(diskPath), logicalBlockSize: 512, physicalBlockSize: 512).partitions
+        let partitions = try GPTTable.read(try GPTDiskFile(diskPath)).partitions
         XCTAssertEqual(partitions.map(\.name), ["Doesn't matter"])
 
         XCTAssertFalse(try RecoveryPartition.delete(diskPath), "no recovery partition: already deleted, nothing written")
@@ -31,11 +22,9 @@ final class DiskGrowthTests: XCTestCase {
 
     func testDeleteRefusesARecoveryPartitionThatIsNotLastOrNotTheOnlyOne() throws {
         for names in [[RecoveryPartition.name, "Main"], ["Main", RecoveryPartition.name, RecoveryPartition.name]] {
-            let disk = try blankDisk(1 << 20)
-            let partitions = names.enumerated().map { GPTPartition(index: $0.offset + 1, start: 34 + UInt64($0.offset) * 5, size: 5 * 512, type: .appleAPFS, name: $0.element) }
-            try GPTTable(partitions: partitions, logicalSectorSize: 512, physicalSectorSize: 512).write(try GPTDiskFile(disk), size: 1 << 20)
+            let disk = try gptDisk(1 << 20, names.enumerated().map { (34 + UInt64($0.offset) * 5, 38 + UInt64($0.offset) * 5, $0.element) })
             XCTAssertThrowsError(try RecoveryPartition.delete(disk)) { XCTAssertTrue("\($0)".contains("refusing to proceed"), "\($0)") }
-            XCTAssertEqual(try GPTTable.read(try GPTDiskFile(disk), logicalBlockSize: 512, physicalBlockSize: 512).partitions.count, names.count, "the table is left as it was")
+            XCTAssertEqual(try GPTTable.read(try GPTDiskFile(disk)).partitions.count, names.count, "the table is left as it was")
         }
     }
 
@@ -63,11 +52,11 @@ final class DiskGrowthTests: XCTestCase {
         let disk = try linuxDisk(64 << 20)
         XCTAssertTrue(try DiskGrowth.grow(disk, to: 96 << 20, os: .linux))
         XCTAssertEqual(try DiskGrowth.size(disk), 96 << 20)
-        let table = try GPTTable.read(try GPTDiskFile(disk), logicalBlockSize: 512, physicalBlockSize: 512)
+        let table = try GPTTable.read(try GPTDiskFile(disk))
         XCTAssertEqual(table.totalSize(), 96 << 20, "the backup header is at the new end")
         XCTAssertEqual(table.partitions.map(\.name), ["esp", "root"])
         XCTAssertEqual(table.partitions[0].end, 2048 + 8191, "the first partition is untouched")
-        XCTAssertEqual(table.partitions[1].end, table.lastUsableSector(), "the root fills the disk")
+        XCTAssertEqual(table.partitions[1].end, table.lastDataSector, "the root fills the disk")
         XCTAssertEqual(table.partitions[1].start, 10240)
         XCTAssertFalse(try DiskGrowth.grow(disk, to: 96 << 20, os: .linux), "a disk already at its size, with a table that fills it, changes nothing")
         XCTAssertThrowsError(try DiskGrowth.grow(disk, to: 64 << 20, os: .linux), "a disk never shrinks")
@@ -85,8 +74,8 @@ final class DiskGrowthTests: XCTestCase {
         let disk = try linuxDisk(64 << 20)
         try FileHandle(forWritingTo: disk).truncate(atOffset: 96 << 20)
         XCTAssertTrue(try DiskGrowth.grow(disk, to: 96 << 20, os: .linux), "the file grew, its table did not: the table is finished")
-        let table = try GPTTable.read(try GPTDiskFile(disk), logicalBlockSize: 512, physicalBlockSize: 512)
-        XCTAssertEqual(table.partitions[1].end, table.lastUsableSector())
+        let table = try GPTTable.read(try GPTDiskFile(disk))
+        XCTAssertEqual(table.partitions[1].end, table.lastDataSector)
     }
 
     /// A macOS disk keeps its table; the guest's `repairDisk` moves the backup header, `resizeContainer` the container.
@@ -138,30 +127,27 @@ final class DiskGrowthTests: XCTestCase {
         return disk
     }
 
+    /// A blank disk of `bytes` with a GPT laid out as `sgdisk` lays one out (the protective MBR, the array at LBA 2,
+    /// partitions from LBA 34 to 34 sectors before the end), holding `partitions` as (start, end, name).
+    private func gptDisk(_ bytes: UInt64, _ partitions: [(UInt64, UInt64, String)]) throws -> URL {
+        let disk = try blankDisk(bytes)
+        let sectors = bytes / 512
+        let table = GPTTable(partitions: partitions.enumerated().map { GPTPartition(index: $0.offset + 1, start: $0.element.0, end: $0.element.1, type: UUID(), name: $0.element.2, guid: UUID(), attributes: 0) },
+                             guid: UUID(), protectiveMBR: true, partitionFirstLBA: 2, partitionEntryChecksum: 0, primaryHeader: 1, secondaryHeader: sectors - 1, firstDataSector: 34, lastDataSector: sectors - 34)
+        try table.write(try GPTDiskFile(disk))
+        return disk
+    }
+
     /// A 4 MiB ESP at 1 MiB and the root after it, `slackSectors` short of the disk's last usable sector, as `sgdisk`
     /// lays the built-in image out.
     private func linuxDisk(_ bytes: UInt64, slackSectors: UInt64 = 0) throws -> URL {
-        let disk = try blankDisk(bytes)
-        let table = GPTTable(partitions: [GPTPartition(index: 1, start: 2048, end: 2048 + 8191, type: .efiSystemPartition, name: "esp"), GPTPartition(index: 2, start: 10240, type: .linuxFilesystem, name: "root")],
-                             logicalSectorSize: 512, physicalSectorSize: 512, protectiveMBR: true)
-        table.initTable(Int64(bytes))
-        table.partitions[1].end = table.lastDataSector - slackSectors
-        try table.write(try GPTDiskFile(disk), size: Int64(bytes))
-        return disk
+        try gptDisk(bytes, [(2048, 2048 + 8191, "esp"), (10240, bytes / 512 - 34 - slackSectors, "root")])
     }
 
     /// iBoot's container, the main APFS container and, unless it fills the disk, the recovery container last.
     private func macDisk(_ bytes: UInt64, containerFills: Bool) throws -> URL {
-        let disk = try blankDisk(bytes)
-        let table = GPTTable(partitions: [GPTPartition(index: 1, start: 40, end: 2087, type: .appleAPFS, name: "iBootSystemContainer"), GPTPartition(index: 2, start: 2088, type: .appleAPFS, name: "Container")],
-                             logicalSectorSize: 512, physicalSectorSize: 512, protectiveMBR: true)
-        table.initTable(Int64(bytes))
-        if containerFills { table.partitions[1].end = table.lastDataSector } else {
-            table.partitions[1].end = table.lastDataSector - 16384
-            table.partitions.append(GPTPartition(index: 3, start: table.lastDataSector - 16383, end: table.lastDataSector, type: .appleAPFS, name: RecoveryPartition.name))
-        }
-        try table.write(try GPTDiskFile(disk), size: Int64(bytes))
-        return disk
+        let lastUsable = bytes / 512 - 34
+        return try gptDisk(bytes, [(40, 2087, "iBootSystemContainer")] + (containerFills ? [(2088, lastUsable, "Container")] : [(2088, lastUsable - 16384, "Container"), (lastUsable - 16383, lastUsable, RecoveryPartition.name)]))
     }
 
     /// A root shell that records each script and answers from `answers`.
@@ -170,7 +156,7 @@ final class DiskGrowthTests: XCTestCase {
         let answers: [String: String]
         init(answers: [String: String] = [:]) { self.answers = answers }
         var scripts: [String] { seen.value }
-        var run: GuestDiskClaim.RootShell { { script, _ in self.seen.withLock { $0.append(script) }; return self.answers[script] ?? "" } }
+        var run: GuestRootShell { { script, _ in self.seen.withLock { $0.append(script) }; return self.answers[script] ?? "" } }
     }
 
     static let singleDisk = """

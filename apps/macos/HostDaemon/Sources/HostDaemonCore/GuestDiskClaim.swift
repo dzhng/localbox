@@ -4,10 +4,7 @@ import Foundation
 /// through the agent's root shell. Run until it succeeds; running it again when there is nothing to claim changes
 /// nothing on Linux, and macOS is only asked when its GPT shows unclaimed space.
 public enum GuestDiskClaim {
-    /// Runs a script as root in the guest: its stdout, or a throw with its output when it exits non-zero.
-    public typealias RootShell = @Sendable (_ script: String, _ timeout: TimeInterval) async throws -> String
-
-    public static func claim(_ os: GuestOS, _ root: RootShell) async throws {
+    public static func claim(_ os: GuestOS, _ root: GuestRootShell) async throws {
         switch os {
         case .linux: try await claimLinux(root)
         case .macos: try await claimMacOS(root)
@@ -15,13 +12,13 @@ public enum GuestDiskClaim {
     }
 
     /// The mounted ext4 root grows online to fill its partition, which the host already extended.
-    static func claimLinux(_ root: RootShell) async throws {
+    static func claimLinux(_ root: GuestRootShell) async throws {
         _ = try await root(#"resize2fs "$(findmnt -n -o SOURCE /)""#, 110)
     }
 
     /// The APFS container grows to the disk's end: `repairDisk` first, which moves the GPT's backup header to the end
     /// of the grown disk, then `resizeContainer` with size 0 (all the space after it).
-    static func claimMacOS(_ root: RootShell) async throws {
+    static func claimMacOS(_ root: GuestRootShell) async throws {
         // Determine the disk and a partition to act on
         let list = try await root("diskutil list -plist physical", 60)
 

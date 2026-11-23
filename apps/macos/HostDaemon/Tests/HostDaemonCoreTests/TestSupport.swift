@@ -111,16 +111,16 @@ final class FakeBackendFactory: SandboxBackendFactory, @unchecked Sendable {
     let agent: FakeAgent
     private let images: Set<String>
     /// Every image's disk size; each sandbox's disk starts at it.
-    let imageDiskBytes: UInt64
+    let imageDiskBytes: UInt64 = 8 * gib
     /// Each sandbox's disk size as its last grow left it.
     private let disks = Locked<[String: UInt64]>([:])
     /// `saveError`: every save fails with it, e.g. `.screenLocked` or `.unsupported("permission denied")`; `stopError`
     /// likewise for every stop, `freezeError` for every freeze on the control lane. `bootDelay` (nanoseconds) is how
     /// long each start or restore takes. `images` are the images this Mac holds; provisioning from any other fails as
     /// `ImageStore` does. Every backend writes to `log` and runs `agent`; each disk grow is logged as `grow disk BYTES`.
-    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage], imageDiskBytes: UInt64 = 8 * gib,
+    public init(saveError: HostDaemonError? = nil, stopError: HostDaemonError? = nil, freezeError: HostDaemonError? = nil, bootDelay: UInt64 = 0, images: Set<String> = [builtInImage],
                 log: EventLog = EventLog(), agent: FakeAgent = FakeAgent(), guest: @escaping @Sendable (Data) async throws -> Data = { $0 }) {
-        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.images = images; self.imageDiskBytes = imageDiskBytes; self.log = log; self.agent = agent; self.guest = guest
+        self.saveError = saveError; self.stopError = stopError; self.freezeError = freezeError; self.bootDelay = bootDelay; self.images = images; self.log = log; self.agent = agent; self.guest = guest
     }
     public var boots: Int { made.count }
     public var made: [FakeSandboxBackend] { backends.value }
@@ -279,7 +279,7 @@ extension ImageStore {
         let disk = Data((0..<bytes).map { _ in UInt8.random(in: 0...255) })
         try disk.write(to: temp.appendingPathComponent("disk.img"))
         try Data("efi".utf8).write(to: temp.appendingPathComponent("boot/efi-vars"))
-        _ = try seal(temp, imageID: id, os: .linux, hardwareModel: nil, minMacOS: nil, agentVersion: "test")
+        _ = try seal(temp, imageID: id, os: .linux, diskBytes: UInt64(bytes), hardwareModel: nil, minMacOS: nil, agentVersion: "test")
         try commit(temp, as: id)
         if let listedBy { try markListed(id, by: listedBy) }
         return disk

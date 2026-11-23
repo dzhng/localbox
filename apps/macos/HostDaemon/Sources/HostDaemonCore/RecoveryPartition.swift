@@ -16,7 +16,7 @@ public enum RecoveryPartition {
         do { file = try GPTDiskFile(disk) } catch { throw GPTError("failed to open the disk image: \(error)") }
 
         let gptTable: GPTTable
-        do { gptTable = try GPTTable.read(file, logicalBlockSize: GPTTable.logicalSectorSize, physicalBlockSize: GPTTable.physicalSectorSize) } catch {
+        do { gptTable = try GPTTable.read(file) } catch {
             throw GPTError("failed to get the partition table: \(error)")
         }
 
@@ -42,7 +42,7 @@ public enum RecoveryPartition {
         gptTable.partitions = Array(gptTable.partitions[..<recoveryPartitionIdx])
 
         do {
-            try gptTable.write(file, size: Int64(try DiskGrowth.size(disk)))
+            try gptTable.write(file)
             try file.synchronize()
         } catch { throw GPTError("failed to write the new partition table: \(error)") }
 

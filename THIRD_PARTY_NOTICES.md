@@ -27,13 +27,14 @@ Exhibit A, for the files above:
 ## go-diskfs (MIT)
 
 From [diskfs/go-diskfs](https://github.com/diskfs/go-diskfs) at tag `v1.9.3`
-(commit `c8d7f7c32e34a300c741aa9f9a9cd48ba73736a0`), the GPT subset its
-`recoverypartition.Delete` relies on:
+(commit `c8d7f7c32e34a300c741aa9f9a9cd48ba73736a0`), the GPT reading and writing
+its `recoverypartition.Delete` relies on, with `Table.Resize` and
+`Partition.Expand`:
 
 | Upstream | Here |
 | --- | --- |
-| `partition/gpt/table.go`, `partition.go`, `common.go`, `types.go` | `apps/macos/HostDaemon/Sources/HostDaemonCore/GPT.swift` |
-| `partition/gpt/table_test.go`, `table_internal_test.go`, `partition_internal_test.go`, `testdata/gpt.img`, `testdata/gpt_partition.dat` | `apps/macos/HostDaemon/Tests/HostDaemonCoreTests/GPTTests.swift` |
+| `partition/gpt/table.go`, `partition.go`, `common.go` | `apps/macos/HostDaemon/Sources/HostDaemonCore/GPT.swift` |
+| `partition/gpt/table_test.go`, `table_internal_test.go`, `testdata/gpt.img`, `testdata/gpt_partition.dat` | `apps/macos/HostDaemon/Tests/HostDaemonCoreTests/GPTTests.swift` |
 
 ```
 MIT License

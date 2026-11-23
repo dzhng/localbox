@@ -27,9 +27,10 @@ public enum DiskGrowth {
     }
 
     /// Grows `disk` to `bytes` for a guest of `os`, with no VM running on it. Returns whether the guest now has space
-    /// its filesystem does not reach. A disk already that size is left as it is, except that a Linux GPT a grow left
-    /// short is finished and a macOS container short of its disk's end is reported, so an interrupted grow is completed
-    /// at the next boot. A smaller size is refused: a disk never shrinks.
+    /// its filesystem does not reach. A disk already that size is left as it is, except that a Linux GPT whose backup
+    /// is short of the disk's end is finished and a macOS container short of it is reported, so a grow interrupted
+    /// before its GPT was written or its claim recorded completes at the next boot. A smaller size is refused: a disk
+    /// never shrinks.
     @discardableResult
     public static func grow(_ disk: URL, to bytes: UInt64, os: GuestOS) throws -> Bool {
         let grew = try growDisk(bytes, disk)
@@ -48,20 +49,17 @@ public enum DiskGrowth {
     }
 
     /// Moves `disk`'s backup GPT to the disk's end and extends the partition that ends last (the root) to the last
-    /// usable sector. Returns whether it changed the table; a table whose backup is at the end and whose root stops
-    /// short of it by no more than `granularity` (the built-in image's alignment slack) is not written.
+    /// usable sector. Returns whether it changed the table; a table whose backup is already at the end is not written.
     static func extendLastPartition(_ disk: URL) throws -> Bool {
         let file = try GPTDiskFile(disk)
         let table: GPTTable
-        do { table = try GPTTable.read(file, logicalBlockSize: GPTTable.logicalSectorSize, physicalBlockSize: GPTTable.physicalSectorSize) } catch { throw GPTError("failed to get the partition table: \(error)") }
+        do { table = try GPTTable.read(file) } catch { throw GPTError("failed to get the partition table: \(error)") }
         let size = try size(disk)
         guard let last = table.partitions.max(by: { $0.end < $1.end }) else { throw GPTError("the disk has no partition to grow") }
-        let atEnd = table.totalSize() == size
+        guard table.totalSize() != size else { return false }
         table.resize(size)
-        let short = last.end < table.lastUsableSector() && (table.lastUsableSector() - last.end) * UInt64(table.logicalSectorSize) > granularity
-        guard !atEnd || short else { return false }
-        if last.end < table.lastUsableSector() { last.expand(table.lastUsableSector() - last.end) }
-        do { try table.write(file, size: Int64(size)); try file.synchronize() } catch { throw GPTError("failed to write the new partition table: \(error)") }
+        if last.end < table.lastDataSector { last.expand(table.lastDataSector - last.end) }
+        do { try table.write(file); try file.synchronize() } catch { throw GPTError("failed to write the new partition table: \(error)") }
         return true
     }
 
@@ -70,11 +68,10 @@ public enum DiskGrowth {
     /// partition just deleted). Read with the VM off.
     public static func hasUnclaimedSpace(_ disk: URL) throws -> Bool {
         let file = try GPTDiskFile(disk)
-        let table = try GPTTable.read(file, logicalBlockSize: GPTTable.logicalSectorSize, physicalBlockSize: GPTTable.physicalSectorSize)
-        let sectors = try size(disk) / UInt64(table.logicalSectorSize)
-        if table.secondaryHeader != sectors - 1 { return true }
+        let table = try GPTTable.read(file)
+        if table.totalSize() != (try size(disk)) { return true }
         let lastEnd = table.partitions.map(\.end).max() ?? 0
-        return table.lastUsableSector() > lastEnd && (table.lastUsableSector() - lastEnd) * UInt64(table.logicalSectorSize) > granularity
+        return table.lastDataSector > lastEnd && table.lastDataSector - lastEnd > granularity / UInt64(GPTTable.sectorSize)
     }
 }
 
