@@ -14,7 +14,7 @@ them."
   the agent's L1–L6, sharp edges E1–E14) and the [plan decisions](#plan-decisions)
   below (P1–P13).
 - Every further choice the build made, and its verdict: the
-  [choices ledger](choices.md). Its **Needs your call** entries (N1–N9) are
+  [choices ledger](choices.md). Its **Needs your call** entries (N2–N9; N1 is resolved) are
   live trade-offs the user owns, and its **Provisional** entries (V1–V6) are each
   waiting on something named.
 - There is no backward compatibility: Localbox was unlaunched, so formats
@@ -339,7 +339,7 @@ What the build found that the plan didn't predict, so nobody walks it again.
   and Apple's catalog failing on a second fetch inside the daemon (a build now
   falls back to the newest release cached whole).
 - The 60 GB disk the plan named became 50 GB, because the build Mac's free space
-  fell during the pass. Whether Xcode fits is open (choice N1).
+  fell during the pass. The size is now chosen per image and per sandbox (choice N1).
 - An uncached build, including the 25.6 GB IPSW download, was never measured
   end to end on a real Mac: the build Mac lacked the free disk. The resumable
   download is proven on a fake HTTP layer, and tier `m` seeds the IPSW cache by

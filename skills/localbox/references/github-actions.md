@@ -71,9 +71,15 @@ Create one sandbox per runner from the image. A running runner keeps its
 sandbox awake by itself; a long `--sleep-after` keeps it up while the runner is
 restarted or reconnects. By default a sandbox is sized to the whole Mac; give a
 runner less if the user works on that Mac too (the sizes below are an example).
+Its disk starts at the image's size, about 8 GiB from `linux`, which checkouts,
+dependency caches, build output and Docker images fill within a few jobs; give
+it room with `--disk`. The disk is sparse, so the Mac pays only for what the
+jobs write. A runner that fills up later grows with
+`localbox sandbox resize NAME --disk 128G`, which restarts it (start its job
+again afterwards).
 
 ```sh
-localbox sandbox create --image actions-runner --sleep-after 30d --cpus 4 --memory 8G
+localbox sandbox create --image actions-runner --sleep-after 30d --cpus 4 --memory 8G --disk 64G
 ```
 
 Use the name it reports, `NAME` below, as the runner's name. Register it

@@ -102,7 +102,8 @@ setup) describe only what the shipped CLI does.
 The positioning doc owns the message and use cases. This file owns contributor
 principles and operations. Package-level behaviour belongs in the
 owning code and its README; closed specs in `specs/done` hold rationale, not
-current instructions.
+current instructions. Code ported from another project is listed, with its
+licence, in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and nowhere else.
 
 ## Building and testing
 
@@ -145,8 +146,9 @@ A probe implements the tiers its claims need:
 A fixture is never evidence for a real-VM claim: hibernation, NAT, cloning and
 guest identity are proven only at tier `v` or `m`.
 
-- **Tier `m`** needs a macOS 27 host and about 47 GiB free (a macOS build's disk)
-  plus any IPSW bytes not yet cached. It keeps the IPSW and the installed macOS
+- **Tier `m`** needs a macOS 27 host and the whole disk size of the macOS build it
+  runs free (47 GiB at the default 50 GB; probe 45 builds a 60 GiB one) plus any
+  IPSW bytes not yet cached. It keeps the IPSW and the installed macOS
   base under `LOCALBOX_VMLAB_DIR` (default `~/.cache/localbox-vmlab`), so only the
   first run downloads and installs; a probe that needs the base and finds none
   exits 2 naming the probe that builds it.

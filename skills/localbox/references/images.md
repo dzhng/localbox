@@ -3,8 +3,14 @@
 An image is a sandbox's disk (and its boot settings) saved under a name, never its
 memory: a sandbox made from one cold boots with the files and installs it had, and
 gets its own machine identity, SSH host keys and network address. Images belong
-to the account; `localbox image list` shows every image, its OS, size, where it
-came from, the Macs holding it and which one is the default.
+to the account; `localbox image list` shows every image, its OS, size, disk size,
+where it came from, the Macs holding it and which one is the default.
+
+An image's disk size is the least every sandbox made from it gets: `sandbox
+create --image IMAGE` gives that size, `--disk` more, and less is refused. A
+saved image keeps its sandbox's disk size, so one saved from a grown sandbox
+starts every new sandbox at least that large; `--disk` on `image create` raises
+it further (never below the sandbox's).
 
 Every `image` command reports what it did and the next command. Long work (a macOS
 build, a copy) answers at once with a state (`building`, `copying`, `ready`,
@@ -74,9 +80,12 @@ localbox sandbox create --image macos
 ```
 
 The build downloads Apple's restore image and installs macOS on the Mac itself,
-with no human step. It needs tens of gigabytes free (it refuses with `disk_full`
-up front if not) and takes a while; tell the user, then keep calling
-`image wait`.
+with no human step. Its disk is 50 GB unless `--disk` asks for more (macOS,
+Chrome and the agent take about 30 GB of it); that is every macOS sandbox's
+minimum, and a sandbox can still grow past it with its own `--disk`. The build
+needs its whole disk size free plus whatever of the restore image is not yet
+downloaded (it refuses with `disk_full` up front if not) and takes a while; tell
+the user, then keep calling `image wait`.
 
 Apple's licence allows at most two macOS VMs running at once per Mac, and a
 macOS base build running there takes one of the two. A third macOS sandbox puts
@@ -90,7 +99,9 @@ user's own development and testing; never set one up for anyone else.
 The macOS base has no Xcode: it needs an Apple ID and can't be redistributed.
 Install it once and save the result as an image:
 
-1. Create a macOS sandbox and get the Xcode `.xip` into it, either way:
+1. Create a macOS sandbox with room for Xcode, its `.xip` while it expands and
+   a simulator runtime (`localbox sandbox create --image macos --disk 120G`),
+   and get the Xcode `.xip` into it, either way:
    - **The user's Apple ID:** open https://developer.apple.com/download/all/ with
      `localbox browser open` and have the user sign in; they approve the
      two-factor prompt on their own device. Never write their password into a

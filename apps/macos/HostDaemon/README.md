@@ -45,6 +45,24 @@ guest learns its identity from the `hello` frame (sandbox id and name); a rename
 sends a new `hello`. A resize of a running sandbox
 restarts it and reports the processes that ended.
 
+A sandbox's disk size is in its record, like its CPUs and memory: its image's
+(the image manifest's `disk_bytes`) or more, never less, and it only grows.
+It takes effect at a cold boot, the one point where no VM runs on the disk and no
+saved state remembers it (a cold boot discards any; a resize while asleep
+discards it then and owes the cold boot). There `DiskGrowth` extends the sparse
+file and, for Linux, rewrites the GPT on the host (the backup header at the new
+end, the last partition, the root, to fill the disk); a macOS disk keeps its
+table, since the guest's `diskutil repairDisk` moves the backup header. After the
+boot and before the sandbox is ready, `GuestDiskClaim` grows the guest's
+filesystem through the agent's root shell: `resize2fs` on the mounted ext4 root,
+or `repairDisk` then `apfs resizeContainer`. A grown disk sets
+`disk_claim_pending` until a claim succeeds, so one that fails (the sandbox
+runs on at its old filesystem size, and its status says so) is tried at the next
+boot. Nothing grows at create: the clone is the image's disk until its first
+boot. An image saved from a sandbox records the sandbox's size or a larger one
+asked for, while its disk file is cloned as it lies; each sandbox from it grows
+its own copy.
+
 On SIGTERM the daemon saves every running sandbox and the next start restores
 it (`woke`). Where saving fails (the screen is locked and its lock asks for a
 password) or the backend cannot save (the process fixture), it stops the sandbox
@@ -117,6 +135,16 @@ labs call. Typing
 into Recovery uses Virtualization's private VNC server, and
 `RecoveryVNC.swift` is the only file that touches private Apple API: a macOS
 update that breaks it breaks one file, and nothing else depends on it.
+
+The build installs at the disk size the create asks for (`MacBaseBuilder.diskBytes`
+by default, and no less), and the base keeps it as its image's disk size. Recovery
+is needed only for `sip`, so once that boot powers off the build drops the
+recovery partition from the GPT (`RecoveryPartition`; only when it is the last
+entry) and the next boot grows the main APFS container into its space. Nothing
+then sits after the container, which is what lets a sandbox's container grow.
+If Localbox ever needs Recovery inside a guest again (a guest `softwareupdate`
+that wants it, say), this is the decision to revisit: moving the partition to
+the disk's end instead of deleting it.
 
 Images move between Macs as host operations on both ends. `ImageCopy` is one
 side of a copy: the sender serves its `ImageStore` files, the receiver writes a
