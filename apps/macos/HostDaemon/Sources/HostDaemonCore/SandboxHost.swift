@@ -187,9 +187,9 @@ public actor SandboxHost {
     /// one count of this Mac's macOS VMs.
     private var macOSBuilds: Set<String> = []
     /// The Mac's idle-sleep prevention, held while `KeepAwake` says so. It follows every state change (`bumpStateVersion`)
-    /// and every start or end of host work (`hostWorkChanged`), one refresh at a time; `releaseIdleSleep` ends it for good.
+    /// and every start or end of host work (`hostWorkChanged`), one refresh at a time.
     private let idleSleep: any IdleSleepPrevention
-    private var idleSleepRefreshing = false, idleSleepStale = false, idleSleepReleased = false
+    private var idleSleepRefreshing = false, idleSleepStale = false
 
     private let changes: ChangeSignal
 
@@ -795,12 +795,6 @@ public actor SandboxHost {
     /// Host work started or ended (`HostOperationStore.onRunningChange`, wired by `HostDaemon`).
     func hostWorkChanged() { refreshIdleSleep() }
 
-    /// At daemon exit: lets the Mac idle-sleep, and holds nothing again whatever changes after.
-    public func releaseIdleSleep() {
-        idleSleepReleased = true
-        idleSleep.hold(false)
-    }
-
     /// `KeepAwake`'s answer for every sandbox here (hidden ones too: their VMs run all the same) and this Mac's host work.
     private func shouldStayAwake() async -> Bool {
         var lifecycles: [RuntimeLifecycle] = []
@@ -818,7 +812,7 @@ public actor SandboxHost {
             while idleSleepStale {
                 idleSleepStale = false
                 let awake = await shouldStayAwake()
-                if !idleSleepReleased { idleSleep.hold(awake) }
+                idleSleep.hold(awake)
             }
             idleSleepRefreshing = false
         }

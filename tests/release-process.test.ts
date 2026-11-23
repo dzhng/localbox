@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appcast, signAppcast, sparkleSignature } from "../scripts/appcast.js";
 import { makeManifest, signManifest, writeRelease } from "../scripts/release.js";
-import { downloadUrl, verifyReleaseFiles } from "../scripts/release/build.js";
-import { parseFlags, ZIP } from "../scripts/release/config.js";
-import { assetList, assetMismatches, confirmCommand, draftCommands } from "../scripts/release/publish.js";
+import { assetList, downloadUrl, readReceipt, verifyReleaseFiles } from "../scripts/release/build.js";
+import { parseFlags, ZIP, type ReleaseConfig } from "../scripts/release/config.js";
+import { assetMismatches, confirmCommand, draftCommands } from "../scripts/release/publish.js";
 import { ALL_GROUPS, BUILD_GROUPS, PUBLISH_GROUPS, judge, neededBytes, type Facts } from "../scripts/release/validate.js";
 import { compareVersions, isPrerelease, newestVersion, parseVersion } from "../scripts/release/version.js";
 
@@ -131,8 +131,8 @@ async function builtRelease(version: string) {
 test("the build's self-check accepts its own output and refuses a stray file, another version, a tampered feed or a feed for another tag", async () => {
   const { dir, publicKey } = await builtRelease("0.2.0");
   try {
-    const { checked } = await verifyReleaseFiles(dir, { version: "0.2.0", publicKey });
-    assert.equal(checked.length, 4);
+    const checked = await verifyReleaseFiles(dir, { version: "0.2.0", publicKey });
+    assert.equal(checked.length, 2);
     await assert.rejects(verifyReleaseFiles(dir, { version: "0.2.1", publicKey }), /names version 0\.2\.0, not 0\.2\.1/);
     await assert.rejects(verifyReleaseFiles(dir, { version: "0.2.0", publicKey: generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString() }), /signature verification failed/);
     await writeFile(join(dir, ".DS_Store"), "");
@@ -152,6 +152,22 @@ test("the build's self-check accepts its own output and refuses a stray file, an
     await writeRelease(other.dir, signManifest(await makeManifest(other.dir, "0.2.0", manifest.imageDigest, "14.0", manifest.image), other.keys.privateKey, "release"));
     await assert.rejects(verifyReleaseFiles(other.dir, { version: "0.2.0", publicKey: other.publicKey }), /appcast\.xml offers https:\/\/github\.com\/dzhng\/localbox\/releases\/download\/v0\.1\.9\//);
   } finally { await rm(other.dir, { recursive: true, force: true }); }
+});
+
+test("smoke and publish act only on the files the build stage verified, for its version and key", async () => {
+  const { dir, publicKey } = await builtRelease("0.2.0");
+  const keyFile = join(dir, "..", `${dir.split("/").at(-1)}.pem`);
+  const config = { out: dir, receipt: `${dir}.build.json`, version: "0.2.0", publicKey: keyFile, rehearsal: false } as ReleaseConfig;
+  try {
+    await writeFile(keyFile, publicKey);
+    await assert.rejects(readReceipt(config), /there is no build in/);
+    const receipt = { version: "0.2.0", commit: "c".repeat(40), rehearsal: false, publicKeySha256: createHash("sha256").update(publicKey).digest("hex"), builtAt: "", assets: await assetList(dir) };
+    await writeFile(config.receipt, JSON.stringify(receipt));
+    assert.deepEqual(await readReceipt(config), receipt);
+    await assert.rejects(readReceipt({ ...config, version: "0.2.1" }), /holds a build of 0\.2\.0, not 0\.2\.1/);
+    await writeFile(join(dir, ZIP), "another app");
+    await assert.rejects(readReceipt(config), /are not the ones the build stage verified/);
+  } finally { await rm(dir, { recursive: true, force: true }); await rm(config.receipt, { force: true }); await rm(keyFile, { force: true }); }
 });
 
 test("publish uploads every file of the build into a draft at the build's commit, and confirming creates the tag there", async () => {

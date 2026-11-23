@@ -213,13 +213,14 @@ Three things Bento has that Localbox does not:
 
 ### N8. The Mac stays awake while a sandbox runs, on battery too, with no setting
 
-**When:** after the build (idle sleep went to 5 minutes the same day) · **Owner:** `SandboxHost` (`KeepAwake`, `IOKitIdleSleepPrevention` in `SystemPower.swift`)
+**When:** after the build (idle sleep went to 5 minutes the same day) · **Owner:** `SandboxHost`; `KeepAwake` and `IOKitIdleSleepPrevention` in `KeepAwake.swift`
 
 While any sandbox is starting, running, freezing for a clone or saving, or any
 long host work runs (an image build, capture or copy), the daemon holds one
 `PreventUserIdleSystemSleep` assertion ("Localbox is running sandboxes" in
 `pmset -g assertions`), as Caffeine would; once every sandbox is asleep, paused
-or stopped and no work runs, it lets go, and it lets go at exit. The display
+or stopped and no work runs, it lets go, and macOS drops it when the daemon
+exits, however it exits (P1). The display
 still sleeps, and a closed lid or a sleep someone asks for still sleeps the Mac,
 hibernating the sandboxes first as before. Only a daemon on real VMs holds it;
 the process fixture holds nothing. The popover's header says "Keeping this Mac
@@ -706,8 +707,9 @@ Refusals from both go through `render()` as the error envelope every other
 command prints, with the existing codes: `invalid_input` (no email, a bad email
 or code), `conflict` (already signed in), `unauthorized` (a revoked Mac),
 `rate_limited` (retryable), `internal`. The identity API's HTTP status picks
-the code; the contract and catalog are unchanged. Without `--json` the text is
-the same as before ("Code sent to E. Ask the user for the 6-digit code…").
+the code; the contract and catalog are unchanged. Without `--json` the same
+`render()` prints the answer's `report` line ("Code sent to E. Ask the user for
+the 6-digit code…"), which `--json` carries too (P3).
 Settings decodes each answer into a `LoginStep` and the code flow follows it:
 `code_sent` shows the code field, `signed_in` ends the flow; an exit 0 with any
 other answer is shown as a failure, and a refusal shows the envelope's
@@ -1107,9 +1109,10 @@ plus 4 GiB.
 **Owner:** `scripts/release/build.ts`
 
 `build` writes `dist/release.build.json` beside the folder (inside it, it
-would become an asset): version, commit, rehearsal or not, and the public
-key's digest. `smoke` and `publish` refuse a folder built for another version
-or key, and `publish` refuses unless `HEAD` is the built commit.
+would become an asset): version, commit, rehearsal or not, the public key's
+digest and every file's name, size and SHA-256. `smoke` and `publish` refuse a
+folder built for another version or key, or whose files differ from the
+receipt's, and `publish` refuses unless `HEAD` is the built commit (P2).
 
 - **Verdict:** sound. **Confidence:** high.
 
@@ -1126,3 +1129,74 @@ files. The version bump is a documented `npm version X.Y.Z
 --no-git-tag-version`, not a helper.
 
 - **Verdict:** sound. **Confidence:** medium–high.
+
+---
+
+## Post-release review
+
+Decisions made in the whole-change review after 0.2.0 shipped (the login
+envelope, the update blocker, image names, the staged release, the 5-minute
+idle default and keeping the Mac awake). Numbered P, in the same verdict order.
+
+### P1. macOS releases the keep-awake assertion at exit; the daemon does not
+
+**Owner:** `KeepAwake.swift` (`KeepAwake`, `IdleSleepPrevention`, `IOKitIdleSleepPrevention`)
+
+The daemon had an explicit `releaseIdleSleep()` at the end of
+`DaemonShutdown` and a flag that kept a released assertion from coming back.
+powerd drops every assertion a process holds when that process ends, a
+SIGKILL included (checked with `caffeinate -i` and `pmset -g assertions`), so
+both went: one mechanism, the platform's, now covers a clean stop, the end of
+a supervised daemon's stdin and a crash alike. While the shutdown hibernates,
+the sandboxes are freezing, so the Mac stays awake until the saves are done.
+The decision and its IOKit wrapper moved into one file; `SystemPower.swift`
+keeps only the sleep notices.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### P2. A release is verified once, by `build`; the receipt pins what it verified
+
+**Owner:** `scripts/release/build.ts` (`verifyBuild`, `assetList`, `readReceipt`); `verifyReleaseFolder` in `scripts/release.ts`; `readAppcast` in `scripts/appcast.ts`
+
+`smoke` ran `verifyBuild` again (unzip, codesign, the feed) and `publish` ran
+the folder and feed checks a third time. Now `build` verifies once and records
+each file's SHA-256 in its receipt; `readReceipt` re-hashes the folder and
+refuses any difference, and that is all `smoke` and `publish` check before
+acting (the smoke's installation procedure still verifies the release against
+the key, as a user's would). The folder check (signed manifest, digests,
+`SHA256SUMS`, no stray file) moved beside the manifest code as
+`verifyReleaseFolder`, with `SHA256SUMS` written and read by one helper; the
+feed is read back by `readAppcast` beside `appcast`, which probe 42 uses too
+instead of its own regex. The smoke no longer reads the signing folder.
+
+- **Verdict:** sound. **Confidence:** high.
+
+### P3. Login's sentence is a `report`, printed by the shared render path
+
+**Owner:** `login` in `apps/cli/src/index.ts`; `render` in `apps/cli/src/render.ts`
+
+`login` printed its text with its own `process.stdout.write` beside
+`print()`. Its answers now carry `report` (one sentence), and `render` prints
+a bare value's report lines as it already did an envelope's, so login and
+logout are one `print()` call. Login keeps the bare success value its sibling
+local commands (`app status`, `app login-item`, `update`) print rather than
+switching to a success envelope; Settings ignores the extra field.
+
+- **Verdict:** sound. **Confidence:** medium–high.
+
+### P4. Idle sleep and keeping awake are stated once per audience
+
+**Owner:** `skills/localbox/SKILL.md` ("Reading results") for agents; `apps/macos/HostDaemon/README.md` for the code
+
+The agent-facing statement (5 idle minutes unless `--sleep-after`, a running
+job keeps a sandbox awake, the Mac kept from idle sleep while a sandbox runs
+or an image builds or copies, the display and a closed lid still sleeping, no
+setting) lives in the skill; `installation.md` says only that no energy
+setting needs changing; the contract's `sandbox.create` defines idle as no
+request and no running job. README, the site's FAQ, SECURITY.md and a
+`positioning.md` rule carry the product-facing sentence. The daemon's image
+messages (`image.wait`, `image.remove`) call the image by its account name as
+the copy's did. DEVELOPMENT.md's note that `latest` had nothing to install
+went, since 0.2.0 is published in the new format.
+
+- **Verdict:** sound. **Confidence:** high.

@@ -33,8 +33,10 @@ instead.
   closed, power-off). The app and the updater only wait for it to exit,
   however long that takes, and send it nothing more (its shutdown runs once,
   so a second signal would do nothing, and it is never SIGKILLed); after 120 s
-  of silence the popover says saving is taking longer than usual. One daemon per machine root is the daemon's own kernel lock, never
-  the app's bookkeeping.
+  of silence the popover says saving is taking longer than usual. One daemon
+  per machine root is the daemon's own kernel lock, never the app's
+  bookkeeping. Keeping the Mac awake while sandboxes run is the daemon's too:
+  the app holds no power assertion and only shows `keeping_awake`.
 - **Paths come from the CLI.** `packages/config`'s `machinePaths()` is the one
   definition of the machine root; Swift learns every path from
   `localbox app paths --json` (which also creates the root and the IPC token)

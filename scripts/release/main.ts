@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, releaseBytes } from "./build.js";
+import { build } from "./build.js";
 import { parseFlags, releaseConfig, type Flags, type ReleaseConfig } from "./config.js";
 import { step } from "./process.js";
 import { publish } from "./publish.js";
@@ -74,7 +74,8 @@ async function runStage(stage: Stage, flags: Flags, config: ReleaseConfig): Prom
       heading("build", config);
       validate(config, BUILD_GROUPS);
       const receipt = await build(config);
-      return finish("build", [`${config.out}: ${(releaseBytes(config.out) / 1024 ** 2).toFixed(1)} MiB from ${receipt.commit.slice(0, 7)}`], command(flags, "smoke"));
+      const bytes = receipt.assets.reduce((total, asset) => total + asset.size, 0);
+      return finish("build", [`${config.out}: ${(bytes / 1024 ** 2).toFixed(1)} MiB from ${receipt.commit.slice(0, 7)}`], command(flags, "smoke"));
     }
     case "smoke":
       heading("smoke", config);

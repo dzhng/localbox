@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signApp, withIdentity } from "../../apps/macos/App/scripts/sign.mjs";
-import { appcast, signAppcast, sparklePublicKey, sparkleSignature, verifyAppcast } from "../appcast.js";
+import { appcast, readAppcast, signAppcast, sparklePublicKey, sparkleSignature } from "../appcast.js";
 import { buildGuestAgent } from "../build-guest-agent.js";
-import { checkManifest, makeManifest, packImage, signManifest, verifyManifestSignature, verifyRelease, writeRelease, type ReleaseManifest } from "../release.js";
-import { BUNDLE_ID, MINIMUM_MACOS, REPOSITORY, ZIP, signingFile, type BuildReceipt, type ReleaseConfig } from "./config.js";
+import { makeManifest, packImage, sha256, signManifest, verifyReleaseFolder, writeRelease } from "../release.js";
+import { BUNDLE_ID, MINIMUM_MACOS, REPOSITORY, ZIP, signingFile, type Asset, type BuildReceipt, type ReleaseConfig } from "./config.js";
 import { capture, step } from "./process.js";
 import { tagOf } from "./version.js";
 
@@ -15,7 +15,7 @@ import { tagOf } from "./version.js";
  * `build`: the release's files into `config.out`, every one of them an asset: the signed app zip (the CLI, its Node and
  * the patched Sparkle inside), `appcast.xml` (Sparkle's signed feed offering that zip at its versioned URL), the linux
  * image's parts, `release.json` (the signed manifest) and `SHA256SUMS`. Then it checks its own output as an installer and
- * an updater would (`verifyBuild`) and writes the receipt `smoke` and `publish` act on.
+ * an updater would (`verifyBuild`), once, and writes the receipt `smoke` and `publish` act on, which pins every file.
  */
 export async function build(config: ReleaseConfig): Promise<BuildReceipt> {
   const { root, version, out } = config;
@@ -55,7 +55,7 @@ export async function build(config: ReleaseConfig): Promise<BuildReceipt> {
   for (const line of await verifyBuild(out, { version, publicKey: readFileSync(config.publicKey, "utf8"), identitySha1: publicJson.sha1 })) console.log(`  ok  ${line}`);
   const receipt: BuildReceipt = {
     version, commit: capture("git", ["rev-parse", "HEAD"], { cwd: root }).stdout.trim(), rehearsal: config.rehearsal,
-    publicKeySha256: createHash("sha256").update(readFileSync(config.publicKey)).digest("hex"), builtAt: new Date().toISOString(),
+    publicKeySha256: createHash("sha256").update(readFileSync(config.publicKey)).digest("hex"), builtAt: new Date().toISOString(), assets: await assetList(out),
   };
   writeFileSync(config.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
   return receipt;
@@ -64,37 +64,23 @@ export async function build(config: ReleaseConfig): Promise<BuildReceipt> {
 export const downloadUrl = (version: string, name: string) => `https://github.com/${REPOSITORY}/releases/download/${tagOf(version)}/${name}`;
 
 /**
- * The release folder's own consistency, as the installation procedure and Sparkle check it: the manifest's signature
- * and version, every artifact's digest, `SHA256SUMS` listing exactly the signed artifacts, no file the manifest does not
- * name, and a signed feed offering exactly this zip at this tag. Returns what it checked; throws at the first mismatch.
+ * The release folder as the installation procedure and Sparkle check it: `verifyReleaseFolder` (the signed manifest,
+ * every digest, `SHA256SUMS`, no stray file), this version, the app zip, the feed and the image among the artifacts, and
+ * a signed feed offering exactly this zip at this tag. Returns what it checked; throws at the first mismatch.
  */
-export async function verifyReleaseFiles(out: string, options: { version: string; publicKey: string }): Promise<{ manifest: ReleaseManifest; checked: string[] }> {
-  const checked: string[] = [];
-  const manifest = JSON.parse(readFileSync(join(out, "release.json"), "utf8")) as ReleaseManifest;
-  verifyManifestSignature(manifest, options.publicKey);
-  checkManifest(manifest);
+export async function verifyReleaseFiles(out: string, options: { version: string; publicKey: string }): Promise<string[]> {
+  const manifest = await verifyReleaseFolder(out, options.publicKey);
   if (manifest.version !== options.version) throw new Error(`release.json names version ${manifest.version}, not ${options.version}`);
-  checked.push(`release.json is ${options.version}, signed by the release key`);
-  await verifyRelease(out, manifest);
-  const sums = manifest.artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}\n`).join("");
-  if (readFileSync(join(out, "SHA256SUMS"), "utf8") !== sums) throw new Error("SHA256SUMS does not list exactly the signed artifacts");
-  checked.push(`every artifact matches its signed digest, and SHA256SUMS lists exactly those ${manifest.artifacts.length}`);
-  const expected = [...manifest.artifacts.map((artifact) => artifact.name), "release.json", "SHA256SUMS"].sort();
-  const present = readdirSync(out).sort();
-  if (JSON.stringify(present) !== JSON.stringify(expected)) throw new Error(`the release folder holds ${present.join(", ")}, but the manifest names ${expected.join(", ")}`);
-  for (const name of [ZIP, "appcast.xml"]) if (!expected.includes(name)) throw new Error(`the release has no ${name}`);
+  for (const name of [ZIP, "appcast.xml"]) if (!manifest.artifacts.some((artifact) => artifact.name === name)) throw new Error(`the release has no ${name}`);
   if (!manifest.image) throw new Error("release.json names no linux image");
-  checked.push("the folder holds exactly the manifest's files, the app zip, the feed and the image among them");
-
-  const feed = verifyAppcast(readFileSync(join(out, "appcast.xml"), "utf8"), options.publicKey);
+  const checked = [`release.json is ${options.version}, signed by the release key; the folder holds exactly its ${manifest.artifacts.length} artifacts (the app zip, the feed and the image among them), each with its digest, and SHA256SUMS`];
+  const offer = readAppcast(readFileSync(join(out, "appcast.xml"), "utf8"), options.publicKey);
   const zip = readFileSync(join(out, ZIP));
-  const enclosure = /<enclosure url="([^"]+)" length="(\d+)" type="application\/octet-stream" sparkle:edSignature="([^"]+)"\/>/.exec(feed);
-  const feedVersion = /<sparkle:version>([^<]+)<\/sparkle:version>/.exec(feed)?.[1];
-  if (feedVersion !== options.version) throw new Error(`appcast.xml offers version ${feedVersion}, not ${options.version}`);
-  if (!enclosure || enclosure[1] !== downloadUrl(options.version, ZIP)) throw new Error(`appcast.xml offers ${enclosure?.[1]}, not ${downloadUrl(options.version, ZIP)}`);
-  if (Number(enclosure[2]) !== zip.length || !verify(null, zip, options.publicKey, Buffer.from(enclosure[3], "base64"))) throw new Error("appcast.xml's length or signature does not match the zip");
+  if (offer.version !== options.version) throw new Error(`appcast.xml offers version ${offer.version}, not ${options.version}`);
+  if (offer.url !== downloadUrl(options.version, ZIP)) throw new Error(`appcast.xml offers ${offer.url}, not ${downloadUrl(options.version, ZIP)}`);
+  if (offer.length !== zip.length || !verify(null, zip, options.publicKey, Buffer.from(offer.signature, "base64"))) throw new Error("appcast.xml's length or signature does not match the zip");
   checked.push(`appcast.xml is signed, offers ${options.version} at ${tagOf(options.version)}'s ${ZIP}, with the zip's length and signature`);
-  return { manifest, checked };
+  return checked;
 }
 
 /**
@@ -102,7 +88,7 @@ export async function verifyReleaseFiles(out: string, options: { version: string
  * the release identity), and its Info.plist, CLI version and pinned key the ones this release names.
  */
 export async function verifyBuild(out: string, options: { version: string; publicKey: string; identitySha1: string }): Promise<string[]> {
-  const { checked } = await verifyReleaseFiles(out, options);
+  const checked = await verifyReleaseFiles(out, options);
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), "localbox-verify-")));
   try {
     execFileSync("ditto", ["-x", "-k", join(out, ZIP), scratch]);
@@ -128,13 +114,22 @@ export async function verifyBuild(out: string, options: { version: string; publi
   return checked;
 }
 
-/** The receipt `build` left, which must name this version and match the folder's manifest. */
-export function readReceipt(config: ReleaseConfig): BuildReceipt {
-  if (!existsSync(config.receipt) || !existsSync(join(config.out, "release.json"))) throw new Error(`there is no build in ${config.out}: run npm run release -- build${config.rehearsal ? " --rehearsal" : ""} first`);
+/** Every file of a build folder, each an asset: name, size and SHA-256. */
+export async function assetList(out: string): Promise<Asset[]> {
+  const assets: Asset[] = [];
+  for (const name of readdirSync(out).sort()) assets.push({ name, size: statSync(join(out, name)).size, sha256: await sha256(join(out, name)) });
+  return assets;
+}
+
+/**
+ * The receipt `build` left, which must name this version and key, and pin exactly the files in the folder: `verifyBuild`
+ * ran on those, so `smoke` and `publish` act on them without checking them again.
+ */
+export async function readReceipt(config: ReleaseConfig): Promise<BuildReceipt> {
+  if (!existsSync(config.receipt)) throw new Error(`there is no build in ${config.out}: run npm run release -- build${config.rehearsal ? " --rehearsal" : ""} first`);
   const receipt = JSON.parse(readFileSync(config.receipt, "utf8")) as BuildReceipt;
   if (receipt.version !== config.version) throw new Error(`${config.out} holds a build of ${receipt.version}, not ${config.version}: run the build stage again`);
   if (receipt.publicKeySha256 !== createHash("sha256").update(readFileSync(config.publicKey)).digest("hex")) throw new Error(`${config.out} was built with another release key than ${config.publicKey}: run the build stage again`);
+  if (JSON.stringify(await assetList(config.out)) !== JSON.stringify(receipt.assets)) throw new Error(`the files in ${config.out} are not the ones the build stage verified: run it again`);
   return receipt;
 }
-
-export const releaseBytes = (out: string) => readdirSync(out).reduce((total, name) => total + statSync(join(out, name)).size, 0);

@@ -46,11 +46,14 @@ test("login --json answers each step with a state; text keeps the person's sente
   try {
     const { env, credentials } = await scratchMac(); const run = (args: string[]) => cli(args, { ...env, LOCALBOX_API_ORIGIN: api.origin });
     const sent = await run(["login", "--email", "you@example.com", "--json"]);
-    assert.equal(sent.code, 0, sent.stderr); assert.deepEqual(JSON.parse(sent.stdout), { state: "code_sent", email: "you@example.com" });
+    assert.equal(sent.code, 0, sent.stderr); const { report: sentReport, ...sentState } = JSON.parse(sent.stdout);
+    assert.deepEqual(sentState, { state: "code_sent", email: "you@example.com" });
+    assert.match(sentReport[0], /^Code sent to you@example\.com\. Ask the user for the 6-digit code/);
     assert.match((await run(["login", "--email", "you@example.com"])).stdout, /^Code sent to you@example\.com\. Ask the user for the 6-digit code/);
     const signed = await run(["login", "--email", "you@example.com", "--code", "123456", "--json"]);
     assert.equal(signed.code, 0, signed.stderr);
-    assert.deepEqual(JSON.parse(signed.stdout), { state: "signed_in", email: "you@example.com", account_name: "brave-walrus-482", machine_name: "studio", machine_count: 2 });
+    assert.deepEqual(JSON.parse(signed.stdout), { state: "signed_in", email: "you@example.com", account_name: "brave-walrus-482", machine_name: "studio", machine_count: 2,
+      report: ["Signed in to brave-walrus-482 as studio. 2 machines."] });
     assert.ok(existsSync(credentials));
     assert.deepEqual(api.calls, ["/api/auth/email/start", "/api/auth/email/start", "/api/auth/email/verify"]);
   } finally { api.close(); }

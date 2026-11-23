@@ -109,10 +109,13 @@ commands run as root in both; a macOS sandbox has macOS's own tools (`zsh`,
   `made_room` (a full Mac slept its least recently used idle sandbox for you),
   `restarted`, `truncated`, `waiting` (a create waiting for its image to copy). Tell the user about anything that changed their world,
   such as a restarted dev server.
-- A sandbox idle for its sleep time (no request, no running job) sleeps. The next
-  command wakes it first and reports `woke` or `cold_booted`. A sandbox running a
-  job never sleeps to make room. While any sandbox runs, the Mac does not idle-sleep
-  (its display still does, and closing the lid still sleeps it).
+- A sandbox sleeps after 5 idle minutes, or the `--sleep-after` it was created
+  with. Idle means no request and no running job: a sandbox running a Localbox
+  job never sleeps, not even to make room. The next command wakes a sleeping
+  sandbox first and reports `woke` or `cold_booted`.
+- While any sandbox runs, or an image builds or copies, Localbox keeps the Mac
+  from idle-sleeping. The display still sleeps, and closing the lid still sleeps
+  the Mac (its sandboxes hibernate first). There is no setting for it.
 - Sleep frees RAM only where the Mac can hibernate; otherwise the `slept`
   detail says the sandbox paused in memory. `localbox host check` says which
   ([why and the settings](references/installation.md#prepare-the-mac-so-sandboxes-can-hibernate)).

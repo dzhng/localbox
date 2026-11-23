@@ -223,6 +223,8 @@ The agent never has to guess or ask a follow-up question.
 - Sleep is the answer to "doesn't a VM eat my RAM?": idle sandboxes sleep,
   give their memory back and resume exactly where they were. Installing
   checks the Mac is set up for it; don't promise it beyond that.
+- While a sandbox runs, the Mac doesn't idle-sleep. Never promise more: the
+  display still sleeps, and a closed lid still sleeps the Mac.
 - Snapshots and rollback stay out of the message until they exist.
 - Marketing (the README, the site and the pitch in `llms.txt`) describes the
   launch product and never its build status. Instructions an agent follows (the

@@ -32,6 +32,7 @@ export interface AppcastItem {
 }
 
 const escape = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+const unescape = (text: string) => text.replaceAll("&quot;", '"').replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 
 /** A one-item feed: Sparkle offers the item when its version is newer than the running app's `CFBundleVersion`. */
 export function appcast(item: AppcastItem): string {
@@ -59,4 +60,14 @@ export function verifyAppcast(signed: string, publicKey: Key): string {
   const signature = /^edSignature:\s*(\S+)$/m.exec(block)?.[1], length = Number(/^length:\s*(\d+)$/m.exec(block)?.[1]);
   if (!signature || length !== content.length || !verify(null, content, publicKey, Buffer.from(signature, "base64"))) throw new Error("the feed's signature does not verify");
   return content.toString("utf8");
+}
+
+/** A signed feed `appcast` wrote, read back: `verifyAppcast`, then its one item. */
+export function readAppcast(signed: string, publicKey: Key): AppcastItem {
+  const feed = verifyAppcast(signed, publicKey);
+  const element = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`).exec(feed)?.[1];
+  const enclosure = /<enclosure url="([^"]+)" length="(\d+)" type="application\/octet-stream" sparkle:edSignature="([^"]+)"\/>/.exec(feed);
+  const version = element("sparkle:version"), minimumSystemVersion = element("sparkle:minimumSystemVersion");
+  if (!enclosure || version === undefined || minimumSystemVersion === undefined) throw new Error("the feed has no item with a version, a minimum macOS and an enclosure");
+  return { version: unescape(version), url: unescape(enclosure[1]), length: Number(enclosure[2]), signature: enclosure[3], minimumSystemVersion: unescape(minimumSystemVersion) };
 }

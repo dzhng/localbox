@@ -4,7 +4,7 @@ import { generateKeyPairSync, verify } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Check, ProofContext } from "../run.js";
-import { sparklePublicKey, verifyAppcast } from "../../appcast.js";
+import { readAppcast, sparklePublicKey } from "../../appcast.js";
 import { sha256 } from "../../release.js";
 import { writeImageFiles } from "../lib/images.js";
 import { installationSteps, runSteps, serveRelease, trusting } from "../lib/installation.js";
@@ -68,14 +68,12 @@ async function release(ctx: ProofContext): Promise<Check[]> {
       assert.ok(files.includes(`localbox-linux-${VERSION}.disk.img.zst.000`));
     }));
     checks.push(await ctx.check("appcast.xml is signed with the manifest's key and offers this release's zip, with the zip's own signature", async () => {
-      const feed = verifyAppcast(readFileSync(join(out, "appcast.xml"), "utf8"), keys.publicKey);
+      const offer = readAppcast(readFileSync(join(out, "appcast.xml"), "utf8"), keys.publicKey);
       const zip = readFileSync(join(out, "Localbox-macos-arm64.zip"));
-      assert.match(feed, new RegExp(`<sparkle:version>${VERSION.replaceAll(".", "\\.")}</sparkle:version>`));
-      const enclosure = /<enclosure url="([^"]+)" length="(\d+)" type="application\/octet-stream" sparkle:edSignature="([^"]+)"\/>/.exec(feed);
-      assert.ok(enclosure, feed);
-      assert.equal(enclosure[1], `https://github.com/dzhng/localbox/releases/download/v${VERSION}/Localbox-macos-arm64.zip`);
-      assert.equal(Number(enclosure[2]), zip.length);
-      assert.ok(verify(null, zip, keys.publicKey, Buffer.from(enclosure[3], "base64")), "the zip's signature verifies with the release key");
+      assert.deepEqual([offer.version, offer.minimumSystemVersion], [VERSION, "14.0"]);
+      assert.equal(offer.url, `https://github.com/dzhng/localbox/releases/download/v${VERSION}/Localbox-macos-arm64.zip`);
+      assert.equal(offer.length, zip.length);
+      assert.ok(verify(null, zip, keys.publicKey, Buffer.from(offer.signature, "base64")), "the zip's signature verifies with the release key");
     }));
     checks.push(await ctx.check("the installation procedure's download, verify and place steps install it into a scratch HOME; a tampered manifest is refused", async () => {
       server = await serveRelease(out);

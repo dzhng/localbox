@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { installationSteps, runSteps, serveRelease, trusting } from "../proof/lib/installation.js";
 import { packagedApp } from "../proof/lib/packaged-app.js";
 import { sha256, type ReleaseManifest } from "../release.js";
-import { verifyBuild, readReceipt } from "./build.js";
-import { BUNDLE_ID, signingFile, type ReleaseConfig } from "./config.js";
+import { readReceipt } from "./build.js";
+import { BUNDLE_ID, type ReleaseConfig } from "./config.js";
 import { capture } from "./process.js";
 
 const FINDER_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -27,10 +27,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * folders the run creates are put back as they were.
  */
 export async function smoke(config: ReleaseConfig): Promise<string[]> {
-  const receipt = readReceipt(config);
+  const receipt = await readReceipt(config);
   const publicKey = readFileSync(config.publicKey, "utf8");
-  const publicJson = JSON.parse(readFileSync(signingFile(config, "publicJson"), "utf8")) as { sha1: string };
-  const checked = await verifyBuild(config.out, { version: receipt.version, publicKey, identitySha1: publicJson.sha1 });
+  const checked = [`${config.out} holds the ${receipt.assets.length} files the build stage verified`];
   const manifest = JSON.parse(readFileSync(join(config.out, "release.json"), "utf8")) as ReleaseManifest;
   if (capture("lsappinfo", ["find", `bundleid=${BUNDLE_ID}`]).stdout.trim()) {
     throw new Error(`Quit Localbox first (osascript -e 'quit app id "${BUNDLE_ID}"'): the smoke runs the release under its real bundle id, and a second copy hands off to the running one`);

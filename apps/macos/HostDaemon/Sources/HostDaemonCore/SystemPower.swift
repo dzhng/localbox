@@ -50,27 +50,4 @@ public final class SystemPowerMonitor: @unchecked Sendable {
     }
 }
 
-/// The idle-sleep assertion while sandboxes run (`IOPMAssertionCreateWithName`,
-/// `PreventUserIdleSystemSleep`, shown by `pmset -g assertions`). The display still sleeps, and a closed lid or a sleep
-/// asked for still sleeps the Mac: `SystemPowerMonitor` hibernates the sandboxes first, as it always has.
-public final class IOKitIdleSleepPrevention: IdleSleepPrevention, @unchecked Sendable {
-    public static let reason = "Localbox is running sandboxes"
-    private let log: @Sendable (String) -> Void
-    private let lock = NSLock()
-    private var assertion: IOPMAssertionID?
-
-    public init(log: @escaping @Sendable (String) -> Void) { self.log = log }
-
-    public func hold(_ held: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        if held, assertion == nil {
-            var id: IOPMAssertionID = 0
-            let status = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), Self.reason as CFString, &id)
-            if status == kIOReturnSuccess { assertion = id; log("keeping this Mac awake while sandboxes run") } else { log("could not keep this Mac awake: IOPMAssertionCreateWithName returned \(status)") }
-        } else if !held, let id = assertion {
-            IOPMAssertionRelease(id); assertion = nil
-            log("letting this Mac idle-sleep again")
-        }
-    }
-}
 #endif
