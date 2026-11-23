@@ -25,7 +25,7 @@ public actor ImageCapture: HostOperationKind {
     /// Starts saving sandbox `sandboxID` as image `imageID` with a disk of at least `diskBytes` under `key` (the
     /// create's mutation id), or returns the operation already under that key. A sandbox this machine doesn't have, or a
     /// disk smaller than the sandbox's, is refused before anything is journaled.
-    public func begin(key: String, imageID: String, sandboxID: String, diskBytes: UInt64? = nil) async throws -> HostOperationRecord {
+    public func begin(key: String, imageID: String, sandboxID: String, diskBytes: UInt64?) async throws -> HostOperationRecord {
         if let existing = await operations.state(key) { return existing }
         guard let runtime = await sandboxes.runtime(sandboxID), await runtime.record.inCatalog else {
             throw HostOperationFailure(code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine")

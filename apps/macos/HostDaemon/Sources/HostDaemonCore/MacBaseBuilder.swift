@@ -117,7 +117,7 @@ public actor MacBaseBuilder: HostOperationKind {
     /// mutation id), or returns the operation already under that key. A disk below `diskBytes` (`invalid_input`), a host
     /// older than macOS 27 (`image_incompatible`), a Mac without room for the IPSW and the disk (`disk_full`) or without
     /// a guest agent build is refused before anything is journaled.
-    public func begin(key: String, imageID: String, diskBytes requested: UInt64? = nil) async throws -> HostOperationRecord {
+    public func begin(key: String, imageID: String, diskBytes requested: UInt64?) async throws -> HostOperationRecord {
         if let existing = await operations.state(key) { return existing }
         let diskBytes = requested.map(DiskGrowth.rounded) ?? Self.diskBytes
         guard diskBytes >= Self.diskBytes else {

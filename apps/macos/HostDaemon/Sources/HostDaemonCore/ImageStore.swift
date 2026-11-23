@@ -149,10 +149,10 @@ public struct ImageStore: Sendable {
 
     /// Writes the manifest of the image laid down in `temp`, sized from its files, ready for `commit`. Its disk size is
     /// the disk file's length, or `diskBytes` when that is larger.
-    public func seal(_ temp: URL, imageID: String, os: GuestOS, diskBytes: UInt64? = nil, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
+    public func seal(_ temp: URL, imageID: String, os: GuestOS, diskBytes: UInt64, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
         let disk = temp.appendingPathComponent(Self.diskName)
         let size = allocatedBytes(disk) + allocatedBytes(Self.bootStore(in: temp, os: os))
-        let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, diskBytes: max(diskBytes ?? 0, try DiskGrowth.size(disk)), hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
+        let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, diskBytes: max(diskBytes, try DiskGrowth.size(disk)), hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: temp.appendingPathComponent(Self.manifestName), options: .atomic)
         return manifest
