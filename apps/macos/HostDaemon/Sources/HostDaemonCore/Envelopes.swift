@@ -39,9 +39,12 @@ public func requestEnvelope(_ operation: String, sandboxID: String?, input: [Str
 /// The longest deadline the guest agent accepts on a request (it refuses more than 120 s).
 let guestMaxDeadlineMs = 120_000
 
+/// Runs a script as root in the guest within a timeout: its stdout, or a throw with its output when it exits non-zero.
+public typealias GuestRootShell = @Sendable (_ script: String, _ timeout: TimeInterval) async throws -> String
+
 /// `shell.exec` through the guest agent's request lane, which runs it as root: its stdout, or a throw with the tail of
 /// its output when it exits non-zero. `step` says what runs, for the error ("a build step").
-func rootShell(on channel: any GuestChannel, sandboxID: String, step: String) -> GuestDiskClaim.RootShell {
+func rootShell(on channel: any GuestChannel, sandboxID: String, step: String) -> GuestRootShell {
     { script, timeout in
         let request = try requestEnvelope("shell.exec", sandboxID: sandboxID, input: ["command": script], deadlineMs: min(Int(timeout * 1000), guestMaxDeadlineMs))
         let answer = try JSONSerialization.jsonObject(with: try await channel.send(request)) as? [String: Any] ?? [:]

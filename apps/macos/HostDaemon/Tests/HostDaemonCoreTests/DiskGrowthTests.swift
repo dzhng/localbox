@@ -170,7 +170,7 @@ final class DiskGrowthTests: XCTestCase {
         let answers: [String: String]
         init(answers: [String: String] = [:]) { self.answers = answers }
         var scripts: [String] { seen.value }
-        var run: GuestDiskClaim.RootShell { { script, _ in self.seen.withLock { $0.append(script) }; return self.answers[script] ?? "" } }
+        var run: GuestRootShell { { script, _ in self.seen.withLock { $0.append(script) }; return self.answers[script] ?? "" } }
     }
 
     static let singleDisk = """
