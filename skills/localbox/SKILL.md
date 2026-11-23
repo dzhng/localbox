@@ -1,6 +1,6 @@
 ---
 name: localbox
-description: Give yourself durable Linux or macOS sandboxes on the user's own Macs through the localbox CLI — a shell, files, a browser and a desktop that stay exactly as you left them, sleep when idle and wake on use, and start from images saved from other sandboxes. Use when the user wants work done in a sandbox rather than on their machine (installs, test suites, untrusted code, permissions-off runs, long builds, a dev server kept running, Xcode or a Mac app), wants a sandbox on another of their Macs, wants to save, reuse or copy a sandbox setup as an image, or asks to install, sign in, set up MCP, or check, update or remove the Localbox skill and CLI.
+description: Give yourself durable Linux or macOS sandboxes on the user's own Macs through the localbox CLI — a shell, files, a browser and a desktop that stay exactly as you left them, sleep when idle and wake on use, and start from images saved from other sandboxes. Use when the user wants work done in a sandbox rather than on their machine (installs, test suites, untrusted code, permissions-off runs, long builds, a dev server kept running, Xcode or a Mac app, a self-hosted GitHub Actions runner on their own Mac), wants a sandbox on another of their Macs, wants to save, reuse or copy a sandbox setup as an image, or asks to install, sign in, set up MCP, or check, update or remove the Localbox skill and CLI.
 ---
 
 # Localbox
