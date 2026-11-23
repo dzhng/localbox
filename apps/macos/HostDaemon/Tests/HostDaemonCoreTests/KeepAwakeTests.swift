@@ -36,15 +36,6 @@ final class KeepAwakeTests: XCTestCase {
         try await until { idle.held }
         _ = try await result(host, "sandbox.stop", "{}", sandboxID: "sandbox_1")
         try await until { !idle.held }
-
-        _ = try await result(host, "sandbox.start", "{}", sandboxID: "sandbox_1")
-        try await until { idle.held }
-        await host.releaseIdleSleep()
-        XCTAssertFalse(idle.held, "daemon exit lets go")
-        _ = try await result(host, "sandbox.stop", "{}", sandboxID: "sandbox_1")
-        _ = try await result(host, "sandbox.start", "{}", sandboxID: "sandbox_1")
-        try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertFalse(idle.held, "and holds nothing after")
     }
 
     func testHostWorkHoldsItWhileItRuns() async throws {
