@@ -21,15 +21,15 @@ async function setup(connectors: Record<string, Machine> = {}) {
 /** A machine that removes whatever image it is told to, recording each request. */
 const holder = (told: RequestEnvelope[]) => async (request: RequestEnvelope) => { told.push(request); return success(request, { image: (request.input as { image: string }).image, removed: true }); };
 
-test("image list shows the whole account: linux on every Mac and default, then each image with size, source and holders", async () => {
+test("image list shows the whole account: linux on every Mac and default, then each image with size, disk size, source and holders", async () => {
   const { op, image, m2 } = await setup();
   const id = await image("rails-dev");
   await m2.mutation(ref("images:setHolder"), { imageId: id, state: "copying", operationId: "copy-1" });
   const listed = await op("image.list", {});
   assert.equal(listed.ok, true, JSON.stringify(listed));
   assert.deepEqual(listed.result.images, [
-    { name: "linux", os: "linux", size_bytes: null, from: "release", on: ["every Mac"], default: true },
-    { name: "rails-dev", os: "linux", size_bytes: 4 * GIB, from: "sandbox bold-otter", on: ["studio", "attic (copying)"], default: false },
+    { name: "linux", os: "linux", size_bytes: null, disk_bytes: null, from: "release", on: ["every Mac"], default: true },
+    { name: "rails-dev", os: "linux", size_bytes: 4 * GIB, disk_bytes: 8 * GIB, from: "sandbox bold-otter", on: ["studio", "attic (copying)"], default: false },
   ]);
 });
 

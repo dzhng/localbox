@@ -34,21 +34,22 @@ const releaseImage = (principal: Principal, image: ImageRow, deps: OpsDeps) => d
  * reads its answer. A replay reserves nothing new and gets the first answer back.
  */
 export async function createImage({ principal, request, machine, deps }: Call): Promise<OpsResponse> {
-  const asked = request.input as { from?: string; macos?: true; name?: string; image?: string };
+  const asked = request.input as { from?: string; macos?: true; name?: string; disk_bytes?: number; image?: string };
   if (asked.image !== undefined) throw new ContractError("invalid_input", "image is set by the agent API; leave it out");
   const named = asked.name === undefined ? {} : { name: asked.name };
+  const disk: Record<string, Json> = asked.disk_bytes === undefined ? {} : { disk_bytes: asked.disk_bytes };
   if (asked.macos) {
     // A Mac too old to build is refused before anything is reserved.
     const target = await resolveMachine(principal, undefined, machine, deps);
     const row = (await machineRows(principal, deps)).find((candidate) => candidate.machineId === target)!;
     const placed = buildTarget(placementMachines([row])[0]);
     if ("error" in placed) throw placementError(placed, placed.error === "image_incompatible" ? { next_step: "update that Mac to macOS 27, or build on another Mac with --machine" } : {});
-    return await reserveAndStart(principal, request, target, { ...named, os: "macos", source: { kind: "ipsw" } }, { macos: true }, deps);
+    return await reserveAndStart(principal, request, target, { ...named, os: "macos", source: { kind: "ipsw" } }, { macos: true, ...disk }, deps);
   }
   // The source's own OS (and the oldest macOS its disk runs on) carries over to the image.
   const source = await resolveSandbox(principal, asked.from, deps);
   await requireSameMachine(principal, source, machine, deps);
-  return await reserveAndStart(principal, request, source.machine_id, { ...named, os: source.os, ...(source.min_macos ? { minMacOS: source.min_macos } : {}), source: { kind: "sandbox", sandboxName: source.name } }, { from: source.sandbox_id }, deps);
+  return await reserveAndStart(principal, request, source.machine_id, { ...named, os: source.os, ...(source.min_macos ? { minMacOS: source.min_macos } : {}), source: { kind: "sandbox", sandboxName: source.name } }, { from: source.sandbox_id, ...disk }, deps);
 }
 
 /** Reserves the image on `machineId` and has that Mac start the work, handing it the reserved id as input `image`. */

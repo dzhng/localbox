@@ -87,7 +87,9 @@ function machine(refuse = false) {
     seen.push(request);
     if (refuse) return { protocol_version: "v1", request_id: request.request_id, operation: request.operation, sandbox_id: request.sandbox_id, release_id: "localbox-contract-v1", ok: false, error: { code: "sandbox_not_ready", message: "could not start", retryable: false } };
     const removed: Record<string, Json> = request.operation === "sandbox.delete" ? { removed: ["sandbox identity"] } : {};
-    return success(request, { requested: request.input, produced: { sandbox_id: request.sandbox_id, ...removed }, actions: request.operation === "sandbox.create" ? [{ kind: "created" }, { kind: "cold_booted" }] : [] });
+    // A create settles its disk as a daemon does: what it asked for, else the image's (8 GiB here).
+    const disk: Record<string, Json> = request.operation === "sandbox.create" ? { disk_bytes: (request.input as { disk_bytes?: number }).disk_bytes ?? 8 * GIB } : {};
+    return success(request, { requested: request.input, produced: { sandbox_id: request.sandbox_id, ...removed, ...disk }, actions: request.operation === "sandbox.create" ? [{ kind: "created" }, { kind: "cold_booted" }] : [] });
   };
   return { seen, answer };
 }
@@ -100,7 +102,7 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
   const created = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "build-box" } });
   assert.equal(created.ok, true, JSON.stringify(created));
   const report = (created as any).result;
-  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", image: "linux", image_reason: "the account default", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", sleep_after_ms: DEFAULT_SLEEP_AFTER_MS, delete_after_ms: null });
+  assert.deepEqual(report.produced, { sandbox_id: "sandbox_1", name: "build-box", image: "linux", image_reason: "the account default", machine: "attic", placement_reason: "on attic, as asked (18 GiB free)", cpus: 6, memory_bytes: 6 * GIB, size_reason: "default for attic: half its 12 CPUs and a quarter of its 24 GiB, at least 2 CPUs and 2 GiB", disk_bytes: 8 * GIB, sleep_after_ms: DEFAULT_SLEEP_AFTER_MS, delete_after_ms: null });
   assert.deepEqual(report.actions.map((action: any) => action.kind), ["created", "cold_booted"]);
   assert.deepEqual([b.seen[0].operation, b.seen[0].sandbox_id, b.seen[0].input], ["sandbox.create", "sandbox_1", { name: "build-box", image: "linux", cpus: 6, memory_bytes: 6 * GIB, sleep_after_ms: DEFAULT_SLEEP_AFTER_MS }]);
   assert.equal(sandboxes.length, 1);
@@ -115,8 +117,23 @@ test("sandbox.create reserves the name, has the machine create it, and reports t
 
 /** An image row as `images:get` answers it, held (ready) by the given machines. */
 const imageRow = (name: string, holders: string[], extra: Partial<ImageRow> = {}): ImageRow => ({
-  image_id: `image_${name}`, name, os: "linux", size_bytes: 4 * GIB, min_macos: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
+  image_id: `image_${name}`, name, os: "linux", size_bytes: 4 * GIB, disk_bytes: 8 * GIB, min_macos: null, source: { kind: "sandbox", sandboxName: "quiet-otter" }, default: false, created_at: 1,
   holders: holders.map((machineId) => ({ machine_id: machineId, machine_name: machines.find((row) => row.machineId === machineId)?.name ?? null, state: "ready", operation_id: null, error: null, updated_at: 1 })), ...extra,
+});
+
+test("sandbox.create hands --disk to the machine, which settles the size; less than the image's disk is refused before anything is reserved", async () => {
+  const b = machine();
+  const { deps, sandboxes } = memoryMailbox({ machines, images: [imageRow("rails-dev", ["m_b"])], connectors: { m_b: b.answer } });
+  const grown = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "big", image: "rails-dev", disk_bytes: 64 * GIB } });
+  assert.equal(grown.ok, true, JSON.stringify(grown));
+  assert.equal((b.seen[0].input as { disk_bytes?: number }).disk_bytes, 64 * GIB);
+  assert.equal((grown as any).result.produced.disk_bytes, 64 * GIB);
+  assert.equal(sandboxes[0].disk_bytes, 64 * GIB, "the catalog row keeps the disk it asked for, so a replay asks for it again");
+  const small = await ops(deps, { operation: "sandbox.create", machine: "attic", input: { name: "small", image: "rails-dev", disk_bytes: 4 * GIB } });
+  assert.equal(!small.ok && small.error.code, "invalid_input");
+  assert.equal(!small.ok && small.error.message, "image rails-dev's disk is 8 GiB, the least a sandbox from it gets, and 4 GiB was asked for");
+  assert.equal(b.seen.length, 1, "no machine was asked");
+  assert.deepEqual(sandboxes.map((row) => row.name), ["big"], "nothing was reserved");
 });
 
 test("sandbox.create starts from the named image, else the account default, and says which on the creation line", async () => {
@@ -206,7 +223,7 @@ test("operations find the sandbox's machine; omitting the sandbox needs exactly 
   const b = machine(); const { deps, sandboxes } = memoryMailbox({ machines, sandboxes: [{ sandbox_id: "sandbox_1", name: "quiet-otter", machine_id: "m_b", machine_name: "attic" }], connectors: { m_b: b.answer } });
   assert.equal((await ops(deps, { operation: "sandbox.status", input: {} })).ok, true, "the only sandbox is used");
   assert.equal(b.seen.at(-1)!.sandbox_id, "sandbox_1");
-  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", image_id: "linux", os: "linux", min_macos: null, cpus: 2, memory_bytes: 2 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
+  sandboxes.push({ sandbox_id: "sandbox_2", name: "brave-fox", machine_id: "m_b", machine_name: "attic", image_id: "linux", os: "linux", min_macos: null, cpus: 2, memory_bytes: 2 * GIB, disk_bytes: 8 * GIB, sleep_after_ms: 1_800_000, delete_after_ms: null, state: "running" });
   const ambiguous = await ops(deps, { operation: "sandbox.status", input: {} });
   assert.equal(!ambiguous.ok && ambiguous.error.code, "sandbox_ambiguous"); assert.deepEqual(!ambiguous.ok && ambiguous.error.details, { names: ["quiet-otter", "brave-fox"] });
   const renamed = await ops(deps, { operation: "sandbox.rename", sandbox: "brave-fox", input: { name: "calm-heron" } });

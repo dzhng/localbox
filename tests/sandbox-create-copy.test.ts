@@ -108,14 +108,14 @@ test("image wait follows the chained create: copying with progress, then the cop
   assert.deepEqual([copying.result.state, copying.result.progress], ["copying", { phase: "receiving", done_bytes: GIB, total_bytes: 3 * GIB }]);
   assert.equal(macs.m2.ops("image.wait").at(-1)?.input && (macs.m2.ops("image.wait").at(-1)!.input as any).timeout_ms, 1000, "attic, where the copy goes, answers the wait");
 
-  macs.m2.state.journal = { key: "cli-create-3", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: image.image_id, state: "succeeded", progress: { phase: "creating" }, result: { sandbox_id: "s", name: "rails-box", cpus: 4, memory_bytes: 4 * GIB, state: "running", copy_operation_id: "cli-create-3-copy", copy: { role: "receiver", bytes: 3 * GIB, duration_ms: 42_000, path: "local_network", size_bytes: 3 * GIB } }, started_at: 2, updated_at: 4 };
+  macs.m2.state.journal = { key: "cli-create-3", kind: HOST_OPERATION_KINDS.createAfterCopy, subject: image.image_id, state: "succeeded", progress: { phase: "creating" }, result: { sandbox_id: "s", name: "rails-box", cpus: 4, memory_bytes: 4 * GIB, disk_bytes: 8 * GIB, state: "running", copy_operation_id: "cli-create-3-copy", copy: { role: "receiver", bytes: 3 * GIB, duration_ms: 42_000, path: "local_network", size_bytes: 3 * GIB } }, started_at: 2, updated_at: 4 };
   // attic's connector reports the copy before the create, as it finishes first: the holding turns ready.
   await attic.mutation(ref("images:endCopy"), { operationId: "cli-create-3-copy", state: "succeeded", sizeBytes: 3 * GIB, result: { bytes: 3 * GIB, durationMs: 42_000, path: "local_network" } });
   const done = await op("image.wait", { input: { image: "rails-dev" } });
   assert.equal(done.result.state, "ready", JSON.stringify(done.result));
   assert.deepEqual(done.result.report, [
     "copied image rails-dev from studio to attic (3 GiB, 42 s, local network)",
-    "created sandbox rails-box on attic: 4 CPUs and 4 GiB, running",
+    "created sandbox rails-box on attic: 4 CPUs, 4 GiB of memory and 8 GiB of disk, running",
     "run a command in it: localbox shell exec --sandbox rails-box -- CMD",
   ], "the wait still goes to attic while the sandbox reads copying, though no holder is copying any more");
   assert.equal(render(done, { json: false }).stdout, `${done.result.report.join("\n")}\n`);

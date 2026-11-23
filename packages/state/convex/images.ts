@@ -63,13 +63,13 @@ const holderView = (row: any, machines: Map<string, string>) => ({
   error: row.error ? { code: row.error.code, message: row.error.message, next_step: row.error.nextStep } : null, updated_at: row.updatedAt,
 });
 const view = (row: any, holders: any[], machines: Map<string, string>, defaultImageId: string | undefined) => ({
-  image_id: row.imageId, name: row.name, os: row.os, size_bytes: row.sizeBytes ?? null, source: row.source, min_macos: row.minMacOS ?? null,
+  image_id: row.imageId, name: row.name, os: row.os, size_bytes: row.sizeBytes ?? null, disk_bytes: row.diskBytes ?? null, source: row.source, min_macos: row.minMacOS ?? null,
   created_at: row.createdAt, default: row.imageId === defaultImageId, holders: holders.map((holder) => holderView(holder, machines)),
 });
 
 /** The built-in `linux`, synthesized: every live machine holds it, ready. */
 const linuxView = (machines: Map<string, string>, defaultImageId: string | undefined) => ({
-  image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
+  image_id: BUILT_IN_IMAGE, name: BUILT_IN_IMAGE, os: "linux", size_bytes: null, disk_bytes: null, source: { kind: "release" }, min_macos: null, created_at: null,
   default: defaultImageId === undefined, holders: [...machines].map(([machineId, name]) => ({ machine_id: machineId, machine_name: name, state: "ready", operation_id: null, error: null, updated_at: null })),
 });
 
@@ -158,11 +158,11 @@ export const remove = mutationGeneric({ args: { image: v.string() }, handler: as
 
 /**
  * The calling machine's holding of an image, as its connector reports it: started, progressing, ready or failed. A
- * `ready` report may carry what only the finished image knows, which the record keeps: its size, and for a macOS base
+ * `ready` report may carry what only the finished image knows, which the record keeps: its size and disk size, and for a macOS base
  * built from an IPSW, the oldest macOS that runs it (placement needs it) and the IPSW's version. A `failed` one carries
  * why and what to try next.
  */
-export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()), minMacOS: v.optional(v.string()), ipswVersion: v.optional(v.string()), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
+export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: holderState, operationId: v.optional(v.string()), sizeBytes: v.optional(v.number()), diskBytes: v.optional(v.number()), minMacOS: v.optional(v.string()), ipswVersion: v.optional(v.string()), error: v.optional(holderFailure) }, handler: async (ctx, args) => {
   const { machineId, accountId } = await requireIdentity(ctx, "machine");
   const image = await byField(ctx, "images", "by_image", "imageId", args.imageId);
   if (!image || image.accountId !== accountId) return refuse("image_not_found", `no image ${args.imageId} on this account`);
@@ -175,6 +175,7 @@ export const setHolder = mutationGeneric({ args: { imageId: v.string(), state: h
   if (args.state === "ready") {
     const learned = {
       ...(args.sizeBytes !== undefined && args.sizeBytes !== image.sizeBytes ? { sizeBytes: args.sizeBytes } : {}),
+      ...(args.diskBytes !== undefined && args.diskBytes !== image.diskBytes ? { diskBytes: args.diskBytes } : {}),
       ...(args.minMacOS !== undefined && args.minMacOS !== image.minMacOS ? { minMacOS: args.minMacOS } : {}),
       ...(args.ipswVersion !== undefined && image.source.kind === "ipsw" && args.ipswVersion !== image.source.ipswVersion ? { source: { ...image.source, ipswVersion: args.ipswVersion } } : {}),
     };

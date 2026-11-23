@@ -46,11 +46,11 @@ export async function relayOverConvex(options: { machines: Array<{ machineId: st
     }
     return (result.body as { response: ResponseEnvelope }).response;
   };
-  /** An image saved on `holders[0]` and ready on every Mac in `holders`. */
-  const readyImage = async (name: string, holders: string[], sizeBytes: number) => {
+  /** An image saved on `holders[0]` and ready on every Mac in `holders`, with a disk of `diskBytes` (8 GiB unless given). */
+  const readyImage = async (name: string, holders: string[], sizeBytes: number, diskBytes = 8 * 1024 ** 3) => {
     const first = as({ accountId: "a1", machineId: holders[0] });
     const image = await first.mutation(ref("images:reserve"), { machineId: holders[0], name, os: "linux", source: { kind: "sandbox", sandboxName: "bold-otter" }, createMutationId: `capture-${name}` }) as any;
-    for (const [index, machineId] of holders.entries()) await as({ accountId: "a1", machineId }).mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", ...(index === 0 ? { sizeBytes } : {}) });
+    for (const [index, machineId] of holders.entries()) await as({ accountId: "a1", machineId }).mutation(ref("images:setHolder"), { imageId: image.image_id, state: "ready", ...(index === 0 ? { sizeBytes, diskBytes } : {}) });
     return image;
   };
   const images = async () => (await as(STUDIO).query(ref("images:list"), {}) as any[]).filter((row) => row.image_id !== "linux");

@@ -24,7 +24,7 @@ const argv = process.argv.slice(2);
 const head = (argv.indexOf("--") < 0 ? argv : argv.slice(0, argv.indexOf("--"))).filter((word) => word !== "--json");
 const tail = argv.indexOf("--") < 0 ? [] : argv.slice(argv.indexOf("--") + 1);
 const json = (argv.indexOf("--") < 0 ? argv : argv.slice(0, argv.indexOf("--"))).includes("--json");
-const CONTROL_FLAGS = new Set(["sandbox", "machine", "input-json", "request-id", "mutation-id", "deadline-ms", "memory", "sleep-after", "delete-after"]);
+const CONTROL_FLAGS = new Set(["sandbox", "machine", "input-json", "request-id", "mutation-id", "deadline-ms", "memory", "disk", "sleep-after", "delete-after"]);
 /** Commands that are not catalog operations. */
 const LOCAL_COMMANDS: Array<[string, string]> = [
   ["login --email EMAIL [--code CODE]", "Sign this Mac in with an email code"],
@@ -87,7 +87,7 @@ function commandLine(entry: OperationCatalogEntry): string {
   const verb = entry.id.split(".").slice(1).join(" ").replaceAll("_", "-");
   if (entry.id === "agents.setup.set") return "setup on|off";
   const properties = entry.input_schema.properties ?? {}; const required = entry.input_schema.required ?? [];
-  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "sleep_after_ms" ? "[--sleep-after 5m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
+  const flag = (key: string) => key === "memory_bytes" ? "[--memory 4G]" : key === "disk_bytes" ? "[--disk 64G]" : key === "sleep_after_ms" ? "[--sleep-after 5m]" : key === "delete_after_ms" ? "[--delete-after 2h]" : properties[key].type === "boolean" ? `[--${key.replaceAll("_", "-")}]` : `[--${key.replaceAll("_", "-")} ${key.toUpperCase()}]`;
   if (entry.id === "shell.exec") return `${verb} [--background] -- COMMAND [ARGS...]`;
   return [verb, ...(entry.sandbox_scoped && entry.id.startsWith("sandbox.") ? ["[SANDBOX]"] : []), ...required.map((key) => key.toUpperCase()), ...Object.keys(properties).filter((key) => !required.includes(key)).map(flag)].join(" ");
 }
@@ -202,8 +202,9 @@ async function run(request: RequestEnvelope, wanted: string | undefined): Promis
 }
 
 const SIZE = /^(\d+(?:\.\d+)?)\s*([KMGT]i?B?|B)?$/i;
-function bytes(value: string): number {
-  const match = value.match(SIZE); if (!match) throw new ContractError("invalid_input", `--memory takes a size like 4G or 4096M, not ${value}`);
+/** `4G`, `4096M`, `64GiB` in bytes (powers of 1024), for `--memory` and `--disk`. */
+function bytes(value: string, flag: string, example: string): number {
+  const match = value.match(SIZE); if (!match) throw new ContractError("invalid_input", `--${flag} takes a size like ${example}, not ${value}`);
   const unit = (match[2] ?? "B")[0].toUpperCase();
   return Math.round(Number(match[1]) * 1024 ** ("BKMGT".indexOf(unit)));
 }
@@ -242,7 +243,11 @@ async function catalogCommand(entry: OperationCatalogEntry, words: string[], imp
     if (!Object.hasOwn(properties, key)) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
     input[key] = coerce(value, properties[key], flag);
   }
-  if (typeof flags.memory === "string") input.memory_bytes = bytes(flags.memory);
+  for (const [flag, key, example] of [["memory", "memory_bytes", "4G or 4096M"], ["disk", "disk_bytes", "64G or 100G"]] as const) {
+    const value = flags[flag]; if (typeof value !== "string") continue;
+    if (!properties[key]) throw new ContractError("invalid_input", `${entry.id} has no --${flag}; see localbox help ${entry.id}`);
+    input[key] = bytes(value, flag, example);
+  }
   for (const flag of ["sleep-after", "delete-after"]) {
     const value = flags[flag]; if (typeof value !== "string") continue;
     const key = `${flag.replace("-", "_")}_ms`;

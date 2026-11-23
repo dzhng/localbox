@@ -38,7 +38,7 @@ async function fixtureImage(dir: string, agentVersion = "1"): Promise<Buffer> {
   const file = await open(join(dir, "disk.img"), "w");
   await file.truncate(disk.length); await file.write(disk, 1024, 10, 1024); await file.write(disk, disk.length - 4, 4, disk.length - 4); await file.close();
   await writeFile(join(dir, "boot/efi-vars"), "variable store");
-  await writeFile(join(dir, "image.json"), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: 8192, agent_version: agentVersion }));
+  await writeFile(join(dir, "image.json"), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: 8192, disk_bytes: 8192, agent_version: agentVersion }));
   return disk;
 }
 

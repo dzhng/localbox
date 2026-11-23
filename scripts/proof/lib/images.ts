@@ -18,7 +18,7 @@ export function writeImageFiles(dir: string, imageId: string, disk: { bytes: num
     try { for (let written = 0; written < disk.bytes; written += 64 * MiB) writeSync(fd, randomBytes(Math.min(64 * MiB, disk.bytes - written))); } finally { closeSync(fd); }
   } else writeFileSync(join(dir, IMAGE_FILES.disk), Buffer.alloc(disk.bytes));
   writeFileSync(join(dir, IMAGE_FILES.bootStore), "efi");
-  writeFileSync(join(dir, IMAGE_FILES.manifest), JSON.stringify({ image_id: imageId, os: "linux", size_bytes: disk.bytes, agent_version: agentVersion }));
+  writeFileSync(join(dir, IMAGE_FILES.manifest), JSON.stringify({ image_id: imageId, os: "linux", size_bytes: disk.bytes, disk_bytes: disk.bytes, agent_version: agentVersion }));
 }
 
 /**

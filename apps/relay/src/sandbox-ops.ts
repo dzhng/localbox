@@ -1,4 +1,4 @@
-import { ContractError, DEFAULT_SIZE_MINIMUM, defaultSize, defaultSizeReason, failure, requestFromInvocation, sizeText, success, type ActionReport, type ErrorBody, type HostOperationRecord, type ImageOperationState, type Json, type RequestEnvelope } from "../../../packages/contract/src/index.js";
+import { ContractError, DEFAULT_SIZE_MINIMUM, defaultSize, defaultSizeReason, failure, gibibytes, requestFromInvocation, sizeText, success, type ActionReport, type ErrorBody, type HostOperationRecord, type ImageOperationState, type Json, type RequestEnvelope } from "../../../packages/contract/src/index.js";
 import { contractError } from "../../../packages/contract/src/convex-errors.js";
 import { place } from "../../../packages/placement/src/index.js";
 import { imageRow, placementError, placementImage, placementMachines, startCopySides } from "./image-ops.js";
@@ -10,12 +10,12 @@ import type { Call } from "./ops.js";
 /** `sandboxes:byCreateMutation`: the sandbox a create with this mutation id reserved, and the input it relayed (null once the relay row expired). */
 interface ReservedCreate extends SandboxRow { create_input: Record<string, Json> | null }
 /** `sandbox.create`'s input as a caller sends it. */
-interface CreateAsk { name?: string; image?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number; after_copy?: string }
+interface CreateAsk { name?: string; image?: string; placement?: "auto" | "remote"; cpus?: number; memory_bytes?: number; disk_bytes?: number; sleep_after_ms?: number; delete_after_ms?: number; after_copy?: string }
 /** What a create's report says it chose, and why. */
 type CreateFacts = { image: string; image_reason: string; machine: string; placement_reason: string; cpus: number; memory_bytes: number; size_reason: string };
 
-/** What a create relays to its machine: the reservation's identity and size, its image by id, and the copy it waits for. */
-const createInput = (row: SandboxRow, afterCopy?: string): Record<string, Json> => ({ name: row.name, image: row.image_id, cpus: row.cpus, memory_bytes: row.memory_bytes, sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}), ...(afterCopy ? { after_copy: afterCopy } : {}) });
+/** What a create relays to its machine: the reservation's identity and size (no disk asks for the image's), its image by id, and the copy it waits for. */
+const createInput = (row: SandboxRow, afterCopy?: string): Record<string, Json> => ({ name: row.name, image: row.image_id, cpus: row.cpus, memory_bytes: row.memory_bytes, ...(row.disk_bytes ? { disk_bytes: row.disk_bytes } : {}), sleep_after_ms: row.sleep_after_ms, ...(row.delete_after_ms ? { delete_after_ms: row.delete_after_ms } : {}), ...(afterCopy ? { after_copy: afterCopy } : {}) });
 /** The facts of a create whose first call (same mutation id) already chose them. */
 const replayFacts = (row: SandboxRow, image: string): CreateFacts => {
   const machine = row.machine_name ?? row.machine_id;
@@ -23,7 +23,7 @@ const replayFacts = (row: SandboxRow, image: string): CreateFacts => {
 };
 /** `sandboxes:create`'s arguments: the reservation on `machine`, under the create's mutation id. */
 const reserveArgs = (request: RequestEnvelope, asked: CreateAsk, machineId: string, image: ImageRow, facts: CreateFacts, copyOperationId?: string) => ({
-  machineId, ...(asked.name ? { name: asked.name } : {}), imageId: image.image_id, cpus: facts.cpus, memoryBytes: facts.memory_bytes,
+  machineId, ...(asked.name ? { name: asked.name } : {}), imageId: image.image_id, cpus: facts.cpus, memoryBytes: facts.memory_bytes, ...(asked.disk_bytes ? { diskBytes: asked.disk_bytes } : {}),
   ...(asked.sleep_after_ms ? { sleepAfterMs: asked.sleep_after_ms } : {}), ...(asked.delete_after_ms ? { deleteAfterMs: asked.delete_after_ms } : {}),
   createMutationId: request.mutation_id, ...(copyOperationId ? { copyOperationId } : {}),
 });
@@ -54,6 +54,10 @@ export async function createSandbox({ principal, request, machine: named, caller
   // `macos` with no IPSW-built image, or a name the account lacks, refuses here with image_not_found and what to do.
   const image = await deps.accountCall(principal, "query", "images:get", asked.image === undefined ? {} : { image: asked.image }) as ImageRow;
   const imageReason = asked.image === undefined ? "the account default" : "as asked";
+  // The image's disk is the least a sandbox from it gets; its Mac refuses less too, but only after any copy.
+  if (asked.disk_bytes !== undefined && image.disk_bytes !== null && asked.disk_bytes < image.disk_bytes) {
+    throw new ContractError("invalid_input", `image ${image.name}'s disk is ${gibibytes(image.disk_bytes)}, the least a sandbox from it gets, and ${gibibytes(asked.disk_bytes)} was asked for`, { next_step: `create it with a --disk of at least ${gibibytes(image.disk_bytes)}, or none for the image's size` });
+  }
   const rows = await machineRows(principal, deps);
   // The relayed create itself finds a gone machine in 3 s (machine_offline), and auto/remote placement then tries the
   // next candidate, counting the one it tried as not reported.
@@ -106,9 +110,11 @@ async function created(principal: Principal, base: RequestEnvelope, relayed: Rel
     return answer({ ...response, request_id: base.request_id, sandbox_id: row.sandbox_id, error: { ...response.error, message: `${response.error.message}; the create may still complete on ${facts.machine}: ${row.name} stays reserved (replay with mutation id ${base.mutation_id} to get its result)` } });
   }
   const machineReport = response.result as unknown as ActionReport;
+  // The disk size is the machine's to settle: the image's, or the larger one asked for.
+  const disk = (machineReport.produced as { disk_bytes?: number } | undefined)?.disk_bytes ?? row.disk_bytes;
   const report: ActionReport = {
     requested: asked,
-    produced: { sandbox_id: row.sandbox_id, name: row.name, ...facts, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
+    produced: { sandbox_id: row.sandbox_id, name: row.name, ...facts, disk_bytes: disk, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
     actions: (machineReport.actions ?? []).map((action) => action.kind === "created" ? { ...action, detail: [action.detail, `image ${facts.image} (${facts.image_reason})`].filter(Boolean).join("; ") } : action),
   };
   return answer(success({ ...base, sandbox_id: row.sandbox_id }, report as unknown as Json));
@@ -183,7 +189,7 @@ async function waitingAnswer(principal: Principal, request: RequestEnvelope, rel
   }
   const report: ActionReport = {
     requested: asked,
-    produced: { sandbox_id: row.sandbox_id, name: row.name, image: facts.image, image_reason: facts.image_reason, machine: facts.machine, placement_reason: facts.placement_reason, state: "copying", copying_from: copy ? copy.from_machine_name ?? copy.from_machine_id : "its source", image_size_bytes: image.size_bytes, cpus: facts.cpus, memory_bytes: facts.memory_bytes, size_reason: facts.size_reason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
+    produced: { sandbox_id: row.sandbox_id, name: row.name, image: facts.image, image_reason: facts.image_reason, machine: facts.machine, placement_reason: facts.placement_reason, state: "copying", copying_from: copy ? copy.from_machine_name ?? copy.from_machine_id : "its source", image_size_bytes: image.size_bytes, cpus: facts.cpus, memory_bytes: facts.memory_bytes, disk_bytes: row.disk_bytes ?? image.disk_bytes, size_reason: facts.size_reason, sleep_after_ms: row.sleep_after_ms, delete_after_ms: row.delete_after_ms },
     actions: [{ kind: "waiting", detail: `sandbox ${row.name} on ${facts.machine} is waiting for image ${image.name} to copy (${sizeText(image.size_bytes)}); localbox image wait ${image.name}` }],
   };
   return answer(success({ ...request, sandbox_id: row.sandbox_id }, report as unknown as Json));

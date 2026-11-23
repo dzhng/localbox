@@ -7,9 +7,10 @@ export interface MachineRow { machineId: string; name: string; lastSeenAt?: numb
 
 /**
  * A row of `sandboxes:list`. A sandbox made on a Mac without its image is `copying` (`copy_operation_id` names the copy)
- * until that Mac reports it created, or `failed` with `error` (why, and what to try next).
+ * until that Mac reports it created, or `failed` with `error` (why, and what to try next). `disk_bytes` is the disk its
+ * create asked for (null: its image's), then the size its Mac reports.
  */
-export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; image_id: string; os: "linux" | "macos"; min_macos: string | null; cpus: number; memory_bytes: number; sleep_after_ms: number; delete_after_ms: number | null; state: string; copy_operation_id?: string | null; error?: { code: string; message: string; next_step: string } | null }
+export interface SandboxRow { sandbox_id: string; name: string; machine_id: string; machine_name: string | null; image_id: string; os: "linux" | "macos"; min_macos: string | null; cpus: number; memory_bytes: number; disk_bytes: number | null; sleep_after_ms: number; delete_after_ms: number | null; state: string; copy_operation_id?: string | null; error?: { code: string; message: string; next_step: string } | null }
 
 export const machineRows = async (principal: Principal, deps: OpsDeps) => await deps.accountCall(principal, "query", "machines:list", {}) as MachineRow[];
 
