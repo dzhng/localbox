@@ -136,8 +136,8 @@ instead, each inside a sandbox, so a workflow never touches your real Mac.
   sandbox from that image, on any of your Macs.
 - The hardware is already yours: no rented machine by the minute.
 - A sandbox running its runner doesn't sleep, and the Mac doesn't idle-sleep
-  under it. When the Mac sleeps or restarts, or Localbox updates, the sandbox
-  comes back afterwards with the runner still running.
+  under it. The runner keeps running through the Mac's sleep and Localbox
+  updating itself, and through a restart where the Mac can hibernate sandboxes.
 - macOS runners are for your own repositories and work, at most two macOS
   sandboxes per Mac (Apple's licence).
 
