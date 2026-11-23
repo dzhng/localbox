@@ -179,6 +179,11 @@ public struct AppleMacBuildDriver: MacBuildDriver {
         return SSHBuildGuest(vm: vm, ssh: ssh, files: guest)
     }
 
+    public func freeRecoverySpace(_ build: MacBuildDirectory) throws -> Bool {
+        try RecoveryPartition.delete(build.disk)
+        return try DiskGrowth.hasUnclaimedSpace(build.disk)
+    }
+
     public func boot(_ build: MacBuildDirectory) async throws -> any MacAgentGuest {
         let vm = try files(build).vm()
         try await vm.start()
@@ -207,21 +212,13 @@ private struct SSHBuildGuest: MacProvisionedGuest {
 private struct AgentBuildGuest: MacAgentGuest {
     /// The id the hello gives every build guest, as a sandbox's id names a sandbox.
     static let guestID = "build_macos"
-    /// The longest deadline the agent accepts on a request (it refuses more than 120 s).
-    static let maxDeadlineMs = 120_000
     let vm: VirtualMachine, channel: FramedFileHandleGuestChannel
 
     func root(_ script: String, timeout: TimeInterval) async throws -> String {
-        let request = try requestEnvelope("shell.exec", sandboxID: Self.guestID, input: ["command": script], deadlineMs: min(Int(timeout * 1000), Self.maxDeadlineMs))
-        let answer = try JSONSerialization.jsonObject(with: try await channel.send(request)) as? [String: Any] ?? [:]
-        guard answer["ok"] as? Bool == true, let result = answer["result"] as? [String: Any] else {
-            throw HostDaemonError.unsupported("the guest agent refused a build step: \(((answer["error"] as? [String: Any])?["message"] as? String) ?? "no answer")")
-        }
-        let status = (result["exit_code"] as? NSNumber)?.intValue ?? -1
-        let stdout = result["stdout"] as? String ?? "", stderr = result["stderr"] as? String ?? ""
-        guard status == 0 else { throw HostDaemonError.unsupported("a build step in the guest exited \(status): \(String((stderr + stdout).suffix(1500)))") }
-        return stdout
+        try await rootShell(on: channel, sandboxID: Self.guestID, step: "a build step")(script, timeout)
     }
+
+    func claimDisk() async throws { try await GuestDiskClaim.claim(.macos, rootShell(on: channel, sandboxID: Self.guestID, step: "growing the disk's container")) }
 
     /// The agent never answers a shutdown it is part of, so the shutdown is detached and the host waits for power-off.
     func shutDown() async throws {

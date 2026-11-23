@@ -9,16 +9,19 @@ public struct ImageManifest: Codable, Equatable, Sendable {
     public let os: GuestOS
     /// Bytes the image's files hold on disk (allocated, so a sparse disk counts only what it stores).
     public let sizeBytes: UInt64
+    /// The disk's size, the least every sandbox made from the image gets. At least the disk file's length; more when
+    /// the image was saved with a larger `--disk`, which each sandbox's disk then grows to at its first boot.
+    public let diskBytes: UInt64
     /// Base64 `VZMacHardwareModel` and the oldest macOS host that runs it; macOS images only.
     public let hardwareModel: String?
     public let minMacOS: String?
     /// The guest agent version the image carries; the host's agent is authoritative and replaces it when they differ.
     public let agentVersion: String
-    public init(imageID: String, os: GuestOS, sizeBytes: UInt64, hardwareModel: String? = nil, minMacOS: String? = nil, agentVersion: String) {
-        self.imageID = imageID; self.os = os; self.sizeBytes = sizeBytes; self.hardwareModel = hardwareModel; self.minMacOS = minMacOS; self.agentVersion = agentVersion
+    public init(imageID: String, os: GuestOS, sizeBytes: UInt64, diskBytes: UInt64, hardwareModel: String? = nil, minMacOS: String? = nil, agentVersion: String) {
+        self.imageID = imageID; self.os = os; self.sizeBytes = sizeBytes; self.diskBytes = diskBytes; self.hardwareModel = hardwareModel; self.minMacOS = minMacOS; self.agentVersion = agentVersion
     }
     enum CodingKeys: String, CodingKey {
-        case imageID = "image_id", os, sizeBytes = "size_bytes", hardwareModel = "hardware_model", minMacOS = "min_macos", agentVersion = "agent_version"
+        case imageID = "image_id", os, sizeBytes = "size_bytes", diskBytes = "disk_bytes", hardwareModel = "hardware_model", minMacOS = "min_macos", agentVersion = "agent_version"
     }
 }
 
@@ -144,10 +147,12 @@ public struct ImageStore: Sendable {
         return cloned
     }
 
-    /// Writes the manifest of the image laid down in `temp`, sized from its files, ready for `commit`.
-    public func seal(_ temp: URL, imageID: String, os: GuestOS, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
-        let size = allocatedBytes(temp.appendingPathComponent(Self.diskName)) + allocatedBytes(Self.bootStore(in: temp, os: os))
-        let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
+    /// Writes the manifest of the image laid down in `temp`, sized from its files, ready for `commit`. Its disk size is
+    /// the disk file's length, or `diskBytes` when that is larger.
+    public func seal(_ temp: URL, imageID: String, os: GuestOS, diskBytes: UInt64? = nil, hardwareModel: String?, minMacOS: String?, agentVersion: String) throws -> ImageManifest {
+        let disk = temp.appendingPathComponent(Self.diskName)
+        let size = allocatedBytes(disk) + allocatedBytes(Self.bootStore(in: temp, os: os))
+        let manifest = ImageManifest(imageID: imageID, os: os, sizeBytes: size, diskBytes: max(diskBytes ?? 0, try DiskGrowth.size(disk)), hardwareModel: hardwareModel, minMacOS: minMacOS, agentVersion: agentVersion)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: temp.appendingPathComponent(Self.manifestName), options: .atomic)
         return manifest

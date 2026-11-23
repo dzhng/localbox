@@ -36,9 +36,9 @@ export interface ConnectorDeps {
 /** One `host.watch` answer: the daemon's state version, host capacity, each sandbox's runtime state, and the sandboxes its idle policy deleted. */
 export interface HostChange { version: number; capacity?: CapacityReport; sandboxes?: SandboxState[]; deleted?: IdleDeletion[] }
 export interface IdleDeletion { sandbox_id: string; name: string; reason: string }
-export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number }
+export interface SandboxState { sandbox_id: string; state: string; cpus?: number; memory_bytes?: number; disk_bytes?: number }
 /** What a finished record's `result` may carry that Convex keeps: the image's size and, for a macOS build or a copy, what only it knows. */
-interface ReportedResult { size_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" }
+interface ReportedResult { size_bytes?: number; disk_bytes?: number; min_macos?: string; ipsw_version?: string; bytes?: number; duration_ms?: number; path?: "local_network" | "internet" }
 /** One of this machine's copies as `images:copiesForMachine` lists it: what its daemon's side needs, key included. */
 export interface CopyRendezvous { copy_id: string; operation_id: string; image_id: string; role: "sender" | "receiver"; key: string; size_bytes: number | null; state: string; candidates: Json[] | null; peer_candidates: Json[] | null; error: Json }
 /** One image the account lists on this machine (`images:forMachine`), as the daemon's image mirror takes it. */
@@ -290,7 +290,7 @@ export class Connector {
         }
         const changed = (change.sandboxes ?? []).filter((sandbox) => !isDeepStrictEqual(states.get(sandbox.sandbox_id), sandbox));
         if (changed.length) {
-          await this.deps.convex.mutation(machineFunctions.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}) })) });
+          await this.deps.convex.mutation(machineFunctions.reportState, { states: changed.map((sandbox) => ({ sandboxId: sandbox.sandbox_id, state: sandbox.state, ...(sandbox.cpus ? { cpus: sandbox.cpus } : {}), ...(sandbox.memory_bytes ? { memoryBytes: sandbox.memory_bytes } : {}), ...(sandbox.disk_bytes ? { diskBytes: sandbox.disk_bytes } : {}) })) });
           for (const sandbox of changed) states.set(sandbox.sandbox_id, sandbox);
         }
         // The daemon deleted these after their delete-after idle time; their catalog rows go too.
@@ -312,7 +312,7 @@ export class Connector {
 
   /**
    * Long work on this Mac (an image build, capture or copy, a sandbox create waiting for its image's copy) runs in the
-   * daemon's operation journal; when one finishes, its image's holder row here becomes `ready` (with the image's size)
+   * daemon's operation journal; when one finishes, its image's holder row here becomes `ready` (with its size and disk size)
    * or `failed` (with why), a copy's row hears how this side ended, and a waiting sandbox is created or failed. The daemon hands over
    * each outcome until a later poll says it was reported, so an outcome lands once the account is reachable, across
    * restarts of either process. An image the account deleted meanwhile has nothing left to report.
@@ -326,9 +326,9 @@ export class Connector {
   private async reportOutcome(record: HostOperationRecord): Promise<void> {
     if (record.kind === HOST_OPERATION_KINDS.copy) return await this.reportCopy(record);
     if (record.kind === HOST_OPERATION_KINDS.createAfterCopy) return await this.reportCreate(record);
-    const { size_bytes: size, min_macos: minMacOS, ipsw_version: ipswVersion } = (record.result ?? {}) as ReportedResult;
+    const { size_bytes: size, disk_bytes: disk, min_macos: minMacOS, ipsw_version: ipswVersion } = (record.result ?? {}) as ReportedResult;
     const args = record.state === "succeeded"
-      ? { imageId: record.subject, operationId: record.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}), ...(typeof minMacOS === "string" ? { minMacOS } : {}), ...(typeof ipswVersion === "string" ? { ipswVersion } : {}) }
+      ? { imageId: record.subject, operationId: record.key, state: "ready", ...(typeof size === "number" ? { sizeBytes: size } : {}), ...(typeof disk === "number" ? { diskBytes: disk } : {}), ...(typeof minMacOS === "string" ? { minMacOS } : {}), ...(typeof ipswVersion === "string" ? { ipswVersion } : {}) }
       : { imageId: record.subject, operationId: record.key, state: "failed", error: failureOf(record, "the operation failed", "try it again; if it fails the same way, check this Mac's disk space and logs") };
     try { await this.deps.convex.mutation(machineFunctions.setHolder, args); this.deps.log(`image ${record.subject}: operation ${record.key} ${args.state}`); }
     catch (error) {

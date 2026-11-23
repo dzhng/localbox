@@ -75,11 +75,11 @@ test("a build whose answer was lost keeps its reservation and says how to follow
 });
 
 test("a finished build reports the release, what the image holds and where it runs, line by line", async () => {
-  const { op } = await setup({ m1: building([], { state: "succeeded", phase: "finish", result: { size_bytes: 31.5 * GIB, ipsw_version: "27.2.1", ipsw_build: "26B131", min_macos: "27.0", chrome_version: "142.0.7444.60", os: "macos" } }) });
+  const { op } = await setup({ m1: building([], { state: "succeeded", phase: "finish", result: { size_bytes: 31.5 * GIB, disk_bytes: 50e9, ipsw_version: "27.2.1", ipsw_build: "26B131", min_macos: "27.0", chrome_version: "142.0.7444.60", os: "macos" } }) });
   const built = await op({ macos: true, name: "mac-base" });
   assert.equal(built.result.state, "ready");
   assert.deepEqual(built.result.report, [
-    "image mac-base built from the macOS 27.2.1 (26B131) IPSW (macos, 31.5 GiB)",
+    "image mac-base built from the macOS 27.2.1 (26B131) IPSW (macos, 31.5 GiB; sandboxes from it get a disk of at least 46.6 GiB)",
     "SIP is disabled, Google Chrome 142.0.7444.60 is installed, Remote Login is off, and there is no Xcode",
     "on machine studio; runs on Macs with macOS 27.0 or later",
     "start a sandbox from it: localbox sandbox create --image mac-base",
@@ -87,7 +87,7 @@ test("a finished build reports the release, what the image holds and where it ru
 });
 
 test("a build that slept a macOS sandbox for its VM slot names it", async () => {
-  const { op } = await setup({ m1: building([], { state: "succeeded", phase: "finish", result: { size_bytes: 31.5 * GIB, ipsw_version: "27.2.1", min_macos: "27.0", os: "macos", made_room: ["slept quiet-fox (8 GiB) to make room"] } }) });
+  const { op } = await setup({ m1: building([], { state: "succeeded", phase: "finish", result: { size_bytes: 31.5 * GIB, disk_bytes: 50e9, ipsw_version: "27.2.1", min_macos: "27.0", os: "macos", made_room: ["slept quiet-fox (8 GiB) to make room"] } }) });
   const built = await op({ macos: true, name: "mac-base" });
   assert.ok(built.result.report.includes("made room for it: slept quiet-fox (8 GiB) to make room"), built.result.report.join("\n"));
 });

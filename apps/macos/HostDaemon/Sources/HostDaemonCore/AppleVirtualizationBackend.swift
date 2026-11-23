@@ -10,12 +10,19 @@ public struct AppleSandboxFactory: SandboxBackendFactory {
     public let images: ImageStore
     public init(images: ImageStore) { self.images = images }
     public func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) async throws -> [String: String] {
+        let manifest = try images.manifest(record.imageID)
+        let disk = try DiskGrowth.sandboxSize(requested: record.diskBytes == 0 ? nil : record.diskBytes, image: images.displayName(record.imageID), imageBytes: manifest.diskBytes)
         let clone = try images.cloneForSandbox(record.imageID, into: directory)
+        // The clone is the image's disk; the first boot grows it to `disk`.
+        record.diskBytes = disk
         record.os = clone.manifest.os
         record.hardwareModel = clone.manifest.hardwareModel
         record.mac = VZMACAddress.randomLocallyAdministered().string
         record.machineIdentifier = (clone.manifest.os == .linux ? VZGenericMachineIdentifier().dataRepresentation : VZMacMachineIdentifier().dataRepresentation).base64EncodedString()
-        return ["disk": clone.disk, "disk_allocated_bytes": String(privateBytes(directory.disk) ?? -1)]
+        return ["disk": clone.disk, "disk_allocated_bytes": String(privateBytes(directory.disk) ?? -1), "image_disk_bytes": String(manifest.diskBytes)]
+    }
+    public func growDisk(_ record: SandboxRecord, in directory: SandboxDirectory) throws -> Bool {
+        try DiskGrowth.grow(directory.disk, to: record.diskBytes, os: record.os)
     }
     public func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend {
         AppleVirtualizationBackend(spec: try VMSpec(record: record, in: directory), sandboxID: record.sandboxID, name: record.name)

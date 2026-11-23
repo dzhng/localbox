@@ -69,21 +69,21 @@ test("errors go to stderr with the code first and exit 1; unauthorized exits 2",
   assert.equal(render(signedOut, { json: true }).exitCode, 2);
 });
 
-test("image list prints one row per image under NAME OS SIZE FROM ON DEFAULT, carrying every fact --json does", () => {
+test("image list prints one row per image under NAME OS SIZE DISK FROM ON DEFAULT, carrying every fact --json does", () => {
   const images = [
-    { name: "linux", os: "linux", size_bytes: null, from: "release", on: ["every Mac"], default: false },
-    { name: "rails-dev", os: "linux", size_bytes: Math.round(4.2 * GIB), from: "sandbox bold-otter", on: ["studio", "attic (copying)"], default: true },
-    { name: "mac-base", os: "macos", size_bytes: 300 * 1024 ** 2, from: "macOS 27.0.1 IPSW", on: [], default: false },
+    { name: "linux", os: "linux", size_bytes: null, disk_bytes: null, from: "release", on: ["every Mac"], default: false },
+    { name: "rails-dev", os: "linux", size_bytes: Math.round(4.2 * GIB), disk_bytes: 64 * GIB, from: "sandbox bold-otter", on: ["studio", "attic (copying)"], default: true },
+    { name: "mac-base", os: "macos", size_bytes: 300 * 1024 ** 2, disk_bytes: 50e9, from: "macOS 27.0.1 IPSW", on: [], default: false },
   ];
   const response = envelope("image.list", { images });
   const [header, ...rows] = render(response, { json: false }).stdout.trimEnd().split("\n");
-  assert.match(header, /^NAME\s+OS\s+SIZE\s+FROM\s+ON\s+DEFAULT$/);
+  assert.match(header, /^NAME\s+OS\s+SIZE\s+DISK\s+FROM\s+ON\s+DEFAULT$/);
   const at = (column: string) => header.indexOf(column);
   for (const [index, image] of images.entries()) {
     const row = rows[index];
     const cell = (column: string, next?: string) => row.slice(at(column), next ? at(next) : undefined).trim();
-    assert.deepEqual([cell("NAME", "OS"), cell("OS", "SIZE"), cell("SIZE", "FROM"), cell("FROM", "ON"), cell("ON", "DEFAULT"), cell("DEFAULT")],
-      [image.name, image.os, sizeText(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""], row);
+    assert.deepEqual([cell("NAME", "OS"), cell("OS", "SIZE"), cell("SIZE", "DISK"), cell("DISK", "FROM"), cell("FROM", "ON"), cell("ON", "DEFAULT"), cell("DEFAULT")],
+      [image.name, image.os, sizeText(image.size_bytes), sizeText(image.disk_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""], row);
   }
   assert.deepEqual([sizeText(null), sizeText(Math.round(4.2 * GIB)), sizeText(300 * 1024 ** 2)], ["-", "4.2 GiB", "300 MiB"]);
   assert.deepEqual(JSON.parse(render(response, { json: true }).stdout), response, "--json prints the whole envelope");

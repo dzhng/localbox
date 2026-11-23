@@ -368,7 +368,7 @@ public actor SandboxHost {
             // `name`, `os` and `lifecycle` (which tells a paused sandbox from one saved to disk, both `sleeping`) are
             // for `localbox app status`, which shows this Mac's sandboxes from this one answer.
             let states = all.map { ["sandbox_id": $0.record.sandboxID, "name": $0.record.name, "os": $0.record.os.rawValue, "state": $0.status.lifecycle.sandboxState,
-                                    "lifecycle": $0.status.lifecycle.rawValue, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes] as [String: Any] }
+                                    "lifecycle": $0.status.lifecycle.rawValue, "cpus": $0.record.cpus, "memory_bytes": $0.record.memoryBytes, "disk_bytes": $0.record.diskBytes] as [String: Any] }
             let deleted = idleDeletions.sorted { $0.key < $1.key }.map { ["sandbox_id": $0.key, "name": $0.value.name, "reason": $0.value.reason] }
             return Reply.success(object, ["version": version, "capacity": await capacity(), "sandboxes": states, "deleted": deleted, "operations": await workInProgress(), "keeping_awake": await shouldStayAwake()])
         case "connector.report":
@@ -447,14 +447,17 @@ public actor SandboxHost {
             bumpStateVersion()
             return Reply.success(object, report(input, produced: ["sandbox_id": sandboxID, "name": next, "previous_name": name], actions: [["kind": "renamed", "detail": "renamed \(name) to \(next)"]]))
         case .sandboxResize:
-            let cpus = (input["cpus"] as? NSNumber)?.intValue, memory = (input["memory_bytes"] as? NSNumber)?.uint64Value
+            let cpus = (input["cpus"] as? NSNumber)?.intValue, memory = (input["memory_bytes"] as? NSNumber)?.uint64Value, disk = (input["disk_bytes"] as? NSNumber)?.uint64Value
+            if let disk, disk < sandbox.record.diskBytes {
+                return Reply.failure(object, code: "invalid_input", message: "a sandbox's disk only grows: \(name)'s is \(gibibytes(sandbox.record.diskBytes)), and \(gibibytes(disk)) was asked for")
+            }
             do {
                 // A running or sleeping sandbox boots again at the new size, so that size must fit.
                 let actions = [.ready, .paused].contains(sandbox.status.lifecycle)
-                    ? try await start(runtime, memoryBytes: memory ?? sandbox.record.memoryBytes) { try await $0.resize(cpus: cpus, memoryBytes: memory) }
-                    : (try await runtime.resize(cpus: cpus, memoryBytes: memory)).map { [$0] } ?? []
+                    ? try await start(runtime, memoryBytes: memory ?? sandbox.record.memoryBytes) { try await $0.resize(cpus: cpus, memoryBytes: memory, diskBytes: disk) }
+                    : (try await runtime.resize(cpus: cpus, memoryBytes: memory, diskBytes: disk)).map { [$0] } ?? []
                 let resized = await runtime.snapshot()
-                return Reply.success(object, report(input, produced: ["sandbox_id": sandboxID, "cpus": resized.record.cpus, "memory_bytes": resized.record.memoryBytes, "state": resized.status.lifecycle.sandboxState], actions: actions))
+                return Reply.success(object, report(input, produced: ["sandbox_id": sandboxID, "cpus": resized.record.cpus, "memory_bytes": resized.record.memoryBytes, "disk_bytes": resized.record.diskBytes, "state": resized.status.lifecycle.sandboxState], actions: actions))
             } catch let refused as AdmissionRefused { return machineFull(object, refused) }
             catch { return Reply.failure(object, code: "conflict", message: "could not resize \(name): \(explain(error))") }
         case .sandboxDelete:
@@ -566,6 +569,12 @@ public actor SandboxHost {
 
     private static func isDirectoryName(_ id: String) -> Bool { !id.isEmpty && !id.contains("/") && !id.hasPrefix(".") }
 
+    /// A new sandbox's disk beside its image's: "8.1 GiB, its image's size" or "60 GiB (its image's is 8.1 GiB)".
+    static func diskText(_ disk: UInt64, image: String?) -> String {
+        guard let image = image.flatMap(UInt64.init), image != disk else { return "\(gibibytes(disk)), its image's size" }
+        return "\(gibibytes(disk)) (its image's is \(gibibytes(image)))"
+    }
+
     /// Lays down the sandbox the agent API reserved, from the image it resolved, at the size and idle policy it chose,
     /// and boots it. A create re-run after a connector restart finds the sandbox already here and only boots it. Throws a
     /// `HostOperationFailure`, or `AdmissionRefused` when it does not fit.
@@ -580,7 +589,7 @@ public actor SandboxHost {
         if let existing {
             runtime = existing; await existing.setInCatalog(true); try? await existing.rename(name)
         } else {
-            var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: creation.image, cpus: creation.cpus, memoryBytes: creation.memoryBytes, sleepAfterMs: creation.sleepAfterMs)
+            var record = SandboxRecord(sandboxID: sandboxID, name: name, imageID: creation.image, cpus: creation.cpus, memoryBytes: creation.memoryBytes, diskBytes: creation.diskBytes ?? 0, sleepAfterMs: creation.sleepAfterMs)
             record.deleteAfterMs = creation.deleteAfterMs
             let directory = SandboxDirectory(root.appendingPathComponent(sandboxID, isDirectory: true))
             provisioning.insert(sandboxID)
@@ -593,11 +602,12 @@ public actor SandboxHost {
                 try? FileManager.default.removeItem(at: directory.url)
                 provisioning.remove(sandboxID)
                 if let missing = error as? ImageNotHere { throw HostOperationFailure(code: "image_not_found", message: "could not lay down \(name): \(missing)") }
+                if let small = error as? DiskBelowImage { throw HostOperationFailure(code: "invalid_input", message: "could not create \(name): \(small)", nextStep: "create it with a --disk of at least \(gibibytes(small.imageBytes)), or none for the image's size") }
                 throw HostOperationFailure(code: "internal", message: "could not lay down \(name): \(explain(error))")
             }
             runtime = makeRuntime(record, directory); runtimes[sandboxID] = runtime
             bumpStateVersion()
-            actions.append(["kind": "created", "detail": "created \(name) with \(record.cpus) CPUs and \(record.memoryBytes / (1024 * 1024 * 1024)) GiB" + (facts["disk"].map { "; disk \($0)" } ?? "")])
+            actions.append(["kind": "created", "detail": "created \(name) with \(record.cpus) CPUs and \(record.memoryBytes / (1024 * 1024 * 1024)) GiB" + (facts["disk"].map { "; disk \($0), \(Self.diskText(record.diskBytes, image: facts["image_disk_bytes"]))" } ?? "")])
         }
         do { actions += try await start(runtime) { try await $0.bringUp() } }
         catch {
@@ -606,7 +616,7 @@ public actor SandboxHost {
             throw HostOperationFailure(code: "sandbox_not_ready", message: "\(name) could not start: \(explain(error))")
         }
         let sandbox = await runtime.snapshot()
-        return CreateReport(sandboxID: sandboxID, name: name, cpus: sandbox.record.cpus, memoryBytes: sandbox.record.memoryBytes, state: sandbox.status.lifecycle.sandboxState, facts: facts, actions: actions)
+        return CreateReport(sandboxID: sandboxID, name: name, cpus: sandbox.record.cpus, memoryBytes: sandbox.record.memoryBytes, diskBytes: sandbox.record.diskBytes, state: sandbox.status.lifecycle.sandboxState, facts: facts, actions: actions)
     }
 
     /// What this Mac can still take: reservation-based, not live free memory. Unlisted sandboxes still hold what they
@@ -754,7 +764,7 @@ public actor SandboxHost {
     }
 
     private func view(_ sandbox: RuntimeSnapshot) -> [String: Any] {
-        ["sandbox_id": sandbox.record.sandboxID, "name": sandbox.record.name, "cpus": sandbox.record.cpus, "memory_bytes": sandbox.record.memoryBytes, "state": sandbox.status.lifecycle.sandboxState]
+        ["sandbox_id": sandbox.record.sandboxID, "name": sandbox.record.name, "cpus": sandbox.record.cpus, "memory_bytes": sandbox.record.memoryBytes, "disk_bytes": sandbox.record.diskBytes, "state": sandbox.status.lifecycle.sandboxState]
     }
 
     private func report(_ requested: [String: Any], produced: [String: Any], actions: [[String: Any]]) -> [String: Any] {
@@ -836,32 +846,35 @@ public actor SandboxHost {
 }
 
 /// What `sandbox.create` asks for: the sandbox the agent API reserved, from the image it resolved (an id), at the size
-/// and idle policy it chose.
+/// and idle policy it chose. No `diskBytes` asks for the image's disk size.
 struct SandboxCreation: Codable, Sendable {
     let name: String
     let image: String
     let cpus: Int
     let memoryBytes: UInt64
+    let diskBytes: UInt64?
     let sleepAfterMs: Int
     let deleteAfterMs: Int?
-    enum CodingKeys: String, CodingKey { case name, image, cpus, memoryBytes = "memory_bytes", sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms" }
+    enum CodingKeys: String, CodingKey { case name, image, cpus, memoryBytes = "memory_bytes", diskBytes = "disk_bytes", sleepAfterMs = "sleep_after_ms", deleteAfterMs = "delete_after_ms" }
 
     init?(_ input: [String: Any]) {
         guard let name = input["name"] as? String, !name.isEmpty, let image = input["image"] as? String, !image.isEmpty, let cpus = (input["cpus"] as? NSNumber)?.intValue,
               let memoryBytes = (input["memory_bytes"] as? NSNumber)?.uint64Value, let sleepAfterMs = (input["sleep_after_ms"] as? NSNumber)?.intValue else { return nil }
         self.name = name; self.image = image; self.cpus = cpus; self.memoryBytes = memoryBytes; self.sleepAfterMs = sleepAfterMs
+        diskBytes = (input["disk_bytes"] as? NSNumber)?.uint64Value
         deleteAfterMs = (input["delete_after_ms"] as? NSNumber)?.intValue
     }
 }
 
 /// What a create made: the report's `produced` facts and the actions it took.
 struct CreateReport: Sendable {
-    let sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, state: String
-    /// What provisioning said (`disk: cloned`, `disk_allocated_bytes`), numbers kept as numbers in `produced`.
+    let sandboxID: String, name: String, cpus: Int, memoryBytes: UInt64, diskBytes: UInt64, state: String
+    /// What provisioning said (`disk: cloned`, `disk_allocated_bytes`, `image_disk_bytes`), numbers kept as numbers in
+    /// `produced`.
     let facts: [String: String]
     let actions: [SandboxAction]
     var produced: [String: Any] {
-        var produced: [String: Any] = ["sandbox_id": sandboxID, "name": name, "cpus": cpus, "memory_bytes": memoryBytes, "state": state]
+        var produced: [String: Any] = ["sandbox_id": sandboxID, "name": name, "cpus": cpus, "memory_bytes": memoryBytes, "disk_bytes": diskBytes, "state": state]
         for (key, value) in facts { produced[key] = Int(value).map { $0 as Any } ?? value }
         return produced
     }

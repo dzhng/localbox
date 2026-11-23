@@ -24,12 +24,15 @@ export function render(value: ResponseEnvelope | Json, options: { json: boolean 
 /** A finished image operation (`image create`, `image wait`) or a login step prints its report lines; `--json` keeps the whole state. */
 const isReported = (value: Json): value is { report: string[] } => isObject(value) && Array.isArray(value.report) && value.report.every((line) => typeof line === "string");
 
-type ImageListRow = { name: string; os: string; size_bytes: number | null; from: string; on: string[]; default: boolean };
+type ImageListRow = { name: string; os: string; size_bytes: number | null; disk_bytes: number | null; from: string; on: string[]; default: boolean };
 const isImageList = (value: Json): value is { images: ImageListRow[] } => isObject(value) && Array.isArray(value.images);
 
-/** `image list` as a table, one image per row; `ON` names the Macs holding it, `DEFAULT` marks the account default. */
+/**
+ * `image list` as a table, one image per row: `SIZE` is what its files hold, `DISK` the disk size every sandbox from it
+ * gets at least; `ON` names the Macs holding it, `DEFAULT` marks the account default.
+ */
 function imageTable(images: ImageListRow[]): string {
-  const rows = [["NAME", "OS", "SIZE", "FROM", "ON", "DEFAULT"], ...images.map((image) => [image.name, image.os, sizeText(image.size_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""])];
+  const rows = [["NAME", "OS", "SIZE", "DISK", "FROM", "ON", "DEFAULT"], ...images.map((image) => [image.name, image.os, sizeText(image.size_bytes), sizeText(image.disk_bytes), image.from, image.on.length ? image.on.join(", ") : "no Mac", image.default ? "yes" : ""])];
   const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
   return rows.map((row) => row.map((cell, column) => cell.padEnd(widths[column])).join("  ").trimEnd()).join("\n") + "\n";
 }

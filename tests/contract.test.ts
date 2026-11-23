@@ -89,6 +89,15 @@ test("CLI help is the catalog and generic invoke preserves envelope identity", (
   assert.equal(response.operation, "system.info");
   assert.equal(response.sandbox_id, "sandbox_fixture", "the only sandbox is used when none is named");
 
+  for (const id of ["sandbox.create", "sandbox.resize", "image.create"]) {
+    const usage = JSON.parse(spawnSync(process.execPath, ["bin/localbox.js", "help", id, "--json"], { encoding: "utf8" }).stdout).usage as string;
+    assert.ok(usage.includes("[--disk 64G]"), `${id} takes --disk: ${usage}`);
+  }
+  const badDisk = spawnSync(process.execPath, ["bin/localbox.js", "sandbox", "resize", "--disk", "lots", "--json"], { encoding: "utf8", env: fixtureEnv });
+  assert.equal(JSON.parse(badDisk.stdout).error.message, "--disk takes a size like 64G or 100G, not lots");
+  const noDisk = spawnSync(process.execPath, ["bin/localbox.js", "sandbox", "start", "--disk", "64G", "--json"], { encoding: "utf8", env: fixtureEnv });
+  assert.equal(JSON.parse(noDisk.stdout).error.message, "sandbox.start has no --disk; see localbox help sandbox.start");
+
   const unknown = spawnSync(process.execPath, ["bin/localbox.js", "invoke", "sandbox.resize", "--input-json", '{"cpus":0}', "--mutation-id", "resize-1", "--json"], { encoding: "utf8", env: fixtureEnv });
   assert.equal(unknown.status, 1);
   assert.equal(JSON.parse(unknown.stdout).error.code, "invalid_input");

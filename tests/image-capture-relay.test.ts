@@ -25,15 +25,15 @@ const capturing = (told: RequestEnvelope[], result: Json, state: "succeeded" | "
 
 test("image create --from routes to the source sandbox's machine, reserves the image there, and reports in the map's four lines", async () => {
   const told: RequestEnvelope[] = [];
-  const { op, images } = await setup({ m2: capturing(told, { size_bytes: 1.5 * GIB, stall_ms: 840 }) });
-  const created = await op({ from: "bold-otter", name: "rails-dev" }, "cli-create-1");
+  const { op, images } = await setup({ m2: capturing(told, { size_bytes: 1.5 * GIB, disk_bytes: 64 * GIB, stall_ms: 840 }) });
+  const created = await op({ from: "bold-otter", name: "rails-dev", disk_bytes: 64 * GIB }, "cli-create-1");
   assert.equal(created.ok, true, JSON.stringify(created));
   assert.equal(told.length, 1, "attic, where bold-otter lives, was told; studio, the caller, was not");
-  assert.deepEqual(told[0].input, { from: "sandbox_otter", image: created.result.image });
+  assert.deepEqual(told[0].input, { from: "sandbox_otter", disk_bytes: 64 * GIB, image: created.result.image }, "the disk size asked for goes to the machine, which checks it against the sandbox's");
   assert.equal(told[0].mutation_id, "cli-create-1", "the machine journals the capture under the create's mutation id");
   assert.equal(created.result.state, "ready");
   assert.deepEqual(created.result.report, [
-    "image rails-dev saved from sandbox bold-otter (linux, 1.5 GiB)",
+    "image rails-dev saved from sandbox bold-otter (linux, 1.5 GiB; sandboxes from it get a disk of at least 64 GiB)",
     "bold-otter froze for 0.8 s while its disk was saved, and is running again",
     "on machine attic; copies to other Macs on first use",
     "start a sandbox from it: localbox sandbox create --image rails-dev",
@@ -48,7 +48,7 @@ test("image create --from routes to the source sandbox's machine, reserves the i
 
 test("a replay reserves nothing new and returns the same operation", async () => {
   const told: RequestEnvelope[] = [];
-  const { op, images } = await setup({ m2: capturing(told, { size_bytes: GIB, stall_ms: 500 }) });
+  const { op, images } = await setup({ m2: capturing(told, { size_bytes: GIB, disk_bytes: 8 * GIB, stall_ms: 500 }) });
   const first = await op({ from: "bold-otter" }, "cli-create-2");
   const replay = await op({ from: "bold-otter" }, "cli-create-2");
   assert.equal(replay.result.image, first.result.image);
@@ -58,13 +58,13 @@ test("a replay reserves nothing new and returns the same operation", async () =>
 });
 
 test("a sleeping source says it woke, and one slept for room is named; a stopped one says it was saved without a freeze", async () => {
-  const woke = await setup({ m2: capturing([], { size_bytes: 300 * 1024 ** 2, stall_ms: 1_210, woke: "restored bold-otter from its saved state", made_room: ["slept quiet-fox (2 GiB) to make room"] }) });
+  const woke = await setup({ m2: capturing([], { size_bytes: 300 * 1024 ** 2, disk_bytes: 8 * GIB, stall_ms: 1_210, woke: "restored bold-otter from its saved state", made_room: ["slept quiet-fox (2 GiB) to make room"] }) });
   assert.deepEqual((await woke.op({ from: "bold-otter", name: "woken" })).result.report.slice(0, 3), [
-    "image woken saved from sandbox bold-otter (linux, 300 MiB)",
+    "image woken saved from sandbox bold-otter (linux, 300 MiB; sandboxes from it get a disk of at least 8 GiB)",
     "bold-otter woke from sleep, then froze for 1.2 s while its disk was saved, and is running again",
     "made room for it: slept quiet-fox (2 GiB) to make room",
   ]);
-  const stopped = await setup({ m2: capturing([], { size_bytes: GIB, stall_ms: null }) });
+  const stopped = await setup({ m2: capturing([], { size_bytes: GIB, disk_bytes: 8 * GIB, stall_ms: null }) });
   assert.equal((await stopped.op({ from: "bold-otter", name: "cold" })).result.report[1], "bold-otter was stopped, so its disk was saved as it lay, without a freeze");
 });
 
@@ -103,7 +103,7 @@ test("a capture answered after the first call's wait is finished on the continua
   const { images, deps } = await setup({ m2: async (request) => {
     const name = (request.input as { image: string }).image;
     const row = (await images()).find((image) => image.image_id === name);
-    if (row.name === "late") { await saved.opened; return hostRecord(request, { kind: HOST_OPERATION_KINDS.capture, state: "succeeded", result: { size_bytes: GIB, stall_ms: 400 } }); }
+    if (row.name === "late") { await saved.opened; return hostRecord(request, { kind: HOST_OPERATION_KINDS.capture, state: "succeeded", result: { size_bytes: GIB, disk_bytes: 8 * GIB, stall_ms: 400 } }); }
     await refused.opened; return failure(request, { code: "sandbox_not_found", message: "no sandbox sandbox_otter on this machine", retryable: false });
   } });
   deps.maxWaitMs = 50;
@@ -114,7 +114,7 @@ test("a capture answered after the first call's wait is finished on the continua
   assert.equal(late.status, "pending");
   saved.open();
   const done = await resume(late);
-  assert.deepEqual([done.ok, done.result.state, done.result.report[0]], [true, "ready", "image late saved from sandbox bold-otter (linux, 1 GiB)"], "the continuation reads as an operation state with its report");
+  assert.deepEqual([done.ok, done.result.state, done.result.report[0]], [true, "ready", "image late saved from sandbox bold-otter (linux, 1 GiB; sandboxes from it get a disk of at least 8 GiB)"], "the continuation reads as an operation state with its report");
 
   const gone = await started("gone", "cli-late-2");
   assert.equal(gone.status, "pending");
@@ -124,7 +124,7 @@ test("a capture answered after the first call's wait is finished on the continua
 });
 
 test("a saved macOS sandbox makes a macOS image that needs what its source needed", async () => {
-  const { op, images } = await setup({ m2: capturing([], { size_bytes: 30 * GIB, stall_ms: 900 }) });
+  const { op, images } = await setup({ m2: capturing([], { size_bytes: 30 * GIB, disk_bytes: 40 * GIB, stall_ms: 900 }) });
   const created = await op({ from: "mac-box", name: "mac-dev" });
   assert.equal(created.result.os, "macos");
   const [row] = await images();
@@ -132,7 +132,7 @@ test("a saved macOS sandbox makes a macOS image that needs what its source neede
 });
 
 test("image create refuses what it can't do before reserving anything", async () => {
-  const { op, images } = await setup({ m2: capturing([], { size_bytes: GIB, stall_ms: 1 }) });
+  const { op, images } = await setup({ m2: capturing([], { size_bytes: GIB, disk_bytes: 8 * GIB, stall_ms: 1 }) });
   assert.equal((await op({ from: "bold-otter", image: "image_mine" })).error.code, "invalid_input", "image is the agent API's own");
   assert.equal((await op({ from: "nope" })).error.code, "sandbox_not_found");
   assert.equal((await op({ from: "bold-otter", macos: true })).error.code, "invalid_input", "exactly one of from and macos");

@@ -8,7 +8,7 @@ import { answer, toHttp, type OpsDeps, type OpsResponse, type Principal, type Re
 
 /** A row of `images:list` / `images:get`. */
 export interface ImageRow {
-  image_id: string; name: string; os: "linux" | "macos"; size_bytes: number | null; min_macos: string | null; source: { kind: "sandbox" | "ipsw" | "release"; sandboxName?: string; ipswVersion?: string };
+  image_id: string; name: string; os: "linux" | "macos"; size_bytes: number | null; disk_bytes: number | null; min_macos: string | null; source: { kind: "sandbox" | "ipsw" | "release"; sandboxName?: string; ipswVersion?: string };
   default: boolean; created_at: number | null;
   holders: Array<{ machine_id: string; machine_name: string | null; state: "building" | "copying" | "ready" | "failed"; operation_id: string | null; error: { code: string; message: string; next_step: string } | null; updated_at: number | null }>;
 }
@@ -24,11 +24,11 @@ export interface CopyRow {
 /** What a finished `image.copy` keeps (both sides). */
 interface CopyResult { size_bytes?: number; bytes?: number; duration_ms?: number; path?: string }
 /** What a finished `sandbox.create_after_copy` keeps: the sandbox as created, and what its copy moved. */
-interface AfterCopyResult { name: string; cpus: number; memory_bytes: number; state: string; copy_operation_id?: string; copy: CopyResult | null }
-/** What a finished `image.capture` reports: the image's size, and how the source got through it. */
-interface CaptureResult { size_bytes: number; stall_ms: number | null; woke?: string; made_room?: string[] }
-/** What a finished `macos.build` reports: the release it installed, what it holds, the oldest macOS that runs it, and the sandboxes slept to free a macOS VM slot for it. */
-interface BuildResult { size_bytes: number; ipsw_version: string; ipsw_build?: string; min_macos?: string; chrome_version?: string; made_room?: string[] }
+interface AfterCopyResult { name: string; cpus: number; memory_bytes: number; disk_bytes: number; state: string; copy_operation_id?: string; copy: CopyResult | null }
+/** What a finished `image.capture` reports: the image's size and disk size, and how the source got through it. */
+interface CaptureResult { size_bytes: number; disk_bytes: number; stall_ms: number | null; woke?: string; made_room?: string[] }
+/** What a finished `macos.build` reports: the release it installed, what it holds and its disk size, the oldest macOS that runs it, and the sandboxes slept to free a macOS VM slot for it. */
+interface BuildResult { size_bytes: number; disk_bytes: number; ipsw_version: string; ipsw_build?: string; min_macos?: string; chrome_version?: string; made_room?: string[] }
 
 /** A record's progress as the contract shows it: bytes when the kind counts them, else 0 of 0. */
 export const progressOf = (record: HostOperationRecord): ImageOperationState["progress"] =>
@@ -73,7 +73,7 @@ function afterCopyState(image: ImageRow, record: HostOperationRecord, copy: Copy
   const to = copy ? copyEnds(copy).to : "this Mac";
   return { ...identity(image), state: "ready", report: [
     copiedLine(image, copy, { size: made.copy?.size_bytes ?? image.size_bytes, duration: copy?.result?.duration_ms ?? made.copy?.duration_ms ?? 0, path: copy?.result?.path ?? made.copy?.path }),
-    `created sandbox ${made.name} on ${to}: ${made.cpus} CPUs and ${gibibytes(made.memory_bytes)}, ${made.state}`,
+    `created sandbox ${made.name} on ${to}: ${made.cpus} CPUs, ${gibibytes(made.memory_bytes)} of memory and ${gibibytes(made.disk_bytes)} of disk, ${made.state}`,
     `run a command in it: localbox shell exec --sandbox ${made.name} -- CMD`,
   ] };
 }
@@ -136,7 +136,7 @@ function captureReport(image: ImageRow, result: CaptureResult, holder: Holder | 
     ? `${source} was stopped, so its disk was saved as it lay, without a freeze`
     : `${source} ${result.woke ? "woke from sleep, then " : ""}froze for ${(result.stall_ms / 1000).toFixed(1)} s while its disk was saved, and is running again`;
   return [
-    `image ${image.name} saved from sandbox ${source} (${image.os}, ${sizeText(result.size_bytes)})`,
+    `image ${image.name} saved from sandbox ${source} (${image.os}, ${sizeText(result.size_bytes)}; sandboxes from it get a disk of at least ${gibibytes(result.disk_bytes)})`,
     froze,
     ...(result.made_room ?? []).map((detail) => `made room for it: ${detail}`),
     `on machine ${holder?.machine_name ?? holder?.machine_id ?? "its source's Mac"}; copies to other Macs on first use`,
@@ -147,7 +147,7 @@ function captureReport(image: ImageRow, result: CaptureResult, holder: Holder | 
 /** A built macOS base, line by line: where it came from, what is in it, anything slept to make room for it, where it lives, and the next command. */
 function buildReport(image: ImageRow, result: BuildResult, holder: Holder | undefined): string[] {
   return [
-    `image ${image.name} built from the macOS ${result.ipsw_version}${result.ipsw_build ? ` (${result.ipsw_build})` : ""} IPSW (${image.os}, ${sizeText(result.size_bytes)})`,
+    `image ${image.name} built from the macOS ${result.ipsw_version}${result.ipsw_build ? ` (${result.ipsw_build})` : ""} IPSW (${image.os}, ${sizeText(result.size_bytes)}; sandboxes from it get a disk of at least ${gibibytes(result.disk_bytes)})`,
     `SIP is disabled, Google Chrome${result.chrome_version ? ` ${result.chrome_version}` : ""} is installed, Remote Login is off, and there is no Xcode`,
     ...(result.made_room ?? []).map((detail) => `made room for it: ${detail}`),
     `on machine ${holder?.machine_name ?? holder?.machine_id ?? "the Mac that built it"}; runs on Macs with macOS ${result.min_macos ?? image.min_macos ?? MACOS_IMAGE_MINIMUM} or later`,
@@ -174,9 +174,9 @@ export const holderName = (holder: Holder) => `${holder.machine_name ?? holder.m
 const imageSource = (source: ImageRow["source"]) => source.kind === "release" ? "release" : source.kind === "ipsw" ? `macOS ${source.ipswVersion ?? ""} IPSW`.replace("  ", " ") : `sandbox ${source.sandboxName ?? "(unknown)"}`;
 
 /**
- * One `image list` row: the facts its table shows (`NAME OS SIZE FROM ON DEFAULT`) and nothing else, so text and JSON
- * carry the same. `on` names the Macs holding the image, with any holding not yet ready marked; `linux` is on every Mac.
+ * One `image list` row: the facts its table shows (`NAME OS SIZE DISK FROM ON DEFAULT`) and nothing else, so text and
+ * JSON carry the same. `on` names the Macs holding the image, with any holding not yet ready marked; `linux` is on every Mac.
  */
 export function imageListRow(image: ImageRow): Json {
-  return { name: image.name, os: image.os, size_bytes: image.size_bytes, from: imageSource(image.source), on: image.image_id === BUILT_IN_IMAGE ? ["every Mac"] : image.holders.map(holderName), default: image.default };
+  return { name: image.name, os: image.os, size_bytes: image.size_bytes, disk_bytes: image.disk_bytes, from: imageSource(image.source), on: image.image_id === BUILT_IN_IMAGE ? ["every Mac"] : image.holders.map(holderName), default: image.default };
 }

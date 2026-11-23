@@ -166,6 +166,7 @@ private final class Clock: @unchecked Sendable { var now = Date(timeIntervalSinc
 /// A backend with a request lane and no control lane, as the process fixture is.
 private struct ChannelOnlyFactory: SandboxBackendFactory {
     func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) throws -> [String: String] { [:] }
+    func growDisk(_ record: SandboxRecord, in directory: SandboxDirectory) throws -> Bool { false }
     func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend { ChannelOnlyBackend() }
 }
 

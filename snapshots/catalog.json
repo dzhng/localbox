@@ -145,7 +145,7 @@
   },
   {
     "id": "sandbox.create",
-    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` with no request and no running job (default 5 min) and, only when `delete_after_ms` is given, is deleted after that much idle time. Its disk starts from `image` (a name or id), else the account's default image (initially `linux`). A machine without that image gets it copied first: the create answers at once with the sandbox `copying`, every other operation on it answers sandbox_not_ready with the copy's progress, and image.wait follows the copy until the sandbox is created. `after_copy` is set by the agent API (the copy the machine waits for); callers leave it out.",
+    "description": "Create a sandbox on the machine the request names, else by `placement` (auto takes the online machine with the most room, remote the same without the caller's), else on the caller's own machine; reports where and why, its name and size. It sleeps after `sleep_after_ms` with no request and no running job (default 5 min) and, only when `delete_after_ms` is given, is deleted after that much idle time. Its disk starts from `image` (a name or id), else the account's default image (initially `linux`), and is that image's disk size unless `disk_bytes` asks for more; less is refused. The disk is sparse: the Mac stores only what the sandbox writes. A machine without that image gets it copied first: the create answers at once with the sandbox `copying`, every other operation on it answers sandbox_not_ready with the copy's progress, and image.wait follows the copy until the sandbox is created. `after_copy` is set by the agent API (the copy the machine waits for); callers leave it out.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -170,6 +170,10 @@
           "maximum": 64
         },
         "memory_bytes": {
+          "type": "integer",
+          "minimum": 1073741824
+        },
+        "disk_bytes": {
           "type": "integer",
           "minimum": 1073741824
         },
@@ -291,7 +295,7 @@
   },
   {
     "id": "image.create",
-    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. Answers with the image's operation state, which for a saved sandbox is usually already ready, with what was done line by line; follow one still building with image.wait. `image` is set by the agent API (the reserved image's id, handed to the machine); callers leave it out.",
+    "description": "Save a sandbox's disk as an image (`from`, a sandbox name or id; it freezes for about a second, then carries on), or build a macOS base from Apple's IPSW on the request's machine (`macos`). Give exactly one. Without `name` the image gets a generated one. The image's disk size is the least every sandbox made from it gets: a saved sandbox's own size, or a larger `disk_bytes`; a macOS base's `disk_bytes`, at least and by default 50 GB, which the build needs free. Answers with the image's operation state, which for a saved sandbox is usually already ready, with what was done line by line; follow one still building with image.wait. `image` is set by the agent API (the reserved image's id, handed to the machine); callers leave it out.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -308,6 +312,10 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "disk_bytes": {
+          "type": "integer",
+          "minimum": 1073741824
         },
         "image": {
           "type": "string",
@@ -334,7 +342,7 @@
   },
   {
     "id": "image.list",
-    "description": "List the account's images: OS, size, source, the machines holding each, and which is the default.",
+    "description": "List the account's images: OS, size, disk size, source, the machines holding each, and which is the default.",
     "input_schema": {
       "type": "object",
       "properties": {},
@@ -578,7 +586,7 @@
   },
   {
     "id": "sandbox.resize",
-    "description": "Change a sandbox's CPUs or memory.",
+    "description": "Change a sandbox's CPUs, memory or disk; a disk only grows. A new size takes effect at a cold boot: a running sandbox restarts (its processes end), a sleeping one boots fresh at its next use.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -588,6 +596,10 @@
           "maximum": 64
         },
         "memory_bytes": {
+          "type": "integer",
+          "minimum": 1073741824
+        },
+        "disk_bytes": {
           "type": "integer",
           "minimum": 1073741824
         }

@@ -40,8 +40,14 @@ is the usual error envelope (`invalid_input`, `conflict`).
   default image (initially the built-in `linux`); `--image NAME` picks another,
   and `--image macos` the account's macOS base ([images](references/images.md)).
   Override with `--name`, `--cpus`,
-  `--memory 4G`, `--sleep-after 10m` (default 5 min idle), `--delete-after 2h`
-  (only when it should be disposable).
+  `--memory 4G`, `--disk 64G`, `--sleep-after 10m` (default 5 min idle),
+  `--delete-after 2h` (only when it should be disposable).
+- Disk: a sandbox gets its image's disk size (the built-in `linux` has about
+  8 GiB), or more with `--disk`; less is refused. Disks are sparse, so a large
+  one costs the Mac only what the sandbox writes. Ask for room up front when the
+  work needs it (toolchains, builds, caches); later,
+  `localbox sandbox resize NAME --disk 100G` grows it (never shrinks), which
+  restarts a running sandbox.
 - Placement: by default it lands on this Mac. `--machine NAME` picks one of the
   user's machines (`localbox machine list`); `--placement auto` takes the online
   machine with the most room, `--placement remote` the same but never this Mac.
@@ -67,7 +73,7 @@ deleting or building one, and for macOS sandboxes and getting Xcode into one.
 
 ```sh
 localbox image create --from NAME --name IMAGE   # save a sandbox (it pauses about a second)
-localbox image list                              # OS, size, source, the Macs holding each, the default
+localbox image list                              # OS, size, disk size, source, the Macs holding each, the default
 localbox image default IMAGE                     # what sandbox create uses with no --image
 localbox image wait IMAGE                        # follow a build or copy; call again until ready or failed
 ```

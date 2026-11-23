@@ -26,7 +26,7 @@ export async function imageRelease(dir: string, version: string, privateKey: Key
     await writeFile(join(dir, name), compressed.subarray(index * partBytes, (index + 1) * partBytes)); parts.push(name);
   }
   await writeFile(join(dir, `${prefix}.efi-vars`), `variable store ${version}`);
-  await writeFile(join(dir, `${prefix}.image.json`), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: diskBytes, agent_version: version }));
+  await writeFile(join(dir, `${prefix}.image.json`), JSON.stringify({ image_id: "linux", os: "linux", size_bytes: diskBytes, disk_bytes: diskBytes, agent_version: version }));
   const image = { sha256: createHash("sha256").update(disk).digest("hex"), size: diskBytes, parts, bootStore: `${prefix}.efi-vars`, manifest: `${prefix}.image.json` };
   const manifest = signManifest(await makeManifest(dir, version, `sha256:${image.sha256}`, undefined, image), privateKey, "scratch");
   await writeRelease(dir, manifest);

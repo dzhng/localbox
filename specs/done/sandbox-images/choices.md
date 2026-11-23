@@ -28,7 +28,7 @@ end). The numbers are the build steps listed in the
 [README](README.md#where-to-look); the README cites entries by their id (N1, S59). ⚠ marks a choice that stretches or contradicts
 a decision in the map.
 
-**Review these first:** N1 (the macOS disk may be too small for Xcode), N2 (macOS
+**Review these first:** N2 (macOS
 notifications are switched off in every guest), N3 (the copy-speed gate was
 restated) and N4 (the VNC server listens on every interface during the build).
 Nothing is unsound any more: the two unsound choices were redone and are now S59
@@ -38,32 +38,25 @@ Nothing is unsound any more: the two unsound choices were redone and are now S59
 
 ## Needs your call
 
-### N1. macOS sandboxes get a 50 GB disk, and the base already fills about 30 GB of it
+### N1. Resolved: the disk size is chosen per image and per sandbox
 
-**When:** 34 · **Owner:** `MacBaseBuilder.diskBytes` (`HostDaemonCore/MacBaseBuilder.swift`)
+**When:** 34, then the disk-size change · **Owner:** `MacBaseBuilder.diskBytes`, `DiskGrowth` (`HostDaemonCore/`)
 
-Say you run `image create --macos`. The build makes one 50 GB virtual disk
-(50 × 10⁹ bytes; sparse, so the Mac stores only the blocks written to it) and
-installs macOS, Chrome and the agent on it. That uses about 30 GB, so every macOS
-sandbox made from the base starts with about 20 GB free. The map says macOS
-sandboxes are mainly for building iOS and Mac apps in Xcode. An expanded Xcode
-plus one iOS simulator runtime, and the `.xip` while it expands, can easily take
-most of those 20 GB. Nothing can make a sandbox's disk bigger: `sandbox.resize`
-changes only CPUs and memory. Before the build starts, it requires the whole
-50 GB to be free (plus whatever part of the IPSW, Apple's macOS installer file, is
-still to download), so that a build never fills the Mac halfway through.
+The build made one fixed 50 GB disk (50 × 10⁹ bytes, sparse) for every macOS
+base, of which macOS, Chrome and the agent take about 30 GB, so a sandbox had
+about 20 GB left for Xcode, its `.xip` and a simulator runtime, and nothing could
+make a sandbox's disk bigger.
 
-- **Gap:** the slice delegated a size between 50 and 80 GB, and its text said 60 GB.
-  50 GB was taken because this Mac's free space fell during the pass.
-- **Reach:** the size is fixed into every macOS base and into every image saved
-  from a sandbox of it. A bigger disk later means building a new base.
-- **Verdict:** needs your call. **Provisional call:** keep 50 GB until someone
-  installs Xcode in a real sandbox and sees whether it fits. To reverse it, raise
-  `diskBytes` (to 80 GB, say). That affects only bases built afterwards. It also
-  raises the free space a build demands up front, unless the check is changed to
-  count expected use instead of the full size. Alternatives: 60 GB as the slice
-  said; a disk-size option on `image create --macos`.
-- **Confidence:** low.
+- **Resolution:** the user's call. An image records its disk size, the least
+  every sandbox made from it gets. `image create --macos --disk SIZE` builds at
+  that size (50 GB stays the default, and is the floor); `image create --from
+  SANDBOX --disk SIZE` may raise a saved image's above its sandbox's. `sandbox
+  create --disk SIZE` and `sandbox resize --disk SIZE` grow a sandbox's disk
+  past its image's (never below it, never shrinking), at its next cold boot. A
+  base drops its recovery partition after the `sip` step so its container can
+  grow. The build still demands its whole disk size free up front; sandbox disks
+  stay sparse, and the capture and copy checks still count what is written.
+- **Confidence:** high.
 
 ### N2. Notification banners are switched off in every macOS guest
 

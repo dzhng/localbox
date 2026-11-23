@@ -26,7 +26,7 @@ async function ownSandbox(ctx: any, accountId: string, sandboxId: string) {
 /** A sandbox waiting for its image's copy reads `copying` (or `failed`, with why) until its machine reports it created. */
 const view = (row: any, machineName?: string) => ({
   sandbox_id: row.sandboxId, name: row.name, machine_id: row.machineId, machine_name: machineName ?? null, image_id: row.imageId, os: row.os, min_macos: row.minMacOS ?? null,
-  cpus: row.cpus, memory_bytes: row.memoryBytes, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
+  cpus: row.cpus, memory_bytes: row.memoryBytes, disk_bytes: row.diskBytes ?? null, sleep_after_ms: row.sleepAfterMs, delete_after_ms: row.deleteAfterMs ?? null,
   state: row.pending ?? row.reportedState ?? "unknown", reported_at: row.reportedAt ?? null, copy_operation_id: row.copyOperationId ?? null,
   error: row.pendingError ? { code: row.pendingError.code, message: row.pendingError.message, next_step: row.pendingError.nextStep } : null,
 });
@@ -38,7 +38,7 @@ const view = (row: any, machineName?: string) => ({
  * `copyOperationId` (the image's copy to that machine) the sandbox is `copying` until the machine reports it created. A
  * create carrying a mutation id this account already reserved with returns that reservation instead of a second one.
  */
-export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), imageId: v.string(), cpus: v.number(), memoryBytes: v.number(), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()), copyOperationId: v.optional(v.string()) }, handler: async (ctx, args) => {
+export const create = mutationGeneric({ args: { machineId: v.string(), name: v.optional(v.string()), imageId: v.string(), cpus: v.number(), memoryBytes: v.number(), diskBytes: v.optional(v.number()), sleepAfterMs: v.optional(v.number()), deleteAfterMs: v.optional(v.number()), createMutationId: v.optional(v.string()), copyOperationId: v.optional(v.string()) }, handler: async (ctx, args) => {
   const { accountId } = await requireAccount(ctx);
   const machine = await byField(ctx, "machines", "by_machine", "machineId", args.machineId);
   if (!machine || machine.accountId !== accountId || machine.revokedAt !== undefined) refuse("machine_not_found", `no machine ${args.machineId} on this account`);
@@ -51,7 +51,7 @@ export const create = mutationGeneric({ args: { machineId: v.string(), name: v.o
     for (let attempt = 0; attempt < NAME_ATTEMPTS && name === undefined; attempt++) { const candidate = sandboxName(); if (!(await named(ctx, accountId, candidate))) name = candidate; }
     if (name === undefined) refuse("name_conflict", `no free generated name after ${NAME_ATTEMPTS} tries; pass a name`);
   }
-  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, os: image.os, ...(image.minMacOS === undefined ? {} : { minMacOS: image.minMacOS }), cpus: args.cpus, memoryBytes: args.memoryBytes, sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), ...(args.copyOperationId === undefined ? {} : { copyOperationId: args.copyOperationId, pending: "copying" as const }), createdAt: Date.now() };
+  const row = { sandboxId: id("sandbox"), accountId, machineId: machine.machineId, name: name!, imageId: args.imageId, os: image.os, ...(image.minMacOS === undefined ? {} : { minMacOS: image.minMacOS }), cpus: args.cpus, memoryBytes: args.memoryBytes, ...(args.diskBytes === undefined ? {} : { diskBytes: args.diskBytes }), sleepAfterMs: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, ...(args.deleteAfterMs === undefined ? {} : { deleteAfterMs: args.deleteAfterMs }), ...(args.createMutationId === undefined ? {} : { createMutationId: args.createMutationId }), ...(args.copyOperationId === undefined ? {} : { copyOperationId: args.copyOperationId, pending: "copying" as const }), createdAt: Date.now() };
   await ctx.db.insert("sandboxes", row);
   return view(row, machine.name);
 } });
@@ -137,7 +137,7 @@ export const endCreate = mutationGeneric({ args: { operationId: v.string(), stat
 } });
 
 /** Runtime state (and the size the daemon runs it at) reported by the machine holding each sandbox; other machines' sandboxes are ignored and unchanged values are not written. */
-export const reportState = mutationGeneric({ args: { states: v.array(v.object({ sandboxId: v.string(), state: v.string(), cpus: v.optional(v.number()), memoryBytes: v.optional(v.number()) })) }, handler: async (ctx, args) => {
+export const reportState = mutationGeneric({ args: { states: v.array(v.object({ sandboxId: v.string(), state: v.string(), cpus: v.optional(v.number()), memoryBytes: v.optional(v.number()), diskBytes: v.optional(v.number()) })) }, handler: async (ctx, args) => {
   const { machineId } = await requireIdentity(ctx, "machine");
   let written = 0;
   for (const report of args.states.slice(0, 200)) {
@@ -147,6 +147,7 @@ export const reportState = mutationGeneric({ args: { states: v.array(v.object({ 
     if (row.reportedState !== report.state) patch.reportedState = report.state;
     if (report.cpus !== undefined && report.cpus !== row.cpus) patch.cpus = report.cpus;
     if (report.memoryBytes !== undefined && report.memoryBytes !== row.memoryBytes) patch.memoryBytes = report.memoryBytes;
+    if (report.diskBytes !== undefined && report.diskBytes !== row.diskBytes) patch.diskBytes = report.diskBytes;
     if (Object.keys(patch).length) { await ctx.db.patch(row._id, { ...patch, reportedAt: Date.now() }); written++; }
   }
   return { written };

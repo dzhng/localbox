@@ -5,9 +5,12 @@ import Foundation
 /// through admission first, since what its sleep kept is in memory or its save file, not on disk (P2); a stopped one is
 /// cloned as it lies. The image is assembled in an `ImageStore` temporary and committed by one rename.
 ///
-/// Checkpoint: `{ sandbox_id }`, plus what the clone did (`stall_ms`, `disk`, `woke`, `made_room`) once it is taken. A
-/// resume finds the image committed (only the result was left to record) or starts over: it removes the half-written
-/// temporary, and the sandbox's disk has moved on since, so the clone is retaken.
+/// The image's disk size is the sandbox's, or the larger `disk_bytes` asked for (never smaller): the disk file is cloned
+/// as it is, and each sandbox made from the image grows its own copy to that size at its first boot.
+///
+/// Checkpoint: `{ sandbox_id, disk_bytes? }`, plus what the clone did (`stall_ms`, `disk`, `woke`, `made_room`) once it
+/// is taken. A resume finds the image committed (only the result was left to record) or starts over: it removes the
+/// half-written temporary, and the sandbox's disk has moved on since, so the clone is retaken.
 public actor ImageCapture: HostOperationKind {
     public static let kind = "image.capture"
 
@@ -19,14 +22,24 @@ public actor ImageCapture: HostOperationKind {
         self.store = store; self.operations = operations; self.sandboxes = sandboxes
     }
 
-    /// Starts saving sandbox `sandboxID` as image `imageID` under `key` (the create's mutation id), or returns the
-    /// operation already under that key. A sandbox this machine doesn't have is refused before anything is journaled.
-    public func begin(key: String, imageID: String, sandboxID: String) async throws -> HostOperationRecord {
+    /// Starts saving sandbox `sandboxID` as image `imageID` with a disk of at least `diskBytes` under `key` (the
+    /// create's mutation id), or returns the operation already under that key. A sandbox this machine doesn't have, or a
+    /// disk smaller than the sandbox's, is refused before anything is journaled.
+    public func begin(key: String, imageID: String, sandboxID: String, diskBytes: UInt64? = nil) async throws -> HostOperationRecord {
         if let existing = await operations.state(key) { return existing }
         guard let runtime = await sandboxes.runtime(sandboxID), await runtime.record.inCatalog else {
             throw HostOperationFailure(code: "sandbox_not_found", message: "no sandbox \(sandboxID) on this machine")
         }
-        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: .object(["sandbox_id": .string(sandboxID)]))
+        var checkpoint: [String: JSONValue] = ["sandbox_id": .string(sandboxID)]
+        if let diskBytes {
+            let record = await runtime.record
+            guard diskBytes >= record.diskBytes else {
+                throw HostOperationFailure(code: "invalid_input", message: "an image's disk can't be smaller than its sandbox's: \(record.name)'s is \(gibibytes(record.diskBytes)), and \(gibibytes(diskBytes)) was asked for",
+                                           nextStep: "save it with a --disk of at least \(gibibytes(record.diskBytes)), or none for the sandbox's size")
+            }
+            checkpoint["disk_bytes"] = .number(Double(DiskGrowth.rounded(diskBytes)))
+        }
+        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: .object(checkpoint))
     }
 
     func run(_ context: HostOperationContext) async throws -> JSONValue {
@@ -69,7 +82,10 @@ public actor ImageCapture: HostOperationKind {
             // The image carries the agent its guest last ran; the host's build replaces it on first boot when they differ.
             let parent = try? store.manifest(record.imageID)
             let agent = await runtime.snapshot().agentVersion ?? parent?.agentVersion ?? "unknown"
-            manifest = try store.seal(temp, imageID: imageID, os: os, hardwareModel: record.hardwareModel, minMacOS: parent?.minMacOS, agentVersion: agent)
+            // The sandbox's size (which may be ahead of its disk file until its next boot), or the larger one asked for.
+            var diskBytes = record.diskBytes
+            if case .number(let asked)? = checkpoint["disk_bytes"] { diskBytes = max(diskBytes, UInt64(asked)) }
+            manifest = try store.seal(temp, imageID: imageID, os: os, diskBytes: diskBytes, hardwareModel: record.hardwareModel, minMacOS: parent?.minMacOS, agentVersion: agent)
 
             // 5. Commit: the image exists from here, so a resume only records the result.
             try await context.report(HostOperationProgress(phase: "committing"), checkpoint: .object(checkpoint))
@@ -81,10 +97,10 @@ public actor ImageCapture: HostOperationKind {
         return Self.result(manifest, checkpoint)
     }
 
-    /// What the connector reports (`size_bytes`) and the relay words the result from.
+    /// What the connector reports (`size_bytes`, `disk_bytes`) and the relay words the result from.
     private static func result(_ manifest: ImageManifest, _ checkpoint: [String: JSONValue]) -> JSONValue {
         var result = checkpoint
-        result["size_bytes"] = .number(Double(manifest.sizeBytes)); result["os"] = .string(manifest.os.rawValue)
+        result["size_bytes"] = .number(Double(manifest.sizeBytes)); result["disk_bytes"] = .number(Double(manifest.diskBytes)); result["os"] = .string(manifest.os.rawValue)
         result["stall_ms"] = checkpoint["stall_ms"] ?? .null
         return .object(result)
     }

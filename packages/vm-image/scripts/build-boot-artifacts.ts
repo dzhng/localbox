@@ -108,7 +108,9 @@ async function writeImageDirectory(built: string, destination: string): Promise<
   await run("swift", [join(root, "packages/vm-image/scripts/create-efi-vars.swift"), join(temp, "boot", "efi-vars")]);
   const agent = JSON.parse(await readFile(join(root, "dist/guest-agent/agent-version.json"), "utf8")) as { version: string };
   const sizeBytes = await allocatedBytes(join(temp, "disk.img")) + await allocatedBytes(join(temp, "boot", "efi-vars"));
-  await writeFile(join(temp, "image.json"), `${JSON.stringify({ image_id: id, os: "linux", size_bytes: sizeBytes, agent_version: agent.version }, null, 2)}\n`);
+  // The disk's length is the image's disk size, the least a sandbox from it gets.
+  const diskBytes = (await stat(join(temp, "disk.img"))).size;
+  await writeFile(join(temp, "image.json"), `${JSON.stringify({ image_id: id, os: "linux", size_bytes: sizeBytes, disk_bytes: diskBytes, agent_version: agent.version }, null, 2)}\n`);
   await rm(destination, { recursive: true, force: true });
   await rename(temp, destination);
   console.log(JSON.stringify({ image: destination, size_bytes: sizeBytes }));

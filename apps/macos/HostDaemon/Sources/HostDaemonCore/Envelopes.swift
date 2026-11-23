@@ -35,3 +35,22 @@ public func requestEnvelope(_ operation: String, sandboxID: String?, input: [Str
     try JSONSerialization.data(withJSONObject: ["protocol_version": protocolVersion, "request_id": UUID().uuidString, "operation": operation, "sandbox_id": sandboxID as Any? ?? NSNull(),
                                                 "deadline_ms": deadlineMs, "mutation_id": mutates ? UUID().uuidString : NSNull(), "input": input] as [String: Any])
 }
+
+/// The longest deadline the guest agent accepts on a request (it refuses more than 120 s).
+let guestMaxDeadlineMs = 120_000
+
+/// `shell.exec` through the guest agent's request lane, which runs it as root: its stdout, or a throw with the tail of
+/// its output when it exits non-zero. `step` says what runs, for the error ("a build step").
+func rootShell(on channel: any GuestChannel, sandboxID: String, step: String) -> GuestDiskClaim.RootShell {
+    { script, timeout in
+        let request = try requestEnvelope("shell.exec", sandboxID: sandboxID, input: ["command": script], deadlineMs: min(Int(timeout * 1000), guestMaxDeadlineMs))
+        let answer = try JSONSerialization.jsonObject(with: try await channel.send(request)) as? [String: Any] ?? [:]
+        guard answer["ok"] as? Bool == true, let result = answer["result"] as? [String: Any] else {
+            throw HostDaemonError.unsupported("the guest agent refused \(step): \(((answer["error"] as? [String: Any])?["message"] as? String) ?? "no answer")")
+        }
+        let status = (result["exit_code"] as? NSNumber)?.intValue ?? -1
+        let stdout = result["stdout"] as? String ?? "", stderr = result["stderr"] as? String ?? ""
+        guard status == 0 else { throw HostDaemonError.unsupported("\(step) in the guest exited \(status): \(String((stderr + stdout).suffix(1500)))") }
+        return stdout
+    }
+}

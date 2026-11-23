@@ -24,7 +24,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       if (name === "sandboxes:list") return sandboxes;
       if (name === "images:get") {
         // As in Convex: no image is the account default (else `linux`), and `linux` is on every machine.
-        const linux: ImageRow = { image_id: "linux", name: "linux", os: "linux", size_bytes: null, min_macos: null, source: { kind: "release" }, default: !(options.images ?? []).some((row) => row.default), created_at: null, holders: options.machines.map((machine) => ({ machine_id: machine.machineId, machine_name: machine.name, state: "ready", operation_id: null, error: null, updated_at: null })) };
+        const linux: ImageRow = { image_id: "linux", name: "linux", os: "linux", size_bytes: null, disk_bytes: null, min_macos: null, source: { kind: "release" }, default: !(options.images ?? []).some((row) => row.default), created_at: null, holders: options.machines.map((machine) => ({ machine_id: machine.machineId, machine_name: machine.name, state: "ready", operation_id: null, error: null, updated_at: null })) };
         const wanted = args.image ?? (options.images ?? []).find((row) => row.default)?.image_id ?? "linux";
         if (wanted === "linux") return linux;
         const image = (options.images ?? []).find((row) => row.image_id === wanted || row.name === wanted);
@@ -33,7 +33,7 @@ export function memoryMailbox(options: { machines: Array<{ machineId: string; na
       }
       if (name === "sandboxes:create") {
         if (sandboxes.some((row) => row.name === args.name)) throw new ConvexError({ code: "name_conflict", message: `${args.name} is taken on this account; sandboxes: ${sandboxes.map((row) => row.name).join(", ")}` });
-        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, image_id: args.imageId, os: "linux", min_macos: null, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
+        const row: SandboxRow = { sandbox_id: `sandbox_${sandboxes.length + 1}`, name: args.name ?? `generated-${sandboxes.length + 1}`, machine_id: args.machineId, image_id: args.imageId, os: "linux", min_macos: null, disk_bytes: args.diskBytes ?? null, machine_name: options.machines.find((machine) => machine.machineId === args.machineId)?.name ?? null, cpus: args.cpus, memory_bytes: args.memoryBytes, sleep_after_ms: args.sleepAfterMs ?? DEFAULT_SLEEP_AFTER_MS, delete_after_ms: args.deleteAfterMs ?? null, state: "unknown" };
         const reserved = args.createMutationId && sandboxes.find((candidate) => candidate.sandbox_id === reservations.get(args.createMutationId));
         if (reserved) return reserved;
         if (args.createMutationId) reservations.set(args.createMutationId, row.sandbox_id);

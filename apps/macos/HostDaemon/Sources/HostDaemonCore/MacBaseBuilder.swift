@@ -26,6 +26,9 @@ public protocol MacBuildDriver: Sendable {
     /// Boots the work copy for the first time with `user` provisioned (auto-login, Remote Login on); the guest answers
     /// over SSH as that user.
     func provision(_ build: MacBuildDirectory, user: MacProvisioningUser) async throws -> any MacProvisionedGuest
+    /// With the VM off, drops the work copy's recovery partition (`RecoveryPartition.delete`); returns whether its APFS
+    /// container has space after it to grow into.
+    func freeRecoverySpace(_ build: MacBuildDirectory) throws -> Bool
     /// Boots the work copy normally; the guest answers through the Localbox agent's root shell over vsock.
     func boot(_ build: MacBuildDirectory) async throws -> any MacAgentGuest
 }
@@ -47,6 +50,8 @@ public protocol MacProvisionedGuest: MacBuildGuest {
 
 /// A normal boot, through the Localbox agent.
 public protocol MacAgentGuest: MacBuildGuest {
+    /// Grows the guest's APFS container into the space after it (`GuestDiskClaim`).
+    func claimDisk() async throws
     /// Shuts the guest down from inside and waits for it to power off.
     func shutDown() async throws
 }
@@ -57,16 +62,19 @@ public protocol MacAgentGuest: MacBuildGuest {
 /// Phases, each journaled as the checkpoint's next phase before it runs: `download` (resumable, into the IPSW cache),
 /// `install`, `provision` (a fresh clone of the installed disk, first boot with a random password and Remote Login),
 /// `bootstrap` (over SSH: the darwin agent, its forwarder, helper and units, and Chrome from Google's installer, P12), `sip` (Recovery's Terminal), `tcc` and `finish` (through the agent's root shell: grants and a quiet
-/// desktop, then Remote Login off, shut down, commit). The password lives only in this process's memory: a restart
+/// desktop, then Remote Login off, shut down, commit). Recovery is needed only for `sip`, so before the next boot the
+/// build drops the recovery partition and the guest's APFS container takes its space: nothing then sits after the
+/// container, so a sandbox's container can grow when its disk does. The password lives only in this process's memory: a restart
 /// during `bootstrap` or `sip` resumes from `provision` on a fresh clone; `tcc` and `finish` need no password and resume
-/// where they were. The IPSW (URL, version, size) is chosen once at `begin` and kept in the checkpoint. From `install`
+/// where they were. The IPSW (URL, version, size) and the disk's size are chosen once at `begin` and kept in the checkpoint. From `install`
 /// on, a build runs a macOS VM, which takes one of the two this Mac may run: before its first boot in a run (a resume
 /// after a restart included) it takes the slot through `SandboxHost`'s admission, which sleeps an idle macOS sandbox
 /// for it (kept in the checkpoint and the result as `made_room`) or fails the build `machine_full`.
 public actor MacBaseBuilder: HostOperationKind {
     public static let kind = "macos.build"
-    /// The guest's disk: 50 GB, the low end of the 50–80 GB the spec delegates and the size the map's E14 measures; the
-    /// built base holds about 30 GB of it (Chrome and the agent included).
+    /// The guest's disk when the build asks for no size, and the smallest it may ask for: 50 GB, of which the built base
+    /// holds about 30 GB (Chrome and the agent included). It becomes the image's disk size, the least every sandbox made
+    /// from the image gets.
     public static let diskBytes: UInt64 = 50_000_000_000
     /// How a building guest is named in the agent's hello (its host name until a sandbox renames it).
     static let guestName = "localbox-macos-base"
@@ -75,13 +83,14 @@ public actor MacBaseBuilder: HostOperationKind {
         case download, install, provision, bootstrap, sip, tcc, finish
     }
 
-    /// The checkpoint: the phase to run next, the release chosen at `begin`, and what sleeping sandboxes made room for
-    /// the build's VM.
+    /// The checkpoint: the phase to run next, the release and disk size chosen at `begin`, and what sleeping sandboxes
+    /// made room for the build's VM.
     struct Checkpoint: Codable, Equatable {
         var phase: Phase
         let ipsw: IPSWRelease
+        var diskBytes: UInt64 = MacBaseBuilder.diskBytes
         var madeRoom: [String] = []
-        enum CodingKeys: String, CodingKey { case phase, ipsw, madeRoom = "made_room" }
+        enum CodingKeys: String, CodingKey { case phase, ipsw, diskBytes = "disk_bytes", madeRoom = "made_room" }
     }
 
     private let store: ImageStore
@@ -104,11 +113,16 @@ public actor MacBaseBuilder: HostOperationKind {
         cache = IPSWCache(directory: store.ipswDirectory)
     }
 
-    /// Starts building image `imageID` under `key` (the create's mutation id), or returns the operation already under
-    /// that key. A host older than macOS 27 (`image_incompatible`), a Mac without room for the IPSW and the disk
-    /// (`disk_full`) or without a guest agent build is refused before anything is journaled.
-    public func begin(key: String, imageID: String) async throws -> HostOperationRecord {
+    /// Starts building image `imageID` with a disk of `requested` bytes (else `diskBytes`) under `key` (the create's
+    /// mutation id), or returns the operation already under that key. A disk below `diskBytes` (`invalid_input`), a host
+    /// older than macOS 27 (`image_incompatible`), a Mac without room for the IPSW and the disk (`disk_full`) or without
+    /// a guest agent build is refused before anything is journaled.
+    public func begin(key: String, imageID: String, diskBytes requested: UInt64? = nil) async throws -> HostOperationRecord {
         if let existing = await operations.state(key) { return existing }
+        let diskBytes = requested.map(DiskGrowth.rounded) ?? Self.diskBytes
+        guard diskBytes >= Self.diskBytes else {
+            throw HostOperationFailure(code: "invalid_input", message: "a macOS image's disk must be at least \(gibibytes(Self.diskBytes)), and \(gibibytes(diskBytes)) was asked for", nextStep: "build again with a larger --disk, or none for \(gibibytes(Self.diskBytes))")
+        }
         let host = hostVersion()
         guard (Int(host.split(separator: ".").first ?? "") ?? 0) >= 27 else {
             throw HostOperationFailure(code: "image_incompatible", message: "building a macOS image needs macOS 27 or later on this Mac, and it runs macOS \(host)", nextStep: "update this Mac to macOS 27, or build on another Mac with --machine")
@@ -125,10 +139,10 @@ public actor MacBaseBuilder: HostOperationKind {
             release = cached
         }
         let missing = cache.missingBytes(release)
-        try store.requireFree(missing + Self.diskBytes, for: "building a macOS image",
-                              because: missing > 0 ? "the macOS \(release.version) IPSW, \(gibibytes(missing)), and a \(gibibytes(Self.diskBytes)) disk" : "its \(gibibytes(Self.diskBytes)) disk",
+        try store.requireFree(missing + diskBytes, for: "building a macOS image",
+                              because: missing > 0 ? "the macOS \(release.version) IPSW, \(gibibytes(missing)), and a \(gibibytes(diskBytes)) disk" : "its \(gibibytes(diskBytes)) disk",
                               then: "build again")
-        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: try JSONValue(encoding: Checkpoint(phase: .download, ipsw: release)))
+        return try await operations.begin(kind: Self.kind, key: key, subject: imageID, checkpoint: try JSONValue(encoding: Checkpoint(phase: .download, ipsw: release, diskBytes: diskBytes)))
     }
 
     func run(_ context: HostOperationContext) async throws -> JSONValue {
@@ -158,7 +172,7 @@ public actor MacBaseBuilder: HostOperationKind {
                     // An install is not resumable: whatever an interrupted one left is started over.
                     try store.discardBuild(imageID)
                     _ = try store.buildDirectory(imageID)
-                    try await driver.install(ipsw: cache.file(for: checkpoint.ipsw), into: build, diskBytes: Self.diskBytes, progress: { _ in })
+                    try await driver.install(ipsw: cache.file(for: checkpoint.ipsw), into: build, diskBytes: checkpoint.diskBytes, progress: { _ in })
                     try await advance(to: .provision)
                 case .provision, .bootstrap, .sip:
                     // Only this run knows the password, so all three run here, from a fresh clone of the installed disk.
@@ -176,8 +190,11 @@ public actor MacBaseBuilder: HostOperationKind {
                     } catch { await guest.abandon(); throw error }
                     try await advance(to: .tcc)
                 case .tcc, .finish:
+                    // `sip` was the last boot into Recovery: its partition goes, and the container takes its space.
+                    let unclaimed = try driver.freeRecoverySpace(build)
                     let guest = try await driver.boot(build)
                     do {
+                        if unclaimed { try await guest.claimDisk() }
                         if checkpoint.phase == .tcc {
                             _ = try await guest.root(Self.tccScript(user: MacProvisioningUser.defaultName), timeout: 120)
                             try await advance(to: .finish)
@@ -190,7 +207,7 @@ public actor MacBaseBuilder: HostOperationKind {
             }
             let hardwareModel = try Data(contentsOf: build.hardwareModel).base64EncodedString()
             for file in build.privateFiles { try? FileManager.default.removeItem(at: file) }
-            let manifest = try store.seal(build.root, imageID: imageID, os: .macos, hardwareModel: hardwareModel, minMacOS: Self.minMacOS(checkpoint.ipsw), agentVersion: agentVersion())
+            let manifest = try store.seal(build.root, imageID: imageID, os: .macos, diskBytes: checkpoint.diskBytes, hardwareModel: hardwareModel, minMacOS: Self.minMacOS(checkpoint.ipsw), agentVersion: agentVersion())
             try store.commit(build.root, as: imageID)
             return result(manifest, checkpoint, chrome: chrome)
         } catch is CancellationError {
@@ -265,10 +282,11 @@ public actor MacBaseBuilder: HostOperationKind {
         return version
     }
 
-    /// What the connector reports to the account (`size_bytes`, `min_macos`, `ipsw_version`) and the relay words from.
+    /// What the connector reports to the account (`size_bytes`, `disk_bytes`, `min_macos`, `ipsw_version`) and the
+    /// relay words from.
     private func result(_ manifest: ImageManifest, _ checkpoint: Checkpoint, chrome: String?) -> JSONValue {
         let release = checkpoint.ipsw
-        var result: [String: JSONValue] = ["size_bytes": .number(Double(manifest.sizeBytes)), "os": .string(manifest.os.rawValue), "ipsw_version": .string(release.version), "ipsw_build": .string(release.build), "agent_version": .string(manifest.agentVersion)]
+        var result: [String: JSONValue] = ["size_bytes": .number(Double(manifest.sizeBytes)), "disk_bytes": .number(Double(manifest.diskBytes)),"os": .string(manifest.os.rawValue), "ipsw_version": .string(release.version), "ipsw_build": .string(release.build), "agent_version": .string(manifest.agentVersion)]
         if let minMacOS = manifest.minMacOS { result["min_macos"] = .string(minMacOS) }
         if let chrome, !chrome.isEmpty { result["chrome_version"] = .string(chrome) }
         if !checkpoint.madeRoom.isEmpty { result["made_room"] = .array(checkpoint.madeRoom.map(JSONValue.string)) }

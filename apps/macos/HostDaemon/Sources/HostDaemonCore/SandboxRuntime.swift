@@ -5,10 +5,15 @@ public typealias SandboxAction = [String: String]
 
 /// Makes the per-sandbox pieces a backend needs: the directory's contents at create, and a backend for each boot.
 public protocol SandboxBackendFactory: Sendable {
-    /// Lays down a new sandbox's directory (a disk clone, a guest root) and the runtime identity it boots with.
-    /// Returns facts for the create report, e.g. `disk: cloned`. Async so it runs off the `SandboxHost` actor: a disk
-    /// copy where cloning is unsupported takes minutes, and no other request may wait behind it.
+    /// Lays down a new sandbox's directory (a disk clone, a guest root) and the runtime identity it boots with, and
+    /// settles its disk size: the image's when the record asks for none (`diskBytes` 0), else what it asks, refused
+    /// below the image's (`DiskBelowImage`). Returns facts for the create report, e.g. `disk: cloned`. Async so it runs
+    /// off the `SandboxHost` actor: a disk copy where cloning is unsupported takes minutes, and no other request may
+    /// wait behind it.
     func provision(_ record: inout SandboxRecord, in directory: SandboxDirectory) async throws -> [String: String]
+    /// With no VM on the disk and no saved state: grows the disk to `record.diskBytes`. Returns whether it grew, so the
+    /// guest has a filesystem to grow into it after the boot.
+    func growDisk(_ record: SandboxRecord, in directory: SandboxDirectory) throws -> Bool
     /// A fresh backend for one boot, configured from the record as it is now.
     func backend(for record: SandboxRecord, in directory: SandboxDirectory) throws -> any SandboxBackend
 }
@@ -95,12 +100,17 @@ public actor SandboxRuntime {
         default: break
         }
         if [.hibernated, .asleep].contains(record.lifecycle), FileManager.default.fileExists(atPath: directory.savedState.path) {
-            do { try await restore(); return remember(["kind": "woke", "detail": "restored \(record.name) from its saved state"]) }
+            do {
+                try await restore()
+                let detail = "restored \(record.name) from its saved state"
+                return remember(["kind": "woke", "detail": diskClaim.map { "\(detail); \($0)" } ?? detail])
+            }
             catch { record.coldBootPending = "could not restore its saved state: \(explain(error))" }
         }
         let reason = record.coldBootPending
         try await coldBoot()
-        return remember(["kind": "cold_booted", "detail": reason.map { "cold-booted \(record.name): \($0)" } ?? "cold-booted \(record.name)"])
+        let detail = reason.map { "cold-booted \(record.name): \($0)" } ?? "cold-booted \(record.name)"
+        return remember(["kind": "cold_booted", "detail": diskClaim.map { "\(detail); \($0)" } ?? detail])
     }
 
     /// Whether the daemon's start brings this sandbox back: it was running, hibernated or is owed a cold boot. An
@@ -130,7 +140,26 @@ public actor SandboxRuntime {
         if let stale = backend { try await stale.stop(); backend = nil }
         // A cold boot changes the disk under any saved state, so that state could never be restored safely again.
         try? FileManager.default.removeItem(at: directory.savedState)
+        // Nothing runs on the disk and no saved state remembers it, so this is where it grows to its size.
+        if try factory.growDisk(record, in: directory) { record.diskClaimPending = true; persist() }
         try await boot { try await $0.start() }
+    }
+
+    /// What the last boot's disk claim did, for its bring-up's report; nil when it had nothing to claim.
+    private var diskClaim: String?
+
+    /// After a boot, before the sandbox is ready: the guest grows its filesystem into a disk the host grew. A failure
+    /// leaves the sandbox running at its old filesystem size and is tried again at the next boot. Returns what it did.
+    private func claimDisk(on channel: any GuestChannel) async -> String? {
+        guard record.diskClaimPending else { return nil }
+        let size = gibibytes(record.diskBytes)
+        do {
+            try await GuestDiskClaim.claim(record.os, rootShell(on: channel, sandboxID: record.sandboxID, step: "growing its filesystem"))
+            record.diskClaimPending = false; persist()
+            return "its filesystem grew into its \(size) disk"
+        } catch {
+            return "its disk is \(size), but the guest could not grow its filesystem into it (tried again at its next boot): \(explain(error))"
+        }
     }
 
     private func restore() async throws {
@@ -153,6 +182,7 @@ public actor SandboxRuntime {
                 Task { await self.guestLost(reason, boot: boot) }
             }
         }
+        diskClaim = nil
         do {
             try await run(next)
             backend = next
@@ -161,12 +191,13 @@ public actor SandboxRuntime {
                 if let readiness = guestChannel as? any GuestReadinessProvider { try await readiness.waitUntilReady() }
                 channel = guestChannel
                 agent = await (guestChannel as? any GuestAgentReporting)?.agentIdentity(); agentUpdateFailed = nil
+                diskClaim = await claimDisk(on: guestChannel)
             }
             // A stop (a delete) during the boot cancels it; the VM it made goes down with it.
             try Task.checkCancellation()
             // A boot counts as activity, so a sandbox that was just started is not the first slept to make room.
             record.coldBootPending = nil; record.lifecycle = .running; record.lastActivityAt = now(); persist()
-            setStatus(.ready, epoch: statusValue.channelEpoch + 1)
+            setStatus(.ready, epoch: statusValue.channelEpoch + 1, detail: record.diskClaimPending ? diskClaim : nil)
             // A guest that connects with another agent build gets the host's, after the bring-up it is part of.
             if agentUpdater != nil { Task { await self.updateAgentIfDue() } }
         } catch {
@@ -514,34 +545,36 @@ public actor SandboxRuntime {
         record.listedBy = machineID; persist()
     }
 
-    /// A size takes effect at boot, so a running sandbox restarts; the action names the processes that ended.
-    func resize(cpus: Int?, memoryBytes: UInt64?) async throws -> SandboxAction? {
+    /// A size takes effect at a cold boot, so a running sandbox restarts; the action names the processes that ended. A
+    /// disk only grows (the caller refuses a smaller one); a stopped or asleep sandbox's disk grows at its next boot.
+    func resize(cpus: Int?, memoryBytes: UInt64?, diskBytes: UInt64? = nil) async throws -> SandboxAction? {
         await operationsSettled()
         let cpus = cpus ?? record.cpus, memory = memoryBytes ?? record.memoryBytes
-        guard cpus != record.cpus || memory != record.memoryBytes else { return nil }
+        let disk = diskBytes.map { $0 > record.diskBytes ? DiskGrowth.rounded($0) : record.diskBytes } ?? record.diskBytes
+        guard cpus != record.cpus || memory != record.memoryBytes || disk != record.diskBytes else { return nil }
         guard cpus > 0, memory > 0 else { throw HostDaemonError.invalidState("a sandbox needs at least one CPU and some memory") }
         guard statusValue.lifecycle == .ready || statusValue.lifecycle == .paused else {
-            record.cpus = cpus; record.memoryBytes = memory
+            record.cpus = cpus; record.memoryBytes = memory; record.diskBytes = disk
             // A saved state only restores at the size it was saved with, so an asleep sandbox wakes with a cold boot.
             if statusValue.lifecycle == .asleep, FileManager.default.fileExists(atPath: directory.savedState.path) {
                 try? FileManager.default.removeItem(at: directory.savedState)
                 record.coldBootPending = "resized while asleep, so its saved state could not be restored"
                 persist(); onChange()
-                return ["kind": "restarted", "detail": "resized \(record.name) to \(cpus) CPUs and \(gibibytes(memory)) while asleep; its processes ended, and it cold-boots at its next use"]
+                return ["kind": "restarted", "detail": "resized \(record.name) to \(Self.size(cpus, memory, disk)) while asleep; its processes ended, and it cold-boots at its next use"]
             }
             persist(); onChange(); return nil
         }
-        return try await flight { try await $0.restart(cpus: cpus, memoryBytes: memory) }
+        return try await flight { try await $0.restart(cpus: cpus, memoryBytes: memory, diskBytes: disk) }
     }
 
-    /// Resize's restart, as the bring-up in flight. A size the backend cannot boot rolls back, and the sandbox comes
-    /// back at the size it had.
-    private func restart(cpus: Int, memoryBytes memory: UInt64) async throws -> SandboxAction? {
+    /// Resize's restart, as the bring-up in flight. CPUs and memory the backend cannot boot roll back, and the sandbox
+    /// comes back at the size it had; its disk keeps the new size, since a disk the boot grew cannot shrink again.
+    private func restart(cpus: Int, memoryBytes memory: UInt64, diskBytes disk: UInt64) async throws -> SandboxAction? {
         if statusValue.lifecycle == .paused { try await resume() }
         let ended = (try? await guestProcesses()) ?? []
         try await halt()
         let previous = (cpus: record.cpus, memory: record.memoryBytes)
-        record.cpus = cpus; record.memoryBytes = memory; persist()
+        record.cpus = cpus; record.memoryBytes = memory; record.diskBytes = disk; persist()
         do { try await coldBoot() } catch {
             record.cpus = previous.cpus; record.memoryBytes = previous.memory; persist()
             // A stop that cancelled the resize wants the sandbox down, not booted again at its old size.
@@ -550,8 +583,12 @@ public actor SandboxRuntime {
         }
         let commands = Array(Set(ended)).sorted()
         let listed = commands.isEmpty ? "" : ": \(commands.prefix(20).joined(separator: ", "))\(commands.count > 20 ? ", …" : "")"
-        return ["kind": "restarted", "detail": "restarted \(record.name) at \(cpus) CPUs and \(gibibytes(memory)); \(ended.count) process\(ended.count == 1 ? "" : "es") ended\(listed)"]
+        let detail = "restarted \(record.name) at \(Self.size(cpus, memory, disk)); \(ended.count) process\(ended.count == 1 ? "" : "es") ended\(listed)"
+        return ["kind": "restarted", "detail": diskClaim.map { "\(detail); \($0)" } ?? detail]
     }
+
+    /// A size in a report: "2 CPUs, 4 GiB of memory and 60 GiB of disk".
+    static func size(_ cpus: Int, _ memory: UInt64, _ disk: UInt64) -> String { "\(cpus) CPUs, \(gibibytes(memory)) of memory and \(gibibytes(disk)) of disk" }
 
     /// The guest's user processes, by command, leaving out kernel threads and the guest agent serving this request.
     private func guestProcesses() async throws -> [String] {
