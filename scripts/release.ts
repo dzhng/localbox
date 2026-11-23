@@ -27,7 +27,21 @@ export const IMAGE_FILES = { manifest: "image.json", disk: "disk.img", bootStore
 /** Streamed, because the VM disk is multi-GiB and no single buffer can hold it. */
 export async function sha256(path: string): Promise<string> { const hash = createHash("sha256"); for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer); return hash.digest("hex"); }
 export async function makeManifest(dir: string, version: string, imageDigest: string, minimumMacOS = "14.0", image?: ReleaseImage): Promise<ReleaseManifest> { const names = (await readdir(dir)).filter((n) => n !== "release.json" && n !== "SHA256SUMS"); const artifacts: ReleaseArtifact[] = []; for (const name of names) { const path = join(dir, name); artifacts.push({ name, sha256: await sha256(path), size: (await stat(path)).size, arch: "arm64" }); } return { schema: "agent-computer.release.v1", version, imageDigest, artifacts, ...(image ? { image } : {}), minimumMacOS }; }
-export async function writeRelease(dir: string, manifest: ReleaseManifest): Promise<void> { await writeFile(join(dir, "release.json"), `${JSON.stringify(manifest, null, 2)}\n`); await writeFile(join(dir, "SHA256SUMS"), `${manifest.artifacts.map((a) => `${a.sha256}  ${a.name}`).join("\n")}\n`); }
+const sha256Sums = (manifest: ReleaseManifest) => manifest.artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}\n`).join("");
+export async function writeRelease(dir: string, manifest: ReleaseManifest): Promise<void> { await writeFile(join(dir, "release.json"), `${JSON.stringify(manifest, null, 2)}\n`); await writeFile(join(dir, "SHA256SUMS"), sha256Sums(manifest)); }
+/**
+ * A release folder exactly as `writeRelease` left it: `release.json` signed by `publicKey`, every artifact its digest,
+ * `SHA256SUMS` listing exactly those, and no file the manifest does not name. Returns the manifest.
+ */
+export async function verifyReleaseFolder(dir: string, publicKey: string | Buffer | KeyObject): Promise<ReleaseManifest> {
+  const manifest = JSON.parse(await readFile(join(dir, "release.json"), "utf8")) as ReleaseManifest;
+  verifyManifestSignature(manifest, publicKey);
+  await verifyRelease(dir, manifest);
+  if (await readFile(join(dir, "SHA256SUMS"), "utf8") !== sha256Sums(manifest)) throw new Error("SHA256SUMS does not list exactly the signed artifacts");
+  const expected = [...manifest.artifacts.map((artifact) => artifact.name), "release.json", "SHA256SUMS"].sort(), present = (await readdir(dir)).sort();
+  if (JSON.stringify(present) !== JSON.stringify(expected)) throw new Error(`the release folder holds ${present.join(", ")}, but the manifest names ${expected.join(", ")}`);
+  return manifest;
+}
 /** Verify a downloaded release: every artifact, the image's included. */
 export async function verifyRelease(dir: string, manifest: ReleaseManifest, platformArch = "arm64"): Promise<void> {
   checkManifest(manifest, platformArch);

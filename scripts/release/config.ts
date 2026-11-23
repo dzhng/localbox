@@ -89,5 +89,7 @@ function recordedImageDigest(root: string): string | undefined {
 
 export const signingFile = (config: ReleaseConfig, file: keyof typeof SIGNING_FILES): string => join(config.signingDir, SIGNING_FILES[file].name);
 
+/** One file of a build, which `publish` uploads as an asset of the same name. */
+export interface Asset { name: string; size: number; sha256: string }
 /** What `build` records beside its output, so `smoke` and `publish` act on exactly that build. */
-export interface BuildReceipt { version: string; commit: string; rehearsal: boolean; publicKeySha256: string; builtAt: string }
+export interface BuildReceipt { version: string; commit: string; rehearsal: boolean; publicKeySha256: string; builtAt: string; assets: Asset[] }

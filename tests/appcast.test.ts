@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
-import { appcast, signAppcast, sparklePublicKey, sparkleSignature, verifyAppcast } from "../scripts/appcast.js";
+import { appcast, readAppcast, signAppcast, sparklePublicKey, sparkleSignature, verifyAppcast } from "../scripts/appcast.js";
 
 // A PKCS#8 Ed25519 key, the release key's format, from a fixed seed (bytes 0..31). The expected values are what the
 // pinned Sparkle's own `sign_update --ed-key-file SEED` printed for the same seed (specs/done/menu-bar-app/choices.md, S28).
@@ -26,13 +26,16 @@ test("SUPublicEDKey is the raw public half, base64, whichever PEM half it is rea
   assert.throws(() => sparklePublicKey(generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey), /Ed25519/);
 });
 
-test("a signed feed verifies with its public key and fails closed after any change", () => {
+test("a signed feed verifies with its public key, reads back as the item it offers, and fails closed after any change", () => {
   const keys = generateKeyPairSync("ed25519"), other = generateKeyPairSync("ed25519");
-  const feed = appcast({ version: "1.2.3", url: "https://github.com/o/r/releases/download/v1.2.3/Localbox-macos-arm64.zip", length: 10, signature: "c2ln", minimumSystemVersion: "14.0" });
+  const item = { version: "1.2.3", url: "https://github.com/o/r/releases/download/v1.2.3/Localbox-macos-arm64.zip?a=1&b=2", length: 10, signature: "c2ln", minimumSystemVersion: "14.0" };
+  const feed = appcast(item);
   assert.match(feed, /<sparkle:version>1\.2\.3<\/sparkle:version>/);
-  assert.match(feed, /<enclosure url="https:\/\/github\.com\/o\/r\/releases\/download\/v1\.2\.3\/Localbox-macos-arm64\.zip" length="10" type="application\/octet-stream" sparkle:edSignature="c2ln"\/>/);
+  assert.match(feed, /<enclosure url="https:\/\/github\.com\/o\/r\/releases\/download\/v1\.2\.3\/Localbox-macos-arm64\.zip\?a=1&amp;b=2" length="10" type="application\/octet-stream" sparkle:edSignature="c2ln"\/>/);
   const signed = signAppcast(feed, keys.privateKey);
   assert.equal(verifyAppcast(signed, keys.publicKey), feed);
+  assert.deepEqual(readAppcast(signed, keys.publicKey), item);
+  assert.throws(() => readAppcast(signed, other.publicKey), /does not verify/);
   assert.throws(() => verifyAppcast(signed, other.publicKey), /does not verify/);
   assert.throws(() => verifyAppcast(signed.replace("1.2.3", "1.2.4"), keys.publicKey), /does not verify/);
   assert.throws(() => verifyAppcast(feed, keys.publicKey), /not signed/);

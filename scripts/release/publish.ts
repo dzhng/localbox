@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { sha256 } from "../release.js";
-import { readReceipt, verifyReleaseFiles } from "./build.js";
-import { FEED_URL, REPOSITORY, type ReleaseConfig } from "./config.js";
+import { readReceipt } from "./build.js";
+import { FEED_URL, REPOSITORY, type Asset, type ReleaseConfig } from "./config.js";
 import { capture, commandLine, step } from "./process.js";
 import { isPrerelease, tagOf } from "./version.js";
 
@@ -16,15 +15,7 @@ import { isPrerelease, tagOf } from "./version.js";
  * update feed's redirect and `releases/latest/download/release.json`. `--dry-run` prints the plan and touches nothing.
  */
 
-export interface Asset { name: string; size: number; sha256: string }
 interface GitHubRelease { id: number; tag_name: string; draft: boolean; prerelease: boolean; target_commitish: string; html_url: string; assets: Array<{ id: number; name: string; size: number; state: string }> }
-
-/** The assets of a build: every file in the folder, which `verifyReleaseFiles` has proven is exactly the manifest's. */
-export async function assetList(out: string): Promise<Asset[]> {
-  const assets: Asset[] = [];
-  for (const name of readdirSync(out).sort()) assets.push({ name, size: statSync(join(out, name)).size, sha256: await sha256(join(out, name)) });
-  return assets;
-}
 
 /** The GitHub calls `publish` makes for the draft, as argv; `--dry-run` prints exactly these. */
 export function draftCommands(version: string, commit: string, out: string, assets: Asset[], draftExists: boolean): string[][] {
@@ -55,14 +46,12 @@ export function assetMismatches(local: Asset[], remote: Array<{ name: string; si
 }
 
 export async function publish(config: ReleaseConfig, options: { confirm: boolean; dryRun: boolean }): Promise<{ done: string[]; next: string }> {
-  const receipt = readReceipt(config);
-  const tag = tagOf(receipt.version);
-  const { checked } = await verifyReleaseFiles(config.out, { version: receipt.version, publicKey: readFileSync(config.publicKey, "utf8") });
-  const assets = await assetList(config.out);
-  const done = [...checked];
+  const receipt = await readReceipt(config);
+  const tag = tagOf(receipt.version), assets = receipt.assets;
+  const done = [`${config.out} holds the ${assets.length} files the build stage verified`];
 
   if (options.dryRun) {
-    for (const line of checked) console.log(`  ok  ${line}`);
+    console.log(`  ok  ${done[0]}`);
     const total = assets.reduce((sum, asset) => sum + asset.size, 0);
     console.log(`\nwould publish ${tag} from ${receipt.commit.slice(0, 7)} (${receipt.rehearsal ? "a rehearsal build, which never publishes" : "a release build"}): ${assets.length} assets, ${(total / 1024 ** 2).toFixed(1)} MiB`);
     for (const asset of assets) console.log(`  ${asset.sha256}  ${String(asset.size).padStart(12)}  ${asset.name}`);
